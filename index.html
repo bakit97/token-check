@@ -38,7 +38,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .store.bad{color:var(--dn)}
 .gear{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--panel);font-size:17px}
 .tabs{display:flex;gap:4px;padding-bottom:8px;overflow-x:auto}
-.tab{flex:1;min-width:max-content;padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--mut);font-weight:700;font-size:13px;white-space:nowrap}
+.tab{flex:1 1 auto;min-width:0;padding:8px 6px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--mut);font-weight:700;font-size:13px;white-space:nowrap}
 .tab.on{background:var(--acc);border-color:var(--acc);color:#fff}
 .tab b{font-family:var(--mono);font-weight:700;opacity:.8;margin-left:3px}
 .stat{font:11px var(--mono);color:var(--mut);padding:8px 0 2px;display:flex;gap:10px;flex-wrap:wrap}
@@ -144,6 +144,24 @@ button{font:inherit;color:inherit;cursor:pointer}
 .hcard svg{width:100%;height:90px;display:block;margin-top:4px}
 .big svg{height:220px}
 
+/* фильтры и правила */
+.chips{display:flex;gap:6px;overflow-x:auto;padding:8px 0 2px}
+.chip{flex:none;padding:7px 11px;border-radius:20px;border:1px solid var(--line);background:var(--panel);color:var(--mut);font-weight:700;font-size:12px}
+.chip.on{background:rgba(34,209,123,.14);border-color:rgba(34,209,123,.55);color:var(--up)}
+.rule{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:8px}
+.rule.off{opacity:.55}
+.rule .rh{display:flex;align-items:center;gap:8px}
+.rule .rh h3{margin:0;font-size:15px;flex:1}
+.tg{width:44px;height:26px;border-radius:13px;background:var(--up);position:relative;flex:none;border:0}
+.tg::after{content:'';position:absolute;right:3px;top:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.15s}
+.tg.off{background:var(--line)}.tg.off::after{right:21px}
+.rule p{margin:6px 0 0;font-size:13px;line-height:1.45}
+.rule p em{font-style:normal;color:var(--up);font-family:var(--mono);font-weight:700}
+.rule .why{color:var(--mut);font-size:12px;margin-top:4px}
+.slw{margin-top:10px}
+.slw .sll{display:flex;justify-content:space-between;font:11px var(--mono);color:var(--mut)}
+.slw .sll b{color:var(--fg)}
+.slw input[type=range]{width:100%;accent-color:var(--up);margin:6px 0 0;height:26px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
@@ -153,18 +171,19 @@ button{font:inherit;color:inherit;cursor:pointer}
     <div class="brand">SOL·СКАН</div>
     <div class="live" id="live"><i></i><span>LIVE</span></div>
     <div class="store" id="store">память…</div>
-    <button class="gear" id="gear" aria-label="Настройки">⚙</button>
   </div>
   <nav class="tabs">
     <button class="tab on" data-t="all">Все<b id="nAll">0</b></button>
     <button class="tab" data-t="pass">Прошли<b id="nPass">0</b></button>
     <button class="tab" data-t="hist">История</button>
+    <button class="tab" data-t="rules">Правила</button>
     <button class="tab" data-t="check">Проверка</button>
   </nav>
 </div></header>
 
 <main class="wrap">
   <section id="v-all">
+    <div class="chips"><button class="chip" id="fFresh"></button><button class="chip" id="fScam">🚫 Без скама</button><button class="chip" id="fLiq"></button></div>
     <div class="stat" id="statAll"></div>
     <div class="list" id="lAll"><div class="empty">Загружаю новые пары…</div></div>
   </section>
@@ -175,6 +194,7 @@ button{font:inherit;color:inherit;cursor:pointer}
   <section id="v-hist" hidden>
     <div id="hist"></div>
   </section>
+  <section id="v-rules" hidden><div class="stat"><span id="rulesHead"></span></div><div id="rules"></div></section>
   <section id="v-check" hidden>
     <div class="inrow"><input id="addr" placeholder="Адрес контракта" autocomplete="off" spellcheck="false"><button class="btn" id="go">Проверить</button></div>
     <div id="out"><p class="mut" style="margin-top:10px">Вставь адрес любой монеты Solana — проверю по тем же правилам, что и ленту.</p></div>
@@ -219,7 +239,7 @@ const DEF={win:10,keepH:5,delay:1,poll:15,
   c_hold:true,top10Max:30,insMax:15,devMax:5,
   c_liq:true,liqMin:5000,
   c_pump:true,pumpMax:3,
-  c_clone:true};
+  c_clone:true,f_fresh:false,f_scam:false,f_liq:0};
 const S=Object.assign({},DEF,sget('sc_set',{}));
 
 /* =================== сеть =================== */
@@ -348,33 +368,33 @@ function rcLite(r){
 // ok: true — прошла, false — завалила, null — ещё ждём данные
 function checks(c){
   const L=c.rcLite, out=[];
-  const add=(g,on,ok,t,d)=>out.push({g,on,ok:on?ok:'off',t,d});
+  const add=(g,on,ok,t,d,w)=>out.push({g,on,ok:on?ok:'off',t,d,w});
   // 1 контракт
-  add(1,S.c_mint,L?!L.mint:null,'Mint отключён',L?(L.mint?'Создатель может допечатать монеты':'Допечатки не будет'):'жду rugcheck');
-  add(1,S.c_freeze,L?!L.freeze:null,'Freeze отключён',L?(L.freeze?'Могут заморозить твои токены — не продашь':'Продать сможешь'):'жду rugcheck');
-  add(1,S.c_lock,L?(L.lock==null?null:L.lock>=S.lockMin):null,'Ликвидность залочена ≥ '+S.lockMin+'%',L&&L.lock!=null?('Залочено '+Math.round(L.lock)+'%'):'жду rugcheck');
+  add(1,S.c_mint,L?!L.mint:null,'Mint отключён',L?(L.mint?'Создатель может допечатать монеты':'Допечатки не будет'):'жду rugcheck','mint');
+  add(1,S.c_freeze,L?!L.freeze:null,'Freeze отключён',L?(L.freeze?'Могут заморозить твои токены — не продашь':'Продать сможешь'):'жду rugcheck','freeze');
+  add(1,S.c_lock,L?(L.lock==null?null:L.lock>=S.lockMin):null,'Ликвидность залочена ≥ '+S.lockMin+'%',L&&L.lock!=null?('Залочено '+Math.round(L.lock)+'%'):'жду rugcheck','пул не залочен');
   // 2 нарисованная капа
   const r=c.mc?c.liq/c.mc*100:null;
-  add(2,S.c_paint,r==null?null:r>=S.liqMcMin,'Ликвидность ≥ '+S.liqMcMin+'% от капы',r==null?'нет данных':('Сейчас '+Math.round(r)+'% ('+money(c.liq)+' из '+money(c.mc)+')'));
+  add(2,S.c_paint,r==null?null:r>=S.liqMcMin,'Ликвидность ≥ '+S.liqMcMin+'% от капы',r==null?'нет данных':('Сейчас '+Math.round(r)+'% ('+money(c.liq)+' из '+money(c.mc)+')'),'нарисована');
   // 3 накрутка
   const tx=(c.b24||0)+(c.s24||0);
   if(tx<20){add(3,S.c_bot,true,'Средняя сделка ≥ $'+S.avgMin,'Сделок пока мало ('+tx+') — не оценить');add(3,S.c_bot,true,'Продажи ≥ '+S.sellMin+'% от покупок','Сделок пока мало')}
   else{const avg=(c.v24||0)/tx,sr=c.b24?c.s24/c.b24*100:100;
-    add(3,S.c_bot,avg>=S.avgMin,'Средняя сделка ≥ $'+S.avgMin,'Сейчас $'+avg.toFixed(2)+(avg<S.avgMin?' — микро-покупки, боты':''));
-    add(3,S.c_bot,sr>=S.sellMin,'Продажи ≥ '+S.sellMin+'% от покупок','Продаж '+c.s24+' на '+c.b24+' покупок')}
+    add(3,S.c_bot,avg>=S.avgMin,'Средняя сделка ≥ $'+S.avgMin,'Сейчас $'+avg.toFixed(2)+(avg<S.avgMin?' — микро-покупки, боты':''),'боты');
+    add(3,S.c_bot,sr>=S.sellMin,'Продажи ≥ '+S.sellMin+'% от покупок','Продаж '+c.s24+' на '+c.b24+' покупок','нет продаж')}
   // 4 держатели
-  add(4,S.c_hold,L?L.top10<=S.top10Max:null,'Топ-10 ≤ '+S.top10Max+'%',L?('Держат '+Math.round(L.top10)+'%'):'жду rugcheck');
-  add(4,S.c_hold,L?L.ins<=S.insMax:null,'Инсайдеры/бандлы ≤ '+S.insMax+'%',L?('Связанные кошельки '+Math.round(L.ins)+'%'):'жду rugcheck');
-  add(4,S.c_hold,L?(L.dev==null?true:L.dev<=S.devMax):null,'Доля дева ≤ '+S.devMax+'%',L?(L.dev==null?'нет данных':('Дев держит '+(Math.round(L.dev*10)/10)+'%')):'жду rugcheck');
+  add(4,S.c_hold,L?L.top10<=S.top10Max:null,'Топ-10 ≤ '+S.top10Max+'%',L?('Держат '+Math.round(L.top10)+'%'):'жду rugcheck',L?'топ-10 '+Math.round(L.top10)+'%':'');
+  add(4,S.c_hold,L?L.ins<=S.insMax:null,'Инсайдеры/бандлы ≤ '+S.insMax+'%',L?('Связанные кошельки '+Math.round(L.ins)+'%'):'жду rugcheck',L?'инсайдеры '+Math.round(L.ins)+'%':'');
+  add(4,S.c_hold,L?(L.dev==null?true:L.dev<=S.devMax):null,'Доля дева ≤ '+S.devMax+'%',L?(L.dev==null?'нет данных':('Дев держит '+(Math.round(L.dev*10)/10)+'%')):'жду rugcheck',L&&L.dev!=null?'дев '+Math.round(L.dev)+'%':'');
   // 5 ликвидность
-  add(5,S.c_liq,c.liq?c.liq>=S.liqMin:null,'Ликвидность ≥ '+money(S.liqMin),'Сейчас '+money(c.liq));
+  add(5,S.c_liq,c.liq?c.liq>=S.liqMin:null,'Ликвидность ≥ '+money(S.liqMin),'Сейчас '+money(c.liq),'мало в пуле');
   // 6 уже улетела
   const g=c.firstPrice&&c.price?c.price/c.firstPrice:null;
-  const late6=Date.now()-c.listedAt>3*60e3;add(6,S.c_pump,g==null?(late6?true:null):g<=S.pumpMax,'Рост с витрины ≤ ×'+S.pumpMax,g==null?(late6?'Цена появления неизвестна — не оценить':'жду цену на момент появления'):('Сейчас '+xf(g)+' от цены появления'));
+  const late6=Date.now()-c.listedAt>3*60e3;add(6,S.c_pump,g==null?(late6?true:null):g<=S.pumpMax,'Рост с витрины ≤ ×'+S.pumpMax,g==null?(late6?'Цена появления неизвестна — не оценить':'жду цену на момент появления'):('Сейчас '+xf(g)+' от цены появления'),'улетела '+xf(g));
   // 7 клон
   const nm=(c.name||'').trim().toLowerCase(),sy=(c.sym||'').trim().toLowerCase();
   const twin=Object.values(C).find(o=>o!==c&&o.listedAt<c.listedAt&&((nm&&o.name?.trim().toLowerCase()===nm)||(sy&&sy.length>1&&o.sym?.trim().toLowerCase()===sy)));
-  add(7,S.c_clone,!twin,'Не клон',twin?('Такое же название уже было '+ago(twin.listedAt)+' назад'):'Название уникальное');
+  add(7,S.c_clone,!twin,'Не клон',twin?('Такое же название уже было '+ago(twin.listedAt)+' назад'):'Название уникальное','клон');
   if(L?.rugged)out.push({g:1,on:true,ok:false,t:'Rugcheck: RUGGED',d:'Уже признан скамом'});
   return out}
 const GRP={1:'1 · Контракт',2:'2 · Нарисованная капа',3:'3 · Накрутка',4:'4 · Держатели',5:'5 · Ликвидность',6:'6 · Уже улетела',7:'7 · Клон'};
@@ -384,6 +404,7 @@ function evalCoin(c){
   const ck=checks(c).filter(x=>x.on);const inWin=Date.now()-c.listedAt<=S.win*60e3;
   const fail=ck.some(x=>x.ok===false), pend=ck.some(x=>x.ok===null);
   if(!fail&&!pend){if(inWin){c.status='pass';c.passAt=Date.now()}else c.status='late';return}
+  c.why=(ck.find(x=>x.ok===false)||{}).w||'';
   if(!inWin){c.status=fail?'fail':'late';return}
   c.status='wait';c.failNow=fail;
 }
@@ -391,7 +412,7 @@ function evalAll(){Object.values(C).forEach(evalCoin);$('#live').classList.toggl
 
 /* =================== отрисовка =================== */
 const BADGE={pass:['b-pass','✓ прошла'],fail:['b-fail','✕ скам'],wait:['b-wait','⏳ проверка'],late:['b-late','опоздала'],miss:['b-miss','пропущена']};
-function badge(c){if(c.status==='wait'&&c.failNow)return['b-fail','✕ пока нет'];return BADGE[c.status]||BADGE.miss}
+function badge(c){if((c.status==='wait'&&c.failNow)||c.status==='fail')return['b-fail','✕ '+(c.why||'скам')];return BADGE[c.status]||BADGE.miss}
 function sparkSvg(pts,w=64,h=28){
   if(!pts||pts.length<2)return `<svg class="spark" viewBox="0 0 ${w} ${h}"></svg>`;
   const t0=pts[0][0],t1=pts[pts.length-1][0]||t0+1,ys=pts.map(p=>p[1]),lo=Math.min(...ys),hi=Math.max(...ys),rg=hi-lo||hi||1;
@@ -420,7 +441,7 @@ function reconcile(box,items,mode){
   const em=box.querySelector('.empty');if(em)em.remove();
   const keep=new Set();let prev=null;
   for(const c of items){keep.add(c.addr);let el=m.get(c.addr);
-    const sig=[c.price,c.mc,c.liq,c.status,c.failNow,c.img,c.tokAt,(c.spark||[]).length,c.passAt].join('|');
+    const sig=[c.price,c.mc,c.liq,c.status,c.failNow,c.why,c.img,c.tokAt,(c.spark||[]).length,c.passAt].join('|');
     if(!el){el=document.createElement('div');el.className='row';el.dataset.a=c.addr;el.onclick=()=>openCoin(c.addr);
       if(c.isNew&&Date.now()-(c.seenAt||0)<60000)el.classList.add('enter');m.set(c.addr,el)}
     if(el._sig!==sig){el.innerHTML=rowInner(c,mode);el._sig=sig;
@@ -435,9 +456,13 @@ function render(){
   const pass=Object.values(C).filter(c=>c.status==='pass').sort((a,b)=>b.passAt-a.passAt);
   $('#nAll').textContent=all.length;$('#nPass').textContent=pass.length;
   const w=all.filter(c=>c.status==='wait').length,f=all.filter(c=>c.status==='fail').length;
-  $('#statAll').innerHTML=`<span>за ${S.keepH} ч</span><span>⏳ проверяю: ${w}</span><span class="dn">✕ ${f}</span>${gtErr?`<span class="dn">GeckoTerminal: ${esc(gtErr)}</span>`:''}`;
   $('#statPass').innerHTML=`<span>прошли все проверки в первые ${S.win} мин</span>`;
-  if(tab==='all')reconcile($('#lAll'),all.slice(0,250),'all');
+  $('#fFresh').textContent='⚡ Свежие < '+S.win+' мин';$('#fFresh').classList.toggle('on',S.f_fresh);
+  $('#fScam').classList.toggle('on',S.f_scam);
+  $('#fLiq').textContent='💧 Ликв. '+(S.f_liq?'от '+money(S.f_liq):'любая');$('#fLiq').classList.toggle('on',!!S.f_liq);
+  const shown=all.filter(c=>(!S.f_fresh||Date.now()-c.listedAt<=S.win*60e3)&&(!S.f_scam||!(c.status==='fail'||c.failNow))&&(c.liq||0)>=S.f_liq);
+  $('#statAll').innerHTML=`<span>показано ${shown.length} из ${all.length}</span><span>⏳ проверяю: ${w}</span>${gtErr?`<span class="dn">GeckoTerminal: ${esc(gtErr)}</span>`:''}`;
+  if(tab==='all')reconcile($('#lAll'),shown.slice(0,250),'all');
   if(tab==='pass')reconcile($('#lPass'),pass,'pass');
   Object.values(C).forEach(c=>{c.flash=null;if(booted&&c.isNew&&Date.now()-(c.seenAt||0)>60000)c.isNew=false});
   if(sheetAddr&&C[sheetAddr])fillChecks(C[sheetAddr]);
@@ -448,8 +473,8 @@ setInterval(()=>{document.querySelectorAll('[data-ts]').forEach(e=>e.textContent
 /* =================== вкладки =================== */
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.t;
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));
-  ['all','pass','hist','check'].forEach(k=>$('#v-'+k).hidden=k!==tab);
-  if(tab==='hist')renderHist();render();window.scrollTo(0,0)});
+  ['all','pass','hist','rules','check'].forEach(k=>$('#v-'+k).hidden=k!==tab);
+  if(tab==='hist')renderHist();if(tab==='rules')renderRules();render();window.scrollTo(0,0)});
 
 /* =================== карточка монеты =================== */
 let sheetAddr=null;
@@ -581,49 +606,35 @@ function overlaySvg(cs){const W=360,Hh=220,M=300;const series=[];
   return `<svg viewBox="0 0 ${W} ${Hh}">${g}<rect x="28" y="8" width="4" height="${Hh-28}" fill="var(--up)" opacity=".35"/>${lines}${md?`<path d="${md}" fill="none" stroke="var(--up)" stroke-width="2.4"/>`:''}
     <text x="${W-4}" y="18" fill="var(--up)" font-size="10" text-anchor="end" font-family="monospace">— медиана</text></svg>`}
 
-/* =================== настройки =================== */
-const OPTS=[
- ['Время',null,[
-  ['win','Окно первых минут','Сколько минут с появления на витрине монета должна успеть пройти все проверки. Не успела — «опоздала».','мин'],
-  ['keepH','Хранить ленту','Монеты старше этого времени на витрине удаляются из «Все».','ч'],
-  ['delay','Время на покупку','Сколько тебе нужно, чтобы купить после прохождения. От этого момента считается вход в Истории.','мин'],
-  ['poll','Обновлять ленту каждые','Чаще — быстрее видно новые, но API может начать резать.','сек']]],
- ['1 · Контракт','Можно ли вообще безопасно торговать этой монетой.',[
-  ['c_mint','Mint отключён','Создатель не может допечатать монеты и обесценить твои.'],
-  ['c_freeze','Freeze отключён','Твои токены не могут заморозить — иначе не продашь.'],
-  ['c_lock','Ликвидность залочена','Пул не могут вытащить и сбежать с деньгами.'],
-  ['lockMin','— минимум залочено','Сколько процентов пула должно быть заблокировано.','%']]],
- ['2 · Нарисованная капа','Есть ли за капой реальные деньги.',[
-  ['c_paint','Проверять','Если капа $100K, а в пуле $5K — капа «нарисована», при продажах цена рухнет.'],
-  ['liqMcMin','— ликвидность от капы, минимум','','%']]],
- ['3 · Накрутка','Не гоняют ли боты счётчики.',[
-  ['c_bot','Проверять','Ловит монеты вроде GTA6: сотни покупок по $0.30.'],
-  ['avgMin','— средняя сделка, минимум','Меньше — значит микро-покупки ботов.','$'],
-  ['sellMin','— продажи от покупок, минимум','Если почти никто не продаёт — накрутка или продать нельзя.','%']]],
- ['4 · Держатели','Кто держит монету и может её обвалить.',[
-  ['c_hold','Проверять',''],
-  ['top10Max','— топ-10 кошельков, максимум','Если десять кошельков держат треть — один их слив обвалит цену.','%'],
-  ['insMax','— инсайдеры/бандлы, максимум','Кошельки, связанные с создателем, скупившие на старте.','%'],
-  ['devMax','— доля дева, максимум','Сколько держит создатель.','%']]],
- ['5 · Ликвидность','Сможешь ли выйти без большой потери.',[
-  ['c_liq','Проверять',''],
-  ['liqMin','— минимум в пуле','Мало денег в пуле — твоя же продажа уронит цену.','$']]],
- ['6 · Уже улетела','Не опоздал ли ты на памп.',[
-  ['c_pump','Проверять','Сравнивает текущую цену с ценой в момент появления на витрине.'],
-  ['pumpMax','— максимальный рост до проверки','Если уже выросла сильнее — поезд ушёл.','×']]],
- ['7 · Клон','Подделки под чужое название.',[
-  ['c_clone','Проверять','Если монета с таким же названием уже была в ленте — это клон (как три Muse подряд).']]]];
-function openSettings(){
-  let h='<div class="set"><h2 style="margin:0 0 4px;font-size:18px">Настройки</h2><p class="hint">Монета попадает в «Прошли», только если ВСЕ включённые проверки пройдены в первые минуты.</p>';
-  for(const[title,hint,items]of OPTS){h+=`<h3>${title}</h3>${hint?`<p class="hint">${hint}</p>`:''}`;
-    for(const[k,l,d,u]of items){const isB=typeof DEF[k]==='boolean';
-      h+=`<div class="opt"><label for="o_${k}">${l}</label><div class="rowopt">${isB?`<input type="checkbox" id="o_${k}" ${S[k]?'checked':''}>`:`<input type="number" id="o_${k}" value="${S[k]}" step="any" min="0"><span class="mut">${u||''}</span>`}</div>${d?`<p>${d}</p>`:''}</div>`}}
-  h+=`<div class="inrow" style="margin-top:14px"><button class="btn" id="sv" style="flex:1">Сохранить</button><button class="btn" id="rs" style="background:var(--panel);border:1px solid var(--line)">Сброс</button></div></div>`;
-  openSheet(h);
-  $('#sv').onclick=()=>{for(const k in DEF){const e=$('#o_'+k);if(!e)continue;S[k]=typeof DEF[k]==='boolean'?e.checked:(parseFloat(e.value)||0)}
-    sset('sc_set',S);Object.values(C).forEach(c=>{if(c.status!=='pass'&&c.status!=='miss')c.status=Date.now()-c.listedAt<=S.win*60e3?'wait':c.status});evalAll();closeSheet();render()};
-  $('#rs').onclick=()=>{Object.assign(S,DEF);sset('sc_set',S);closeSheet();openSettings()}}
-$('#gear').onclick=openSettings;
+/* =================== фильтры =================== */
+$('#fFresh').onclick=()=>{S.f_fresh=!S.f_fresh;sset('sc_set',S);render()};
+$('#fScam').onclick=()=>{S.f_scam=!S.f_scam;sset('sc_set',S);render()};
+$('#fLiq').onclick=()=>{const L=[0,1000,5000,20000];S.f_liq=L[(L.indexOf(S.f_liq)+1)%L.length];sset('sc_set',S);render()};
+
+/* =================== правила =================== */
+const RULES=[
+ {n:0,t:'Окно первых минут',tg:null,text:()=>`У монеты есть <em>${S.win} мин</em> с появления пула, чтобы пройти все правила.`,why:'Не успела — «опоздала», поезд ушёл.',sl:[['win',3,60,1,v=>v+' мин']]},
+ {n:1,t:'Контракт',tg:['c_mint','c_freeze','c_lock'],text:()=>`Создатель <b>не может</b> допечатать монеты, заморозить твои или забрать деньги из пула (заблокировано не меньше <em>${S.lockMin}%</em> пула).`,why:'Если может — тебя кинут, даже если всё остальное хорошо.',sl:[['lockMin',50,100,5,v=>v+'% пула']]},
+ {n:2,t:'Нарисованная капа',tg:['c_paint'],text:()=>`В пуле должно быть хотя бы <em>${S.liqMcMin}%</em> от капы.`,why:'Капа $100K, а в пуле $3K — цифра ненастоящая, при продажах цена рухнет.',sl:[['liqMcMin',2,50,1,v=>v+'% от капы']]},
+ {n:3,t:'Боты',tg:['c_bot'],text:()=>`Средняя покупка не меньше <em>$${S.avgMin}</em>, и продаж хотя бы <em>${S.sellMin}%</em> от покупок.`,why:'Сотни покупок по $0.30 и никто не продаёт — накрутка ботами.',sl:[['avgMin',0.5,20,0.5,v=>'покупка $'+v],['sellMin',0,50,1,v=>'продаж '+v+'%']]},
+ {n:4,t:'Держатели',tg:['c_hold'],text:()=>`10 крупнейших кошельков держат не больше <em>${S.top10Max}%</em>, связанные с создателем — не больше <em>${S.insMax}%</em>, сам создатель — не больше <em>${S.devMax}%</em>.`,why:'Если монету держат несколько человек — один их слив обвалит цену.',sl:[['top10Max',10,80,1,v=>'топ-10: '+v+'%'],['insMax',0,60,1,v=>'связанные: '+v+'%'],['devMax',0,30,0.5,v=>'создатель: '+v+'%']]},
+ {n:5,t:'Деньги в пуле',tg:['c_liq'],text:()=>`В пуле минимум <em>${money(S.liqMin)}</em>.`,why:'Мало денег — твоя же продажа уронит цену.',sl:[['liqMin',500,100000,500,v=>money(v)]]},
+ {n:6,t:'Уже улетела',tg:['c_pump'],text:()=>`С момента появления цена выросла не больше чем в <em>×${S.pumpMax}</em>.`,why:'Выросла сильнее до твоего входа — ты опоздал на памп.',sl:[['pumpMax',1.2,20,0.1,v=>'×'+v]]},
+ {n:7,t:'Клон',tg:['c_clone'],text:()=>'Монета с таким же названием ещё <b>не появлялась</b>.',why:'Скамеры запускают одно имя по несколько раз (три Muse, две Charge AI).'},
+ {n:'⏱',t:'Время',tg:null,text:()=>`Хранить ленту <em>${S.keepH} ч</em>. На покупку тебе нужно <em>${S.delay} мин</em> — от этого момента считается вход в Истории. Лента обновляется каждые <em>${S.poll} сек</em>.`,why:'Обновлять чаще — быстрее видно новые, но API может начать резать.',sl:[['keepH',1,24,1,v=>'хранить '+v+' ч'],['delay',0,10,0.5,v=>'на покупку '+v+' мин'],['poll',8,60,1,v=>'обновлять '+v+' сек']]}];
+let saveT=0;
+function saveRules(){clearTimeout(saveT);saveT=setTimeout(()=>{sset('sc_set',S);evalAll();render()},400)}
+function renderRules(){
+  $('#rulesHead').innerHTML=`Монета попадает в «Прошли», только если прошла ВСЕ включённые правила за первые <b style="color:var(--fg)">${S.win} мин</b>. Меняется сразу.`;
+  $('#rules').innerHTML=RULES.map((r,i)=>{const on=!r.tg||r.tg.every(k=>S[k]);
+    return `<div class="rule${on?'':' off'}" data-i="${i}"><div class="rh"><h3>${typeof r.n==='number'?r.n+'. ':r.n+' '}${r.t}</h3>${r.tg?`<button class="tg${on?'':' off'}" aria-label="Включить правило"></button>`:''}</div>
+    <p class="rtx">${r.text()}</p><div class="why">${r.why}</div>
+    ${(r.sl||[]).map(([k,mn,mx,st,f])=>`<div class="slw"><div class="sll"><b data-l="${k}">${f(S[k])}</b><span>${f(mn)} … ${f(mx)}</span></div><input type="range" id="r_${k}" data-k="${k}" min="${mn}" max="${mx}" step="${st}" value="${S[k]}"></div>`).join('')}</div>`}).join('');
+  $('#rules').querySelectorAll('.rule').forEach(el=>{const r=RULES[+el.dataset.i];
+    const tg=el.querySelector('.tg');if(tg)tg.onclick=()=>{const on=!r.tg.every(k=>S[k]);r.tg.forEach(k=>S[k]=on);el.classList.toggle('off',!on);tg.classList.toggle('off',!on);saveRules()};
+    el.querySelectorAll('input[type=range]').forEach(inp=>inp.oninput=()=>{const k=inp.dataset.k;S[k]=+inp.value;
+      const f=r.sl.find(x=>x[0]===k)[4];el.querySelector(`[data-l="${k}"]`).textContent=f(S[k]);el.querySelector('.rtx').innerHTML=r.text();
+      if(k==='win')$('#rulesHead b').textContent=S.win+' мин';saveRules()})})}
 
 /* =================== старт =================== */
 evalAll();render();boot();rcLoop();setTimeout(pollDS,4000);
