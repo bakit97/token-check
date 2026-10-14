@@ -246,11 +246,12 @@ $('#store').textContent=storeOk?'память: ок':'память: нет';$('#
 /* =================== настройки =================== */
 const DEF={win:10,keepH:5,delay:1,poll:30,
   c_contract:true,c_owner:true,ownerMax:15,c_dev:true,devMax:5,c_liq:true,liqMin:5000,c_lock:true,lockMin:90,
-  c_press:true,pressMin:1.2,c_vol5:true,vol5Min:2000,c_buyers:true,buyersMin:20,c_dd:true,ddMax:30,
+  c_press:true,pressMin:1,c_vol5:true,vol5Min:2000,c_buyers:true,buyersMin:20,c_dd:true,ddMax:30,
   w_ins:true,insMax:15,w_top10:true,top10Max:30,w_pump:true,pumpMax:3,w_clone:true,
-  devStrict:false,fee:3,h_all:false,f_fresh:false,f_scam:false,f_liq:0,ver:2};
+  devStrict:false,fee:3,helius:'',h_all:false,f_fresh:false,f_scam:false,f_liq:0,ver:2};
 const old=sget('sc_set',{});
 const S=Object.assign({},DEF,old.ver===2?old:{f_fresh:old.f_fresh||false,f_scam:old.f_scam||false,f_liq:old.f_liq||0});
+if(!old.v3){S.pressMin=Math.min(S.pressMin,1);S.v3=true}
 if(S.poll<20)S.poll=20;
 
 /* =================== сеть =================== */
@@ -264,10 +265,10 @@ function gt(path,prio=5){return new Promise((res,rej)=>{gtQ.push({path,prio,res,
     try{t.res(await j(GT+t.path));gtErr='';gtOkAt=Date.now()}catch(e){if(e.rl)gtPause=Date.now()+30000;gtErr=e.rl?'лимит запросов, жду':e.message;t.rej(e)}}
   await sleep(6200)}})();
 let rpcI=0,rpcErr='';
-async function rpc(method,params){let last;
-  for(let t=0;t<RPCS.length;t++){const url=RPCS[(rpcI+t)%RPCS.length];
+async function rpc(method,params){let last;const list=S.helius?['https://mainnet.helius-rpc.com/?api-key='+encodeURIComponent(S.helius.trim()),...RPCS]:RPCS;
+  for(let t=0;t<list.length;t++){const url=list[(rpcI+t)%list.length];
     try{const d=await j(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
-      if(d.error)throw new Error(d.error.message||'ошибка RPC');rpcI=(rpcI+t)%RPCS.length;rpcErr='';return d.result}
+      if(d.error)throw new Error(d.error.message||'ошибка RPC');rpcI=(rpcI+t)%list.length;rpcErr='';return d.result}
     catch(e){last=e}}
   rpcErr=last?.message||'RPC';throw last}
 
@@ -405,7 +406,9 @@ function rcLite(r){
   const pools=new Set();(r.markets||[]).forEach(m=>[m.pubkey,m.liquidityAAccount,m.liquidityBAccount,m.lp?.lpMint].forEach(x=>x&&pools.add(x)));
   const hs=(r.topHolders||[]).filter(h=>!pools.has(h.address)&&!pools.has(h.owner));
   const sup=Number(r.token?.supply)||0;
-  return{ins:hs.filter(h=>h.insider).reduce((s,h)=>s+(h.pct||0),0),
+  return{has:!!r.token,mint:!!r.token?.mintAuthority,freeze:!!r.token?.freezeAuthority,maxOwner:hs[0]?.pct||0,top10:hs.slice(0,10).reduce((s,h)=>s+(h.pct||0),0),
+    risk22:(r.risks||[]).filter(x=>/transfer fee|permanent delegate|transfer hook|non.?transferable/i.test(x.name||'')).map(x=>x.name),
+    ins:hs.filter(h=>h.insider).reduce((s,h)=>s+(h.pct||0),0),
     dev:sup&&r.creatorBalance!=null?(Number(r.creatorBalance)||0)/sup*100:null,
     lock:(r.markets||[]).length?Math.max(0,...r.markets.map(m=>m.lp?.lpLockedPct||0)):null,rugged:!!r.rugged}}
 
@@ -413,14 +416,16 @@ function rcLite(r){
 // статус правила: pass ✓ · fail ✕ · unk … (ждём данные) · err ⚠ (API не ответил) · na – (данных нет, не блокирует) · off (выключено)
 const SECT={safe:'Безопасность',sig:'Сигналы для входа',warn:'Предупреждения — не блокируют'};
 function checks(c){
-  const R=c.rpc,L=c.rcLite,out=[];
+  const L=c.rcLite;
+  // блокчейн — главный источник; если он не ответил, берём то же из rugcheck
+  const R=c.rpc||(L?.has?{src:'rc',mint:L.mint,freeze:L.freeze,bad:L.risk22||[],is22:false,maxOwner:L.maxOwner,top10:L.top10}:null),out=[];
   const put=(sec,k,on,st,t,d,w)=>out.push({sec,k,st:on?st:'off',t,d,w});
   const rpcSt=c.rpcErr?'err':'unk';
   // безопасность
   if(R){const pr=[...(R.mint?['можно допечатать монеты']:[]),...(R.freeze?['можно заморозить твои токены']:[]),...R.bad];
-    put('safe','contract',S.c_contract,pr.length?'fail':'pass','Контракт чистый',pr.length?pr.join(', '):('Mint и freeze отключены'+(R.is22?', Token-2022 без опасных функций':'')),R.mint?'mint':R.freeze?'freeze':R.bad.length?'Token-2022':'контракт')}
+    put('safe','contract',S.c_contract,pr.length?'fail':'pass','Контракт чистый',pr.length?pr.join(', '):('Mint и freeze отключены'+(R.src==='rc'?' (по rugcheck — блокчейн не ответил)':(R.is22?', Token-2022 без опасных функций':''))),R.mint?'mint':R.freeze?'freeze':R.bad.length?'Token-2022':'контракт')}
   else put('safe','contract',S.c_contract,rpcSt,'Контракт чистый',c.rpcErr?'Блокчейн не ответил: '+c.rpcErr:'Проверяю в блокчейне…','контракт');
-  put('safe','owner',S.c_owner,R?(R.maxOwner<=S.ownerMax?'pass':'fail'):rpcSt,'Один владелец ≤ '+S.ownerMax+'%',R?('Крупнейший (кроме пула) держит '+f1(R.maxOwner)+'%'):'Проверяю в блокчейне…','кит '+(R?Math.round(R.maxOwner)+'%':''));
+  put('safe','owner',S.c_owner,R?(R.maxOwner<=S.ownerMax?'pass':'fail'):rpcSt,'Один владелец ≤ '+S.ownerMax+'%',R?('Крупнейший (кроме пула) держит '+f1(R.maxOwner)+'%'+(R.src==='rc'?' (по rugcheck)':'')):'Проверяю в блокчейне…','кит '+(R?Math.round(R.maxOwner)+'%':''));
   const dev=L?.dev;
   put('safe','dev',S.c_dev,dev!=null?(dev<=S.devMax?'pass':'fail'):(c.rcTried?(S.devStrict?(c.rcErr?'err':'unk'):'na'):'unk'),'Дев ≤ '+S.devMax+'%',dev!=null?('Создатель держит '+f1(dev)+'%'):(c.rcTried?(S.devStrict?'Данных о создателе нет — не пропускаю':'Данных о создателе нет — правило пропущено'):'Жду rugcheck…'),'дев '+(dev!=null?Math.round(dev)+'%':''));
   put('safe','liq',S.c_liq,c.liq?(c.liq>=S.liqMin?'pass':'fail'):'unk','В пуле ≥ '+money(S.liqMin),'Сейчас '+money(c.liq),'мало в пуле');
@@ -727,6 +732,12 @@ function renderRules(){
     el.querySelectorAll('input[type=range]').forEach(inp=>inp.oninput=()=>{const k=inp.dataset.k;S[k]=+inp.value;
       const f=r.sl.find(x=>x[0]===k)[4];el.querySelector(`[data-l="${k}"]`).textContent=f(S[k]);el.querySelector('.rtx').innerHTML=r.text();
       if(k==='win')$('#rulesHead b').textContent=S.win+' мин';saveRules()})});
+  const hk=document.createElement('div');hk.className='rule';
+  hk.innerHTML=`<div class="rh"><h3>🔑 Ключ Helius (необязательно)</h3></div><p class="rtx">Бесплатные узлы Solana часто не отвечают сайтам. С бесплатным ключом Helius проверка контракта и китов работает стабильно. Получить: <b>helius.dev</b> → Sign up → скопировать API key.</p>
+    <div class="inrow"><input id="hkey" placeholder="вставь ключ сюда" autocomplete="off" spellcheck="false" value="${esc(S.helius)}"><button class="btn" id="hsave">Сохранить</button></div><div class="why" id="hst">${S.helius?'Ключ сохранён':'Без ключа — запасной вариант через rugcheck'}</div>`;
+  $('#rules').appendChild(hk);
+  $('#hsave').onclick=()=>{S.helius=$('#hkey').value.trim();sset('sc_set',S);$('#hst').textContent=S.helius?'Ключ сохранён, проверяю…':'Ключ удалён';
+    rpc('getHealth',[]).then(()=>{$('#hst').textContent=S.helius?'✓ Ключ работает':'✓ Блокчейн отвечает'}).catch(e=>{$('#hst').textContent='✕ Не отвечает: '+e.message})};
   updRuleCounts()}
 
 /* =================== старт =================== */
