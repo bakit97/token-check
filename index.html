@@ -401,13 +401,15 @@ function sparkSvg(pts,w=64,h=28){
   return `<svg class="spark" viewBox="0 0 ${w} ${h}"><path d="${d} L${w-1} ${h} L1 ${h}Z" fill="${col}" opacity=".12"/><path d="${d}" fill="none" stroke="${col}" stroke-width="1.5"/><circle cx="${X(t1).toFixed(1)}" cy="${Y(ys[ys.length-1]).toFixed(1)}" r="2" fill="${col}"/></svg>`}
 const avHtml=(c,cls='av')=>c.img?`<img class="${cls}" src="${esc(c.img)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'${cls} ph',textContent:'${esc((c.sym||'?').slice(0,2))}'}))">`:`<div class="${cls} ph">${esc((c.sym||c.name||'?').slice(0,2))}</div>`;
 
+function tokTs(c){return c.tokAt?Math.min(c.tokAt,c.listedAt):null}
+function tokHtml(c){const t=tokTs(c);if(!t)return '';return c.listedAt-t<60e3?' · <span class="tok">токен = пул</span>':` · <span class="tok">токен ${ago(t)}</span>`}
 function rowInner(c,mode){
   const [bc,bt]=badge(c);const inWin=Date.now()-c.listedAt<=S.win*60e3;
   let l3=`${money(c.mc)} · L ${money(c.liq)} · <span class="${(c.ch5||0)<0?'dn':'up'}">${pct(c.ch5)}</span>`;
   if(mode==='pass'&&c.passAt)l3=`прошла за ${dur((c.passAt-c.listedAt)/60000)} · ${money(c.mc)} · L ${money(c.liq)}`;
   return `${avHtml(c)}
   <div class="mid"><div class="nm">${esc(c.name)}<span>${esc(c.sym)}</span></div>
-    <div class="l2">🌱 <span class="age${inWin?' fresh':''}" data-ts="${c.listedAt}">${ago(c.listedAt)}</span>${c.tokAt?` · <span class="tok">токен ${ago(c.tokAt)}</span>`:''}</div>
+    <div class="l2">🌱 <span class="age${inWin?' fresh':''}" data-ts="${c.listedAt}">${ago(c.listedAt)}</span>${tokHtml(c)}</div>
     <div class="l3">${l3}</div></div>
   ${sparkSvg(c.spark)}
   <div class="rt"><span class="px">${price(c.price)}</span><span class="badge ${bc}">${bt}</span></div>`}
@@ -469,7 +471,7 @@ function detailHtml(c,manual){
     <div class="cell"><small>Капа</small><b>${money(c.mc)}</b></div>
     <div class="cell"><small>Ликвидн.</small><b>${money(c.liq)}</b></div>
     <div class="cell"><small>На витрине</small><b data-ts="${c.listedAt}">${ago(c.listedAt)}</b></div>
-    <div class="cell"><small>Токену</small><b class="dn">${c.tokAt?ago(c.tokAt):'—'}</b></div>
+    <div class="cell"><small>Токену</small><b class="dn">${!tokTs(c)?'—':(c.listedAt-tokTs(c)<60e3?'= пул':ago(tokTs(c)))}</b></div>
     <div class="cell"><small>Площадка</small><b>${esc(c.dex||'—')}</b></div>
   </div>
   <div id="ckBox"></div>
