@@ -248,7 +248,7 @@ const DEF={win:10,keepH:5,delay:1,poll:30,
   c_contract:true,c_owner:true,ownerMax:15,c_dev:true,devMax:5,c_liq:true,liqMin:5000,c_lock:true,lockMin:90,
   c_press:true,pressMin:1.2,c_vol5:true,vol5Min:2000,c_buyers:true,buyersMin:20,c_dd:true,ddMax:30,
   w_ins:true,insMax:15,w_top10:true,top10Max:30,w_pump:true,pumpMax:3,w_clone:true,
-  f_fresh:false,f_scam:false,f_liq:0,ver:2};
+  devStrict:false,fee:3,h_all:false,f_fresh:false,f_scam:false,f_liq:0,ver:2};
 const old=sget('sc_set',{});
 const S=Object.assign({},DEF,old.ver===2?old:{f_fresh:old.f_fresh||false,f_scam:old.f_scam||false,f_liq:old.f_liq||0});
 if(S.poll<20)S.poll=20;
@@ -422,7 +422,7 @@ function checks(c){
   else put('safe','contract',S.c_contract,rpcSt,'Контракт чистый',c.rpcErr?'Блокчейн не ответил: '+c.rpcErr:'Проверяю в блокчейне…','контракт');
   put('safe','owner',S.c_owner,R?(R.maxOwner<=S.ownerMax?'pass':'fail'):rpcSt,'Один владелец ≤ '+S.ownerMax+'%',R?('Крупнейший (кроме пула) держит '+f1(R.maxOwner)+'%'):'Проверяю в блокчейне…','кит '+(R?Math.round(R.maxOwner)+'%':''));
   const dev=L?.dev;
-  put('safe','dev',S.c_dev,dev!=null?(dev<=S.devMax?'pass':'fail'):(c.rcTried?'na':'unk'),'Дев ≤ '+S.devMax+'%',dev!=null?('Создатель держит '+f1(dev)+'%'):(c.rcTried?'Данных о создателе нет — правило пропущено':'Жду rugcheck…'),'дев '+(dev!=null?Math.round(dev)+'%':''));
+  put('safe','dev',S.c_dev,dev!=null?(dev<=S.devMax?'pass':'fail'):(c.rcTried?(S.devStrict?(c.rcErr?'err':'unk'):'na'):'unk'),'Дев ≤ '+S.devMax+'%',dev!=null?('Создатель держит '+f1(dev)+'%'):(c.rcTried?(S.devStrict?'Данных о создателе нет — не пропускаю':'Данных о создателе нет — правило пропущено'):'Жду rugcheck…'),'дев '+(dev!=null?Math.round(dev)+'%':''));
   put('safe','liq',S.c_liq,c.liq?(c.liq>=S.liqMin?'pass':'fail'):'unk','В пуле ≥ '+money(S.liqMin),'Сейчас '+money(c.liq),'мало в пуле');
   if(isPumpSwap(c.dex))put('safe','lock',S.c_lock,'pass','Пул не вытащат','PumpSwap: пул сжигается при миграции','лок');
   else{const lk=L?.lock;put('safe','lock',S.c_lock,lk!=null?(lk>=S.lockMin?'pass':'fail'):(c.rcTried?(c.rcErr?'err':'fail'):'unk'),'Пул заблокирован ≥ '+S.lockMin+'%',lk!=null?('Заблокировано '+Math.round(lk)+'% ('+esc(c.dex)+')'):(c.rcTried?(c.rcErr?'rugcheck не ответил':'Данных о блокировке нет — риск'):'Жду rugcheck…'),'пул не залочен')}
@@ -456,8 +456,9 @@ function evalCoin(c){
   if(fails.length&&!c.firstFail)c.firstFail=fails[0].k;
   if(inWin(c)){if(!fails.length&&!waits.length){c.status='pass';c.passAt=Date.now();finalize(c,ck)}return}
   c.status=fails.length?'fail':'nodata';finalize(c,ck)}
+function cfgKey(){return['win','c_contract','c_owner','ownerMax','c_dev','devMax','devStrict','c_liq','liqMin','c_lock','lockMin','c_press','pressMin','c_vol5','vol5Min','c_buyers','buyersMin','c_dd','ddMax'].map(k=>S[k]).join('|')}
 function finalize(c,ck){if(c.final)return;
-  c.final={fails:ck.filter(x=>x.sec!=='warn'&&x.st==='fail').map(x=>x.k),first:c.firstFail||null,
+  c.final={cfg:cfgKey(),fails:ck.filter(x=>x.sec!=='warn'&&x.st==='fail').map(x=>x.k),first:c.firstFail||null,
     unk:ck.filter(x=>x.sec!=='warn'&&(x.st==='unk'||x.st==='err')).map(x=>x.k),api:ck.some(x=>x.st==='err')}}
 function evalAll(){Object.values(C).forEach(evalCoin);$('#live').classList.toggle('off',!!gtErr&&Date.now()-gtOkAt>90000)}
 function stats(){const cs=Object.values(C).filter(c=>c.status!=='miss'&&Date.now()-c.listedAt<=S.keepH*3600e3);
@@ -577,8 +578,10 @@ function verdictHtml(c){
   const[v,t,s]=m[c.status]||m.miss;return `<div class="verdict ${v}">${t}<small>${s}</small></div>`}
 function fillChecks(c){const box=$('#ckBox');if(!box)return;
   const ck=checks(c);let html=verdictHtml(c);
-  if(c.status==='manual'){const blk=ck.filter(x=>x.sec!=='warn'&&x.st==='fail');
-    html=`<div class="verdict ${blk.length?'v-fail':'v-pass'}">${blk.length?'✕ Сейчас не проходит: '+blk.map(x=>RULE_NAMES[x.k]).join(', '):'✓ Сейчас проходит правила'}<small>Ручная проверка — окно первых минут не учитывается</small></div>`}
+  if(c.status==='manual'){const blk=ck.filter(x=>x.sec!=='warn'&&x.st==='fail'),unk=ck.filter(x=>x.sec!=='warn'&&(x.st==='unk'||x.st==='err'));
+    html=blk.length?`<div class="verdict v-fail">✕ Сейчас не проходит: ${blk.map(x=>RULE_NAMES[x.k]).join(', ')}<small>Ручная проверка — окно первых минут не учитывается</small></div>`
+      :unk.length?`<div class="verdict v-late">? Не всё проверено: ${unk.map(x=>RULE_NAMES[x.k]).join(', ')}<small>Нет данных — это не значит «безопасно»</small></div>`
+      :`<div class="verdict v-pass">✓ Сейчас проходит правила<small>Ручная проверка — окно первых минут не учитывается</small></div>`}
   for(const sec of ['safe','sig','warn']){const it=ck.filter(x=>x.sec===sec);
     html+=`<div class="grp"><h4>${SECT[sec]}</h4>${it.map(x=>{const[cl,ic]={pass:['ok','✓'],fail:[sec==='warn'?'er':'no',sec==='warn'?'⚠':'✕'],unk:['wt','…'],err:['er','⚠'],na:['off','–'],off:['off','–']}[x.st];
       return `<div class="ck"><i class="${cl}">${ic}</i><div>${esc(x.t)}${x.st==='off'?' <em class="mut" style="font-style:normal">(выключено)</em>':''}<span>${esc(x.d)}</span></div></div>`}).join('')}</div>`}
@@ -607,44 +610,59 @@ async function manual(addr){addr=addr.trim();if(!addr)return;const out=$('#out')
   out.innerHTML=`<div style="margin-top:10px">${detailHtml(c)}</div>`;bindDetail(c)}
 $('#go').onclick=()=>manual($('#addr').value);$('#addr').onkeydown=e=>{if(e.key==='Enter')manual(e.target.value)};
 
-/* =================== история прошедших =================== */
+/* =================== история =================== */
 const HOFF=[15,30,60,120,180,300],TGT=[1.5,2,3];
 const H=sget('sc_hist2',{});
-function histCoins(){return Object.values(C).filter(c=>c.status==='pass'&&c.pair)}
-function fetchHist(){histCoins().forEach(c=>{const h=H[c.addr];
+const curCfg=c=>S.h_all||c.final?.cfg===cfgKey();
+function histPass(){return Object.values(C).filter(c=>c.status==='pass'&&c.pair&&curCfg(c))}
+function histFail(){return Object.values(C).filter(c=>c.status==='fail'&&c.pair&&curCfg(c)).sort((a,b)=>b.listedAt-a.listedAt).slice(0,40)}
+function fetchH(c,prio){const h=H[c.addr];
   const done=h&&h.pts.length&&h.pts[h.pts.length-1][0]>=c.listedAt+5*3600e3-60e3;
-  if(done||(h&&Date.now()-h.at<240e3)||c._hq)return;c._hq=1;
-  gt(`/pools/${c.pair}/ohlcv/minute?aggregate=1&limit=1000&currency=usd`,6).then(r=>{
+  if(done||(h&&Date.now()-h.at<(prio>6?1800e3:240e3))||c._hq)return;
+  if(prio>6&&Date.now()-c.listedAt<30*60e3)return;c._hq=1;
+  gt(`/pools/${c.pair}/ohlcv/minute?aggregate=1&limit=1000&currency=usd`,prio).then(r=>{
     const l=(r.data?.attributes?.ohlcv_list||[]).map(k=>[k[0]*1000,+k[1],+k[2],+k[3],+k[4]]).filter(k=>k[0]>=c.listedAt-60e3&&k[0]<=c.listedAt+5*3600e3).sort((a,b)=>a[0]-b[0]);
-    H[c.addr]={pts:l,at:Date.now()};sset('sc_hist2',H);if(tab==='hist')renderHist()}).catch(()=>{}).finally(()=>{c._hq=0})})}
+    H[c.addr]={pts:l,at:Date.now()};sset('sc_hist2',H);if(tab==='hist')renderHist()}).catch(()=>{}).finally(()=>{c._hq=0})}
+function fetchHist(){histPass().forEach(c=>fetchH(c,6));histFail().forEach(c=>fetchH(c,7))}
 setInterval(()=>{if(tab==='hist')fetchHist()},60000);
-function entryOf(c){const h=H[c.addr];if(!h||!h.pts.length)return null;const te=c.passAt+S.delay*60e3;
-  const k=h.pts.find(p=>p[0]>=te);if(!k)return null;return{te,p0:k[4]||k[1]}}
+// вход: прошедшие — момент прохождения + время на покупку; завалившие — конец окна + время на покупку (для сравнения)
+function entryOf(c){const h=H[c.addr];if(!h||!h.pts.length)return null;
+  const te=(c.status==='pass'?c.passAt:c.listedAt+S.win*60e3)+S.delay*60e3;
+  const k=h.pts.find(p=>p[0]>=te);if(!k)return null;return{te,p0:(k[4]||k[1])*(1+S.fee/100)}}
+const net=p=>p*(1-S.fee/100);
 function xAt(c,min){const h=H[c.addr],e=entryOf(c);if(!e)return null;const t=e.te+min*60e3;
-  if(h.pts[h.pts.length-1][0]<t-90e3)return null;let b=null;for(const p of h.pts){if(p[0]<=t)b=p;else break}return b?b[4]/e.p0:null}
+  if(h.pts[h.pts.length-1][0]<t-90e3)return null;let b=null;for(const p of h.pts){if(p[0]<=t)b=p;else break}return b?net(b[4])/e.p0:null}
 function pathOf(c){const h=H[c.addr],e=entryOf(c);if(!e)return null;let mx=0,mt=0,mn=Infinity;const hit={};
   for(const p of h.pts){if(p[0]<e.te)continue;if(p[2]>mx){mx=p[2];mt=p[0]}if(p[3]<mn)mn=p[3];
-    TGT.forEach(x=>{if(hit[x]==null&&p[2]>=x*e.p0)hit[x]=(p[0]-e.te)/60000})}
-  return mx?{peak:mx/e.p0,peakMin:(mt-e.te)/60000,dd:isFinite(mn)?(1-mn/e.p0)*100:null,hit}:null}
+    TGT.forEach(x=>{if(hit[x]==null&&net(p[2])>=x*e.p0)hit[x]=(p[0]-e.te)/60000})}
+  return mx?{peak:net(mx)/e.p0,peakMin:(mt-e.te)/60000,dd:isFinite(mn)?(1-net(mn)/e.p0)*100:null,hit}:null}
 function renderHist(){
-  fetchHist();const cs=histCoins().sort((a,b)=>b.passAt-a.passAt);const box=$('#hist');
-  if(!cs.length){box.innerHTML=`<div class="empty">Здесь будут монеты, прошедшие правила, и что с ними стало за первые 5 часов.<br>Зелёная зона на графике — момент прохождения + ${S.delay} мин на покупку.</div>`;return}
-  let rows='';for(const m of HOFF){const v=cs.map(c=>xAt(c,m)).filter(x=>x!=null);
-    rows+=`<tr><td>через ${dur(m)}</td><td>${v.length}</td><td class="${avg(v)>=1?'up':'dn'}">${xf(avg(v))}</td><td class="${med(v)>=1?'up':'dn'}">${xf(med(v))}</td><td>${v.length?Math.round(v.filter(x=>x>=1).length/v.length*100)+'%':'—'}</td></tr>`}
-  const ps=cs.map(pathOf).filter(Boolean);
-  let hrows='';TGT.forEach(x=>{const t=ps.map(p=>p.hit[x]).filter(v=>v!=null);
-    hrows+=`<tr><td>дошли до ×${x}</td><td>${ps.length?Math.round(t.length/ps.length*100)+'%':'—'}</td><td>${t.length?'~'+dur(med(t)):'—'}</td></tr>`});
-  box.innerHTML=`<div class="agg big"><h3>Сводка по ${cs.length} прошедшим</h3>
-    <p class="mut" style="margin:0;font-size:12px">Вход = прохождение правил + ${S.delay} мин. ×1 = цена входа.<br>Средний пик <b class="up">${xf(avg(ps.map(p=>p.peak)))}</b> через ~${ps.length?dur(avg(ps.map(p=>p.peakMin))):'—'} · средняя макс. просадка <b class="dn">${ps.length?'−'+Math.round(avg(ps.map(p=>p.dd).filter(x=>x!=null)))+'%':'—'}</b></p>
+  fetchHist();const cs=histPass().sort((a,b)=>b.passAt-a.passAt),fs=histFail();const box=$('#hist');
+  const head=`<div class="chips"><button class="chip${S.h_all?'':' on'}" id="hCur">Только текущие правила</button><button class="chip${S.h_all?' on':''}" id="hAll">Все версии правил</button></div>
+    <p class="mut" style="font-size:11px;margin:4px 0 0;font-family:var(--mono)">Учтена комиссия + проскальзывание ${S.fee}% на вход и ${S.fee}% на выход (меняется в «Правила → Время»).</p>`;
+  const bind=()=>{$('#hCur').onclick=()=>{S.h_all=false;sset('sc_set',S);renderHist()};$('#hAll').onclick=()=>{S.h_all=true;sset('sc_set',S);renderHist()};
+    box.querySelectorAll('.hcard').forEach(e=>e.onclick=()=>openCoin(e.dataset.a))};
+  if(!cs.length&&!fs.length){box.innerHTML=head+`<div class="empty">Пока пусто.<br>Здесь будет: что стало с монетами, прошедшими правила, за первые 5 часов — и для сравнения с теми, что завалили.<br>Зелёная зона на графике — момент прохождения + ${S.delay} мин на покупку.</div>`;bind();return}
+  const col=v=>v==null?'':v>=1?'up':'dn';
+  let rows='';for(const m of HOFF){const v=cs.map(c=>xAt(c,m)).filter(x=>x!=null),w=fs.map(c=>xAt(c,m)).filter(x=>x!=null);
+    rows+=`<tr><td>через ${dur(m)}</td><td class="${col(med(v))}">${xf(med(v))}</td><td>${v.length?Math.round(v.filter(x=>x>=1).length/v.length*100)+'%':'—'}</td><td class="${col(med(w))}">${xf(med(w))}</td><td>${w.length?Math.round(w.filter(x=>x>=1).length/w.length*100)+'%':'—'}</td></tr>`}
+  const ps=cs.map(pathOf).filter(Boolean),pf=fs.map(pathOf).filter(Boolean);
+  const hr=(arr,x)=>{const t=arr.map(p=>p.hit[x]).filter(v=>v!=null);return arr.length?Math.round(t.length/arr.length*100)+'%'+(t.length?' · ~'+dur(med(t)):''):'—'};
+  let hrows='';TGT.forEach(x=>{hrows+=`<tr><td>дошли до ×${x}</td><td>${hr(ps,x)}</td><td>${hr(pf,x)}</td></tr>`});
+  hrows+=`<tr><td>средний пик</td><td class="up">${xf(avg(ps.map(p=>p.peak)))}</td><td>${xf(avg(pf.map(p=>p.peak)))}</td></tr>`;
+  hrows+=`<tr><td>средняя просадка</td><td class="dn">${ps.length?'−'+Math.round(avg(ps.map(p=>p.dd).filter(x=>x!=null)))+'%':'—'}</td><td class="dn">${pf.length?'−'+Math.round(avg(pf.map(p=>p.dd).filter(x=>x!=null)))+'%':'—'}</td></tr>`;
+  box.innerHTML=head+`<div class="agg big"><h3>Прошли (${cs.length}) против завалили (${fs.length})</h3>
+    <p class="mut" style="margin:0;font-size:12px">Вход у прошедших — прохождение правил + ${S.delay} мин. У заваливших — конец окна + ${S.delay} мин, как если бы ты купил их. Медиана, ×1 = в ноль после комиссий.</p>
     ${overlaySvg(cs)}
-    <div class="tbl"><table><tr><th>После входа</th><th>монет</th><th>среднее</th><th>медиана</th><th>в плюсе</th></tr>${rows}</table></div>
-    <div class="tbl"><table><tr><th>Цель (за 5 ч)</th><th>доля монет</th><th>обычно через</th></tr>${hrows}</table></div></div>
-    <div class="sec-h">Каждая монета · первые 5 ч с витрины</div>
+    <div class="tbl"><table><tr><th>После входа</th><th>прошли</th><th>в плюсе</th><th>завалили</th><th>в плюсе</th></tr>${rows}</table></div>
+    <div class="tbl"><table><tr><th>За 5 ч</th><th>прошли</th><th>завалили</th></tr>${hrows}</table></div>
+    <p class="mut" style="font-size:11px;margin:6px 0 0">Если «прошли» не лучше, чем «завалили» — правила не работают, их надо менять. Завалившие подгружаются медленно (лимит API), только старше 30 мин.</p></div>
+    <div class="sec-h">Прошедшие · первые 5 ч с витрины</div>
     ${cs.map(c=>{const p=pathOf(c);const nowX=xAt(c,Math.max(0,Math.min(300,(Date.now()-c.passAt)/60000-S.delay-1)));
       return `<div class="hcard" data-a="${c.addr}"><div class="hh">${avHtml(c)}<div class="mid" style="flex:1"><div class="nm">${esc(c.name)}<span>${esc(c.sym)}</span></div>
       <div class="l2">пик <span class="up">${p?xf(p.peak):'—'}</span>${p?' через '+dur(p.peakMin):''} · просадка <span class="dn">${p&&p.dd!=null?'−'+Math.round(p.dd)+'%':'—'}</span> · сейчас <span class="${(nowX||0)>=1?'up':'dn'}">${xf(nowX)}</span></div></div></div>
       ${coinSvg(c)}</div>`}).join('')}`;
-  box.querySelectorAll('.hcard').forEach(e=>e.onclick=()=>openCoin(e.dataset.a))}
+  bind()}
 function coinSvg(c){const h=H[c.addr];const W=360,Hh=90;
   if(!h||h.pts.length<2)return `<svg viewBox="0 0 ${W} ${Hh}"><text x="${W/2}" y="${Hh/2}" fill="var(--mut)" font-size="11" text-anchor="middle" font-family="monospace">загружаю график…</text></svg>`;
   const t0=c.listedAt,t1=c.listedAt+5*3600e3,ys=h.pts.map(p=>p[4]),lo=Math.min(...ys),hi=Math.max(...ys),rg=hi-lo||1;
@@ -654,10 +672,10 @@ function coinSvg(c){const h=H[c.addr];const W=360,Hh=90;
   let ticks='';for(let i=1;i<5;i++){const x=X(t0+i*3600e3);ticks+=`<line x1="${x}" x2="${x}" y1="0" y2="${Hh-10}" stroke="var(--line)"/><text x="${x}" y="${Hh-1}" fill="var(--mut)" font-size="9" text-anchor="middle" font-family="monospace">${i}ч</text>`}
   return `<svg viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none">${ticks}
     <rect x="${e1.toFixed(1)}" y="0" width="${Math.max(3,e2-e1).toFixed(1)}" height="${Hh-10}" fill="var(--up)" opacity=".28"/>
-    ${e?`<line x1="0" x2="${W}" y1="${Y(e.p0).toFixed(1)}" y2="${Y(e.p0).toFixed(1)}" stroke="var(--up)" stroke-dasharray="3 3" opacity=".6"/>`:''}
+    ${e?`<line x1="0" x2="${W}" y1="${Y(e.p0/(1+S.fee/100)).toFixed(1)}" y2="${Y(e.p0/(1+S.fee/100)).toFixed(1)}" stroke="var(--up)" stroke-dasharray="3 3" opacity=".6"/>`:''}
     <path d="${d}" fill="none" stroke="var(--fg)" stroke-width="1.4"/></svg>`}
 function overlaySvg(cs){const W=360,Hh=220,M=300;const series=[];
-  cs.forEach(c=>{const h=H[c.addr],e=entryOf(c);if(!e)return;series.push(h.pts.filter(p=>p[0]>=e.te&&p[0]<=e.te+M*60e3).map(p=>[(p[0]-e.te)/60000,p[4]/e.p0]))});
+  cs.forEach(c=>{const h=H[c.addr],e=entryOf(c);if(!e)return;series.push(h.pts.filter(p=>p[0]>=e.te&&p[0]<=e.te+M*60e3).map(p=>[(p[0]-e.te)/60000,net(p[4])/e.p0]))});
   if(!series.length)return `<svg viewBox="0 0 ${W} ${Hh}"><text x="${W/2}" y="${Hh/2}" fill="var(--mut)" font-size="11" text-anchor="middle" font-family="monospace">графики подгружаются…</text></svg>`;
   let mx=2;series.forEach(s=>s.forEach(p=>{if(p[1]>mx)mx=p[1]}));mx=Math.min(mx,100);const mn=0.1;
   const X=m=>28+(m/M)*(W-34),Y=v=>{const l=Math.log10(Math.max(mn,Math.min(mx,v)));return 8+(1-(l-Math.log10(mn))/(Math.log10(mx)-Math.log10(mn)))*(Hh-28)};
@@ -676,6 +694,7 @@ const RULES=[
  {n:1,t:'Контракт',k:'contract',tg:['c_contract'],text:()=>'Создатель <b>не может</b> допечатать монеты или заморозить твои. Нет скрытых функций Token-2022: комиссии на перевод, перехвата переводов, вечного делегата. Проверяется прямо в блокчейне.',why:'Если может — тебя кинут, даже если всё остальное хорошо.'},
  {n:2,t:'Кит',k:'owner',tg:['c_owner'],text:()=>`Ни один владелец (кроме пула) не держит больше <em>${S.ownerMax}%</em> монет. Счета одного владельца складываются.`,why:'Один крупный кошелёк может слить всё разом.',sl:[['ownerMax',3,50,1,v=>v+'%']]},
  {n:3,t:'Дев',k:'dev',tg:['c_dev'],text:()=>`Создатель держит не больше <em>${S.devMax}%</em>. Если данных о создателе нет — правило пропускается.`,why:'Дев с большой долей обычно продаёт первым.',sl:[['devMax',0,30,0.5,v=>v+'%']]},
+ {n:'3а',t:'Дев обязателен',k:null,tg:['devStrict'],text:()=>'Если rugcheck не знает создателя — монета <b>не проходит</b>. Выключено: правило «Дев» просто пропускается.',why:'Строже, но часть монет будет «нет данных».'},
  {n:4,t:'Деньги в пуле',k:'liq',tg:['c_liq'],text:()=>`В пуле минимум <em>${money(S.liqMin)}</em>.`,why:'При $5K в пуле на каждую сторону всего ~$2.5K — даже небольшая продажа сильно двигает цену.',sl:[['liqMin',1000,50000,500,v=>money(v)]]},
  {n:5,t:'Лок пула',k:'lock',tg:['c_lock'],text:()=>`Для Raydium/Meteora заблокировано не меньше <em>${S.lockMin}%</em> пула. PumpSwap проходит автоматически — там пул сжигается при миграции.`,why:'Если пул не заблокирован, создатель может забрать деньги из него.',sl:[['lockMin',50,100,5,v=>v+'%']]},
  {h:'Сигналы для входа'},
@@ -689,7 +708,7 @@ const RULES=[
  {n:'⚠',t:'Уже улетела',k:null,tg:['w_pump'],text:()=>`С момента появления цена выросла больше чем в <em>×${S.pumpMax}</em>.`,why:'Можешь войти на хаях.',sl:[['pumpMax',1.2,20,0.1,v=>'×'+v]]},
  {n:'⚠',t:'Клон',k:null,tg:['w_clone'],text:()=>'Монета с таким же названием уже появлялась.',why:'Часто скам, но не всегда.'},
  {h:'Время'},
- {n:'⏱',t:'Лента и история',k:null,tg:null,text:()=>`Хранить ленту <em>${S.keepH} ч</em>. На покупку тебе нужно <em>${S.delay} мин</em> — от этого момента считается вход в Истории. Новые пары проверяются каждые <em>${S.poll} сек</em>.`,why:'GeckoTerminal даёт бесплатно только 10 запросов в минуту, поэтому чаще 20 сек нельзя.',sl:[['keepH',1,24,1,v=>v+' ч'],['delay',0,10,0.5,v=>v+' мин'],['poll',20,90,5,v=>v+' сек']]}];
+ {n:'⏱',t:'Лента и история',k:null,tg:null,text:()=>`Хранить ленту <em>${S.keepH} ч</em>. На покупку тебе нужно <em>${S.delay} мин</em> — от этого момента считается вход в Истории. Новые пары проверяются каждые <em>${S.poll} сек</em>. Комиссия и проскальзывание в Истории — <em>${S.fee}%</em> на вход и на выход.`,why:'GeckoTerminal даёт бесплатно только 10 запросов в минуту, поэтому чаще 20 сек нельзя.',sl:[['keepH',1,24,1,v=>v+' ч'],['delay',0,10,0.5,v=>v+' мин'],['poll',20,90,5,v=>v+' сек'],['fee',0,10,0.5,v=>'комиссия '+v+'%']]}];
 let saveT=0;
 function saveRules(){clearTimeout(saveT);saveT=setTimeout(()=>{sset('sc_set',S);evalAll();render()},400)}
 function updRuleCounts(){const st=stats();
@@ -700,7 +719,7 @@ function updRuleCounts(){const st=stats();
 function renderRules(){
   $('#rulesHead').innerHTML=`В «Прошли» попадает монета, которая прошла ВСЕ включённые правила безопасности и сигналы за первые <b style="color:var(--fg)">${S.win} мин</b>. Меняется сразу.`;
   $('#rules').innerHTML='<div id="rulesSum"></div>'+RULES.map((r,i)=>{if(r.h)return `<div class="sec-h">${r.h}</div>`;const on=!r.tg||r.tg.every(k=>S[k]);
-    return `<div class="rule${on?'':' off'}" data-i="${i}"><div class="rh"><h3>${typeof r.n==='number'?r.n+'. ':r.n+' '}${r.t}</h3>${r.tg?`<button class="tg${on?'':' off'}" aria-label="Включить правило"></button>`:''}</div>
+    return `<div class="rule${on?'':' off'}" data-i="${i}"><div class="rh"><h3>${/^\d/.test(String(r.n))?r.n+'. ':r.n+' '}${r.t}</h3>${r.tg?`<button class="tg${on?'':' off'}" aria-label="Включить правило"></button>`:''}</div>
     <p class="rtx">${r.text()}</p><div class="why">${r.why}</div>${r.k?`<div class="rcnt" data-cnt="${r.k}"></div>`:''}
     ${(r.sl||[]).map(([k,mn,mx,st,f])=>`<div class="slw"><div class="sll"><b data-l="${k}">${f(S[k])}</b><span>${f(mn)} … ${f(mx)}</span></div><input type="range" id="r_${k}" data-k="${k}" min="${mn}" max="${mx}" step="${st}" value="${S[k]}"></div>`).join('')}</div>`}).join('');
   $('#rules').querySelectorAll('.rule').forEach(el=>{const r=RULES[+el.dataset.i];
