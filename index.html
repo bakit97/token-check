@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Проверка токенов</title>
+<style>
+:root{
+  --bg:#0e1013;--card:#171a1f;--line:#262a31;--fg:#e8eaed;--mut:#8a919c;
+  --acc:#7c8cff;--ok:#2ecc71;--warn:#f1c40f;--bad:#ff5a5f;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,Roboto,sans-serif;
+  padding:max(12px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 40px max(14px,env(safe-area-inset-left))}
+h1{font-size:20px;margin:4px 0 12px}
+.tabs{display:flex;gap:6px;margin-bottom:12px}
+.tab{flex:1;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--mut);font-weight:600;font-size:14px}
+.tab.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.row{display:flex;gap:8px}
+input{flex:1;min-width:0;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font:14px var(--mono)}
+button{cursor:pointer;font:inherit}
+.btn{padding:12px 14px;border-radius:10px;border:0;background:var(--acc);color:#fff;font-weight:700;white-space:nowrap}
+.btn.sec{background:var(--card);border:1px solid var(--line);color:var(--fg);font-weight:600}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px}
+.verdict{border-radius:12px;padding:14px;margin-top:12px;font-weight:700;font-size:17px}
+.v-ok{background:rgba(46,204,113,.15);color:var(--ok);border:1px solid rgba(46,204,113,.4)}
+.v-warn{background:rgba(241,196,15,.12);color:var(--warn);border:1px solid rgba(241,196,15,.4)}
+.v-bad{background:rgba(255,90,95,.13);color:var(--bad);border:1px solid rgba(255,90,95,.4)}
+.chk{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.chk:last-child{border-bottom:0}
+.dot{width:10px;height:10px;border-radius:50%;margin-top:5px;flex:none}
+.d-ok{background:var(--ok)}.d-warn{background:var(--warn)}.d-bad{background:var(--bad)}.d-na{background:var(--mut)}
+.chk b{display:block;font-weight:600}
+.chk span{color:var(--mut);font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
+.stat{background:var(--bg);border-radius:8px;padding:8px;text-align:center}
+.stat small{display:block;color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.stat strong{font-variant-numeric:tabular-nums;font-size:14px}
+.links{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.links a{flex:1 1 30%;text-align:center;padding:10px 6px;border-radius:9px;background:var(--bg);border:1px solid var(--line);color:var(--fg);text-decoration:none;font-size:13px;font-weight:600}
+.head{display:flex;gap:10px;align-items:center}
+.head img{width:40px;height:40px;border-radius:50%;background:var(--line)}
+.head .nm{font-weight:700;font-size:17px}
+.head .ad{color:var(--mut);font:12px var(--mono);word-break:break-all}
+.feed-item{display:flex;gap:10px;align-items:center;padding:10px;border-radius:10px;background:var(--card);border:1px solid var(--line);margin-top:8px;cursor:pointer}
+.feed-item img{width:36px;height:36px;border-radius:50%;background:var(--line);flex:none}
+.fi-main{flex:1;min-width:0}
+.fi-main b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fi-main span{color:var(--mut);font-size:12px;font-variant-numeric:tabular-nums}
+.pill{font-size:12px;font-weight:700;padding:4px 8px;border-radius:20px;flex:none}
+.p-ok{background:rgba(46,204,113,.15);color:var(--ok)}.p-warn{background:rgba(241,196,15,.15);color:var(--warn)}.p-bad{background:rgba(255,90,95,.15);color:var(--bad)}
+.mut{color:var(--mut);font-size:13px}
+.err{color:var(--bad);font-size:14px;margin-top:10px}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.filters select{padding:8px;border-radius:8px;background:var(--card);color:var(--fg);border:1px solid var(--line);font-size:13px}
+.up{color:var(--ok)}.dn{color:var(--bad)}
+</style>
+</head>
+<body>
+<h1>Проверка токенов · Solana</h1>
+<div class="tabs">
+  <button class="tab on" data-t="check">Проверка</button>
+  <button class="tab" data-t="feed">Новые</button>
+  <button class="tab" data-t="hist">История</button>
+</div>
+
+<section id="v-check">
+  <div class="row">
+    <input id="addr" placeholder="Адрес контракта" autocomplete="off" spellcheck="false">
+    <button class="btn" id="go">Проверить</button>
+  </div>
+  <div id="out"></div>
+</section>
+
+<section id="v-feed" hidden>
+  <div class="row">
+    <button class="btn" id="refresh" style="flex:1">Обновить список</button>
+  </div>
+  <div class="filters">
+    <select id="fAge"><option value="30">до 30 мин</option><option value="60">до 1 часа</option><option value="180" selected>до 3 часов</option><option value="360">до 6 часов</option></select>
+    <select id="fLiq"><option value="0">ликв. любая</option><option value="1000" selected>ликв. от $1K</option><option value="5000">ликв. от $5K</option><option value="10000">ликв. от $10K</option><option value="20000">ликв. от $20K</option></select>
+    <select id="fHide"><option value="1" selected>скрыть красные</option><option value="0">показать все</option></select>
+  </div>
+  <p class="mut">Все новые пары Solana с ликвидностью (PumpSwap, Raydium, Meteora и др.) — как список с ростком 🌱 на DEX Screener. Копится до 6 часов, обновляется сам каждые 45 сек. Нажми на монету — полная проверка.</p>
+  <div id="feed"></div>
+</section>
+
+<section id="v-hist" hidden>
+  <p class="mut">Монеты, которые ты проверял. «Обновить» покажет, что стало с капой с момента проверки.</p>
+  <div class="row"><button class="btn sec" id="histUp" style="flex:1">Обновить цены</button><button class="btn sec" id="histClr">Очистить</button></div>
+  <div id="hist"></div>
+</section>
+
+<script>
+const DS='https://api.dexscreener.com';
+const RC='https://api.rugcheck.xyz/v1';
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money=n=>n==null||isNaN(n)?'—':n>=1e6?'$'+(n/1e6).toFixed(2)+'M':n>=1e3?'$'+(n/1e3).toFixed(1)+'K':'$'+Number(n).toFixed(n<10?2:0);
+const pct=n=>n==null||isNaN(n)?'—':(Math.round(n*10)/10)+'%';
+const age=ms=>{if(!ms)return '—';const m=(Date.now()-ms)/60000;return m<60?Math.floor(m)+' мин':m<1440?Math.floor(m/60)+' ч':Math.floor(m/1440)+' дн'};
+async function j(url){const r=await fetch(url);if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
+
+/* ---------- tabs ---------- */
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>show(b.dataset.t));
+function show(t){document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.t===t));
+  ['check','feed','hist'].forEach(k=>$('#v-'+k).hidden=k!==t);
+  if(t==='feed'&&!$('#feed').innerHTML)loadFeed(); if(t==='hist')renderHist();}
+
+/* ---------- DEX Screener ---------- */
+function bestPair(pairs){if(!pairs||!pairs.length)return null;
+  return pairs.slice().sort((a,b)=>(b.liquidity?.usd||0)-(a.liquidity?.usd||0))[0]}
+
+function dexChecks(p){
+  const c=[];if(!p)return c;
+  const liq=p.liquidity?.usd||0, mc=p.marketCap||p.fdv||0;
+  const b5=p.txns?.m5?.buys||0, s5=p.txns?.m5?.sells||0, v5=p.volume?.m5||0;
+  const b24=p.txns?.h24?.buys||0, s24=p.txns?.h24?.sells||0, v24=p.volume?.h24||0;
+  // liquidity
+  c.push(liq<10000?{l:'bad',t:'Ликвидность '+money(liq),d:'Меньше $10K — выйти без большого проскальзывания трудно'}
+    :liq<20000?{l:'warn',t:'Ликвидность '+money(liq),d:'Низкая, будь аккуратен с суммой'}
+    :{l:'ok',t:'Ликвидность '+money(liq),d:'Нормально'});
+  // liq / mcap
+  if(mc>0){const r=liq/mc*100;
+    c.push(r<10?{l:'bad',t:'Ликвидность '+pct(r)+' от капы',d:'Капа «нарисована» — при продажах цена рухнет'}
+      :r<20?{l:'warn',t:'Ликвидность '+pct(r)+' от капы',d:'Тонковато'}
+      :{l:'ok',t:'Ликвидность '+pct(r)+' от капы',d:'Нормальное соотношение'});}
+  // bot pump: tiny average buys
+  const buys=b24, vol=v24; if(buys>50){const avg=vol/(buys+s24||1);
+    c.push(avg<3?{l:'bad',t:'Средняя сделка '+money(avg),d:'Сотни микро-покупок — бот-накрутка транзакций'}
+      :avg<10?{l:'warn',t:'Средняя сделка '+money(avg),d:'Много мелких сделок, возможны боты'}
+      :{l:'ok',t:'Средняя сделка '+money(avg),d:'Похоже на живую торговлю'});}
+  // sells exist
+  if(b24>30){const r=s24/b24;
+    c.push(r<0.05?{l:'bad',t:'Продаж почти нет ('+s24+' на '+b24+' покупок)',d:'Либо накрутка, либо продать невозможно (honeypot)'}
+      :{l:'ok',t:'Продажи идут ('+s24+' / '+b24+')',d:'Продавать можно'});}
+  // volume vs liquidity churn
+  if(liq>0&&v24/liq>8)c.push({l:'warn',t:'Оборот '+Math.round(v24/liq)+'× от ликвидности',d:'Часть объёма, скорее всего, гоняют боты'});
+  // socials
+  const soc=(p.info?.socials||[]).length+(p.info?.websites||[]).length;
+  if(p.src!=='gt')c.push(soc?{l:'ok',t:'Есть сайт/соцсети ('+soc+')',d:'Профиль оплачен — но это не гарантия'}
+    :{l:'warn',t:'Нет сайта и соцсетей',d:'Нулевые вложения в проект'});
+  // dump from recent
+  const ch=p.priceChange?.h1; if(ch!=null&&ch<-50)c.push({l:'bad',t:'Падение '+pct(ch)+' за час',d:'Уже сливают'});
+  return c;
+}
+
+/* ---------- rugcheck ---------- */
+function rcChecks(r){
+  const c=[];
+  const tok=r.token||{};
+  c.push(tok.mintAuthority?{l:'bad',t:'Mint включён',d:'Создатель может допечатать токены'}:{l:'ok',t:'Mint отключён',d:'Допечатки не будет'});
+  c.push(tok.freezeAuthority?{l:'bad',t:'Freeze включён',d:'Могут заморозить твои токены — honeypot'}:{l:'ok',t:'Freeze отключён',d:'Продать сможешь'});
+  // pool accounts to exclude from holders
+  const pools=new Set();(r.markets||[]).forEach(m=>{[m.pubkey,m.liquidityAAccount,m.liquidityBAccount,m.lp?.lpMint].forEach(x=>x&&pools.add(x))});
+  const hs=(r.topHolders||[]).filter(h=>!pools.has(h.address)&&!pools.has(h.owner));
+  const top10=hs.slice(0,10).reduce((s,h)=>s+(h.pct||0),0);
+  if(hs.length)c.push(top10>40?{l:'bad',t:'Топ-10 держат '+pct(top10),d:'Сильная концентрация — один слив обвалит цену'}
+    :top10>30?{l:'warn',t:'Топ-10 держат '+pct(top10),d:'Повышенная концентрация'}
+    :{l:'ok',t:'Топ-10 держат '+pct(top10),d:'Распределение нормальное'});
+  const ins=hs.filter(h=>h.insider).reduce((s,h)=>s+(h.pct||0),0);
+  if(r.graphInsidersDetected||ins>0)c.push(ins>15?{l:'bad',t:'Инсайдеры / связанные кошельки: '+pct(ins),d:'Похоже на бандл — скупили своими кошельками'}
+    :{l:'warn',t:'Найдены связанные кошельки'+(ins?' ('+pct(ins)+')':''),d:'Проверь на bubblemaps'});
+  const sup=Number(tok.supply)||0, cb=Number(r.creatorBalance)||0;
+  if(sup>0){const dp=cb/sup*100;
+    c.push(dp>5?{l:'bad',t:'Дев держит '+pct(dp),d:'Может слить в любой момент'}
+      :dp>0.01?{l:'warn',t:'Дев держит '+pct(dp),d:'Немного'}
+      :{l:'ok',t:'Дев продал / не держит',d:'Дев-слива уже не будет (но мог слить раньше)'});}
+  const lp=Math.max(0,...(r.markets||[]).map(m=>m.lp?.lpLockedPct||0));
+  if((r.markets||[]).length)c.push(lp>=90?{l:'ok',t:'Ликвидность залочена '+pct(lp),d:'Пул не вытащат'}
+    :{l:'bad',t:'Ликвидность залочена '+pct(lp),d:'Дев может вытащить пул (rug pull)'});
+  if(r.totalHolders)c.push({l:r.totalHolders<50?'warn':'ok',t:'Холдеров: '+r.totalHolders,d:r.totalHolders<50?'Очень мало':'—'});
+  if(r.rugged)c.push({l:'bad',t:'Rugcheck: RUGGED',d:'Токен уже признан скамом'});
+  (r.risks||[]).filter(x=>x.level==='danger').slice(0,4).forEach(x=>{
+    if(!/mint|freeze|top 10|single holder/i.test(x.name))c.push({l:'bad',t:'Риск: '+x.name,d:x.description||''})});
+  return c;
+}
+
+function verdict(all){
+  const bad=all.filter(x=>x.l==='bad').length, warn=all.filter(x=>x.l==='warn').length;
+  if(bad>=2)return {c:'v-bad',t:'🔴 Скорее скам — не входить',lv:'bad'};
+  if(bad===1||warn>=3)return {c:'v-warn',t:'🟡 Осторожно — только малая сумма',lv:'warn'};
+  return {c:'v-ok',t:'🟢 Явных красных флагов нет',lv:'ok'};
+}
+const chkHtml=c=>`<div class="chk"><i class="dot d-${c.l}"></i><div><b>${esc(c.t)}</b><span>${esc(c.d)}</span></div></div>`;
+
+async function check(addr){
+  addr=addr.trim(); if(!addr)return;
+  $('#addr').value=addr; show('check');
+  const out=$('#out'); out.innerHTML='<p class="mut">Проверяю…</p>';
+  const [ds,rc]=await Promise.allSettled([j(`${DS}/tokens/v1/solana/${addr}`),j(`${RC}/tokens/${addr}/report`)]);
+  const p=ds.status==='fulfilled'?bestPair(ds.value):null;
+  const r=rc.status==='fulfilled'?rc.value:null;
+  if(!p&&!r){out.innerHTML='<p class="err">Не нашёл токен. Проверь адрес или интернет.</p>';return}
+  const dc=dexChecks(p), rcc=r?rcChecks(r):[];
+  const v=verdict([...dc,...rcc]);
+  const name=p?.baseToken?.name||r?.tokenMeta?.name||'Токен', sym=p?.baseToken?.symbol||r?.tokenMeta?.symbol||'';
+  const img=p?.info?.imageUrl||'';
+  const ch5=p?.priceChange?.m5, ch1=p?.priceChange?.h1;
+  out.innerHTML=`
+  <div class="card">
+    <div class="head">${img?`<img src="${esc(img)}" alt="">`:'<img alt="" style="visibility:hidden">'}<div style="min-width:0"><div class="nm">${esc(name)} <span class="mut">${esc(sym)}</span></div><div class="ad">${esc(addr)}</div></div></div>
+    <div class="grid">
+      <div class="stat"><small>Капа</small><strong>${money(p?.marketCap||p?.fdv)}</strong></div>
+      <div class="stat"><small>Ликвидн.</small><strong>${money(p?.liquidity?.usd)}</strong></div>
+      <div class="stat"><small>Возраст</small><strong>${age(p?.pairCreatedAt)}</strong></div>
+      <div class="stat"><small>5м</small><strong class="${ch5<0?'dn':'up'}">${pct(ch5)}</strong></div>
+      <div class="stat"><small>1ч</small><strong class="${ch1<0?'dn':'up'}">${pct(ch1)}</strong></div>
+      <div class="stat"><small>Площадка</small><strong>${esc(p?.dexId||'—')}</strong></div>
+    </div>
+  </div>
+  <div class="verdict ${v.c}">${v.t}</div>
+  <div class="card"><div class="mut" style="margin-bottom:4px">Рынок (DEX Screener)</div>${p?dc.map(chkHtml).join(''):'<p class="err">DEX Screener не ответил</p>'}</div>
+  <div class="card"><div class="mut" style="margin-bottom:4px">Контракт и холдеры (rugcheck)</div>${r?rcc.map(chkHtml).join(''):'<p class="err">rugcheck не ответил — открой его по кнопке ниже</p>'}</div>
+  <div class="card"><div class="mut">Бандлы и снайперы смотри на gmgn:</div>
+    <div class="links">
+      <a href="https://gmgn.ai/sol/token/${encodeURIComponent(addr)}" target="_blank" rel="noopener">gmgn</a>
+      <a href="https://app.bubblemaps.io/sol/token/${encodeURIComponent(addr)}" target="_blank" rel="noopener">bubblemaps</a>
+      <a href="https://rugcheck.xyz/tokens/${encodeURIComponent(addr)}" target="_blank" rel="noopener">rugcheck</a>
+      <a href="https://dexscreener.com/solana/${encodeURIComponent(addr)}" target="_blank" rel="noopener">dexscreener</a>
+      <a href="https://jup.ag/swap/SOL-${encodeURIComponent(addr)}" target="_blank" rel="noopener">купить (Jupiter)</a>
+    </div>
+  </div>`;
+  saveHist({addr,name,sym,img,mc:p?.marketCap||p?.fdv||0,lv:v.lv,t:Date.now()});
+}
+$('#go').onclick=()=>check($('#addr').value);
+$('#addr').addEventListener('keydown',e=>{if(e.key==='Enter')check($('#addr').value)});
+
+/* ---------- feed: новые пулы Solana (GeckoTerminal) + свежие данные (DEX Screener) ---------- */
+const GT='https://api.geckoterminal.com/api/v2/networks/solana';
+const SKIP=new Set(['So11111111111111111111111111111111111111112','EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v','Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB']);
+const FK='tc_pools';
+const loadPools=()=>{try{return JSON.parse(localStorage.getItem(FK))||{}}catch{return {}}};
+const savePools=o=>{try{localStorage.setItem(FK,JSON.stringify(o))}catch{}};
+let firstFeed=true, feedBusy=false;
+function gtToPair(d,inc){
+  const a=d.attributes||{}, bid=d.relationships?.base_token?.data?.id||'', qid=d.relationships?.quote_token?.data?.id||'';
+  let addr=bid.replace(/^solana_/,''), tok=inc[bid];
+  if(SKIP.has(addr)){addr=qid.replace(/^solana_/,'');tok=inc[qid]}
+  if(!addr||SKIP.has(addr))return null;
+  const t=a.transactions||{}, v=a.volume_usd||{}, pc=a.price_change_percentage||{};
+  const tx=k=>({buys:t[k]?.buys||0,sells:t[k]?.sells||0});
+  return {src:'gt',dexId:d.relationships?.dex?.data?.id||'',
+    baseToken:{address:addr,name:tok?.attributes?.name||(a.name||'').split(' / ')[0],symbol:tok?.attributes?.symbol||''},
+    liquidity:{usd:+a.reserve_in_usd||0},marketCap:+a.market_cap_usd||+a.fdv_usd||0,fdv:+a.fdv_usd||0,
+    txns:{m5:tx('m5'),h1:tx('h1'),h24:tx('h24')},volume:{m5:+v.m5||0,h1:+v.h1||0,h24:+v.h24||0},
+    priceChange:{m5:+pc.m5||0,h1:+pc.h1||0},pairCreatedAt:Date.parse(a.pool_created_at)||0,
+    info:{imageUrl:(tok?.attributes?.image_url&&tok.attributes.image_url!=='missing.png')?tok.attributes.image_url:''}};
+}
+async function loadFeed(){
+  if(feedBusy)return; feedBusy=true;
+  const f=$('#feed'); if(!f.innerHTML)f.innerHTML='<p class="mut">Загружаю новые пары…</p>';
+  try{
+    const pools=loadPools(), now=Date.now();
+    // 1) новые пулы: первый раз 10 страниц (~200 пулов), дальше по 3
+    const pages=firstFeed?10:3; let got=0, gtErr='';
+    for(let pg=1;pg<=pages;pg++){
+      try{const r=await j(`${GT}/new_pools?page=${pg}&include=base_token,quote_token,dex`);
+        const inc={};(r.included||[]).forEach(x=>inc[x.id]=x);
+        (r.data||[]).forEach(d=>{const p=gtToPair(d,inc);if(p){const old=pools[p.baseToken.address];
+          if(!old||old.src==='gt')pools[p.baseToken.address]=p; got++}});
+      }catch(e){gtErr=e.message;break}
+    }
+    firstFeed=false;
+    // чистим старше 6 часов
+    Object.keys(pools).forEach(a=>{if(now-(pools[a].pairCreatedAt||0)>6*3600e3)delete pools[a]});
+    const maxAge=+$('#fAge').value, minLiq=+$('#fLiq').value, hide=$('#fHide').value==='1';
+    let cand=Object.values(pools).filter(p=>(now-(p.pairCreatedAt||0))/60000<=maxAge).sort((a,b)=>b.pairCreatedAt-a.pairCreatedAt);
+    // 2) свежие цифры и соцсети с DEX Screener для первых 120
+    const addrs=cand.slice(0,120).map(p=>p.baseToken.address);
+    for(let i=0;i<addrs.length;i+=30){try{const ps=await j(`${DS}/tokens/v1/solana/${addrs.slice(i,i+30).join(',')}`);
+      const by={};ps.forEach(p=>{const a=p.baseToken?.address;if(a&&(!by[a]||(p.liquidity?.usd||0)>(by[a].liquidity?.usd||0)))by[a]=p});
+      Object.entries(by).forEach(([a,p])=>{p.src='ds';if(!p.pairCreatedAt)p.pairCreatedAt=pools[a]?.pairCreatedAt;pools[a]=p})}catch{}}
+    savePools(pools);
+    cand=Object.values(pools).filter(p=>(now-(p.pairCreatedAt||0))/60000<=maxAge);
+    let list=cand.map(p=>({p,v:verdict(dexChecks(p))}))
+      .filter(x=>(x.p.liquidity?.usd||0)>=minLiq&&!(hide&&x.v.lv==='bad'))
+      .sort((a,b)=>(b.p.pairCreatedAt||0)-(a.p.pairCreatedAt||0));
+    const tm=new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const info=`<p class="mut">Новых пар собрано: ${Object.keys(pools).length} · под фильтр: ${list.length} · обновлено ${tm}${gtErr?' · <span class="dn">GeckoTerminal: '+esc(gtErr)+'</span>':''}</p>`;
+    if(!list.length){f.innerHTML=info+'<p class="mut">Под фильтр ничего не попало. Ослабь фильтры — список копится сам.</p>';return}
+    f.innerHTML=info+list.slice(0,200).map(({p,v})=>`<div class="feed-item" data-a="${esc(p.baseToken.address)}">
+      ${p.info?.imageUrl?`<img src="${esc(p.info.imageUrl)}" alt="" loading="lazy">`:'<img alt="" style="visibility:hidden">'}
+      <div class="fi-main"><b>${esc(p.baseToken.name)} <span>${esc(p.baseToken.symbol)}</span></b>
+      <span>🌱 ${age(p.pairCreatedAt)} · ${esc(p.dexId)} · капа ${money(p.marketCap||p.fdv)} · ликв ${money(p.liquidity?.usd)} · 1ч <span class="${(p.priceChange?.h1||0)<0?'dn':'up'}">${pct(p.priceChange?.h1)}</span></span></div>
+      <span class="pill p-${v.lv}">${v.lv==='ok'?'ок':v.lv==='warn'?'риск':'скам'}</span></div>`).join('');
+    f.querySelectorAll('.feed-item').forEach(el=>el.onclick=()=>check(el.dataset.a));
+  }catch(e){f.innerHTML='<p class="err">Не удалось загрузить: '+esc(e.message)+'. Проверь интернет.</p>'}
+  finally{feedBusy=false}
+}
+$('#refresh').onclick=loadFeed;
+setInterval(()=>{if(!$('#v-feed').hidden&&!document.hidden)loadFeed()},45000);
+['#fAge','#fLiq','#fHide'].forEach(s=>$(s).onchange=loadFeed);
+
+/* ---------- history ---------- */
+const HK='tc_hist';
+const getHist=()=>{try{return JSON.parse(localStorage.getItem(HK))||[]}catch{return []}};
+function saveHist(x){try{const h=getHist().filter(y=>y.addr!==x.addr);h.unshift(x);localStorage.setItem(HK,JSON.stringify(h.slice(0,50)))}catch{}}
+function renderHist(now={}){
+  const h=getHist(), el=$('#hist');
+  if(!h.length){el.innerHTML='<p class="mut">Пока пусто. Проверь любую монету — она появится здесь.</p>';return}
+  el.innerHTML=h.map(x=>{const n=now[x.addr];let chg='';
+    if(n!=null&&x.mc){const d=(n/x.mc-1)*100;chg=` → ${money(n)} <span class="${d<0?'dn':'up'}">${d>0?'+':''}${pct(d)}</span>`}
+    return `<div class="feed-item" data-a="${esc(x.addr)}">${x.img?`<img src="${esc(x.img)}" alt="">`:'<img alt="" style="visibility:hidden">'}
+    <div class="fi-main"><b>${esc(x.name)} <span>${esc(x.sym)}</span></b><span>${age(x.t)} назад · было ${money(x.mc)}${chg}</span></div>
+    <span class="pill p-${x.lv}">${x.lv==='ok'?'ок':x.lv==='warn'?'риск':'скам'}</span></div>`}).join('');
+  el.querySelectorAll('.feed-item').forEach(e=>e.onclick=()=>check(e.dataset.a));
+}
+$('#histUp').onclick=async()=>{const h=getHist();if(!h.length)return;$('#histUp').textContent='Обновляю…';const now={};
+  try{for(let i=0;i<h.length;i+=30){const ps=await j(`${DS}/tokens/v1/solana/${h.slice(i,i+30).map(x=>x.addr).join(',')}`);
+    ps.forEach(p=>{const a=p.baseToken?.address,m=p.marketCap||p.fdv;if(a&&(now[a]==null||(p.liquidity?.usd||0)>0))now[a]=m})}}catch{}
+  $('#histUp').textContent='Обновить цены';renderHist(now)};
+$('#histClr').onclick=()=>{try{localStorage.removeItem(HK)}catch{};renderHist()};
+</script>
+</body>
+</html>
