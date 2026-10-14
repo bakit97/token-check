@@ -109,7 +109,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .ck{display:flex;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:13px}
 .grp h4+.ck{border-top:0}
 .ck i{font-style:normal;width:18px;flex:none;text-align:center;font-weight:800}
-.ck .ok{color:var(--up)}.ck .no{color:var(--dn)}.ck .wt{color:var(--acc)}.ck .off{color:var(--mut)}
+.ck .ok{color:var(--up)}.ck .no{color:var(--dn)}.ck .wt{color:var(--acc)}.ck .off{color:var(--mut)}.ck .er{color:var(--warn)}
 .ck span{display:block;color:var(--mut);font-size:12px}
 .links{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:10px}
 .links a{padding:10px 4px;text-align:center;border-radius:9px;background:var(--panel);border:1px solid var(--line);color:var(--fg);text-decoration:none;font-size:12px;font-weight:700}
@@ -162,6 +162,10 @@ button{font:inherit;color:inherit;cursor:pointer}
 .slw .sll{display:flex;justify-content:space-between;font:11px var(--mono);color:var(--mut)}
 .slw .sll b{color:var(--fg)}
 .slw input[type=range]{width:100%;accent-color:var(--up);margin:6px 0 0;height:26px}
+.rcnt{margin-top:6px;font:11px var(--mono);color:var(--mut)}.rcnt b{color:var(--fg)}
+.sum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:6px}
+.sum div{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:7px;text-align:center}
+.sum b{display:block;font:700 16px var(--mono)}.sum small{font:10px var(--mono);color:var(--mut)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
@@ -207,6 +211,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 'use strict';
 /* =================== утилиты =================== */
 const DS='https://api.dexscreener.com', GT='https://api.geckoterminal.com/api/v2/networks/solana', RC='https://api.rugcheck.xyz/v1';
+const RPCS=['https://solana-rpc.publicnode.com','https://api.mainnet-beta.solana.com'];
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const SUB='₀₁₂₃₄₅₆₇₈₉';
@@ -215,14 +220,21 @@ function price(p){if(p==null||!isFinite(p)||p<=0)return '—';if(p>=1)return '$'
   if(z<3)return '$'+p.toFixed(z+4);return '$0.0'+String(z).split('').map(d=>SUB[d]).join('')+s.slice(z,z+4)}
 const money=n=>n==null||!isFinite(n)?'—':n>=1e6?'$'+(n/1e6).toFixed(2)+'M':n>=1e3?'$'+(n/1e3).toFixed(1)+'K':'$'+Math.round(n);
 const pct=n=>n==null||!isFinite(n)?'—':(n>0?'+':'')+(Math.abs(n)>=100?Math.round(n):Math.round(n*10)/10)+'%';
+const f1=n=>n==null||!isFinite(n)?'—':(Math.round(n*10)/10).toString();
 const xf=n=>n==null||!isFinite(n)?'—':'×'+(n>=10?n.toFixed(1):n.toFixed(2));
 function ago(ms){if(!ms)return '—';let s=Math.max(0,Math.floor((Date.now()-ms)/1000));
   if(s<60)return s+'с';const m=Math.floor(s/60);if(m<60)return m+':'+String(s%60).padStart(2,'0');
   const h=Math.floor(m/60);if(h<24)return h+'ч '+(m%60)+'м';return Math.floor(h/24)+'д'}
-const dur=min=>min<60?Math.round(min)+'м':(Math.floor(min/60)+'ч'+(min%60?(' '+Math.round(min%60)+'м'):''));
+const dur=min=>min==null||!isFinite(min)?'—':min<60?Math.max(0,Math.round(min))+'м':(Math.floor(min/60)+'ч'+(Math.round(min%60)?(' '+Math.round(min%60)+'м'):''));
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const SKIPTOK=new Set(['So11111111111111111111111111111111111111112','EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v','Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB']);
 const isCurve=d=>/pump-?fun/i.test(d||'')&&!/swap/i.test(d||'');
+const isPumpSwap=d=>/pump-?swap/i.test(d||'');
+// владельцы, которые являются пулами/сжиганием, а не людьми
+const POOL_AUTH=new Set(['5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1','GpMZbSM2GgvTKHJirzeGfMFoaZ8UR2X7F4v8vHTvxFbL','1nc1nerator11111111111111111111111111111111','11111111111111111111111111111111']);
+const T22='TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
+const med=a=>{if(!a.length)return null;const s=a.slice().sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
+const avg=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:null;
 
 /* =================== память =================== */
 const mem={};let storeOk=true;
@@ -232,36 +244,41 @@ try{localStorage.setItem('__t','1');localStorage.removeItem('__t')}catch{storeOk
 $('#store').textContent=storeOk?'память: ок':'память: нет';$('#store').classList.toggle('bad',!storeOk);
 
 /* =================== настройки =================== */
-const DEF={win:10,keepH:5,delay:1,poll:15,
-  c_mint:true,c_freeze:true,c_lock:true,lockMin:90,
-  c_paint:true,liqMcMin:10,
-  c_bot:true,avgMin:3,sellMin:5,
-  c_hold:true,top10Max:30,insMax:15,devMax:5,
-  c_liq:true,liqMin:5000,
-  c_pump:true,pumpMax:3,
-  c_clone:true,f_fresh:false,f_scam:false,f_liq:0};
-const S=Object.assign({},DEF,sget('sc_set',{}));
+const DEF={win:10,keepH:5,delay:1,poll:30,
+  c_contract:true,c_owner:true,ownerMax:15,c_dev:true,devMax:5,c_liq:true,liqMin:5000,c_lock:true,lockMin:90,
+  c_press:true,pressMin:1.2,c_vol5:true,vol5Min:2000,c_buyers:true,buyersMin:20,c_dd:true,ddMax:30,
+  w_ins:true,insMax:15,w_top10:true,top10Max:30,w_pump:true,pumpMax:3,w_clone:true,
+  f_fresh:false,f_scam:false,f_liq:0,ver:2};
+const old=sget('sc_set',{});
+const S=Object.assign({},DEF,old.ver===2?old:{f_fresh:old.f_fresh||false,f_scam:old.f_scam||false,f_liq:old.f_liq||0});
+if(S.poll<20)S.poll=20;
 
 /* =================== сеть =================== */
-async function j(url){const r=await fetch(url);if(r.status===429){const e=new Error('лимит запросов');e.rl=1;throw e}
+async function j(url,opt){const r=await fetch(url,opt);if(r.status===429){const e=new Error('лимит');e.rl=1;throw e}
   if(!r.ok){const e=new Error('HTTP '+r.status);e.code=r.status;throw e}return r.json()}
-// очередь GeckoTerminal: не больше ~28 запросов в минуту
-const gtQ=[];let gtPause=0,gtErr='';
+// GeckoTerminal: бесплатно 10 запросов в минуту — очередь с паузой 6.2 сек
+const gtQ=[];let gtPause=0,gtErr='',gtOkAt=0;
 function gt(path,prio=5){return new Promise((res,rej)=>{gtQ.push({path,prio,res,rej,t:Date.now()});gtQ.sort((a,b)=>a.prio-b.prio||a.t-b.t)})}
 (async function gtLoop(){for(;;){
   if(gtQ.length&&Date.now()>gtPause){const t=gtQ.shift();
-    try{t.res(await j(GT+t.path));gtErr=''}catch(e){if(e.rl)gtPause=Date.now()+20000;gtErr=e.message;t.rej(e)}}
-  await sleep(2200)}})();
+    try{t.res(await j(GT+t.path));gtErr='';gtOkAt=Date.now()}catch(e){if(e.rl)gtPause=Date.now()+30000;gtErr=e.rl?'лимит запросов, жду':e.message;t.rej(e)}}
+  await sleep(6200)}})();
+let rpcI=0,rpcErr='';
+async function rpc(method,params){let last;
+  for(let t=0;t<RPCS.length;t++){const url=RPCS[(rpcI+t)%RPCS.length];
+    try{const d=await j(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
+      if(d.error)throw new Error(d.error.message||'ошибка RPC');rpcI=(rpcI+t)%RPCS.length;rpcErr='';return d.result}
+    catch(e){last=e}}
+  rpcErr=last?.message||'RPC';throw last}
 
 /* =================== данные =================== */
-// C[адрес токена] = монета
-const C=sget('sc_coins',{});
+const C=sget('sc_coins2',{});
 let booted=false;
 Object.values(C).forEach(c=>{c.isNew=false;if(!c.spark)c.spark=[]});
-
-function pruneOld(){const lim=Date.now()-S.keepH*3600e3;
-  const limP=Date.now()-72*3600e3;Object.keys(C).forEach(a=>{const c=C[a];if((c.listedAt||0)<(c.status==='pass'?limP:lim))delete C[a]});}
-function saveCoins(){const o={};Object.entries(C).forEach(([a,c])=>{const{rc,isNew,...rest}=c;rest.spark=(c.spark||[]).slice(-60);rest.rcLite=c.rcLite;o[a]=rest});sset('sc_coins',o)}
+function inWin(c){return Date.now()-c.listedAt<=S.win*60e3}
+function pruneOld(){const lim=Date.now()-S.keepH*3600e3,limP=Date.now()-72*3600e3;
+  Object.keys(C).forEach(a=>{const c=C[a];if((c.listedAt||0)<(c.status==='pass'?limP:lim))delete C[a]})}
+function saveCoins(){const o={};Object.entries(C).forEach(([a,c])=>{const{isNew,flash,_hq,...rest}=c;rest.spark=(c.spark||[]).slice(-60);o[a]=rest});sset('sc_coins2',o)}
 setInterval(saveCoins,20000);
 
 function gtParse(d,inc){
@@ -271,48 +288,51 @@ function gtParse(d,inc){
   if(SKIPTOK.has(addr)){bid=d.relationships?.quote_token?.data?.id||'';addr=bid.replace(/^solana_/,'')}
   if(!addr||SKIPTOK.has(addr))return null;
   const tk=inc[bid]?.attributes||{};const t=a.transactions||{},v=a.volume_usd||{},pc=a.price_change_percentage||{};
+  const listedAt=Date.parse(a.pool_created_at)||Date.now();
+  const older1h=Date.now()-listedAt>3600e3;
   return{addr,name:tk.name||(a.name||'').split(' / ')[0],sym:tk.symbol||'',img:tk.image_url&&tk.image_url!=='missing.png'?tk.image_url:'',
-    pair:a.address,dex,listedAt:Date.parse(a.pool_created_at)||Date.now(),
+    pair:a.address,dex,listedAt,
     price:+a.base_token_price_usd||0,liq:+a.reserve_in_usd||0,mc:+a.market_cap_usd||+a.fdv_usd||0,
-    b24:t.h24?.buys||0,s24:t.h24?.sells||0,v24:+v.h24||0,ch5:+pc.m5||0,ch1:+pc.h1||0}
+    b24:t.h24?.buys||0,s24:t.h24?.sells||0,v24:+v.h24||0,ch5:+pc.m5||0,ch1:+pc.h1||0,
+    b5:t.m5?.buys,s5:t.m5?.sells,v5:v.m5!=null?+v.m5:null,
+    buyers:(older1h?t.h24?.buyers:t.h1?.buyers)??null}
 }
 function upsertGT(p){
   const c=C[p.addr];
   if(!c){if(Date.now()-p.listedAt>S.keepH*3600e3)return;
-    C[p.addr]={...p,spark:p.price?[[Date.now(),p.price]]:[],status:Date.now()-p.listedAt>S.win*60e3?'miss':'wait',isNew:booted,seenAt:Date.now(),firstPrice:Date.now()-p.listedAt<120e3?p.price||null:null};
-    if(C[p.addr].status==='wait')wantOhlcv(p.addr);return}
+    const fresh=Date.now()-p.listedAt<=S.win*60e3;
+    C[p.addr]={...p,spark:p.price?[[Date.now(),p.price]]:[],peak:p.price||0,status:fresh?'wait':'miss',isNew:booted,seenAt:Date.now(),
+      firstPrice:Date.now()-p.listedAt<150e3?(p.price||null):null};
+    if(fresh&&!C[p.addr].firstPrice)wantOhlcv(p.addr);return}
   if(p.listedAt<c.listedAt){c.listedAt=p.listedAt;c.pair=p.pair;c.dex=p.dex}
-  if(!c.dsAt){Object.assign(c,{price:p.price||c.price,liq:p.liq,mc:p.mc,b24:p.b24,s24:p.s24,v24:p.v24,ch5:p.ch5,ch1:p.ch1});pushSpark(c)}
+  if(p.buyers!=null)c.buyers=p.buyers;
+  if(!c.dsAt){Object.assign(c,{price:p.price||c.price,liq:p.liq,mc:p.mc,b24:p.b24,s24:p.s24,v24:p.v24,ch5:p.ch5,ch1:p.ch1,b5:p.b5,s5:p.s5,v5:p.v5});pushSpark(c)}
   if(!c.img&&p.img)c.img=p.img;
 }
-function pushSpark(c){if(!c.price)return;const s=c.spark||(c.spark=[]);const last=s[s.length-1];
+function pushSpark(c){if(!c.price)return;c.peak=Math.max(c.peak||0,c.price);const s=c.spark||(c.spark=[]);const last=s[s.length-1];
   if(!last||Date.now()-last[0]>8000)s.push([Date.now(),c.price]);else last[1]=c.price;if(s.length>80)s.splice(0,s.length-80)}
 
-/* --- новые пулы --- */
-let pollN=0;
+/* --- новые пулы (GeckoTerminal) --- */
+let pollN=0,lastPoll=0;
 async function pollNew(pages){
   for(const pg of pages){
     try{const r=await gt(`/new_pools?page=${pg}&include=base_token,quote_token,dex`,pg===1?1:3);
-      const inc={};(r.included||[]).forEach(x=>inc[x.id]=x);(r.data||[]).forEach(d=>{const p=gtParse(d,inc);if(p)upsertGT(p)});
+      const inc={};(r.included||[]).forEach(x=>inc[x.id]=x);(r.data||[]).forEach(d=>{const p=gtParse(d,inc);if(p)upsertGT(p)});lastPoll=Date.now()
     }catch(e){}
   }
   pruneOld();evalAll();render();
 }
-async function boot(){
-  await pollNew([1,2,3,4,5]);booted=true;
-  for(;;){await sleep(S.poll*1000);pollN++;await pollNew(pollN%4===0?[1,2]:[1])}
-}
+async function boot(){await pollNew([1,2,3]);booted=true;
+  for(;;){await sleep(Math.max(20,S.poll)*1000);pollN++;await pollNew(pollN%4===0?[1,2]:[1])}}
 
-/* --- DEX Screener: свежие цифры, соцсети, возраст токена --- */
+/* --- DEX Screener: цена, сделки за 5 мин, объём, соцсети --- */
 let dsTurn=0;
 async function pollDS(){
-  const now=Date.now();const all=Object.values(C).sort((a,b)=>b.listedAt-a.listedAt);
-  const hot=all.filter(c=>now-c.listedAt<S.win*60e3*1.5||c.status==='wait').slice(0,60);
+  const all=Object.values(C).sort((a,b)=>b.listedAt-a.listedAt);
+  const hot=all.filter(c=>Date.now()-c.listedAt<S.win*60e3*2||c.status==='wait').slice(0,60);
   const rest=all.filter(c=>!hot.includes(c));const slice=rest.slice((dsTurn*30)%Math.max(rest.length,1)).slice(0,30);dsTurn++;
   const list=[...hot,...slice].map(c=>c.addr);
-  for(let i=0;i<list.length;i+=30){
-    try{const ps=await j(`${DS}/tokens/v1/solana/${list.slice(i,i+30).join(',')}`);applyDS(ps)}catch{}
-  }
+  for(let i=0;i<list.length;i+=30){try{applyDS(await j(`${DS}/tokens/v1/solana/${list.slice(i,i+30).join(',')}`))}catch{}}
   evalAll();render();
 }
 function applyDS(ps){
@@ -320,11 +340,10 @@ function applyDS(ps){
   Object.entries(by).forEach(([a,arr])=>{const c=C[a];
     const created=Math.min(...arr.map(p=>p.pairCreatedAt||Infinity));if(isFinite(created)&&(!c.tokAt||created<c.tokAt))c.tokAt=created;
     const pools=arr.filter(p=>!isCurve(p.dexId));if(!pools.length)return;
-    const p=pools.sort((x,y)=>(y.liquidity?.usd||0)-(x.liquidity?.usd||0))[0];
-    const prev=c.price;
+    const p=pools.sort((x,y)=>(y.liquidity?.usd||0)-(x.liquidity?.usd||0))[0];const prev=c.price;
     Object.assign(c,{price:+p.priceUsd||c.price,liq:p.liquidity?.usd??c.liq,mc:p.marketCap||p.fdv||c.mc,
       b24:p.txns?.h24?.buys??c.b24,s24:p.txns?.h24?.sells??c.s24,v24:p.volume?.h24??c.v24,
-      ch5:p.priceChange?.m5??c.ch5,ch1:p.priceChange?.h1??c.ch1,b5:p.txns?.m5?.buys,s5:p.txns?.m5?.sells,
+      ch5:p.priceChange?.m5??c.ch5,ch1:p.priceChange?.h1??c.ch1,b5:p.txns?.m5?.buys??c.b5,s5:p.txns?.m5?.sells??c.s5,v5:p.volume?.m5??c.v5,
       soc:(p.info?.socials||[]).length+(p.info?.websites||[]).length,dsAt:Date.now()});
     if(!c.img&&p.info?.imageUrl)c.img=p.info.imageUrl;if(!c.pair)c.pair=p.pairAddress;
     if(prev&&c.price&&prev!==c.price)c.flash=c.price>prev?'up':'dn';
@@ -332,87 +351,125 @@ function applyDS(ps){
 }
 setInterval(pollDS,15000);
 
-/* --- цена в момент появления (для «уже улетела») и микро-график --- */
+/* --- цена в момент появления + пик (если не застали сами) --- */
 const ohlcvWant=new Set();
-function wantOhlcv(a){if(ohlcvWant.has(a))return;ohlcvWant.add(a);const c=C[a];if(!c?.pair)return;
-  gt(`/pools/${c.pair}/ohlcv/minute?aggregate=1&limit=40&currency=usd`,2).then(r=>{
-    const l=(r.data?.attributes?.ohlcv_list||[]).slice().reverse();if(!l.length||!C[a])return;
-    const c2=C[a];const first=l.find(k=>k[0]*1000>=c2.listedAt-60e3)||l[0];c2.firstPrice=+first[1]||+first[4];
+function wantOhlcv(a){if(ohlcvWant.has(a))return;const c=C[a];if(!c?.pair)return;ohlcvWant.add(a);
+  gt(`/pools/${c.pair}/ohlcv/minute?aggregate=1&limit=30&currency=usd`,4).then(r=>{
+    const l=(r.data?.attributes?.ohlcv_list||[]).slice().reverse();const c2=C[a];if(!l.length||!c2)return;
+    const first=l.find(k=>k[0]*1000>=c2.listedAt-60e3)||l[0];if(!c2.firstPrice)c2.firstPrice=+first[1]||+first[4];
+    l.forEach(k=>{if(k[0]*1000>=c2.listedAt-60e3)c2.peak=Math.max(c2.peak||0,+k[2])});
     const pts=l.map(k=>[k[0]*1000,+k[4]]);c2.spark=[...pts,...(c2.spark||[]).filter(s=>s[0]>pts[pts.length-1][0])].slice(-80);
     evalAll();render()}).catch(()=>{ohlcvWant.delete(a)});}
 
-/* --- rugcheck: полная проверка контракта и держателей --- */
-const rcBusy=new Set();
-async function rcLoop(){for(;;){
-  const now=Date.now();
-  const cand=Object.values(C).filter(c=>c.status==='wait'&&!rcBusy.has(c.addr)&&(!c.rcAt||now-c.rcAt>45000))
-    .sort((a,b)=>b.listedAt-a.listedAt);
+/* --- блокчейн (Solana RPC): mint, freeze, Token-2022, реальные владельцы --- */
+async function rpcCheck(c){
+  const mi=await rpc('getAccountInfo',[c.addr,{encoding:'jsonParsed'}]);
+  const v=mi?.value;if(!v)throw new Error('токен не найден');
+  const info=v.data?.parsed?.info||{};const is22=v.owner===T22;const bad=[];
+  (info.extensions||[]).forEach(e=>{const s=e.state||{};
+    if(e.extension==='transferFeeConfig'){const bps=Math.max(+(s.newerTransferFee?.transferFeeBasisPoints||0),+(s.olderTransferFee?.transferFeeBasisPoints||0));if(bps>0)bad.push('комиссия '+bps/100+'% на перевод')}
+    if(e.extension==='transferHook'&&s.programId)bad.push('перехват переводов');
+    if(e.extension==='permanentDelegate'&&s.delegate)bad.push('вечный делегат');
+    if(e.extension==='nonTransferable')bad.push('нельзя переводить');
+    if(e.extension==='defaultAccountState'&&/frozen/i.test(s.accountState||''))bad.push('счета заморожены');
+    if(/pausable/i.test(e.extension))bad.push('можно поставить на паузу')});
+  const dec=+info.decimals||0,supply=(+info.supply||0)/10**dec;
+  const la=await rpc('getTokenLargestAccounts',[c.addr]);
+  const accs=(la?.value||[]).filter(a=>+a.uiAmount>0);
+  let owners=[];
+  if(accs.length){const ma=await rpc('getMultipleAccounts',[accs.map(a=>a.address),{encoding:'jsonParsed'}]);
+    const by={};accs.forEach((a,i)=>{const own=ma?.value?.[i]?.data?.parsed?.info?.owner||a.address;by[own]=(by[own]||0)+(+a.uiAmount)});
+    const poolTok=c.liq&&c.price?c.liq/2/c.price:null;
+    owners=Object.entries(by).filter(([o,amt])=>!(o===c.pair||POOL_AUTH.has(o)||(poolTok&&Math.abs(amt-poolTok)/poolTok<0.25)))
+      .map(([o,amt])=>({o,p:supply?amt/supply*100:0})).sort((a,b)=>b.p-a.p)}
+  c.rpc={at:Date.now(),is22,mint:!!info.mintAuthority,freeze:!!info.freezeAuthority,bad,
+    maxOwner:owners[0]?.p||0,maxOwnerAddr:owners[0]?.o||'',top10:owners.slice(0,10).reduce((s,x)=>s+x.p,0)};
+  c.rpcErr='';
+}
+async function rpcLoop(){for(;;){
+  const cand=Object.values(C).filter(c=>c.status==='wait'&&inWin(c)&&(!c.rpc||Date.now()-c.rpc.at>45000)&&(!c.rpcTry||Date.now()-c.rpcTry>15000))
+    .sort((a,b)=>(!!a.rpc-!!b.rpc)||b.listedAt-a.listedAt);
   const c=cand[0];
-  if(c){rcBusy.add(c.addr);
-    try{const r=await j(`${RC}/tokens/${c.addr}/report`);c.rcLite=rcLite(r);c.rcAt=Date.now();
-      if(!c.tokAt&&r.detectedAt)c.tokAt=Date.parse(r.detectedAt)||c.tokAt}
-    catch(e){c.rcErr=e.message;c.rcAt=Date.now()-30000;if(e.rl)await sleep(10000)}
-    rcBusy.delete(c.addr);evalAll();render();await sleep(1500)}
-  else await sleep(1500)}}
+  if(c){c.rpcTry=Date.now();try{await rpcCheck(c)}catch(e){c.rpcErr=e.message||'ошибка'}evalAll();render();await sleep(400)}
+  else await sleep(1000)}}
+
+/* --- rugcheck: дев, инсайдеры, лок пула (не блокирует, если нет данных) --- */
+async function rcFetch(c){c.rcTry=Date.now();
+  try{const r=await j(`${RC}/tokens/${c.addr}/report`);c.rcLite=rcLite(r);c.rcErr=''}
+  catch(e){c.rcErr=e.message;if(e.rl)await sleep(10000)}
+  c.rcTried=true}
+async function rcLoop(){for(;;){
+  const c=Object.values(C).filter(c=>c.status==='wait'&&inWin(c)&&(!c.rcTry||Date.now()-c.rcTry>60000)).sort((a,b)=>b.listedAt-a.listedAt)[0];
+  if(c){await rcFetch(c);evalAll();render();await sleep(2000)}else await sleep(1500)}}
 function rcLite(r){
   const pools=new Set();(r.markets||[]).forEach(m=>[m.pubkey,m.liquidityAAccount,m.liquidityBAccount,m.lp?.lpMint].forEach(x=>x&&pools.add(x)));
   const hs=(r.topHolders||[]).filter(h=>!pools.has(h.address)&&!pools.has(h.owner));
   const sup=Number(r.token?.supply)||0;
-  return{mint:!!r.token?.mintAuthority,freeze:!!r.token?.freezeAuthority,
-    top10:hs.slice(0,10).reduce((s,h)=>s+(h.pct||0),0),ins:hs.filter(h=>h.insider).reduce((s,h)=>s+(h.pct||0),0),
-    dev:sup?(Number(r.creatorBalance)||0)/sup*100:null,
-    lock:(r.markets||[]).length?Math.max(0,...r.markets.map(m=>m.lp?.lpLockedPct||0)):null,
-    holders:r.totalHolders||null,rugged:!!r.rugged}}
+  return{ins:hs.filter(h=>h.insider).reduce((s,h)=>s+(h.pct||0),0),
+    dev:sup&&r.creatorBalance!=null?(Number(r.creatorBalance)||0)/sup*100:null,
+    lock:(r.markets||[]).length?Math.max(0,...r.markets.map(m=>m.lp?.lpLockedPct||0)):null,rugged:!!r.rugged}}
 
-/* =================== правила проверки =================== */
-// ok: true — прошла, false — завалила, null — ещё ждём данные
+/* =================== правила =================== */
+// статус правила: pass ✓ · fail ✕ · unk … (ждём данные) · err ⚠ (API не ответил) · na – (данных нет, не блокирует) · off (выключено)
+const SECT={safe:'Безопасность',sig:'Сигналы для входа',warn:'Предупреждения — не блокируют'};
 function checks(c){
-  const L=c.rcLite, out=[];
-  const add=(g,on,ok,t,d,w)=>out.push({g,on,ok:on?ok:'off',t,d,w});
-  // 1 контракт
-  add(1,S.c_mint,L?!L.mint:null,'Mint отключён',L?(L.mint?'Создатель может допечатать монеты':'Допечатки не будет'):'жду rugcheck','mint');
-  add(1,S.c_freeze,L?!L.freeze:null,'Freeze отключён',L?(L.freeze?'Могут заморозить твои токены — не продашь':'Продать сможешь'):'жду rugcheck','freeze');
-  add(1,S.c_lock,L?(L.lock==null?null:L.lock>=S.lockMin):null,'Ликвидность залочена ≥ '+S.lockMin+'%',L&&L.lock!=null?('Залочено '+Math.round(L.lock)+'%'):'жду rugcheck','пул не залочен');
-  // 2 нарисованная капа
-  const r=c.mc?c.liq/c.mc*100:null;
-  add(2,S.c_paint,r==null?null:r>=S.liqMcMin,'Ликвидность ≥ '+S.liqMcMin+'% от капы',r==null?'нет данных':('Сейчас '+Math.round(r)+'% ('+money(c.liq)+' из '+money(c.mc)+')'),'нарисована');
-  // 3 накрутка
-  const tx=(c.b24||0)+(c.s24||0);
-  if(tx<20){add(3,S.c_bot,true,'Средняя сделка ≥ $'+S.avgMin,'Сделок пока мало ('+tx+') — не оценить');add(3,S.c_bot,true,'Продажи ≥ '+S.sellMin+'% от покупок','Сделок пока мало')}
-  else{const avg=(c.v24||0)/tx,sr=c.b24?c.s24/c.b24*100:100;
-    add(3,S.c_bot,avg>=S.avgMin,'Средняя сделка ≥ $'+S.avgMin,'Сейчас $'+avg.toFixed(2)+(avg<S.avgMin?' — микро-покупки, боты':''),'боты');
-    add(3,S.c_bot,sr>=S.sellMin,'Продажи ≥ '+S.sellMin+'% от покупок','Продаж '+c.s24+' на '+c.b24+' покупок','нет продаж')}
-  // 4 держатели
-  add(4,S.c_hold,L?L.top10<=S.top10Max:null,'Топ-10 ≤ '+S.top10Max+'%',L?('Держат '+Math.round(L.top10)+'%'):'жду rugcheck',L?'топ-10 '+Math.round(L.top10)+'%':'');
-  add(4,S.c_hold,L?L.ins<=S.insMax:null,'Инсайдеры/бандлы ≤ '+S.insMax+'%',L?('Связанные кошельки '+Math.round(L.ins)+'%'):'жду rugcheck',L?'инсайдеры '+Math.round(L.ins)+'%':'');
-  add(4,S.c_hold,L?(L.dev==null?true:L.dev<=S.devMax):null,'Доля дева ≤ '+S.devMax+'%',L?(L.dev==null?'нет данных':('Дев держит '+(Math.round(L.dev*10)/10)+'%')):'жду rugcheck',L&&L.dev!=null?'дев '+Math.round(L.dev)+'%':'');
-  // 5 ликвидность
-  add(5,S.c_liq,c.liq?c.liq>=S.liqMin:null,'Ликвидность ≥ '+money(S.liqMin),'Сейчас '+money(c.liq),'мало в пуле');
-  // 6 уже улетела
+  const R=c.rpc,L=c.rcLite,out=[];
+  const put=(sec,k,on,st,t,d,w)=>out.push({sec,k,st:on?st:'off',t,d,w});
+  const rpcSt=c.rpcErr?'err':'unk';
+  // безопасность
+  if(R){const pr=[...(R.mint?['можно допечатать монеты']:[]),...(R.freeze?['можно заморозить твои токены']:[]),...R.bad];
+    put('safe','contract',S.c_contract,pr.length?'fail':'pass','Контракт чистый',pr.length?pr.join(', '):('Mint и freeze отключены'+(R.is22?', Token-2022 без опасных функций':'')),R.mint?'mint':R.freeze?'freeze':R.bad.length?'Token-2022':'контракт')}
+  else put('safe','contract',S.c_contract,rpcSt,'Контракт чистый',c.rpcErr?'Блокчейн не ответил: '+c.rpcErr:'Проверяю в блокчейне…','контракт');
+  put('safe','owner',S.c_owner,R?(R.maxOwner<=S.ownerMax?'pass':'fail'):rpcSt,'Один владелец ≤ '+S.ownerMax+'%',R?('Крупнейший (кроме пула) держит '+f1(R.maxOwner)+'%'):'Проверяю в блокчейне…','кит '+(R?Math.round(R.maxOwner)+'%':''));
+  const dev=L?.dev;
+  put('safe','dev',S.c_dev,dev!=null?(dev<=S.devMax?'pass':'fail'):(c.rcTried?'na':'unk'),'Дев ≤ '+S.devMax+'%',dev!=null?('Создатель держит '+f1(dev)+'%'):(c.rcTried?'Данных о создателе нет — правило пропущено':'Жду rugcheck…'),'дев '+(dev!=null?Math.round(dev)+'%':''));
+  put('safe','liq',S.c_liq,c.liq?(c.liq>=S.liqMin?'pass':'fail'):'unk','В пуле ≥ '+money(S.liqMin),'Сейчас '+money(c.liq),'мало в пуле');
+  if(isPumpSwap(c.dex))put('safe','lock',S.c_lock,'pass','Пул не вытащат','PumpSwap: пул сжигается при миграции','лок');
+  else{const lk=L?.lock;put('safe','lock',S.c_lock,lk!=null?(lk>=S.lockMin?'pass':'fail'):(c.rcTried?(c.rcErr?'err':'fail'):'unk'),'Пул заблокирован ≥ '+S.lockMin+'%',lk!=null?('Заблокировано '+Math.round(lk)+'% ('+esc(c.dex)+')'):(c.rcTried?(c.rcErr?'rugcheck не ответил':'Данных о блокировке нет — риск'):'Жду rugcheck…'),'пул не залочен')}
+  // сигналы
+  if(c.b5==null)put('sig','press',S.c_press,'unk','Покупок ≥ ×'+S.pressMin+' от продаж за 5 мин','Жду данные…','');
+  else{const b=c.b5||0,s=c.s5||0;
+    if(b+s<3)put('sig','press',S.c_press,'fail','Покупок ≥ ×'+S.pressMin+' от продаж за 5 мин','За 5 мин почти нет сделок ('+(b+s)+')','нет сделок');
+    else{const r=s?b/s:b;put('sig','press',S.c_press,r>=S.pressMin?'pass':'fail','Покупок ≥ ×'+S.pressMin+' от продаж за 5 мин','Покупок '+b+', продаж '+s+' (×'+(Math.round(r*10)/10)+')','продают')}}
+  put('sig','vol5',S.c_vol5,c.v5==null?'unk':(c.v5>=S.vol5Min?'pass':'fail'),'Объём за 5 мин ≥ '+money(S.vol5Min),c.v5==null?'Жду данные…':'Сейчас '+money(c.v5),'мало объёма');
+  put('sig','buyers',S.c_buyers,c.buyers==null?'unk':(c.buyers>=S.buyersMin?'pass':'fail'),'Уникальных покупателей ≥ '+S.buyersMin,c.buyers==null?'Жду данные…':('Купили '+c.buyers+' разных кошельков'),'мало покупателей');
+  const dd=c.peak&&c.price?(1-c.price/c.peak)*100:null;
+  put('sig','dd',S.c_dd,dd==null?'unk':(dd<=S.ddMax?'pass':'fail'),'Не упала > '+S.ddMax+'% от пика',dd==null?'Жду цену…':('От пика '+(dd<0.5?'на пике':'−'+Math.round(dd)+'%')),'сливают');
+  // предупреждения
+  const ins=L?.ins;put('warn','ins',S.w_ins,ins==null?'na':(ins<=S.insMax?'pass':'fail'),'Инсайдеры ≤ '+S.insMax+'%',ins==null?'Нет данных rugcheck':('Связанные с созданием кошельки: '+Math.round(ins)+'%'),'');
+  put('warn','top10',S.w_top10,R?(R.top10<=S.top10Max?'pass':'fail'):'na','Топ-10 владельцев ≤ '+S.top10Max+'%',R?('Держат '+Math.round(R.top10)+'% (кроме пула)'):'Нет данных','');
   const g=c.firstPrice&&c.price?c.price/c.firstPrice:null;
-  const late6=Date.now()-c.listedAt>3*60e3;add(6,S.c_pump,g==null?(late6?true:null):g<=S.pumpMax,'Рост с витрины ≤ ×'+S.pumpMax,g==null?(late6?'Цена появления неизвестна — не оценить':'жду цену на момент появления'):('Сейчас '+xf(g)+' от цены появления'),'улетела '+xf(g));
-  // 7 клон
+  put('warn','pump',S.w_pump,g==null?'na':(g<=S.pumpMax?'pass':'fail'),'Рост с появления ≤ ×'+S.pumpMax,g==null?'Цена в момент появления неизвестна':('Сейчас '+xf(g)+' от цены появления'),'');
   const nm=(c.name||'').trim().toLowerCase(),sy=(c.sym||'').trim().toLowerCase();
-  const twin=Object.values(C).find(o=>o!==c&&o.listedAt<c.listedAt&&((nm&&o.name?.trim().toLowerCase()===nm)||(sy&&sy.length>1&&o.sym?.trim().toLowerCase()===sy)));
-  add(7,S.c_clone,!twin,'Не клон',twin?('Такое же название уже было '+ago(twin.listedAt)+' назад'):'Название уникальное','клон');
-  if(L?.rugged)out.push({g:1,on:true,ok:false,t:'Rugcheck: RUGGED',d:'Уже признан скамом'});
+  const twin=Object.values(C).find(o=>o!==c&&o.listedAt<c.listedAt&&((nm&&o.name?.trim().toLowerCase()===nm)||(sy.length>1&&o.sym?.trim().toLowerCase()===sy)));
+  put('warn','clone',S.w_clone,twin?'fail':'pass','Не клон',twin?('Такое же название было '+ago(twin.listedAt)+' назад'):'Название уникальное','');
+  if(L?.rugged)put('safe','rug',true,'fail','Rugcheck: RUGGED','Токен уже признан скамом','rugged');
   return out}
-const GRP={1:'1 · Контракт',2:'2 · Нарисованная капа',3:'3 · Накрутка',4:'4 · Держатели',5:'5 · Ликвидность',6:'6 · Уже улетела',7:'7 · Клон'};
+const RULE_NAMES={contract:'Контракт',owner:'Кит',dev:'Дев',liq:'Деньги в пуле',lock:'Лок пула',press:'Давление покупок',vol5:'Объём 5 мин',buyers:'Покупатели',dd:'Не сливают',rug:'Rugcheck'};
 
 function evalCoin(c){
-  if(c.status==='pass'||c.status==='miss')return; // прошедшие фиксируются, пропущенные не проверяем
-  const ck=checks(c).filter(x=>x.on);const inWin=Date.now()-c.listedAt<=S.win*60e3;
-  const fail=ck.some(x=>x.ok===false), pend=ck.some(x=>x.ok===null);
-  if(!fail&&!pend){if(inWin){c.status='pass';c.passAt=Date.now()}else c.status='late';return}
-  c.why=(ck.find(x=>x.ok===false)||{}).w||'';
-  if(!inWin){c.status=fail?'fail':'late';return}
-  c.status='wait';c.failNow=fail;
-}
-function evalAll(){Object.values(C).forEach(evalCoin);$('#live').classList.toggle('off',!!gtErr)}
+  if(c.status==='pass'||c.status==='miss'||c.status==='fail'||c.status==='nodata')return;
+  const ck=checks(c),blk=ck.filter(x=>x.sec!=='warn'&&x.st!=='off'&&x.st!=='na');
+  const fails=blk.filter(x=>x.st==='fail'),waits=blk.filter(x=>x.st==='unk'||x.st==='err');
+  c.why=fails[0]?.w||'';c.failNow=fails.length>0;c.waitErr=waits.some(x=>x.st==='err');
+  c.warnN=ck.filter(x=>x.sec==='warn'&&x.st==='fail').length;
+  if(fails.length&&!c.firstFail)c.firstFail=fails[0].k;
+  if(inWin(c)){if(!fails.length&&!waits.length){c.status='pass';c.passAt=Date.now();finalize(c,ck)}return}
+  c.status=fails.length?'fail':'nodata';finalize(c,ck)}
+function finalize(c,ck){if(c.final)return;
+  c.final={fails:ck.filter(x=>x.sec!=='warn'&&x.st==='fail').map(x=>x.k),first:c.firstFail||null,
+    unk:ck.filter(x=>x.sec!=='warn'&&(x.st==='unk'||x.st==='err')).map(x=>x.k),api:ck.some(x=>x.st==='err')}}
+function evalAll(){Object.values(C).forEach(evalCoin);$('#live').classList.toggle('off',!!gtErr&&Date.now()-gtOkAt>90000)}
+function stats(){const cs=Object.values(C).filter(c=>c.status!=='miss'&&Date.now()-c.listedAt<=S.keepH*3600e3);
+  const fin=cs.filter(c=>c.final),st={found:cs.length,pass:cs.filter(c=>c.status==='pass').length,fail:cs.filter(c=>c.status==='fail').length,
+    nodata:cs.filter(c=>c.status==='nodata').length,wait:cs.filter(c=>c.status==='wait').length,api:fin.filter(c=>c.final.api).length,miss:Object.values(C).filter(c=>c.status==='miss').length,rule:{}};
+  fin.forEach(c=>{c.final.fails.forEach(k=>{(st.rule[k]=st.rule[k]||{all:0,first:0}).all++});if(c.final.first)(st.rule[c.final.first]=st.rule[c.final.first]||{all:0,first:0}).first++});
+  st.fin=fin.length;return st}
 
 /* =================== отрисовка =================== */
-const BADGE={pass:['b-pass','✓ прошла'],fail:['b-fail','✕ скам'],wait:['b-wait','⏳ проверка'],late:['b-late','опоздала'],miss:['b-miss','пропущена']};
-function badge(c){if((c.status==='wait'&&c.failNow)||c.status==='fail')return['b-fail','✕ '+(c.why||'скам')];return BADGE[c.status]||BADGE.miss}
+const BADGE={pass:['b-pass','✓ прошла'],wait:['b-wait','⏳ проверка'],nodata:['b-late','? нет данных'],miss:['b-miss','пропущена']};
+function badge(c){if((c.status==='wait'&&c.failNow)||c.status==='fail')return['b-fail','✕ '+(c.why||'скам')];
+  if(c.status==='wait'&&c.waitErr)return['b-late','⚠ API'];return BADGE[c.status]||BADGE.miss}
 function sparkSvg(pts,w=64,h=28){
   if(!pts||pts.length<2)return `<svg class="spark" viewBox="0 0 ${w} ${h}"></svg>`;
   const t0=pts[0][0],t1=pts[pts.length-1][0]||t0+1,ys=pts.map(p=>p[1]),lo=Math.min(...ys),hi=Math.max(...ys),rg=hi-lo||hi||1;
@@ -420,73 +477,73 @@ function sparkSvg(pts,w=64,h=28){
   const d=pts.map((p,i)=>(i?'L':'M')+X(p[0]).toFixed(1)+' '+Y(p[1]).toFixed(1)).join('');
   const col=ys[ys.length-1]>=ys[0]?'var(--up)':'var(--dn)';
   return `<svg class="spark" viewBox="0 0 ${w} ${h}"><path d="${d} L${w-1} ${h} L1 ${h}Z" fill="${col}" opacity=".12"/><path d="${d}" fill="none" stroke="${col}" stroke-width="1.5"/><circle cx="${X(t1).toFixed(1)}" cy="${Y(ys[ys.length-1]).toFixed(1)}" r="2" fill="${col}"/></svg>`}
-const avHtml=(c,cls='av')=>c.img?`<img class="${cls}" src="${esc(c.img)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'${cls} ph',textContent:'${esc((c.sym||'?').slice(0,2))}'}))">`:`<div class="${cls} ph">${esc((c.sym||c.name||'?').slice(0,2))}</div>`;
-
+const avHtml=(c,cls='av')=>c.img?`<img class="${cls}" src="${esc(c.img)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'${cls} ph',textContent:'${esc((c.sym||'?').slice(0,2)).replace(/'/g,'')}'}))">`:`<div class="${cls} ph">${esc((c.sym||c.name||'?').slice(0,2))}</div>`;
 function tokTs(c){return c.tokAt?Math.min(c.tokAt,c.listedAt):null}
 function tokHtml(c){const t=tokTs(c);if(!t)return '';return c.listedAt-t<60e3?' · <span class="tok">токен = пул</span>':` · <span class="tok">токен ${ago(t)}</span>`}
 function rowInner(c,mode){
-  const [bc,bt]=badge(c);const inWin=Date.now()-c.listedAt<=S.win*60e3;
+  const[bc,bt]=badge(c);const w=inWin(c);
   let l3=`${money(c.mc)} · L ${money(c.liq)} · <span class="${(c.ch5||0)<0?'dn':'up'}">${pct(c.ch5)}</span>`;
   if(mode==='pass'&&c.passAt)l3=`прошла за ${dur((c.passAt-c.listedAt)/60000)} · ${money(c.mc)} · L ${money(c.liq)}`;
   return `${avHtml(c)}
   <div class="mid"><div class="nm">${esc(c.name)}<span>${esc(c.sym)}</span></div>
-    <div class="l2">🌱 <span class="age${inWin?' fresh':''}" data-ts="${c.listedAt}">${ago(c.listedAt)}</span>${tokHtml(c)}</div>
+    <div class="l2">🌱 <span class="age${w?' fresh':''}" data-ts="${c.listedAt}">${ago(c.listedAt)}</span>${tokHtml(c)}${c.warnN?` · <span class="warn">⚠${c.warnN}</span>`:''}</div>
     <div class="l3">${l3}</div></div>
   ${sparkSvg(c.spark)}
   <div class="rt"><span class="px">${price(c.price)}</span><span class="badge ${bc}">${bt}</span></div>`}
-
 function reconcile(box,items,mode){
   if(!box._m)box._m=new Map();const m=box._m;
-  if(!items.length){m.clear();box.innerHTML=`<div class="empty">${mode==='pass'?'Пока ни одна монета не прошла все проверки в первые '+S.win+' мин.<br>Держи страницу открытой — проверка идёт только пока она открыта.':'Новых пар пока нет. Жду…'}</div>`;return}
+  if(!items.length){m.clear();box.innerHTML=`<div class="empty">${mode==='pass'?'Пока ни одна монета не прошла все правила в первые '+S.win+' мин.<br>Держи страницу открытой — проверка идёт, только пока она открыта.':'Под фильтр ничего не попало. Жду новые пары…'}</div>`;return}
   const em=box.querySelector('.empty');if(em)em.remove();
   const keep=new Set();let prev=null;
   for(const c of items){keep.add(c.addr);let el=m.get(c.addr);
-    const sig=[c.price,c.mc,c.liq,c.status,c.failNow,c.why,c.img,c.tokAt,(c.spark||[]).length,c.passAt].join('|');
+    const sig=[c.price,c.mc,c.liq,c.status,c.failNow,c.why,c.waitErr,c.warnN,c.img,c.tokAt,(c.spark||[]).length,c.passAt,inWin(c)].join('|');
     if(!el){el=document.createElement('div');el.className='row';el.dataset.a=c.addr;el.onclick=()=>openCoin(c.addr);
       if(c.isNew&&Date.now()-(c.seenAt||0)<60000)el.classList.add('enter');m.set(c.addr,el)}
     if(el._sig!==sig){el.innerHTML=rowInner(c,mode);el._sig=sig;
       if(c.flash&&!el.classList.contains('enter')){el.classList.remove('fl-up','fl-dn');void el.offsetWidth;el.classList.add('fl-'+c.flash)}}
-    el.classList.toggle('inwin',Date.now()-c.listedAt<=S.win*60e3&&c.status!=='fail'&&!c.failNow);
+    el.classList.toggle('inwin',inWin(c)&&c.status!=='fail'&&!c.failNow);
     const want=prev?prev.nextSibling:box.firstChild;if(want!==el)box.insertBefore(el,want);prev=el}
-  for(const[a,el]of m){if(!keep.has(a)){el.remove();m.delete(a)}}
-}
+  for(const[a,el]of m){if(!keep.has(a)){el.remove();m.delete(a)}}}
 let tab='all';
 function render(){
   const all=Object.values(C).filter(c=>Date.now()-c.listedAt<=S.keepH*3600e3).sort((a,b)=>b.listedAt-a.listedAt);
   const pass=Object.values(C).filter(c=>c.status==='pass').sort((a,b)=>b.passAt-a.passAt);
   $('#nAll').textContent=all.length;$('#nPass').textContent=pass.length;
-  const w=all.filter(c=>c.status==='wait').length,f=all.filter(c=>c.status==='fail').length;
-  $('#statPass').innerHTML=`<span>прошли все проверки в первые ${S.win} мин</span>`;
+  const w=all.filter(c=>c.status==='wait').length;
   $('#fFresh').textContent='⚡ Свежие < '+S.win+' мин';$('#fFresh').classList.toggle('on',S.f_fresh);
   $('#fScam').classList.toggle('on',S.f_scam);
   $('#fLiq').textContent='💧 Ликв. '+(S.f_liq?'от '+money(S.f_liq):'любая');$('#fLiq').classList.toggle('on',!!S.f_liq);
-  const shown=all.filter(c=>(!S.f_fresh||Date.now()-c.listedAt<=S.win*60e3)&&(!S.f_scam||!(c.status==='fail'||c.failNow))&&(c.liq||0)>=S.f_liq);
-  $('#statAll').innerHTML=`<span>показано ${shown.length} из ${all.length}</span><span>⏳ проверяю: ${w}</span>${gtErr?`<span class="dn">GeckoTerminal: ${esc(gtErr)}</span>`:''}`;
+  const shown=all.filter(c=>(!S.f_fresh||inWin(c))&&(!S.f_scam||!(c.status==='fail'||c.failNow))&&(c.liq||0)>=S.f_liq);
+  const apiBad=(gtErr&&Date.now()-gtOkAt>60000)?`<span class="dn">GeckoTerminal: ${esc(gtErr)}</span>`:'';
+  $('#statAll').innerHTML=`<span>показано ${shown.length} из ${all.length}</span><span>⏳ проверяю: ${w}</span>${apiBad}${rpcErr?'<span class="warn">блокчейн: '+esc(rpcErr)+'</span>':''}`;
+  $('#statPass').innerHTML=`<span>прошли все правила в первые ${S.win} мин</span>`;
   if(tab==='all')reconcile($('#lAll'),shown.slice(0,250),'all');
   if(tab==='pass')reconcile($('#lPass'),pass,'pass');
+  if(tab==='rules')updRuleCounts();
   Object.values(C).forEach(c=>{c.flash=null;if(booted&&c.isNew&&Date.now()-(c.seenAt||0)>60000)c.isNew=false});
   if(sheetAddr&&C[sheetAddr])fillChecks(C[sheetAddr]);
 }
-// тикают возрасты
 setInterval(()=>{document.querySelectorAll('[data-ts]').forEach(e=>e.textContent=ago(+e.dataset.ts))},1000);
+setInterval(()=>{evalAll();render()},5000); // окно закрывается по времени, даже без новых данных
 
 /* =================== вкладки =================== */
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.t;
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));
   ['all','pass','hist','rules','check'].forEach(k=>$('#v-'+k).hidden=k!==tab);
   if(tab==='hist')renderHist();if(tab==='rules')renderRules();render();window.scrollTo(0,0)});
+$('#fFresh').onclick=()=>{S.f_fresh=!S.f_fresh;sset('sc_set',S);render()};
+$('#fScam').onclick=()=>{S.f_scam=!S.f_scam;sset('sc_set',S);render()};
+$('#fLiq').onclick=()=>{const L=[0,1000,5000,20000];S.f_liq=L[(L.indexOf(S.f_liq)+1)%L.length];sset('sc_set',S);render()};
 
 /* =================== карточка монеты =================== */
-let sheetAddr=null;
+let sheetAddr=null,sheetCoin=null;
 function openSheet(html){$('#sheetBody').innerHTML=html;$('#sheet').hidden=false;document.body.style.overflow='hidden'}
-function closeSheet(){$('#sheet').hidden=true;$('#sheetBody').innerHTML='';sheetAddr=null;document.body.style.overflow=''}
+function closeSheet(){$('#sheet').hidden=true;$('#sheetBody').innerHTML='';sheetAddr=null;sheetCoin=null;document.body.style.overflow=''}
 document.querySelectorAll('[data-close]').forEach(e=>e.onclick=closeSheet);
-
 function chartUrl(pair,src){return src==='gt'
   ?`https://www.geckoterminal.com/solana/pools/${pair}?embed=1&info=0&swaps=0&grayscale=0&light_chart=0&chart_type=price&resolution=1m`
   :`https://dexscreener.com/solana/${pair}?embed=1&loadChartSettings=0&trades=0&tabs=0&info=0&chartLeftToolbar=0&chartTheme=dark&theme=dark&chartStyle=1&chartType=usd&interval=1`}
-function detailHtml(c,manual){
-  const a=encodeURIComponent(c.addr);
+function detailHtml(c){const a=encodeURIComponent(c.addr);const t=tokTs(c);
   return `<div class="dh">${avHtml(c)}<div style="min-width:0"><div class="nm" style="font-size:17px">${esc(c.name)}<span>${esc(c.sym)}</span></div>
     <div class="addr">${esc(c.addr)}</div><button class="copy" id="cp">Скопировать адрес</button></div></div>
   ${c.pair?`<div class="seg"><button class="on" data-src="ds">График DEX Screener</button><button data-src="gt">GeckoTerminal</button></div>
@@ -494,9 +551,9 @@ function detailHtml(c,manual){
   <div class="grid">
     <div class="cell"><small>Цена</small><b>${price(c.price)}</b></div>
     <div class="cell"><small>Капа</small><b>${money(c.mc)}</b></div>
-    <div class="cell"><small>Ликвидн.</small><b>${money(c.liq)}</b></div>
+    <div class="cell"><small>В пуле</small><b>${money(c.liq)}</b></div>
     <div class="cell"><small>На витрине</small><b data-ts="${c.listedAt}">${ago(c.listedAt)}</b></div>
-    <div class="cell"><small>Токену</small><b class="dn">${!tokTs(c)?'—':(c.listedAt-tokTs(c)<60e3?'= пул':ago(tokTs(c)))}</b></div>
+    <div class="cell"><small>Токену</small><b class="dn">${!t?'—':(c.listedAt-t<60e3?'= пул':ago(t))}</b></div>
     <div class="cell"><small>Площадка</small><b>${esc(c.dex||'—')}</b></div>
   </div>
   <div id="ckBox"></div>
@@ -506,81 +563,86 @@ function detailHtml(c,manual){
     <a href="https://app.bubblemaps.io/sol/token/${a}" target="_blank" rel="noopener">bubblemaps</a>
     <a href="https://rugcheck.xyz/tokens/${a}" target="_blank" rel="noopener">rugcheck</a>
     <a href="https://dexscreener.com/solana/${a}" target="_blank" rel="noopener">dexscreener</a>
-    <a href="https://pump.fun/coin/${a}" target="_blank" rel="noopener">pump.fun</a>
+    <a href="https://solscan.io/token/${a}" target="_blank" rel="noopener">solscan</a>
   </div>`}
 function verdictHtml(c){
-  const inWin=Date.now()-c.listedAt<=S.win*60e3;
-  const m={pass:['v-pass','✓ Прошла все проверки',`Через ${dur((c.passAt-c.listedAt)/60000)} после появления на витрине`],
-    fail:['v-fail','✕ Не прошла','Завалила проверку в первые '+S.win+' мин'],
-    late:['v-late','Опоздала','Не успела пройти все проверки за '+S.win+' мин — поезд ушёл'],
+  const left=Math.max(0,Math.ceil((c.listedAt+S.win*60e3-Date.now())/60000));
+  const m={pass:['v-pass','✓ Прошла все правила',`Через ${dur((c.passAt-c.listedAt)/60000)} после появления на витрине`],
+    fail:['v-fail','✕ Не прошла','Завалила: '+(c.final?.fails||[]).map(k=>RULE_NAMES[k]||k).join(', ')],
+    nodata:['v-late','? Не успели проверить','За '+S.win+' мин не пришли данные: '+(c.final?.unk||[]).map(k=>RULE_NAMES[k]||k).join(', ')+'. Это не провал правил.'],
     miss:['v-miss','Пропущена','Появилась, пока страница была закрыта — не проверялась вовремя'],
-    wait:c.failNow?['v-fail','✕ Пока не проходит',`Ещё проверяю — окно закроется через ${Math.max(0,Math.ceil((c.listedAt+S.win*60e3-Date.now())/60000))} мин`]
-      :['v-wait','⏳ Проверяю…',inWin?'Жду данные rugcheck / цену появления':'']};
+    manual:['v-wait','Ручная проверка','Окно первых минут не учитывается'],
+    wait:c.failNow?['v-fail','✕ Пока не проходит',`Ещё проверяю — окно закроется через ${left} мин`]
+      :['v-wait','⏳ Проверяю…',`Жду данные · окно закроется через ${left} мин`]};
   const[v,t,s]=m[c.status]||m.miss;return `<div class="verdict ${v}">${t}<small>${s}</small></div>`}
 function fillChecks(c){const box=$('#ckBox');if(!box)return;
   const ck=checks(c);let html=verdictHtml(c);
-  for(const g of [1,2,3,4,5,6,7]){const it=ck.filter(x=>x.g===g);if(!it.length)continue;
-    html+=`<div class="grp"><h4>${GRP[g]}</h4>${it.map(x=>{const[cl,ic]=x.ok==='off'?['off','–']:x.ok===true?['ok','✓']:x.ok===false?['no','✕']:['wt','…'];
-      return `<div class="ck"><i class="${cl}">${ic}</i><div>${esc(x.t)}${x.ok==='off'?' <span style="display:inline">(выключено)</span>':''}<span>${esc(x.d)}</span></div></div>`}).join('')}</div>`}
+  if(c.status==='manual'){const blk=ck.filter(x=>x.sec!=='warn'&&x.st==='fail');
+    html=`<div class="verdict ${blk.length?'v-fail':'v-pass'}">${blk.length?'✕ Сейчас не проходит: '+blk.map(x=>RULE_NAMES[x.k]).join(', '):'✓ Сейчас проходит правила'}<small>Ручная проверка — окно первых минут не учитывается</small></div>`}
+  for(const sec of ['safe','sig','warn']){const it=ck.filter(x=>x.sec===sec);
+    html+=`<div class="grp"><h4>${SECT[sec]}</h4>${it.map(x=>{const[cl,ic]={pass:['ok','✓'],fail:[sec==='warn'?'er':'no',sec==='warn'?'⚠':'✕'],unk:['wt','…'],err:['er','⚠'],na:['off','–'],off:['off','–']}[x.st];
+      return `<div class="ck"><i class="${cl}">${ic}</i><div>${esc(x.t)}${x.st==='off'?' <em class="mut" style="font-style:normal">(выключено)</em>':''}<span>${esc(x.d)}</span></div></div>`}).join('')}</div>`}
   box.innerHTML=html}
 function bindDetail(c){
   const cp=$('#cp');if(cp)cp.onclick=async()=>{try{await navigator.clipboard.writeText(c.addr);cp.textContent='Скопировано'}catch{cp.textContent='Не удалось — выдели адрес выше'}};
   document.querySelectorAll('.seg button[data-src]').forEach(b=>b.onclick=()=>{document.querySelectorAll('.seg button[data-src]').forEach(x=>x.classList.toggle('on',x===b));$('#chart').src=chartUrl(c.pair,b.dataset.src)});
   fillChecks(c)}
 function openCoin(a){const c=C[a];if(!c)return;sheetAddr=a;openSheet(detailHtml(c));bindDetail(c);
-  if(!c.rcLite&&!rcBusy.has(a)){rcBusy.add(a);j(`${RC}/tokens/${a}/report`).then(r=>{c.rcLite=rcLite(r);c.rcAt=Date.now()}).catch(()=>{}).finally(()=>{rcBusy.delete(a);evalAll();render()})}}
+  if(!c.rpc&&!c.rpcBusy){c.rpcBusy=1;rpcCheck(c).catch(e=>{c.rpcErr=e.message}).finally(()=>{c.rpcBusy=0;evalAll();render()})}
+  if(!c.rcTried&&!c.rcBusy){c.rcBusy=1;rcFetch(c).finally(()=>{c.rcBusy=0;evalAll();render()})}}
 
 /* =================== ручная проверка =================== */
-async function manual(addr){addr=addr.trim();if(!addr)return;const out=$('#out');out.innerHTML='<p class="mut" style="margin-top:10px">Проверяю…</p>';
-  if(C[addr]){out.innerHTML='';openCoin(addr);return}
-  const[ds,rc]=await Promise.allSettled([j(`${DS}/tokens/v1/solana/${addr}`),j(`${RC}/tokens/${addr}/report`)]);
-  const ps=ds.status==='fulfilled'?ds.value:[];const r=rc.status==='fulfilled'?rc.value:null;
-  if(!ps.length&&!r){out.innerHTML='<p class="dn" style="margin-top:10px">Не нашёл токен. Проверь адрес.</p>';return}
+async function manual(addr){addr=addr.trim();if(!addr)return;const out=$('#out');
+  if(C[addr]){openCoin(addr);return}
+  out.innerHTML='<p class="mut" style="margin-top:10px">Проверяю…</p>';
+  let ps=[];try{ps=await j(`${DS}/tokens/v1/solana/${addr}`)}catch{}
   const pools=ps.filter(p=>!isCurve(p.dexId)).sort((x,y)=>(y.liquidity?.usd||0)-(x.liquidity?.usd||0));const p=pools[0]||ps[0]||{};
   const created=Math.min(...ps.map(x=>x.pairCreatedAt||Infinity));
-  const c={addr,name:p.baseToken?.name||r?.tokenMeta?.name||'Токен',sym:p.baseToken?.symbol||r?.tokenMeta?.symbol||'',img:p.info?.imageUrl||'',
-    pair:pools[0]?.pairAddress||'',dex:p.dexId||'',listedAt:pools[0]?.pairCreatedAt||created,tokAt:isFinite(created)?created:null,
-    price:+p.priceUsd||0,liq:p.liquidity?.usd||0,mc:p.marketCap||p.fdv||0,b24:p.txns?.h24?.buys||0,s24:p.txns?.h24?.sells||0,v24:p.volume?.h24||0,
-    rcLite:r?rcLite(r):null,status:'manual',spark:[]};
-  out.innerHTML=`<div style="margin-top:10px">${detailHtml(c,true)}</div>`;bindDetail(c);
-  const ck=checks(c).filter(x=>x.on&&x.g!==6);const fail=ck.filter(x=>x.ok===false).length;
-  const vb=$('#ckBox .verdict');if(vb){vb.className='verdict '+(fail?'v-fail':'v-pass');vb.innerHTML=fail?`✕ Завалила ${fail} ${fail===1?'проверку':'проверки'}<small>Подробно ниже</small>`:'✓ Проходит все проверки сейчас<small>Окно «первых минут» для ручной проверки не учитывается</small>'}}
+  const c={addr,name:p.baseToken?.name||'Токен',sym:p.baseToken?.symbol||'',img:p.info?.imageUrl||'',pair:pools[0]?.pairAddress||'',dex:p.dexId||'',
+    listedAt:pools[0]?.pairCreatedAt||created||Date.now(),tokAt:isFinite(created)?created:null,price:+p.priceUsd||0,liq:p.liquidity?.usd||0,mc:p.marketCap||p.fdv||0,
+    b24:p.txns?.h24?.buys||0,s24:p.txns?.h24?.sells||0,v24:p.volume?.h24||0,b5:p.txns?.m5?.buys,s5:p.txns?.m5?.sells,v5:p.volume?.m5,ch5:p.priceChange?.m5,
+    buyers:null,status:'manual',spark:[]};
+  await Promise.allSettled([rpcCheck(c).catch(e=>{c.rpcErr=e.message}),rcFetch(c)]);
+  if(!ps.length&&!c.rpc){out.innerHTML='<p class="dn" style="margin-top:10px">Не нашёл токен. Проверь адрес.</p>';return}
+  out.innerHTML=`<div style="margin-top:10px">${detailHtml(c)}</div>`;bindDetail(c)}
 $('#go').onclick=()=>manual($('#addr').value);$('#addr').onkeydown=e=>{if(e.key==='Enter')manual(e.target.value)};
 
 /* =================== история прошедших =================== */
-const HOFF=[15,30,60,120,180,300];
-const H=sget('sc_hist',{}); // адрес -> {pts:[[t,o,h,l,c]], at}
+const HOFF=[15,30,60,120,180,300],TGT=[1.5,2,3];
+const H=sget('sc_hist2',{});
 function histCoins(){return Object.values(C).filter(c=>c.status==='pass'&&c.pair)}
-function fetchHist(){const now=Date.now();
-  histCoins().forEach(c=>{const h=H[c.addr];const done=h&&h.pts.length&&h.pts[h.pts.length-1][0]>=c.listedAt+5*3600e3-60e3;
-    if(done||(h&&now-h.at<180e3)||c._hq)return;c._hq=1;
-    gt(`/pools/${c.pair}/ohlcv/minute?aggregate=1&limit=1000&currency=usd`,6).then(r=>{
-      const l=(r.data?.attributes?.ohlcv_list||[]).map(k=>[k[0]*1000,+k[1],+k[2],+k[3],+k[4]]).filter(k=>k[0]>=c.listedAt-60e3&&k[0]<=c.listedAt+5*3600e3).sort((a,b)=>a[0]-b[0]);
-      H[c.addr]={pts:l,at:Date.now()};sset('sc_hist',H);if(tab==='hist')renderHist()}).catch(()=>{}).finally(()=>{c._hq=0})})}
+function fetchHist(){histCoins().forEach(c=>{const h=H[c.addr];
+  const done=h&&h.pts.length&&h.pts[h.pts.length-1][0]>=c.listedAt+5*3600e3-60e3;
+  if(done||(h&&Date.now()-h.at<240e3)||c._hq)return;c._hq=1;
+  gt(`/pools/${c.pair}/ohlcv/minute?aggregate=1&limit=1000&currency=usd`,6).then(r=>{
+    const l=(r.data?.attributes?.ohlcv_list||[]).map(k=>[k[0]*1000,+k[1],+k[2],+k[3],+k[4]]).filter(k=>k[0]>=c.listedAt-60e3&&k[0]<=c.listedAt+5*3600e3).sort((a,b)=>a[0]-b[0]);
+    H[c.addr]={pts:l,at:Date.now()};sset('sc_hist2',H);if(tab==='hist')renderHist()}).catch(()=>{}).finally(()=>{c._hq=0})})}
 setInterval(()=>{if(tab==='hist')fetchHist()},60000);
 function entryOf(c){const h=H[c.addr];if(!h||!h.pts.length)return null;const te=c.passAt+S.delay*60e3;
-  let k=h.pts.find(p=>p[0]>=te);if(!k)return null;return{te,p0:k[4]||k[1]}}
+  const k=h.pts.find(p=>p[0]>=te);if(!k)return null;return{te,p0:k[4]||k[1]}}
 function xAt(c,min){const h=H[c.addr],e=entryOf(c);if(!e)return null;const t=e.te+min*60e3;
-  if(h.pts[h.pts.length-1][0]<t-90e3)return null;let best=null;for(const p of h.pts){if(p[0]<=t)best=p;else break}return best?best[4]/e.p0:null}
-function peakOf(c){const h=H[c.addr],e=entryOf(c);if(!e)return null;let mx=0,mt=0;for(const p of h.pts)if(p[0]>=e.te&&p[2]>mx){mx=p[2];mt=p[0]}
-  return mx?{x:mx/e.p0,min:(mt-e.te)/60000}:null}
-const med=a=>{if(!a.length)return null;const s=a.slice().sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
-const avg=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:null;
+  if(h.pts[h.pts.length-1][0]<t-90e3)return null;let b=null;for(const p of h.pts){if(p[0]<=t)b=p;else break}return b?b[4]/e.p0:null}
+function pathOf(c){const h=H[c.addr],e=entryOf(c);if(!e)return null;let mx=0,mt=0,mn=Infinity;const hit={};
+  for(const p of h.pts){if(p[0]<e.te)continue;if(p[2]>mx){mx=p[2];mt=p[0]}if(p[3]<mn)mn=p[3];
+    TGT.forEach(x=>{if(hit[x]==null&&p[2]>=x*e.p0)hit[x]=(p[0]-e.te)/60000})}
+  return mx?{peak:mx/e.p0,peakMin:(mt-e.te)/60000,dd:isFinite(mn)?(1-mn/e.p0)*100:null,hit}:null}
 function renderHist(){
   fetchHist();const cs=histCoins().sort((a,b)=>b.passAt-a.passAt);const box=$('#hist');
-  if(!cs.length){box.innerHTML=`<div class="empty">Здесь будут монеты, прошедшие проверку, и что с ними стало за первые 5 часов.<br>Зелёная зона на графике — момент прохождения + ${S.delay} мин на покупку.</div>`;return}
-  // сводка
+  if(!cs.length){box.innerHTML=`<div class="empty">Здесь будут монеты, прошедшие правила, и что с ними стало за первые 5 часов.<br>Зелёная зона на графике — момент прохождения + ${S.delay} мин на покупку.</div>`;return}
   let rows='';for(const m of HOFF){const v=cs.map(c=>xAt(c,m)).filter(x=>x!=null);
     rows+=`<tr><td>через ${dur(m)}</td><td>${v.length}</td><td class="${avg(v)>=1?'up':'dn'}">${xf(avg(v))}</td><td class="${med(v)>=1?'up':'dn'}">${xf(med(v))}</td><td>${v.length?Math.round(v.filter(x=>x>=1).length/v.length*100)+'%':'—'}</td></tr>`}
-  const pk=cs.map(peakOf).filter(Boolean);
+  const ps=cs.map(pathOf).filter(Boolean);
+  let hrows='';TGT.forEach(x=>{const t=ps.map(p=>p.hit[x]).filter(v=>v!=null);
+    hrows+=`<tr><td>дошли до ×${x}</td><td>${ps.length?Math.round(t.length/ps.length*100)+'%':'—'}</td><td>${t.length?'~'+dur(med(t)):'—'}</td></tr>`});
   box.innerHTML=`<div class="agg big"><h3>Сводка по ${cs.length} прошедшим</h3>
-    <p class="mut" style="margin:0;font-size:12px">Вход = прохождение проверки + ${S.delay} мин. ×1 = цена входа. Средний пик: <b class="up">${xf(avg(pk.map(p=>p.x)))}</b> через ~${pk.length?dur(avg(pk.map(p=>p.min))):'—'}</p>
+    <p class="mut" style="margin:0;font-size:12px">Вход = прохождение правил + ${S.delay} мин. ×1 = цена входа.<br>Средний пик <b class="up">${xf(avg(ps.map(p=>p.peak)))}</b> через ~${ps.length?dur(avg(ps.map(p=>p.peakMin))):'—'} · средняя макс. просадка <b class="dn">${ps.length?'−'+Math.round(avg(ps.map(p=>p.dd).filter(x=>x!=null)))+'%':'—'}</b></p>
     ${overlaySvg(cs)}
-    <div class="tbl"><table><tr><th>После входа</th><th>монет</th><th>среднее</th><th>медиана</th><th>в плюсе</th></tr>${rows}</table></div></div>
+    <div class="tbl"><table><tr><th>После входа</th><th>монет</th><th>среднее</th><th>медиана</th><th>в плюсе</th></tr>${rows}</table></div>
+    <div class="tbl"><table><tr><th>Цель (за 5 ч)</th><th>доля монет</th><th>обычно через</th></tr>${hrows}</table></div></div>
     <div class="sec-h">Каждая монета · первые 5 ч с витрины</div>
-    ${cs.map(c=>{const p=peakOf(c),now=xAt(c,Math.max(0,Math.min(300,(Date.now()-c.passAt)/60000-S.delay-1)));
+    ${cs.map(c=>{const p=pathOf(c);const nowX=xAt(c,Math.max(0,Math.min(300,(Date.now()-c.passAt)/60000-S.delay-1)));
       return `<div class="hcard" data-a="${c.addr}"><div class="hh">${avHtml(c)}<div class="mid" style="flex:1"><div class="nm">${esc(c.name)}<span>${esc(c.sym)}</span></div>
-      <div class="l2">прошла через ${dur((c.passAt-c.listedAt)/60000)} · пик <span class="up">${p?xf(p.x):'—'}</span>${p?' через '+dur(p.min):''} · сейчас <span class="${(now||0)>=1?'up':'dn'}">${xf(now)}</span></div></div></div>
+      <div class="l2">пик <span class="up">${p?xf(p.peak):'—'}</span>${p?' через '+dur(p.peakMin):''} · просадка <span class="dn">${p&&p.dd!=null?'−'+Math.round(p.dd)+'%':'—'}</span> · сейчас <span class="${(nowX||0)>=1?'up':'dn'}">${xf(nowX)}</span></div></div></div>
       ${coinSvg(c)}</div>`}).join('')}`;
   box.querySelectorAll('.hcard').forEach(e=>e.onclick=()=>openCoin(e.dataset.a))}
 function coinSvg(c){const h=H[c.addr];const W=360,Hh=90;
@@ -606,39 +668,51 @@ function overlaySvg(cs){const W=360,Hh=220,M=300;const series=[];
   return `<svg viewBox="0 0 ${W} ${Hh}">${g}<rect x="28" y="8" width="4" height="${Hh-28}" fill="var(--up)" opacity=".35"/>${lines}${md?`<path d="${md}" fill="none" stroke="var(--up)" stroke-width="2.4"/>`:''}
     <text x="${W-4}" y="18" fill="var(--up)" font-size="10" text-anchor="end" font-family="monospace">— медиана</text></svg>`}
 
-/* =================== фильтры =================== */
-$('#fFresh').onclick=()=>{S.f_fresh=!S.f_fresh;sset('sc_set',S);render()};
-$('#fScam').onclick=()=>{S.f_scam=!S.f_scam;sset('sc_set',S);render()};
-$('#fLiq').onclick=()=>{const L=[0,1000,5000,20000];S.f_liq=L[(L.indexOf(S.f_liq)+1)%L.length];sset('sc_set',S);render()};
-
 /* =================== правила =================== */
 const RULES=[
- {n:0,t:'Окно первых минут',tg:null,text:()=>`У монеты есть <em>${S.win} мин</em> с появления пула, чтобы пройти все правила.`,why:'Не успела — «опоздала», поезд ушёл.',sl:[['win',3,60,1,v=>v+' мин']]},
- {n:1,t:'Контракт',tg:['c_mint','c_freeze','c_lock'],text:()=>`Создатель <b>не может</b> допечатать монеты, заморозить твои или забрать деньги из пула (заблокировано не меньше <em>${S.lockMin}%</em> пула).`,why:'Если может — тебя кинут, даже если всё остальное хорошо.',sl:[['lockMin',50,100,5,v=>v+'% пула']]},
- {n:2,t:'Нарисованная капа',tg:['c_paint'],text:()=>`В пуле должно быть хотя бы <em>${S.liqMcMin}%</em> от капы.`,why:'Капа $100K, а в пуле $3K — цифра ненастоящая, при продажах цена рухнет.',sl:[['liqMcMin',2,50,1,v=>v+'% от капы']]},
- {n:3,t:'Боты',tg:['c_bot'],text:()=>`Средняя покупка не меньше <em>$${S.avgMin}</em>, и продаж хотя бы <em>${S.sellMin}%</em> от покупок.`,why:'Сотни покупок по $0.30 и никто не продаёт — накрутка ботами.',sl:[['avgMin',0.5,20,0.5,v=>'покупка $'+v],['sellMin',0,50,1,v=>'продаж '+v+'%']]},
- {n:4,t:'Держатели',tg:['c_hold'],text:()=>`10 крупнейших кошельков держат не больше <em>${S.top10Max}%</em>, связанные с создателем — не больше <em>${S.insMax}%</em>, сам создатель — не больше <em>${S.devMax}%</em>.`,why:'Если монету держат несколько человек — один их слив обвалит цену.',sl:[['top10Max',10,80,1,v=>'топ-10: '+v+'%'],['insMax',0,60,1,v=>'связанные: '+v+'%'],['devMax',0,30,0.5,v=>'создатель: '+v+'%']]},
- {n:5,t:'Деньги в пуле',tg:['c_liq'],text:()=>`В пуле минимум <em>${money(S.liqMin)}</em>.`,why:'Мало денег — твоя же продажа уронит цену.',sl:[['liqMin',500,100000,500,v=>money(v)]]},
- {n:6,t:'Уже улетела',tg:['c_pump'],text:()=>`С момента появления цена выросла не больше чем в <em>×${S.pumpMax}</em>.`,why:'Выросла сильнее до твоего входа — ты опоздал на памп.',sl:[['pumpMax',1.2,20,0.1,v=>'×'+v]]},
- {n:7,t:'Клон',tg:['c_clone'],text:()=>'Монета с таким же названием ещё <b>не появлялась</b>.',why:'Скамеры запускают одно имя по несколько раз (три Muse, две Charge AI).'},
- {n:'⏱',t:'Время',tg:null,text:()=>`Хранить ленту <em>${S.keepH} ч</em>. На покупку тебе нужно <em>${S.delay} мин</em> — от этого момента считается вход в Истории. Лента обновляется каждые <em>${S.poll} сек</em>.`,why:'Обновлять чаще — быстрее видно новые, но API может начать резать.',sl:[['keepH',1,24,1,v=>'хранить '+v+' ч'],['delay',0,10,0.5,v=>'на покупку '+v+' мин'],['poll',8,60,1,v=>'обновлять '+v+' сек']]}];
+ {h:'Окно первых минут'},
+ {n:'⏱',t:'Окно первых минут',k:null,tg:null,text:()=>`У монеты есть <em>${S.win} мин</em> с появления пула, чтобы пройти все правила. Если данные не пришли вовремя — это «нет данных», а не провал.`,why:'Не успела — поезд ушёл.',sl:[['win',3,30,1,v=>v+' мин']]},
+ {h:'Безопасность — обязательно'},
+ {n:1,t:'Контракт',k:'contract',tg:['c_contract'],text:()=>'Создатель <b>не может</b> допечатать монеты или заморозить твои. Нет скрытых функций Token-2022: комиссии на перевод, перехвата переводов, вечного делегата. Проверяется прямо в блокчейне.',why:'Если может — тебя кинут, даже если всё остальное хорошо.'},
+ {n:2,t:'Кит',k:'owner',tg:['c_owner'],text:()=>`Ни один владелец (кроме пула) не держит больше <em>${S.ownerMax}%</em> монет. Счета одного владельца складываются.`,why:'Один крупный кошелёк может слить всё разом.',sl:[['ownerMax',3,50,1,v=>v+'%']]},
+ {n:3,t:'Дев',k:'dev',tg:['c_dev'],text:()=>`Создатель держит не больше <em>${S.devMax}%</em>. Если данных о создателе нет — правило пропускается.`,why:'Дев с большой долей обычно продаёт первым.',sl:[['devMax',0,30,0.5,v=>v+'%']]},
+ {n:4,t:'Деньги в пуле',k:'liq',tg:['c_liq'],text:()=>`В пуле минимум <em>${money(S.liqMin)}</em>.`,why:'При $5K в пуле на каждую сторону всего ~$2.5K — даже небольшая продажа сильно двигает цену.',sl:[['liqMin',1000,50000,500,v=>money(v)]]},
+ {n:5,t:'Лок пула',k:'lock',tg:['c_lock'],text:()=>`Для Raydium/Meteora заблокировано не меньше <em>${S.lockMin}%</em> пула. PumpSwap проходит автоматически — там пул сжигается при миграции.`,why:'Если пул не заблокирован, создатель может забрать деньги из него.',sl:[['lockMin',50,100,5,v=>v+'%']]},
+ {h:'Сигналы для входа'},
+ {n:6,t:'Давление покупок',k:'press',tg:['c_press'],text:()=>`За последние 5 мин покупок в <em>×${S.pressMin}</em> больше, чем продаж.`,why:'Покупают сильнее, чем продают — спрос есть прямо сейчас.',sl:[['pressMin',0.5,3,0.1,v=>'×'+v]]},
+ {n:7,t:'Живой объём',k:'vol5',tg:['c_vol5'],text:()=>`Объём торгов за 5 мин не меньше <em>${money(S.vol5Min)}</em>.`,why:'Монета реально торгуется, а не стоит.',sl:[['vol5Min',0,20000,250,v=>money(v)]]},
+ {n:8,t:'Покупатели',k:'buyers',tg:['c_buyers'],text:()=>`С момента появления купили минимум <em>${S.buyersMin}</em> разных кошельков.`,why:'Много сделок от пары кошельков — это боты. Важно количество людей.',sl:[['buyersMin',0,200,5,v=>v+' кошельков']]},
+ {n:9,t:'Не сливают',k:'dd',tg:['c_dd'],text:()=>`Цена не упала больше чем на <em>${S.ddMax}%</em> от своего пика с момента появления.`,why:'Если уже идёт слив — не лезь под него.',sl:[['ddMax',10,80,5,v=>v+'%']]},
+ {h:'Предупреждения — показываются, но не блокируют'},
+ {n:'⚠',t:'Инсайдеры',k:null,tg:['w_ins'],text:()=>`Связанные с созданием кошельки держат больше <em>${S.insMax}%</em>.`,why:'Оценка rugcheck неточная, поэтому только предупреждение.',sl:[['insMax',0,60,1,v=>v+'%']]},
+ {n:'⚠',t:'Топ-10',k:null,tg:['w_top10'],text:()=>`10 крупнейших владельцев держат больше <em>${S.top10Max}%</em>.`,why:'На старте это нормально, но стоит знать.',sl:[['top10Max',10,80,1,v=>v+'%']]},
+ {n:'⚠',t:'Уже улетела',k:null,tg:['w_pump'],text:()=>`С момента появления цена выросла больше чем в <em>×${S.pumpMax}</em>.`,why:'Можешь войти на хаях.',sl:[['pumpMax',1.2,20,0.1,v=>'×'+v]]},
+ {n:'⚠',t:'Клон',k:null,tg:['w_clone'],text:()=>'Монета с таким же названием уже появлялась.',why:'Часто скам, но не всегда.'},
+ {h:'Время'},
+ {n:'⏱',t:'Лента и история',k:null,tg:null,text:()=>`Хранить ленту <em>${S.keepH} ч</em>. На покупку тебе нужно <em>${S.delay} мин</em> — от этого момента считается вход в Истории. Новые пары проверяются каждые <em>${S.poll} сек</em>.`,why:'GeckoTerminal даёт бесплатно только 10 запросов в минуту, поэтому чаще 20 сек нельзя.',sl:[['keepH',1,24,1,v=>v+' ч'],['delay',0,10,0.5,v=>v+' мин'],['poll',20,90,5,v=>v+' сек']]}];
 let saveT=0;
 function saveRules(){clearTimeout(saveT);saveT=setTimeout(()=>{sset('sc_set',S);evalAll();render()},400)}
+function updRuleCounts(){const st=stats();
+  const s=$('#rulesSum');if(s)s.innerHTML=`<div class="sum"><div><b>${st.found}</b><small>найдено</small></div><div><b class="up">${st.pass}</b><small>прошли</small></div><div><b class="dn">${st.fail}</b><small>завалили</small></div><div><b class="warn">${st.nodata}</b><small>нет данных</small></div><div><b style="color:var(--acc)">${st.wait}</b><small>проверяю</small></div><div><b class="mut">${st.miss}</b><small>пропущено</small></div></div>
+    <p class="mut" style="font-size:11px;margin:6px 0 0">Из-за ошибок API: ${st.api}. Счёт по монетам, у которых окно уже закрылось (${st.fin}).</p>`;
+  document.querySelectorAll('[data-cnt]').forEach(e=>{const r=st.rule[e.dataset.cnt];
+    e.innerHTML=st.fin?`Завалили <b>${r?.all||0}</b> из ${st.fin} (${Math.round((r?.all||0)/st.fin*100)}%) · первым правилом: <b>${r?.first||0}</b>`:'Счётчик появится, когда закроется окно у первых монет'})}
 function renderRules(){
-  $('#rulesHead').innerHTML=`Монета попадает в «Прошли», только если прошла ВСЕ включённые правила за первые <b style="color:var(--fg)">${S.win} мин</b>. Меняется сразу.`;
-  $('#rules').innerHTML=RULES.map((r,i)=>{const on=!r.tg||r.tg.every(k=>S[k]);
+  $('#rulesHead').innerHTML=`В «Прошли» попадает монета, которая прошла ВСЕ включённые правила безопасности и сигналы за первые <b style="color:var(--fg)">${S.win} мин</b>. Меняется сразу.`;
+  $('#rules').innerHTML='<div id="rulesSum"></div>'+RULES.map((r,i)=>{if(r.h)return `<div class="sec-h">${r.h}</div>`;const on=!r.tg||r.tg.every(k=>S[k]);
     return `<div class="rule${on?'':' off'}" data-i="${i}"><div class="rh"><h3>${typeof r.n==='number'?r.n+'. ':r.n+' '}${r.t}</h3>${r.tg?`<button class="tg${on?'':' off'}" aria-label="Включить правило"></button>`:''}</div>
-    <p class="rtx">${r.text()}</p><div class="why">${r.why}</div>
+    <p class="rtx">${r.text()}</p><div class="why">${r.why}</div>${r.k?`<div class="rcnt" data-cnt="${r.k}"></div>`:''}
     ${(r.sl||[]).map(([k,mn,mx,st,f])=>`<div class="slw"><div class="sll"><b data-l="${k}">${f(S[k])}</b><span>${f(mn)} … ${f(mx)}</span></div><input type="range" id="r_${k}" data-k="${k}" min="${mn}" max="${mx}" step="${st}" value="${S[k]}"></div>`).join('')}</div>`}).join('');
   $('#rules').querySelectorAll('.rule').forEach(el=>{const r=RULES[+el.dataset.i];
     const tg=el.querySelector('.tg');if(tg)tg.onclick=()=>{const on=!r.tg.every(k=>S[k]);r.tg.forEach(k=>S[k]=on);el.classList.toggle('off',!on);tg.classList.toggle('off',!on);saveRules()};
     el.querySelectorAll('input[type=range]').forEach(inp=>inp.oninput=()=>{const k=inp.dataset.k;S[k]=+inp.value;
       const f=r.sl.find(x=>x[0]===k)[4];el.querySelector(`[data-l="${k}"]`).textContent=f(S[k]);el.querySelector('.rtx').innerHTML=r.text();
-      if(k==='win')$('#rulesHead b').textContent=S.win+' мин';saveRules()})})}
+      if(k==='win')$('#rulesHead b').textContent=S.win+' мин';saveRules()})});
+  updRuleCounts()}
 
 /* =================== старт =================== */
-evalAll();render();boot();rcLoop();setTimeout(pollDS,4000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){pollDS()}});
+evalAll();render();boot();rcLoop();rpcLoop();setTimeout(pollDS,4000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollDS()});
 </script>
 </body>
 </html>
