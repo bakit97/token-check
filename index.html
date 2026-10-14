@@ -231,7 +231,8 @@ const SKIPTOK=new Set(['So11111111111111111111111111111111111111112','EPjFWdd5Au
 const isCurve=d=>/pump-?fun/i.test(d||'')&&!/swap/i.test(d||'');
 const isPumpSwap=d=>/pump-?swap/i.test(d||'');
 // владельцы, которые являются пулами/сжиганием, а не людьми
-const POOL_AUTH=new Set(['5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1','GpMZbSM2GgvTKHJirzeGfMFoaZ8UR2X7F4v8vHTvxFbL','1nc1nerator11111111111111111111111111111111','11111111111111111111111111111111']);
+const SYS='11111111111111111111111111111111';
+const POOL_AUTH=new Set(['5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1','GpMZbSM2GgvTKHJirzeGfMFoaZ8UR2X7F4v8vHTvxFbL','HLnpSz9h2S4hiLQ43rnSD9XkcUThA7B8hQMKmDaiTLcC','FhVo3mqL8PW5pH5U2CN4XE33DokiyZnUwuGpH2hmHLuM','1nc1nerator11111111111111111111111111111111','11111111111111111111111111111111']);
 const T22='TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
 const med=a=>{if(!a.length)return null;const s=a.slice().sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
 const avg=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:null;
@@ -266,9 +267,9 @@ function gt(path,prio=5){return new Promise((res,rej)=>{gtQ.push({path,prio,res,
   await sleep(6200)}})();
 let rpcI=0,rpcErr='';
 async function rpc(method,params){let last;const list=S.helius?['https://mainnet.helius-rpc.com/?api-key='+encodeURIComponent(S.helius.trim()),...RPCS]:RPCS;
-  for(let t=0;t<list.length;t++){const url=list[(rpcI+t)%list.length];
+  const start=S.helius?0:rpcI;for(let t=0;t<list.length;t++){const url=list[(start+t)%list.length];
     try{const d=await j(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
-      if(d.error)throw new Error(d.error.message||'ошибка RPC');rpcI=(rpcI+t)%list.length;rpcErr='';return d.result}
+      if(d.error)throw new Error(d.error.message||'ошибка RPC');if(!S.helius)rpcI=(start+t)%list.length;rpcErr='';return d.result}
     catch(e){last=e}}
   rpcErr=last?.message||'RPC';throw last}
 
@@ -342,7 +343,7 @@ function applyDS(ps){
     const created=Math.min(...arr.map(p=>p.pairCreatedAt||Infinity));if(isFinite(created)&&(!c.tokAt||created<c.tokAt))c.tokAt=created;
     const pools=arr.filter(p=>!isCurve(p.dexId));if(!pools.length)return;
     const p=pools.sort((x,y)=>(y.liquidity?.usd||0)-(x.liquidity?.usd||0))[0];const prev=c.price;
-    Object.assign(c,{price:+p.priceUsd||c.price,liq:p.liquidity?.usd??c.liq,mc:p.marketCap||p.fdv||c.mc,
+    Object.assign(c,{price:+p.priceUsd||c.price,liq:(p.liquidity?.usd>0?p.liquidity.usd:c.liq),mc:p.marketCap||p.fdv||c.mc,
       b24:p.txns?.h24?.buys??c.b24,s24:p.txns?.h24?.sells??c.s24,v24:p.volume?.h24??c.v24,
       ch5:p.priceChange?.m5??c.ch5,ch1:p.priceChange?.h1??c.ch1,b5:p.txns?.m5?.buys??c.b5,s5:p.txns?.m5?.sells??c.s5,v5:p.volume?.m5??c.v5,
       soc:(p.info?.socials||[]).length+(p.info?.websites||[]).length,dsAt:Date.now()});
@@ -380,8 +381,12 @@ async function rpcCheck(c){
   let owners=[];
   if(accs.length){const ma=await rpc('getMultipleAccounts',[accs.map(a=>a.address),{encoding:'jsonParsed'}]);
     const by={};accs.forEach((a,i)=>{const own=ma?.value?.[i]?.data?.parsed?.info?.owner||a.address;by[own]=(by[own]||0)+(+a.uiAmount)});
+    // владелец-программа (пул, кривая pump.fun, хранилище) — не кит. Кит = обычный кошелёк (System Program)
+    const ownList=Object.keys(by);let prog=new Set();
+    try{const oa=await rpc('getMultipleAccounts',[ownList,{encoding:'base64',dataSlice:{offset:0,length:0}}]);
+      ownList.forEach((o,i)=>{const v=oa?.value?.[i];if(v&&v.owner&&v.owner!==SYS)prog.add(o)})}catch{}
     const poolTok=c.liq&&c.price?c.liq/2/c.price:null;
-    owners=Object.entries(by).filter(([o,amt])=>!(o===c.pair||POOL_AUTH.has(o)||(poolTok&&Math.abs(amt-poolTok)/poolTok<0.25)))
+    owners=Object.entries(by).filter(([o,amt])=>!(o===c.pair||POOL_AUTH.has(o)||prog.has(o)||(poolTok&&Math.abs(amt-poolTok)/poolTok<0.25)))
       .map(([o,amt])=>({o,p:supply?amt/supply*100:0})).sort((a,b)=>b.p-a.p)}
   c.rpc={at:Date.now(),is22,mint:!!info.mintAuthority,freeze:!!info.freezeAuthority,bad,
     maxOwner:owners[0]?.p||0,maxOwnerAddr:owners[0]?.o||'',top10:owners.slice(0,10).reduce((s,x)=>s+x.p,0)};
