@@ -281,10 +281,15 @@ const PUMP='6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
 const bondingCurveOf=mint=>findPDA([new TextEncoder().encode('bonding-curve'),b58dec(mint)],PUMP);
 // канонический пул PumpSwap, в который pump.fun переносит монету при миграции (LP сжигаются)
 const PUMP_AMM='pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA',WSOL='So11111111111111111111111111111111111111112';
-async function canonicalPoolOf(mint){const te=new TextEncoder();
+const USDC='EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+async function canonicalPoolOf(mint,quote=WSOL){const te=new TextEncoder();
   const auth=await findPDA([te.encode('pool-authority'),b58dec(mint)],PUMP);
-  return findPDA([te.encode('pool'),new Uint8Array([0,0]),b58dec(auth),b58dec(mint),b58dec(WSOL)],PUMP_AMM)}
+  return findPDA([te.encode('pool'),new Uint8Array([0,0]),b58dec(auth),b58dec(mint),b58dec(quote)],PUMP_AMM)}
+// пул канонический, если совпал с адресом миграции в SOL или в USDC
+async function isCanonical(mint,pair){for(const q of [WSOL,USDC]){if((await canonicalPoolOf(mint,q))===pair)return true}return false}
 
+// картинка не загрузилась → кружок с буквами (без inline-JS, безопасно)
+document.addEventListener('error',e=>{const t=e.target;if(t.tagName==='IMG'&&t.dataset.ph!=null){const d=document.createElement('div');d.className=t.className+' ph';d.textContent=t.dataset.ph;t.replaceWith(d)}},true);
 /* =================== память =================== */
 const mem={};let storeOk=true;
 function sget(k,d){try{const v=localStorage.getItem(k);if(v!=null)return JSON.parse(v)}catch{storeOk=false}return k in mem?mem[k]:d}
@@ -391,7 +396,7 @@ function applyDS(ps){
   Object.entries(by).forEach(([a,arr])=>{const c=C[a];
     const cv=arr.filter(p=>isCurve(p.dexId)&&p.pairCreatedAt).map(p=>p.pairCreatedAt);if(cv.length)c.curveAt=Math.min(...cv);
     const created=Math.min(...arr.map(p=>p.pairCreatedAt||Infinity));if(isFinite(created)&&(!c.tokAt||created<c.tokAt))c.tokAt=created;
-    const pools=arr.filter(p=>!isCurve(p.dexId));if(!pools.length)return;
+    const pools=arr.filter(p=>!isCurve(p.dexId));c.pairs=[...new Set([...(c.pairs||[]),...arr.map(p=>p.pairAddress).filter(Boolean)])];if(!pools.length)return;
     const p=pools.find(x=>x.pairAddress===c.pair)||pools.sort((x,y)=>(y.liquidity?.usd||0)-(x.liquidity?.usd||0))[0];const prev=c.price;
     Object.assign(c,{price:+p.priceUsd||c.price,liq:(p.liquidity?.usd>0?p.liquidity.usd:c.liq),mc:p.marketCap||p.fdv||c.mc,
       b24:p.txns?.h24?.buys??c.b24,s24:p.txns?.h24?.sells??c.s24,v24:p.volume?.h24??c.v24,
@@ -419,7 +424,7 @@ function wantOhlcv(a){if(ohlcvWant.has(a))return;const c=C[a];if(!c?.pair)return
 //  • контракт, кривая, supply не меняются — запрашиваются один раз
 //  • держатели обновляются раз в 90 сек и только пока монета может пройти
 async function rpcCheck(c){
-  if(isPumpSwap(c.dex)&&c.pair&&!c.st){let canon=null;try{canon=(await canonicalPoolOf(c.addr))===c.pair}catch{canon=false}
+  if(S.c_lock&&isPumpSwap(c.dex)&&c.pair&&!c.st){let canon=null;try{canon=await isCanonical(c.addr,c.pair)}catch{canon=false}
     if(canon===false){c.st={canon:false,skip:true};c.rpc={at:Date.now(),skip:true,canon:false};c.rpcErr='';rpcUsed(0);return}}
   if(!c.st){
     const mi=await rpc('getAccountInfo',[c.addr,{encoding:'jsonParsed'}]);rpcUsed(1);
@@ -434,24 +439,24 @@ async function rpcCheck(c){
       if(/pausable/i.test(e.extension))bad.push('можно поставить на паузу')});
     const dec=+info.decimals||0,supply=(+info.supply||0)/10**dec;
     let bc=null,canon=null;
-    if(isPumpSwap(c.dex)){canon=true; // сюда доходят только канонические пулы
+    if(isPumpSwap(c.dex)){try{canon=c.pair?await isCanonical(c.addr,c.pair):null}catch{canon=null}
       if(Math.abs(supply-1e9)>1||dec!==6)bc='none';
       else{let bca=null;try{bca=await bondingCurveOf(c.addr)}catch{}
         if(!bca)bc='none';else{const ai=await rpc('getAccountInfo',[bca,{encoding:'base64'}]);rpcUsed(1);const v2=ai?.value;
           if(!v2||v2.owner!==PUMP)bc='none';else{const raw=atob(v2.data?.[0]||'');bc=raw.length>48&&raw.charCodeAt(48)===1?'complete':'open'}}}}
     c.st={is22,supply,dec,bc,canon,mint:!!info.mintAuthority,freeze:!!info.freezeAuthority,bad}}
   const st=c.st;let owners=[];
-  const hard=st.mint||st.freeze||st.bad.length||(isPumpSwap(c.dex)&&st.bc!=='complete');
+  const hard=st.mint||st.freeze||st.bad.length||(S.c_lock&&isPumpSwap(c.dex)&&(st.bc!=='complete'||st.canon===false));
   if(!hard){ // держателей смотрим, только если монета ещё может пройти
     const la=await rpc('getTokenLargestAccounts',[c.addr]);rpcUsed(1);
     const accs=(la?.value||[]).filter(a=>+a.uiAmount>0);
     if(accs.length){const ma=await rpc('getMultipleAccounts',[accs.map(a=>a.address),{encoding:'jsonParsed'}]);rpcUsed(1);
       const by={};accs.forEach((a,i)=>{const own=ma?.value?.[i]?.data?.parsed?.info?.owner||a.address;by[own]=(by[own]||0)+(+a.uiAmount)});
+      let bcPda=null;try{bcPda=await bondingCurveOf(c.addr)}catch{}
+      const poolSet=new Set([c.pair,...(c.pairs||[]),bcPda].filter(Boolean));
       // владелец-программа (пул, кривая pump.fun, хранилище) — не кит; кит = обычный кошелёк
-      const ownList=Object.keys(by);c.prog=c.prog||{};const need=ownList.filter(o=>!(o in c.prog));
-      if(need.length){try{const oa=await rpc('getMultipleAccounts',[need,{encoding:'base64',dataSlice:{offset:0,length:0}}]);rpcUsed(1);
-        need.forEach((o,i)=>{const v=oa?.value?.[i];c.prog[o]=!!(v&&v.owner&&v.owner!==SYS)})}catch{}}
-      owners=Object.entries(by).filter(([o])=>!(o===c.pair||POOL_AUTH.has(o)||c.prog[o]))
+      // исключаем только пулы этой монеты, кривую pump.fun и известные хранилища DEX; прочие программы считаются держателями
+      owners=Object.entries(by).filter(([o])=>!(poolSet.has(o)||POOL_AUTH.has(o)))
         .map(([o,amt])=>({o,p:st.supply?amt/st.supply*100:0})).sort((a,b)=>b.p-a.p)}}
   c.rpc={at:Date.now(),...st,holders:!hard,maxOwner:owners[0]?.p||0,maxOwnerAddr:owners[0]?.o||'',top10:owners.slice(0,10).reduce((s,x)=>s+x.p,0)};
   c.rpcErr='';
@@ -467,13 +472,13 @@ async function rpcLoop(){for(;;){
 
 /* --- rugcheck: дев, инсайдеры, лок пула (не блокирует, если нет данных) --- */
 async function rcFetch(c){c.rcTry=Date.now();
-  try{const r=await j(`${RC}/tokens/${c.addr}/report`);c.rcLite=rcLite(r);c.rcErr=''}
+  try{const r=await j(`${RC}/tokens/${c.addr}/report`);c.rcLite=rcLite(r,c.pair);c.rcErr=''}
   catch(e){c.rcErr=e.message;if(e.rl)await sleep(10000)}
   c.rcTried=true}
 async function rcLoop(){for(;;){
   const c=Object.values(C).filter(c=>c.status==='wait'&&inWin(c)&&(!c.rcTry||Date.now()-c.rcTry>60000)).sort((a,b)=>b.listedAt-a.listedAt)[0];
   if(c){await rcFetch(c);evalAll();render();await sleep(2000)}else await sleep(1500)}}
-function rcLite(r){
+function rcLite(r,pair){
   const pools=new Set();(r.markets||[]).forEach(m=>[m.pubkey,m.liquidityAAccount,m.liquidityBAccount,m.lp?.lpMint].forEach(x=>x&&pools.add(x)));
   const hs=(r.topHolders||[]).filter(h=>!pools.has(h.address)&&!pools.has(h.owner));
   const sup=Number(r.token?.supply)||0;
@@ -482,7 +487,7 @@ function rcLite(r){
     risk22:(r.risks||[]).filter(x=>/transfer fee|permanent delegate|transfer hook|non.?transferable/i.test(x.name||'')).map(x=>x.name),
     ins:hs.filter(h=>h.insider).reduce((s,h)=>s+(h.pct||0),0),
     dev:sup&&r.creatorBalance!=null?(Number(r.creatorBalance)||0)/sup*100:null,
-    lock:(r.markets||[]).length?Math.max(0,...r.markets.map(m=>m.lp?.lpLockedPct||0)):null,rugged:!!r.rugged}}
+    lock:(()=>{const m=(r.markets||[]).find(m=>m.pubkey===pair);return m?(m.lp?.lpLockedPct||0):null})(),rugged:!!r.rugged}}
 
 /* =================== правила =================== */
 // статус правила: pass ✓ · fail ✕ · unk … (ждём данные) · err ⚠ (API не ответил) · na – (данных нет, не блокирует) · off (выключено)
@@ -505,7 +510,7 @@ function checks(c){
   if(isPumpSwap(c.dex)){const m=migr(c,R);
     put('safe','lock',S.c_lock,m==='yes'?'pass':m==='no'?'fail':rpcSt,'Пул не вытащат',
       m==='yes'?'Настоящая миграция с pump.fun: кривая завершена, это канонический пул миграции — LP сожжены':m==='no'?'Пул создан вручную, не миграция с pump.fun ('+migrWhy(c,R)+') — создатель может забрать деньги':(R?.src==='rc'?'Нужен ответ блокчейна (ключ Helius), rugcheck этого не показывает':'Проверяю кривую pump.fun…'),'пул вручную')}
-  else{const lk=L?.lock;put('safe','lock',S.c_lock,lk!=null?(lk>=S.lockMin?'pass':'fail'):(c.rcTried?(c.rcErr?'err':'fail'):'unk'),'Пул заблокирован ≥ '+S.lockMin+'%',lk!=null?('Заблокировано '+Math.round(lk)+'% ('+esc(c.dex)+')'):(c.rcTried?(c.rcErr?'rugcheck не ответил':'Данных о блокировке нет — риск'):'Жду rugcheck…'),'пул не залочен')}
+  else{const lk=L?.lock;put('safe','lock',S.c_lock,lk!=null?(lk>=S.lockMin?'pass':'fail'):(c.rcTried?(c.rcErr?'err':'unk'):'unk'),'Пул заблокирован ≥ '+S.lockMin+'%',lk!=null?('Заблокировано '+Math.round(lk)+'% ('+esc(c.dex)+')'):(c.rcTried?(c.rcErr?'rugcheck не ответил':'Rugcheck не знает этот пул — не пропускаю'):'Жду rugcheck…'),'пул не залочен')}
   // сигналы
   if(c.b5==null)put('sig','press',S.c_press,'unk','Покупок ≥ ×'+S.pressMin+' от продаж за 5 мин','Жду данные…','');
   else{const b=c.b5||0,s=c.s5||0;
@@ -547,7 +552,7 @@ function evalCoin(c){
   if(fails.length&&!c.firstFail)c.firstFail=fails[0].k;
   if(inWin(c)){if(!fails.length&&!waits.length){c.status='pass';c.passAt=Date.now();finalize(c,ck)}return}
   c.status=fails.length?'fail':'nodata';finalize(c,ck)}
-function cfgKey(){return['r5','win','c_contract','c_owner','ownerMax','c_dev','devMax','devStrict','c_liq','liqMin','c_lock','lockMin','c_press','pressMin','c_sells','sellMin2','c_vol5','vol5Min','c_buyers','buyersMin','c_dd','ddMax'].map(k=>S[k]).join('|')}
+function cfgKey(){return['r6','win','c_contract','c_owner','ownerMax','c_dev','devMax','devStrict','c_liq','liqMin','c_lock','lockMin','c_press','pressMin','c_sells','sellMin2','c_vol5','vol5Min','c_buyers','buyersMin','c_dd','ddMax'].map(k=>S[k]).join('|')}
 function finalize(c,ck){if(c.final)return;
   c.final={cfg:cfgKey(),fails:ck.filter(x=>x.sec!=='warn'&&x.st==='fail').map(x=>x.k),first:c.firstFail||null,
     unk:ck.filter(x=>x.sec!=='warn'&&(x.st==='unk'||x.st==='err')).map(x=>x.k),api:ck.some(x=>x.st==='err')}}
@@ -569,7 +574,7 @@ function sparkSvg(pts,w=64,h=28){
   const d=pts.map((p,i)=>(i?'L':'M')+X(p[0]).toFixed(1)+' '+Y(p[1]).toFixed(1)).join('');
   const col=ys[ys.length-1]>=ys[0]?'var(--up)':'var(--dn)';
   return `<svg class="spark" viewBox="0 0 ${w} ${h}"><path d="${d} L${w-1} ${h} L1 ${h}Z" fill="${col}" opacity=".12"/><path d="${d}" fill="none" stroke="${col}" stroke-width="1.5"/><circle cx="${X(t1).toFixed(1)}" cy="${Y(ys[ys.length-1]).toFixed(1)}" r="2" fill="${col}"/></svg>`}
-const avHtml=(c,cls='av')=>c.img?`<img class="${cls}" src="${esc(c.img)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'${cls} ph',textContent:'${esc((c.sym||'?').slice(0,2)).replace(/'/g,'')}'}))">`:`<div class="${cls} ph">${esc((c.sym||c.name||'?').slice(0,2))}</div>`;
+const avHtml=(c,cls='av')=>c.img?`<img class="${cls}" src="${esc(c.img)}" alt="" loading="lazy" data-ph="${esc((c.sym||'?').slice(0,2))}">`:`<div class="${cls} ph">${esc((c.sym||c.name||'?').slice(0,2))}</div>`;
 function tokTs(c){return c.tokAt?Math.min(c.tokAt,c.listedAt):null}
 function tokHtml(c){const t=tokTs(c);if(!t)return '';return c.listedAt-t<60e3?' · <span class="tok">токен = пул</span>':` · <span class="tok">токен ${ago(t)}</span>`}
 function rowInner(c,mode){
