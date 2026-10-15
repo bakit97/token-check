@@ -927,7 +927,7 @@ setInterval(()=>{const lim=Date.now()-26*3600e3;const ks=Object.keys(SEEN);ks.fo
   const rest=Object.values(SEEN).sort((a,b)=>b.listedAt-a.listedAt);if(rest.length>1500)rest.slice(1500).forEach(x=>delete SEEN[x.addr]);sset('sc_seen',SEEN)},30000);
 Object.values(C).forEach(c=>{if(c.addr&&c.pair&&c.listedAt)seenAdd(c)});
 const RES=sget('sc_research',{});
-const GROUPS=[['grow','Растёт и жива','up'],['pd','Выросла, потом слилась','warn'],['rug','Сразу слилась','dn'],['dead','Тихо умерла','mut']];
+const GROUPS=[['win','Дала +50%','up'],['flat','Живая без роста','warn'],['dead','Умерла','mut'],['rug','Слив','dn']];
 let resBusy=false,resMsg='',resStop=false;
 
 // вид запуска
@@ -1005,7 +1005,7 @@ async function runResearch(){if(resBusy){resStop=true;resMsg='Останавли
 
 // клоны: такое же имя у другой монеты в выборке
 function cloneOf(r,all){const n=(r.name||'').trim().toLowerCase();return !!n&&all.some(o=>o!==r&&(o.name||'').trim().toLowerCase()===n)}
-const pctOf=(arr,fn)=>arr.length?Math.round(arr.filter(fn).length/arr.length*100):null;
+const pctOf=(arr,fn)=>{const v=arr.map(fn).filter(x=>x!=null);return v.length?Math.round(v.filter(Boolean).length/v.length*100):null};
 /* --- перепись дня с сервера (Cloud Storage) --- */
 const CENSUS_URL='https://storage.googleapis.com/sol-scan-511718-data/';
 const CEN={day:null,data:null,status:null,err:'',loading:false,dayOff:0};
@@ -1017,16 +1017,16 @@ async function loadCensus(){CEN.loading=true;CEN.err='';renderResearch();const d
     CEN.status=st&&st.ok?await st.json():null;CEN.day=d}
   catch(e){CEN.err='Не удалось загрузить данные сервера: '+e.message}
   CEN.loading=false;renderResearch()}
-function cenRecs(){return (CEN.data?.coins||[]).map(c=>{const f=c.f?{...c.f,trend:c.f.v5?c.f.v510/c.f.v5:null,peak:c.o?.peak??null,now:c.o?.now??null}:null;
-  const age=Date.now()-c.t;return{addr:c.a,name:c.n,sym:c.s,img:c.i,pair:c.p,type:c.ty,migMin:c.mig,mcMig:c.mcMig,soc:c.soc,listedAt:c.t,f,snap:c.snap||{},live:c.live,
-    g:c.g||(age<90*60e3?'early':c.f?'wait':'nodata')}})}
+function cenRecs(){return (CEN.data?.coins||[]).map(c=>{const f=c.f?{...c.f,trend:c.f.v5?c.f.v510/c.f.v5:null,peak:c.o?.peak??null,now:c.o?.min??null}:null;
+  const age=Date.now()-c.t;return{addr:c.a,name:c.n,sym:c.s,img:c.i,pair:c.p,type:c.ty,migMin:c.mig,mcMig:c.mcMig,soc:c.soc,listedAt:c.t,f,snap:c.snap||{},live:c.live,ct:c.ct,o:c.o,act:c.act||[],
+    g:c.g||(age<5*3600e3+10*60e3?'early':c.f?'wait':'nodata')}})}
 const sv=(r,m,k)=>r.snap?.[m]?.[k];
 const bsr=(r,m)=>{const b=sv(r,m,'b5'),s2=sv(r,m,'s5');return b==null?null:(s2?b/s2:b)};
 function renderResearch(){const box=$('#research');if(!box)return;
   if(!CEN.data&&!CEN.loading&&!CEN.err){loadCensus();return}
   const recs=cenRecs(),total=recs.length,alive=recs.filter(r=>r.live).length;
-  const all=recs.filter(r=>r.f&&['grow','pd','rug','dead'].includes(r.g));const by={};GROUPS.forEach(([g])=>by[g]=all.filter(r=>r.g===g));
-  const early=recs.filter(r=>r.g==='early').length,wait=recs.filter(r=>r.g==='wait').length,others=all.filter(r=>r.g!=='grow');
+  const all=recs.filter(r=>r.f&&['win','flat','dead','rug'].includes(r.g));const by={};GROUPS.forEach(([g])=>by[g]=all.filter(r=>r.g===g));
+  const early=recs.filter(r=>r.g==='early').length,wait=recs.filter(r=>r.g==='wait').length,others=all.filter(r=>r.g!=='win');
   const typeCnt={};recs.forEach(r=>typeCnt[r.type]=(typeCnt[r.type]||0)+1);
   const types=Object.keys(typeCnt).sort((a,b)=>typeCnt[b]-typeCnt[a]);
   const ROWS=[
@@ -1036,6 +1036,16 @@ function renderResearch(){const box=$('#research');if(!box)return;
     ['Капа в момент появления на витрине',r=>r.mcMig,'num',money],
     ['Есть сайт/соцсети',r=>r.soc>0,'pct'],
     ['Клон (имя уже было)',r=>cloneOf(r,recs),'pct'],
+    ['h','Контракт'],
+    ['Можно допечатать (mint)',r=>r.ct?r.ct.mint:null,'pct'],
+    ['Можно заморозить (freeze)',r=>r.ct?r.ct.freeze:null,'pct'],
+    ['Стандарт Token-2022',r=>r.ct?r.ct.prog==='token2022':null,'pct'],
+    ['Комиссия на перевод',r=>r.ct?r.ct.fee>0:null,'pct'],
+    ['Перехват переводов (hook)',r=>r.ct?r.ct.hook:null,'pct'],
+    ['Вечный делегат',r=>r.ct?r.ct.deleg:null,'pct'],
+    ['Пауза / заморозка / запрет перевода',r=>r.ct?(r.ct.pause||r.ct.defFrozen||r.ct.nontr):null,'pct'],
+    ['Можно менять название и картинку',r=>r.ct&&r.ct.metaMut!=null?r.ct.metaMut:null,'pct'],
+    ['Ровно 1 млрд монет и 6 знаков',r=>r.ct?(Math.abs(r.ct.supply-1e9)<1&&r.ct.dec===6):null,'pct'],
     ['h','Первые 10 минут: свечи'],
     ['Объём в 1-ю минуту',r=>r.f.v1,'num',money],
     ['Объём минуты 1–5',r=>r.f.v5,'num',money],
@@ -1055,18 +1065,18 @@ function renderResearch(){const box=$('#research');if(!box)return;
     ['Капа (5-я мин)',r=>sv(r,5,'mc'),'num',money],
     ['Деньги в пуле к капе (5-я мин)',r=>sv(r,5,'liq')&&sv(r,5,'mc')?sv(r,5,'liq')/sv(r,5,'mc')*100:null,'num',v=>Math.round(v)+'%']];
   const cell=(arr,row)=>{if(!arr.length)return{t:'—',v:null};
-    if(row[2]==='pct'){const v=pctOf(arr,row[1]);return{t:v+'%',v}}
+    if(row[2]==='pct'){const v=pctOf(arr,row[1]);return{t:v==null?'—':v+'%',v}}
     const vs=arr.map(row[1]).filter(v=>v!=null&&isFinite(v));const v=med(vs);return{t:v==null?'—':row[3](v),v}};
   const star=(row,a,b)=>{if(a.v==null||b.v==null)return false;if(row[2]==='pct')return Math.abs(a.v-b.v)>=20;
     if(!a.v&&!b.v)return false;const r=(a.v||1e-9)/(b.v||1e-9);return r>=1.5||r<=0.67};
   let rows='';for(const row of ROWS){if(row[0]==='h'){rows+=`<tr class="rh"><td colspan="6">${row[1]}</td></tr>`;continue}
-    const g=by.grow.length?cell(by.grow,row):{t:'—',v:null},o=cell(others,row),st=by.grow.length>=3&&star(row,g,o);
+    const g=by.win.length?cell(by.win,row):{t:'—',v:null},o=cell(others,row),st=by.win.length>=3&&star(row,g,o);
     rows+=`<tr class="${st?'star':''}"><td>${st?'⭐ ':''}${esc(row[0])}</td><td class="up">${g.t}</td><td>${o.t}</td>${GROUPS.slice(1).map(([gk])=>`<td>${cell(by[gk],row).t}</td>`).join('')}</tr>`}
   const cards=GROUPS.map(([g,l,c])=>`<div><b class="${c}">${by[g].length}</b><small>${l}</small></div>`).join('');
   const lists=GROUPS.map(([g,l,c])=>by[g].length?`<details class="rgrp"><summary><span class="${c}">●</span> ${l} · ${by[g].length}</summary>${by[g].sort((a,b)=>(b.f.peak||0)-(a.f.peak||0)).slice(0,150).map(r=>`
     <a class="rrow" href="https://dexscreener.com/solana/${encodeURIComponent(r.pair)}" target="_blank" rel="noopener">${avHtml(r)}<span class="mid"><b class="nm">${esc(r.name)}<span>${esc(r.sym)}</span></b>
     <span class="l2">${esc(r.type)}</span><span class="l2">до миграции ${r.migMin!=null?dur(r.migMin):'—'} · ${ago(r.listedAt)} назад</span></span>
-    <span class="rt"><span class="px up">пик ${xf(r.f.peak)}</span><span class="l2 ${r.f.now>=1?'up':'dn'}">сейчас ${xf(r.f.now)}</span></span></a>`).join('')}</details>`:'').join('');
+    <span class="rt"><span class="px up">пик ${xf(r.f.peak)}</span><span class="l2 dn">дно ${xf(r.f.now)}</span></span></a>`).join('')}</details>`:'').join('');
   const st=CEN.status,stale=st&&Date.now()-st.updated>10*60e3;
   const srv=st?`<span class="${stale?'dn':'up'}">● сервер ${stale?'молчит '+ago(st.updated):'работает'}</span> · обновлено ${ago(CEN.data?.updated||st.updated)} назад`:'';
   const typeList=types.map(t=>`<div><b>${typeCnt[t]}</b><small>${esc(t)}</small></div>`).join('');
@@ -1078,12 +1088,12 @@ function renderResearch(){const box=$('#research');if(!box)return;
     <p class="mut" style="margin:0 0 6px;font-size:12px">Сервер круглосуточно записывает каждую новую монету Solana с пулом с 00:00 по Алматы — и живые, и скам.</p>
     <div class="sum"><div><b>${total}</b><small>всего монет</small></div><div><b class="up">${alive}</b><small>торгуются сейчас</small></div><div><b class="mut">${total-alive}</b><small>мёртвые</small></div></div>
     ${types.length?`<div class="sec-h">Как родились</div><div class="sum">${typeList}</div>`:''}</div>
-  <div class="agg"><h3>Чем кончились (монеты старше 1.5 ч)</h3>
+  <div class="agg"><h3>Первые 5 часов (монеты старше 5 ч)</h3>
     <div class="sum" style="grid-template-columns:repeat(2,minmax(0,1fr))">${cards}</div>
-    <p class="mut" style="font-size:11px;margin:6px 0 0">Считается от цены на 10-й минуте. Растёт и жива: дошла до ×2, сейчас не ниже и торгуется · Выросла, потом слилась: была ×2, сейчас ниже · Сразу слилась: ×2 не было, упала на 70%+ · Тихо умерла: остальные.${early?' Моложе 1.5 ч, ещё рано судить: '+early+'.':''}${wait?' Итог ещё считается: '+wait+'.':''}</p></div>
-  ${all.length?`<div class="agg"><h3>Что отличает растущие</h3>
-    <p class="mut" style="margin:0;font-size:12px">Медиана или доля в каждой группе. ⭐ — у растущих заметно не так, как у остальных: это кандидаты в правила.${by.grow.length<5?' <b class="warn">Растущих пока '+by.grow.length+' — выводы ненадёжны, нужно хотя бы 5–10.</b>':''}</p>
-    <div class="tbl"><table class="rtab"><tr><th></th><th class="up">Растёт</th><th>Все остальные</th><th class="warn">Выросла→слилась</th><th class="dn">Сразу слилась</th><th>Умерла</th></tr>${rows}</table></div></div>
+    <p class="mut" style="font-size:11px;margin:6px 0 0">Вход — цена на 10-й минуте после выхода на витрину, окно — 5 часов. Дала +50%: цена хоть раз была на 50% выше входа раньше, чем слилась · Слив: цена упала на 70%+ или из пула ушло больше половины денег · Умерла: 30 минут подряд без сделок · Живая без роста: торговалась, но +50% не дала.${early?' Моложе 5 ч, ещё рано судить: '+early+'.':''}${wait?' Итог ещё считается: '+wait+'.':''}</p></div>
+  ${all.length?`<div class="agg"><h3>Что отличает те, что дали +50%</h3>
+    <p class="mut" style="margin:0;font-size:12px">Медиана или доля в каждой группе. ⭐ — у «дала +50%» заметно не так, как у остальных: это кандидаты в правила.${by.win.length<5?' <b class="warn">Таких пока '+by.win.length+' — выводы ненадёжны, нужно хотя бы 5–10.</b>':''}</p>
+    <div class="tbl"><table class="rtab"><tr><th></th><th class="up">Дала +50%</th><th>Все остальные</th><th class="warn">Живая без роста</th><th>Умерла</th><th class="dn">Слив</th></tr>${rows}</table></div></div>
     <div class="sec-h">Монеты по группам</div>${lists}`:''}`;
   $('#cenToday').onclick=()=>{CEN.dayOff=0;loadCensus()};$('#cenYest').onclick=()=>{CEN.dayOff=1;loadCensus()};$('#cenRe').onclick=loadCensus}
 setInterval(()=>{if(tab==='research'&&!CEN.loading&&CEN.dayOff===0)loadCensus()},5*60e3);
