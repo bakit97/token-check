@@ -542,7 +542,7 @@ function stats(){const cs=Object.values(C).filter(c=>c.status!=='miss'&&Date.now
 
 /* =================== отрисовка =================== */
 const BADGE={pass:['b-pass','✓ прошла'],wait:['b-wait','⏳ проверка'],nodata:['b-late','? нет данных'],miss:['b-miss','пропущена']};
-function badge(c){if(c.status==='pass'&&!curCfg(c))return['b-miss','✓ по старым правилам'];if((c.status==='wait'&&c.failNow)||c.status==='fail')return['b-fail','✕ '+(c.why||'скам')];
+function badge(c){if(c.status==='pass'&&!isCur(c))return['b-miss','✓ по старым правилам'];if((c.status==='wait'&&c.failNow)||c.status==='fail')return['b-fail','✕ '+(c.why||'скам')];
   if(c.status==='wait'&&c.waitErr)return['b-late','⚠ API'];return BADGE[c.status]||BADGE.miss}
 function sparkSvg(pts,w=64,h=28){
   if(!pts||pts.length<2)return `<svg class="spark" viewBox="0 0 ${w} ${h}"></svg>`;
@@ -570,18 +570,18 @@ function reconcile(box,items,mode){
   const em=box.querySelector('.empty');if(em)em.remove();
   const keep=new Set();let prev=null;
   for(const c of items){keep.add(c.addr);let el=m.get(c.addr);
-    const sig=[curCfg(c),c.price,c.mc,c.liq,c.status,c.failNow,c.why,c.waitErr,c.warnN,c.img,c.tokAt,(c.spark||[]).length,c.passAt,inWin(c)].join('|');
+    const sig=[isCur(c),c.price,c.mc,c.liq,c.status,c.failNow,c.why,c.waitErr,c.warnN,c.img,c.tokAt,(c.spark||[]).length,c.passAt,inWin(c)].join('|');
     if(!el){el=document.createElement('div');el.className='row';el.dataset.a=c.addr;el.onclick=()=>openCoin(c.addr);
       if(c.isNew&&Date.now()-(c.seenAt||0)<60000)el.classList.add('enter');m.set(c.addr,el)}
     if(el._sig!==sig){el.innerHTML=rowInner(c,mode);el._sig=sig;
       if(c.flash&&!el.classList.contains('enter')){el.classList.remove('fl-up','fl-dn');void el.offsetWidth;el.classList.add('fl-'+c.flash)}}
-    el.classList.toggle('inwin',inWin(c)&&c.status!=='fail'&&!c.failNow&&!(c.status==='pass'&&!curCfg(c)));
+    el.classList.toggle('inwin',inWin(c)&&c.status!=='fail'&&!c.failNow&&!(c.status==='pass'&&!isCur(c)));
     const want=prev?prev.nextSibling:box.firstChild;if(want!==el)box.insertBefore(el,want);prev=el}
   for(const[a,el]of m){if(!keep.has(a)){el.remove();m.delete(a)}}}
 let tab='all';
 function render(){
   const all=Object.values(C).filter(c=>Date.now()-c.listedAt<=S.keepH*3600e3).sort((a,b)=>b.listedAt-a.listedAt);
-  const pass=Object.values(C).filter(c=>c.status==='pass'&&curCfg(c)).sort((a,b)=>b.passAt-a.passAt);
+  const pass=Object.values(C).filter(c=>c.status==='pass'&&isCur(c)).sort((a,b)=>b.passAt-a.passAt);
   $('#nAll').textContent=all.length;$('#nPass').textContent=pass.length;
   const w=all.filter(c=>c.status==='wait').length;
   $('#fFresh').textContent='⚡ Свежие < '+S.win+' мин';$('#fFresh').classList.toggle('on',S.f_fresh);
@@ -725,6 +725,7 @@ $('#go').onclick=()=>manual($('#addr').value);$('#addr').onkeydown=e=>{if(e.key=
 const HOFF=[15,30,60,120,180,300],TGT=[1.5,2,3];
 const H=sget('sc_hist2',{});
 const curCfg=c=>S.h_all||c.final?.cfg===cfgKey();
+const isCur=c=>c.final?.cfg===cfgKey();
 function histPass(){return Object.values(C).filter(c=>c.status==='pass'&&c.pair&&curCfg(c))}
 function histFail(){return Object.values(C).filter(c=>c.status==='fail'&&c.pair&&curCfg(c)).sort((a,b)=>b.listedAt-a.listedAt).slice(0,40)}
 function fetchH(c,prio){const h=H[c.addr];
@@ -760,8 +761,8 @@ function renderHist(){
   const ps=cs.map(pathOf).filter(Boolean),pf=fs.map(pathOf).filter(Boolean);
   const hr=(arr,x)=>{const t=arr.map(p=>p.hit[x]).filter(v=>v!=null);return arr.length?Math.round(t.length/arr.length*100)+'%'+(t.length?' · ~'+dur(med(t)):''):'—'};
   let hrows='';TGT.forEach(x=>{hrows+=`<tr><td>дошли до ×${x}</td><td>${hr(ps,x)}</td><td>${hr(pf,x)}</td></tr>`});
-  hrows+=`<tr><td>средний пик</td><td class="up">${xf(avg(ps.map(p=>p.peak)))}</td><td>${xf(avg(pf.map(p=>p.peak)))}</td></tr>`;
-  hrows+=`<tr><td>средняя просадка</td><td class="dn">${ps.length?'−'+Math.round(avg(ps.map(p=>p.dd).filter(x=>x!=null)))+'%':'—'}</td><td class="dn">${pf.length?'−'+Math.round(avg(pf.map(p=>p.dd).filter(x=>x!=null)))+'%':'—'}</td></tr>`;
+  hrows+=`<tr><td>пик (медиана)</td><td class="up">${xf(med(ps.map(p=>p.peak)))}</td><td>${xf(med(pf.map(p=>p.peak)))}</td></tr>`;
+  hrows+=`<tr><td>просадка (медиана)</td><td class="dn">${ps.length?'−'+Math.round(med(ps.map(p=>p.dd).filter(x=>x!=null)))+'%':'—'}</td><td class="dn">${pf.length?'−'+Math.round(med(pf.map(p=>p.dd).filter(x=>x!=null)))+'%':'—'}</td></tr>`;
   box.innerHTML=head+`<div class="agg big"><h3>Прошли (${cs.length}) против завалили (${fs.length})</h3>
     <p class="mut" style="margin:0;font-size:12px">Вход у прошедших — прохождение правил + ${S.delay} мин. У заваливших — конец окна + ${S.delay} мин, как если бы ты купил их. Медиана, ×1 = в ноль после комиссий.</p>
     ${overlaySvg(cs)}
