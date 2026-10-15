@@ -1006,19 +1006,37 @@ async function runResearch(){if(resBusy){resStop=true;resMsg='Останавли
 // клоны: такое же имя у другой монеты в выборке
 function cloneOf(r,all){const n=(r.name||'').trim().toLowerCase();return !!n&&all.some(o=>o!==r&&(o.name||'').trim().toLowerCase()===n)}
 const pctOf=(arr,fn)=>arr.length?Math.round(arr.filter(fn).length/arr.length*100):null;
+/* --- перепись дня с сервера (Cloud Storage) --- */
+const CENSUS_URL='https://storage.googleapis.com/sol-scan-511718-data/';
+const CEN={day:null,data:null,status:null,err:'',loading:false,dayOff:0};
+const almatyDay=off=>new Date(Date.now()+5*3600e3-off*864e5).toISOString().slice(0,10);
+async function loadCensus(){CEN.loading=true;CEN.err='';renderResearch();const d=almatyDay(CEN.dayOff);
+  try{const [r,st]=await Promise.all([fetch(CENSUS_URL+'day/'+d+'.json?t='+Date.now()),fetch(CENSUS_URL+'status.json?t='+Date.now()).catch(()=>null)]);
+    if(r.status===404||r.status===403){CEN.data={day:d,coins:[]};CEN.err=CEN.dayOff?'За этот день данных нет — сервер тогда ещё не работал.':'Данных за сегодня пока нет.'}
+    else if(!r.ok)throw new Error('HTTP '+r.status);else CEN.data=await r.json();
+    CEN.status=st&&st.ok?await st.json():null;CEN.day=d}
+  catch(e){CEN.err='Не удалось загрузить данные сервера: '+e.message}
+  CEN.loading=false;renderResearch()}
+function cenRecs(){return (CEN.data?.coins||[]).map(c=>{const f=c.f?{...c.f,trend:c.f.v5?c.f.v510/c.f.v5:null,peak:c.o?.peak??null,now:c.o?.now??null}:null;
+  const age=Date.now()-c.t;return{addr:c.a,name:c.n,sym:c.s,img:c.i,pair:c.p,type:c.ty,migMin:c.mig,mcMig:c.mcMig,soc:c.soc,listedAt:c.t,f,snap:c.snap||{},live:c.live,
+    g:c.g||(age<90*60e3?'early':c.f?'wait':'nodata')}})}
+const sv=(r,m,k)=>r.snap?.[m]?.[k];
+const bsr=(r,m)=>{const b=sv(r,m,'b5'),s2=sv(r,m,'s5');return b==null?null:(s2?b/s2:b)};
 function renderResearch(){const box=$('#research');if(!box)return;
-  const all=Object.values(RES).filter(r=>r.f);const by={};GROUPS.forEach(([g])=>by[g]=all.filter(r=>r.g===g));
-  const early=all.filter(r=>r.g==='early').length,others=all.filter(r=>r.g&&r.g!=='grow'&&r.g!=='early');
-  const types=[...new Set(all.map(r=>r.type))].sort();
-  // строки сравнения: [название, функция значения, вид: num|pct, формат]
+  if(!CEN.data&&!CEN.loading&&!CEN.err){loadCensus();return}
+  const recs=cenRecs(),total=recs.length,alive=recs.filter(r=>r.live).length;
+  const all=recs.filter(r=>r.f&&['grow','pd','rug','dead'].includes(r.g));const by={};GROUPS.forEach(([g])=>by[g]=all.filter(r=>r.g===g));
+  const early=recs.filter(r=>r.g==='early').length,wait=recs.filter(r=>r.g==='wait').length,others=all.filter(r=>r.g!=='grow');
+  const typeCnt={};recs.forEach(r=>typeCnt[r.type]=(typeCnt[r.type]||0)+1);
+  const types=Object.keys(typeCnt).sort((a,b)=>typeCnt[b]-typeCnt[a]);
   const ROWS=[
     ['h','Как родилась'],
     ...types.map(t=>['Вид: '+t,r=>r.type===t,'pct']),
     ['Время от создания до миграции',r=>r.migMin,'num',v=>dur(v)],
     ['Капа в момент появления на витрине',r=>r.mcMig,'num',money],
     ['Есть сайт/соцсети',r=>r.soc>0,'pct'],
-    ['Клон (имя уже было)',r=>cloneOf(r,all),'pct'],
-    ['h','Первые 10 минут на витрине'],
+    ['Клон (имя уже было)',r=>cloneOf(r,recs),'pct'],
+    ['h','Первые 10 минут: свечи'],
     ['Объём в 1-ю минуту',r=>r.f.v1,'num',money],
     ['Объём минуты 1–5',r=>r.f.v5,'num',money],
     ['Объём минуты 6–10',r=>r.f.v510,'num',money],
@@ -1026,7 +1044,16 @@ function renderResearch(){const box=$('#research');if(!box)return;
     ['Цена через 10 минут',r=>r.f.x10,'num',xf],
     ['Самая глубокая просадка за 10 мин',r=>r.f.dd10,'num',v=>'−'+Math.round(v)+'%'],
     ['Минут со сделками из 10',r=>r.f.active,'num',v=>Math.round(v)+''],
-    ['Зелёных свечей из 10',r=>r.f.green,'num',v=>Math.round(v)+'']];
+    ['Зелёных свечей из 10',r=>r.f.green,'num',v=>Math.round(v)+''],
+    ['h','Снимки: 3-я и 5-я минута'],
+    ['Сделок за 5 мин (3-я мин)',r=>sv(r,3,'b5')!=null?sv(r,3,'b5')+sv(r,3,'s5'):null,'num',v=>Math.round(v)+''],
+    ['Покупок к продажам (3-я мин)',r=>bsr(r,3),'num',v=>'×'+v.toFixed(2)],
+    ['Сделок за 5 мин (5-я мин)',r=>sv(r,5,'b5')!=null?sv(r,5,'b5')+sv(r,5,'s5'):null,'num',v=>Math.round(v)+''],
+    ['Покупок к продажам (5-я мин)',r=>bsr(r,5),'num',v=>'×'+v.toFixed(2)],
+    ['Объём за 5 мин (5-я мин)',r=>sv(r,5,'v5'),'num',money],
+    ['Деньги в пуле (5-я мин)',r=>sv(r,5,'liq'),'num',money],
+    ['Капа (5-я мин)',r=>sv(r,5,'mc'),'num',money],
+    ['Деньги в пуле к капе (5-я мин)',r=>sv(r,5,'liq')&&sv(r,5,'mc')?sv(r,5,'liq')/sv(r,5,'mc')*100:null,'num',v=>Math.round(v)+'%']];
   const cell=(arr,row)=>{if(!arr.length)return{t:'—',v:null};
     if(row[2]==='pct'){const v=pctOf(arr,row[1]);return{t:v+'%',v}}
     const vs=arr.map(row[1]).filter(v=>v!=null&&isFinite(v));const v=med(vs);return{t:v==null?'—':row[3](v),v}};
@@ -1036,22 +1063,30 @@ function renderResearch(){const box=$('#research');if(!box)return;
     const g=by.grow.length?cell(by.grow,row):{t:'—',v:null},o=cell(others,row),st=by.grow.length>=3&&star(row,g,o);
     rows+=`<tr class="${st?'star':''}"><td>${st?'⭐ ':''}${esc(row[0])}</td><td class="up">${g.t}</td><td>${o.t}</td>${GROUPS.slice(1).map(([gk])=>`<td>${cell(by[gk],row).t}</td>`).join('')}</tr>`}
   const cards=GROUPS.map(([g,l,c])=>`<div><b class="${c}">${by[g].length}</b><small>${l}</small></div>`).join('');
-  const lists=GROUPS.map(([g,l,c])=>by[g].length?`<details class="rgrp"><summary><span class="${c}">●</span> ${l} · ${by[g].length}</summary>${by[g].sort((a,b)=>(b.f.peak||0)-(a.f.peak||0)).map(r=>`
+  const lists=GROUPS.map(([g,l,c])=>by[g].length?`<details class="rgrp"><summary><span class="${c}">●</span> ${l} · ${by[g].length}</summary>${by[g].sort((a,b)=>(b.f.peak||0)-(a.f.peak||0)).slice(0,150).map(r=>`
     <a class="rrow" href="https://dexscreener.com/solana/${encodeURIComponent(r.pair)}" target="_blank" rel="noopener">${avHtml(r)}<span class="mid"><b class="nm">${esc(r.name)}<span>${esc(r.sym)}</span></b>
     <span class="l2">${esc(r.type)}</span><span class="l2">до миграции ${r.migMin!=null?dur(r.migMin):'—'} · ${ago(r.listedAt)} назад</span></span>
     <span class="rt"><span class="px up">пик ${xf(r.f.peak)}</span><span class="l2 ${r.f.now>=1?'up':'dn'}">сейчас ${xf(r.f.now)}</span></span></a>`).join('')}</details>`:'').join('');
+  const st=CEN.status,stale=st&&Date.now()-st.updated>10*60e3;
+  const srv=st?`<span class="${stale?'dn':'up'}">● сервер ${stale?'молчит '+ago(st.updated):'работает'}</span> · обновлено ${ago(CEN.data?.updated||st.updated)} назад`:'';
+  const typeList=types.map(t=>`<div><b>${typeCnt[t]}</b><small>${esc(t)}</small></div>`).join('');
   box.innerHTML=`<div class="agg">
-    <h3>Часть 1 · Рождение и миграция</h3>
-    <p class="mut" style="margin:0 0 8px;font-size:12px">Монеты, родившиеся сегодня: топ дня по объёму и всё, что видел сканер (там есть и скамы). Смотрит, как каждая родилась и как вела себя первые 10 минут, и сравнивает с тем, чем она кончилась. Результат меряется от цены на 10-й минуте.</p>
-    <button class="btn" id="resGo" style="width:100%;${resBusy?'background:var(--panel2);border:1px solid var(--line)':''}">${resBusy?'■ Стоп':'Запустить исследование'}</button>
-    <p class="mut" id="resMsg" style="font-size:12px;margin:6px 0 0">${esc(resMsg||(all.length?'Изучено монет: '+all.length:'Берёт топ монет за сегодня с PumpSwap, Meteora, LaunchLab и всё, что видел сканер. Первый прогон — около 25–30 минут, живая лента на это время на паузе. Держи страницу открытой, можно остановить и продолжить.'))}</p>
+    <h3>Перепись дня · ${esc(CEN.day||almatyDay(CEN.dayOff))}</h3>
+    <div class="chips" style="padding-top:2px"><button class="chip${CEN.dayOff===0?' on':''}" id="cenToday">Сегодня</button><button class="chip${CEN.dayOff===1?' on':''}" id="cenYest">Вчера</button><button class="chip" id="cenRe">↻ Обновить</button></div>
+    <p class="mut" style="margin:4px 0 8px;font-size:11px;font-family:var(--mono)">${CEN.loading?'Загружаю…':srv}</p>
+    ${CEN.err?`<p class="warn" style="font-size:12px">${esc(CEN.err)}</p>`:''}
+    <p class="mut" style="margin:0 0 6px;font-size:12px">Сервер круглосуточно записывает каждую новую монету Solana с пулом с 00:00 по Алматы — и живые, и скам.</p>
+    <div class="sum"><div><b>${total}</b><small>всего монет</small></div><div><b class="up">${alive}</b><small>торгуются сейчас</small></div><div><b class="mut">${total-alive}</b><small>мёртвые</small></div></div>
+    ${types.length?`<div class="sec-h">Как родились</div><div class="sum">${typeList}</div>`:''}</div>
+  <div class="agg"><h3>Чем кончились (монеты старше 1.5 ч)</h3>
     <div class="sum" style="grid-template-columns:repeat(2,minmax(0,1fr))">${cards}</div>
-    <p class="mut" style="font-size:11px;margin:6px 0 0">Растёт и жива: от 10-й минуты дошла до ×2 и сейчас не ниже входа · Выросла, потом слилась: была ×2, сейчас ниже входа · Сразу слилась: ×2 не было, упала на 70%+ · Тихо умерла: остальные.${early?' Ещё рано судить (моложе 2 ч): '+early+'.':''}</p></div>
+    <p class="mut" style="font-size:11px;margin:6px 0 0">Считается от цены на 10-й минуте. Растёт и жива: дошла до ×2, сейчас не ниже и торгуется · Выросла, потом слилась: была ×2, сейчас ниже · Сразу слилась: ×2 не было, упала на 70%+ · Тихо умерла: остальные.${early?' Моложе 1.5 ч, ещё рано судить: '+early+'.':''}${wait?' Итог ещё считается: '+wait+'.':''}</p></div>
   ${all.length?`<div class="agg"><h3>Что отличает растущие</h3>
     <p class="mut" style="margin:0;font-size:12px">Медиана или доля в каждой группе. ⭐ — у растущих заметно не так, как у остальных: это кандидаты в правила.${by.grow.length<5?' <b class="warn">Растущих пока '+by.grow.length+' — выводы ненадёжны, нужно хотя бы 5–10.</b>':''}</p>
     <div class="tbl"><table class="rtab"><tr><th></th><th class="up">Растёт</th><th>Все остальные</th><th class="warn">Выросла→слилась</th><th class="dn">Сразу слилась</th><th>Умерла</th></tr>${rows}</table></div></div>
     <div class="sec-h">Монеты по группам</div>${lists}`:''}`;
-  $('#resGo').onclick=runResearch}
+  $('#cenToday').onclick=()=>{CEN.dayOff=0;loadCensus()};$('#cenYest').onclick=()=>{CEN.dayOff=1;loadCensus()};$('#cenRe').onclick=loadCensus}
+setInterval(()=>{if(tab==='research'&&!CEN.loading&&CEN.dayOff===0)loadCensus()},5*60e3);
 
 /* =================== старт =================== */
 Object.values(C).forEach(setCanon);evalAll();render();boot();rcLoop();rpcLoop();microLoop();setTimeout(pollDS,4000);
