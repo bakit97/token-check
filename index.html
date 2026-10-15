@@ -188,7 +188,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .tr .tw{color:var(--mut);text-decoration:none;text-align:right;overflow:hidden;text-overflow:ellipsis}
 .tr.enter{animation:trin 1.6s ease-out}@keyframes trin{0%{background:rgba(91,140,255,.35)}100%{background:transparent}}
 /* исследование */
-.rtab td,.rtab th{font-size:11px}.rtab td:first-child{white-space:normal;min-width:150px;font-family:var(--sans);font-size:12px}
+.rtab td,.rtab th{font-size:11px}.rtab td:first-child,.rtab th:first-child{position:sticky;left:0;background:var(--panel);z-index:1}.rtab td:first-child{white-space:normal;min-width:150px;font-family:var(--sans);font-size:12px}
 .rtab tr.rh td{color:var(--mut);font:700 10px var(--mono);text-transform:uppercase;letter-spacing:.06em;padding-top:12px;text-align:left}
 .rtab tr.star td{background:rgba(245,192,74,.07)}.rtab tr.star td:first-child{color:var(--warn);font-weight:700}
 .rgrp{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-top:6px;padding:8px 10px}
@@ -390,7 +390,7 @@ function pushSpark(c){if(!c.price)return;c.peak=Math.max(c.peak||0,c.price);cons
 
 /* --- новые пулы (GeckoTerminal) --- */
 let pollN=0,lastPoll=0;
-async function pollNew(pages){
+async function pollNew(pages){if(resBusy)return;
   for(const pg of pages){
     try{const r=await gt(`/new_pools?page=${pg}&include=base_token,quote_token,dex`,pg===1?1:3);
       const inc={};(r.included||[]).forEach(x=>inc[x.id]=x);(r.data||[]).forEach(d=>{const p=gtParse(d,inc);if(p)upsertGT(p)});lastPoll=Date.now()
@@ -431,7 +431,7 @@ setInterval(pollDS,15000);
 
 /* --- цена в момент появления + пик (если не застали сами) --- */
 const ohlcvWant=new Set();
-function wantOhlcv(a){if(ohlcvWant.has(a+(C[a]?.pair||'')))return;const c=C[a];if(!c?.pair)return;ohlcvWant.add(a+c.pair);
+function wantOhlcv(a){if(resBusy)return;if(ohlcvWant.has(a+(C[a]?.pair||'')))return;const c=C[a];if(!c?.pair)return;ohlcvWant.add(a+c.pair);
   gt(`/pools/${c.pair}/ohlcv/minute?aggregate=1&limit=30&currency=usd`,4).then(r=>{
     const l=(r.data?.attributes?.ohlcv_list||[]).slice().reverse();const c2=C[a];if(!l.length||!c2)return;
     const first=l.find(k=>k[0]*1000>=c2.listedAt-60e3)||l[0];if(!c2.firstPrice)c2.firstPrice=+first[1]||+first[4];
@@ -487,7 +487,7 @@ function microOf(list){const from=Date.now()-5*60e3;const l5=list.filter(x=>x.t>
   const bu=l5.filter(x=>x.buy).reduce((a,x)=>a+x.usd,0),su=l5.filter(x=>!x.buy).reduce((a,x)=>a+x.usd,0);
   if(!n)return{n:0,share:0,avg:0,ubAll,bu,su};
   return{n,share:v.filter(u=>u<S.microUsd).length/n*100,avg:v.reduce((a,b)=>a+b,0)/n,ubAll,bu,su}}
-async function microLoop(){for(;;){
+async function microLoop(){for(;;){if(resBusy){await sleep(3000);continue}
   const c=Object.values(C).filter(c=>S.c_micro&&c.status==='wait'&&inWin(c)&&c.pair&&(!c.microAt||Date.now()-c.microAt>60000)
     &&!checks(c).some(x=>x.sec!=='warn'&&!LAZY.has(x.k)&&!TRADE.has(x.k)&&(x.st==='fail'||x.st==='unk'||x.st==='err'))).sort((a,b)=>b.listedAt-a.listedAt)[0];
   if(c){c.microAt=Date.now();
@@ -736,7 +736,7 @@ function bindDetail(c){
 let trT=null,trCoin=null;const TV={per:5,side:'all'};
 function stopTrades(){clearInterval(trT);trT=null;trCoin=null}
 function startTrades(c){stopTrades();if(!c.pair)return;trCoin=c;c._tr=c._tr||new Map();
-  const tick=()=>{const box=$('#trBox');if(!box||box.dataset.a!==c.addr){stopTrades();return}if(c._trq)return;c._trq=1;
+  const tick=()=>{const box=$('#trBox');if(!box||box.dataset.a!==c.addr){stopTrades();return}if(c._trq||resBusy)return;c._trq=1;
     gt(`/pools/${c.pair}/trades`,2).then(r=>{const fresh=new Set();
       (r.data||[]).forEach(d=>{const a=d.attributes||{};const key=a.tx_hash||d.id;if(!key||c._tr.has(key))return;
         const buy=a.kind==='buy';c._tr.set(key,{t:Date.parse(a.block_timestamp)||Date.now(),buy,usd:+a.volume_in_usd||0,w:a.tx_from_address||'',
@@ -803,7 +803,7 @@ function fetchH(c,prio){const h=H[c.addr];
   gt(`/pools/${c.pair}/ohlcv/minute?aggregate=1&limit=1000&currency=usd`,prio).then(r=>{
     const l=(r.data?.attributes?.ohlcv_list||[]).map(k=>[k[0]*1000,+k[1],+k[2],+k[3],+k[4]]).filter(k=>k[0]>=c.listedAt-60e3&&k[0]<=c.listedAt+5*3600e3).sort((a,b)=>a[0]-b[0]);
     H[c.addr]={pts:l,at:Date.now()};sset('sc_hist2',H);if(tab==='hist')renderHist()}).catch(()=>{}).finally(()=>{c._hq=0})}
-function fetchHist(){histPass().forEach(c=>fetchH(c,6));histFail().forEach(c=>fetchH(c,7))}
+function fetchHist(){if(resBusy)return;histPass().forEach(c=>fetchH(c,6));histFail().forEach(c=>fetchH(c,7))}
 setInterval(()=>{if(tab==='hist')fetchHist()},60000);
 // вход: прошедшие — момент прохождения + время на покупку; завалившие — конец окна + время на покупку (для сравнения)
 function entryOf(c){const h=H[c.addr];if(!h||!h.pts.length)return null;
@@ -925,6 +925,7 @@ const SEEN=sget('sc_seen',{});
 function seenAdd(p){if(SEEN[p.addr])return;SEEN[p.addr]={addr:p.addr,name:p.name,sym:p.sym,img:p.img,pair:p.pair,dex:p.dex,listedAt:p.listedAt}}
 setInterval(()=>{const lim=Date.now()-26*3600e3;const ks=Object.keys(SEEN);ks.forEach(k=>{if(SEEN[k].listedAt<lim)delete SEEN[k]});
   const rest=Object.values(SEEN).sort((a,b)=>b.listedAt-a.listedAt);if(rest.length>1500)rest.slice(1500).forEach(x=>delete SEEN[x.addr]);sset('sc_seen',SEEN)},30000);
+Object.values(C).forEach(c=>{if(c.addr&&c.pair&&c.listedAt)seenAdd(c)});
 const RES=sget('sc_research',{});
 const GROUPS=[['grow','Растёт и жива','up'],['pd','Выросла, потом слилась','warn'],['rug','Сразу слилась','dn'],['dead','Тихо умерла','mut']];
 let resBusy=false,resMsg='';
@@ -963,14 +964,14 @@ async function runResearch(){if(resBusy)return;resBusy=true;const btn=$('#resGo'
     // 1. топ сегодняшнего дня (растущие и активные)
     for(const path of ['/trending_pools?duration=24h&page=1','/trending_pools?duration=24h&page=2','/trending_pools?duration=24h&page=3','/pools?sort=h24_volume_usd_desc&page=1','/pools?sort=h24_volume_usd_desc&page=2']){
       resMsg='Ищу топ монет дня…';renderResearch();
-      try{const r=await gt(path+'&include=base_token,quote_token,dex',3);const inc={};(r.included||[]).forEach(x=>inc[x.id]=x);
+      try{const r=await gt(path+'&include=base_token,quote_token,dex',1);const inc={};(r.included||[]).forEach(x=>inc[x.id]=x);
         (r.data||[]).forEach(d=>{const p=gtParse(d,inc);if(p&&okAge(p))cand[p.addr]={...p,src:'top'}})}catch{}}
     // 2. все, что видел сканер (в том числе скамы и тихо умершие)
     Object.values(SEEN).filter(okAge).forEach(x=>{if(!cand[x.addr])cand[x.addr]={...x,src:'seen'}});
     // не повторять свежие замеры; монеты старше 16 ч уже не меняются
     let list=Object.values(cand).filter(x=>{const o=RES[x.addr];return !o||(Date.now()-o.at>30*60e3&&Date.now()-o.listedAt<16*3600e3+30*60e3)});
     const tops=list.filter(x=>x.src==='top'),rest=list.filter(x=>x.src!=='top').sort(()=>Math.random()-.5);
-    list=[...tops,...rest].slice(0,60);
+    list=[...tops,...rest].slice(0,45);
     if(!list.length){resMsg=Object.keys(SEEN).length?'Новых монет для замера нет: нужны монеты старше 2 часов. Держи страницу открытой — сканер их копит.':'Сканер ещё не накопил монет. Подожди пару часов с открытой страницей.';return}
     // 3. DEX Screener: время рождения токена, все его пулы, соцсети
     for(let i=0;i<list.length;i+=30){resMsg='Узнаю время рождения монет…';renderResearch();
@@ -981,15 +982,18 @@ async function runResearch(){if(resBusy)return;resBusy=true;const btn=$('#resGo'
     // 4. по каждой: настоящий ли пул и первые минуты жизни
     let done=0;
     for(const x of list){
-      resMsg=`Изучаю монеты: ${done} из ${list.length} · осталось ~${Math.ceil((list.length-done)*6.5/60)} мин`;renderResearch();
+      resMsg=`Изучаю монеты: ${done} из ${list.length} · осталось ~${Math.ceil((list.length-done)*13/60)} мин · живая лента на паузе`;renderResearch();
       if(/pump-?swap/i.test(x.dex)&&x.canon==null){try{x.canon=await isCanonical(x.addr,x.pair)}catch(e){if(/base58/.test(e?.message||''))x.canon=false}}
       try{const before=Math.floor(Math.min(Date.now(),x.listedAt+16*3600e3)/1000);
-        const r=await gt(`/pools/${x.pair}/ohlcv/minute?aggregate=1&limit=1000&before_timestamp=${before}&currency=usd`,3);
+        const r=await gt(`/pools/${x.pair}/ohlcv/minute?aggregate=1&limit=1000&before_timestamp=${before}&currency=usd`,1);
         const k=(r.data?.attributes?.ohlcv_list||[]).map(c=>[c[0]*1000,+c[1],+c[2],+c[3],+c[4],+c[5]]).filter(c=>c[0]>=x.listedAt-60e3).sort((a,b)=>a[0]-b[0]);
         const sup=x.mc&&x.price?x.mc/x.price:null;
+        if(!(x.tokAt<x.listedAt-60e3)){try{const tp=await gt(`/tokens/${x.addr}/pools?page=1`,1);
+          (tp.data||[]).forEach(d=>{const t=Date.parse(d.attributes?.pool_created_at);if(t)x.tokAt=Math.min(isFinite(x.tokAt)?x.tokAt:Infinity,t);
+            const dx=d.relationships?.dex?.data?.id;if(dx)x.dexes=[...new Set([...(x.dexes||[]),dx])]})}catch{}}
         const rec={addr:x.addr,name:x.name,sym:x.sym,img:x.img,pair:x.pair,dex:x.dex,dexes:x.dexes||[],canon:x.canon,listedAt:x.listedAt,
           tokAt:isFinite(x.tokAt)?Math.min(x.tokAt,x.listedAt):null,soc:x.soc||0,src:x.src,at:Date.now(),f:featOf(x,k)};
-        rec.type=launchType(rec);rec.migMin=rec.tokAt?(rec.listedAt-rec.tokAt)/60000:null;
+        rec.type=launchType(rec);rec.migMin=rec.tokAt&&rec.listedAt-rec.tokAt>60e3?(rec.listedAt-rec.tokAt)/60000:(isManual(rec.type)?0:null);
         rec.mcMig=sup&&rec.f?rec.f.p0*sup:null;rec.g=groupOf(rec);RES[rec.addr]=rec;sset('sc_research',RES)}catch{}
       done++;if(tab==='research')renderResearch()}
     resMsg=`Готово: изучено ${done} монет. Нажми ещё раз позже — добавятся новые.`;
@@ -1036,7 +1040,7 @@ function renderResearch(){const box=$('#research');if(!box)return;
     <h3>Часть 1 · Рождение и миграция</h3>
     <p class="mut" style="margin:0 0 8px;font-size:12px">Берёт монеты за сутки: топ дня и всё, что видел сканер (там есть и скамы). Смотрит, как каждая родилась и как вела себя первые 10 минут, и сравнивает с тем, чем она кончилась. Результат меряется от цены на 10-й минуте.</p>
     <button class="btn" id="resGo" style="width:100%" ${resBusy?'disabled':''}>${resBusy?'Идёт исследование…':'Запустить исследование'}</button>
-    <p class="mut" id="resMsg" style="font-size:12px;margin:6px 0 0">${esc(resMsg||(all.length?'Изучено монет: '+all.length:'Нажми кнопку. Займёт 5–7 минут — держи страницу открытой.'))}</p>
+    <p class="mut" id="resMsg" style="font-size:12px;margin:6px 0 0">${esc(resMsg||(all.length?'Изучено монет: '+all.length:'Нажми кнопку. Займёт около 10 минут, живая лента на это время встанет на паузу. Держи страницу открытой.'))}</p>
     <div class="sum" style="grid-template-columns:repeat(2,minmax(0,1fr))">${cards}</div>
     <p class="mut" style="font-size:11px;margin:6px 0 0">Растёт и жива: от 10-й минуты дошла до ×2 и сейчас не ниже входа · Выросла, потом слилась: была ×2, сейчас ниже входа · Сразу слилась: ×2 не было, упала на 70%+ · Тихо умерла: остальные.${early?' Ещё рано судить (моложе 2 ч): '+early+'.':''}</p></div>
   ${all.length?`<div class="agg"><h3>Что отличает растущие</h3>
