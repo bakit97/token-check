@@ -467,18 +467,21 @@ async function rpcCheck(c){
   c.rpcErr='';
 }
 // монета уже не проходит правила, которым блокчейн не нужен → Helius не тратим
-const LAZY=new Set(['contract','owner','micro']);
+const LAZY=new Set(['contract','owner','micro']),TRADE=new Set(['press','buyers','micro']);
 // true, если какое-то из остальных правил ещё не пройдено (провалено или ещё неизвестно)
 const otherFails=c=>checks(c).some(x=>x.sec!=='warn'&&!LAZY.has(x.k)&&(x.st==='fail'||x.st==='unk'||x.st==='err'));
 /* --- микро-сделки: последние сделки смотрим только у монет, которые проходят всё остальное (экономим лимит GeckoTerminal) --- */
-function microOf(list){const from=Date.now()-5*60e3;const v=list.filter(x=>x.t>=from).map(x=>x.usd);const n=v.length;if(!n)return{n:0,share:0,avg:0};
-  return{n,share:v.filter(u=>u<S.microUsd).length/n*100,avg:v.reduce((a,b)=>a+b,0)/n}}
+function microOf(list){const from=Date.now()-5*60e3;const l5=list.filter(x=>x.t>=from);const v=l5.map(x=>x.usd);const n=v.length;
+  const ubAll=new Set(list.filter(x=>x.buy&&x.w).map(x=>x.w)).size;
+  const bu=l5.filter(x=>x.buy).reduce((a,x)=>a+x.usd,0),su=l5.filter(x=>!x.buy).reduce((a,x)=>a+x.usd,0);
+  if(!n)return{n:0,share:0,avg:0,ubAll,bu,su};
+  return{n,share:v.filter(u=>u<S.microUsd).length/n*100,avg:v.reduce((a,b)=>a+b,0)/n,ubAll,bu,su}}
 async function microLoop(){for(;;){
   const c=Object.values(C).filter(c=>S.c_micro&&c.status==='wait'&&inWin(c)&&c.pair&&(!c.microAt||Date.now()-c.microAt>60000)
-    &&!otherFails(c)).sort((a,b)=>b.listedAt-a.listedAt)[0];
+    &&!checks(c).some(x=>x.sec!=='warn'&&!LAZY.has(x.k)&&!TRADE.has(x.k)&&(x.st==='fail'||x.st==='unk'||x.st==='err'))).sort((a,b)=>b.listedAt-a.listedAt)[0];
   if(c){c.microAt=Date.now();
     try{const r=await gt(`/pools/${c.pair}/trades`,2);
-      const l=(r.data||[]).map(d=>({t:Date.parse(d.attributes?.block_timestamp)||0,usd:+d.attributes?.volume_in_usd||0})).sort((a,b)=>b.t-a.t).slice(0,100);
+      const l=(r.data||[]).map(d=>({t:Date.parse(d.attributes?.block_timestamp)||0,usd:+d.attributes?.volume_in_usd||0,buy:d.attributes?.kind==='buy',w:d.attributes?.tx_from_address||''})).sort((a,b)=>b.t-a.t);
       c.micro=microOf(l)}catch{}
     evalAll();render()}
   await sleep(3000)}}
@@ -534,9 +537,12 @@ function checks(c){
   if(isPumpSwap(c.dex)){const m=migr(c,R);
     put('safe','lock',S.c_lock,m==='yes'?'pass':m==='no'?'fail':'unk','Пул не вытащат',
       m==='yes'?'Настоящая миграция с pump.fun: это пул, который создал сам pump.fun, LP сожжены':m==='no'?'Пул создан вручную, а не pump.fun при миграции — создатель может забрать деньги':'Считаю адрес пула…','пул вручную')}
+  else if(/meteora-?dbc|launch-?lab|dynamic-bonding/i.test(c.dex||''))put('safe','lock',S.c_lock,'pass','Пул не вытащат','Кривая запуска ('+esc(c.dex)+'): деньги лежат в программе, создатель вытащить не может','');
   else{const lk=L?.lock;put('safe','lock',S.c_lock,lk!=null?(lk>=S.lockMin?'pass':'fail'):(c.rcTried?(c.rcErr?'err':'unk'):'unk'),'Пул заблокирован ≥ '+S.lockMin+'%',lk!=null?('Заблокировано '+Math.round(lk)+'% ('+esc(c.dex)+')'):(c.rcTried?(c.rcErr?'rugcheck не ответил':'Rugcheck не знает этот пул — не пропускаю'):'Жду rugcheck…'),'пул не залочен')}
   // сигналы
-  if(c.b5==null)put('sig','press',S.c_press,'unk','Покупок ≥ ×'+S.pressMin+' от продаж за 5 мин','Жду данные…','');
+  const M=c.micro;
+  if(M&&M.n>=10){const r=M.su?M.bu/M.su:(M.bu?99:0);put('sig','press',S.c_press,r>=S.pressMin?'pass':'fail','Покупок ≥ ×'+S.pressMin+' от продаж за 5 мин','По сумме: покупки '+money(M.bu)+', продажи '+money(M.su)+' (×'+(Math.round(r*10)/10)+')','продают')}
+  else if(c.b5==null)put('sig','press',S.c_press,'unk','Покупок ≥ ×'+S.pressMin+' от продаж за 5 мин','Жду данные…','');
   else{const b=c.b5||0,s=c.s5||0;
     if(b+s<3)put('sig','press',S.c_press,'fail','Покупок ≥ ×'+S.pressMin+' от продаж за 5 мин','За 5 мин почти нет сделок ('+(b+s)+')','нет сделок');
     else{const r=s?b/s:b;put('sig','press',S.c_press,r>=S.pressMin?'pass':'fail','Покупок ≥ ×'+S.pressMin+' от продаж за 5 мин','Покупок '+b+', продаж '+s+' (×'+(Math.round(r*10)/10)+')','продают')}}
@@ -547,7 +553,7 @@ function checks(c){
   {const m=c.micro;put('sig','micro',S.c_micro,m==null||m.n<10?'unk':(m.share<=S.microMax?'pass':'fail'),'Микро-сделки (меньше $'+S.microUsd+') ≤ '+S.microMax+'%',
     m==null?'Проверю, когда пройдут остальные правила':m.n<10?'За 5 мин сделок пока мало ('+m.n+') — жду хотя бы 10':(Math.round(m.share)+'% из '+m.n+' сделок за 5 мин меньше $'+S.microUsd+(m.share>S.microMax?' — боты накручивают активность':'')+', средняя $'+m.avg.toFixed(1)),'микро-сделки')}
   put('sig','vol5',S.c_vol5,c.v5==null?'unk':(c.v5>=S.vol5Min?'pass':'fail'),'Объём за 5 мин ≥ '+money(S.vol5Min),c.v5==null?'Жду данные…':'Сейчас '+money(c.v5),'мало объёма');
-  put('sig','buyers',S.c_buyers,c.buyers==null?'unk':(c.buyers>=S.buyersMin?'pass':'fail'),'Уникальных покупателей ≥ '+S.buyersMin,c.buyers==null?'Жду данные…':('Купили '+c.buyers+' разных кошельков'),'мало покупателей');
+  {const nb=Math.max(c.buyers||0,M?.ubAll||0),has=c.buyers!=null||M;put('sig','buyers',S.c_buyers,!has?'unk':(nb>=S.buyersMin?'pass':'fail'),'Уникальных покупателей ≥ '+S.buyersMin,!has?'Жду данные…':('Купили '+nb+' разных кошельков'),'мало покупателей')}
   const dd=c.peak&&c.price?(1-c.price/c.peak)*100:null;
   put('sig','dd',S.c_dd,dd==null?'unk':(dd<=S.ddMax?'pass':'fail'),'Не упала > '+S.ddMax+'% от пика',dd==null?'Жду цену…':('От пика '+(dd<0.5?'на пике':'−'+Math.round(dd)+'%')),'сливают');
   // предупреждения
@@ -578,7 +584,7 @@ function evalCoin(c){
   if(fails.length&&!c.firstFail)c.firstFail=fails[0].k;
   if(inWin(c)){if(!fails.length&&!waits.length){c.status='pass';c.passAt=Date.now();finalize(c,ck)}return}
   c.status=fails.length?'fail':'nodata';finalize(c,ck)}
-function cfgKey(){return['r7','win','c_contract','c_owner','ownerMax','c_dev','devMax','devStrict','c_liq','liqMin','c_lock','lockMin','c_press','pressMin','c_sells','sellMin2','c_micro','microMax','microUsd','c_vol5','vol5Min','c_buyers','buyersMin','c_dd','ddMax'].map(k=>S[k]).join('|')}
+function cfgKey(){return['r8','win','c_contract','c_owner','ownerMax','c_dev','devMax','devStrict','c_liq','liqMin','c_lock','lockMin','c_press','pressMin','c_sells','sellMin2','c_micro','microMax','microUsd','c_vol5','vol5Min','c_buyers','buyersMin','c_dd','ddMax'].map(k=>S[k]).join('|')}
 function finalize(c,ck){if(c.final)return;
   c.final={cfg:cfgKey(),fails:ck.filter(x=>x.sec!=='warn'&&x.st==='fail').map(x=>x.k),first:c.firstFail||null,
     unk:ck.filter(x=>x.sec!=='warn'&&(x.st==='unk'||x.st==='err')).map(x=>x.k),api:ck.some(x=>x.st==='err')}}
@@ -724,7 +730,7 @@ function startTrades(c){stopTrades();if(!c.pair)return;trCoin=c;c._tr=c._tr||new
       (r.data||[]).forEach(d=>{const a=d.attributes||{};const key=a.tx_hash||d.id;if(!key||c._tr.has(key))return;
         const buy=a.kind==='buy';c._tr.set(key,{t:Date.parse(a.block_timestamp)||Date.now(),buy,usd:+a.volume_in_usd||0,w:a.tx_from_address||'',
           price:buy?+a.price_to_in_usd:+a.price_from_in_usd});if(c._trInit)fresh.add(key)});
-      c._trInit=true;c._trAt=Date.now();c._trErr='';c.micro=microOf([...c._tr.values()].sort((a,b)=>b.t-a.t).slice(0,100));c.microAt=Date.now();renderTrades(c,fresh)})
+      c._trInit=true;c._trAt=Date.now();c._trErr='';c.micro=microOf([...c._tr.values()].sort((a,b)=>b.t-a.t));c.microAt=Date.now();renderTrades(c,fresh)})
     .catch(e=>{c._trErr=e.message;renderTrades(c,new Set())}).finally(()=>{c._trq=0})};
   renderTrades(c,new Set());tick();trT=setInterval(tick,12000)}
 function renderTrades(c,fresh){const box=$('#trBox');if(!box||box.dataset.a!==c.addr)return;
