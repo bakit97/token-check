@@ -279,6 +279,11 @@ async function findPDA(seeds,prog){const pb=b58dec(prog);
     const h=await sha256(buf);if(!onCurve(h))return b58enc(h)}throw new Error('no PDA')}
 const PUMP='6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
 const bondingCurveOf=mint=>findPDA([new TextEncoder().encode('bonding-curve'),b58dec(mint)],PUMP);
+// канонический пул PumpSwap, в который pump.fun переносит монету при миграции (LP сжигаются)
+const PUMP_AMM='pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA',WSOL='So11111111111111111111111111111111111111112';
+async function canonicalPoolOf(mint){const te=new TextEncoder();
+  const auth=await findPDA([te.encode('pool-authority'),b58dec(mint)],PUMP);
+  return findPDA([te.encode('pool'),new Uint8Array([0,0]),b58dec(auth),b58dec(mint),b58dec(WSOL)],PUMP_AMM)}
 
 /* =================== память =================== */
 const mem={};let storeOk=true;
@@ -387,7 +392,7 @@ function applyDS(ps){
     const cv=arr.filter(p=>isCurve(p.dexId)&&p.pairCreatedAt).map(p=>p.pairCreatedAt);if(cv.length)c.curveAt=Math.min(...cv);
     const created=Math.min(...arr.map(p=>p.pairCreatedAt||Infinity));if(isFinite(created)&&(!c.tokAt||created<c.tokAt))c.tokAt=created;
     const pools=arr.filter(p=>!isCurve(p.dexId));if(!pools.length)return;
-    const p=pools.sort((x,y)=>(y.liquidity?.usd||0)-(x.liquidity?.usd||0))[0];const prev=c.price;
+    const p=pools.find(x=>x.pairAddress===c.pair)||pools.sort((x,y)=>(y.liquidity?.usd||0)-(x.liquidity?.usd||0))[0];const prev=c.price;
     Object.assign(c,{price:+p.priceUsd||c.price,liq:(p.liquidity?.usd>0?p.liquidity.usd:c.liq),mc:p.marketCap||p.fdv||c.mc,
       b24:p.txns?.h24?.buys??c.b24,s24:p.txns?.h24?.sells??c.s24,v24:p.volume?.h24??c.v24,
       ch5:p.priceChange?.m5??c.ch5,ch1:p.priceChange?.h1??c.ch1,b5:p.txns?.m5?.buys??c.b5,s5:p.txns?.m5?.sells??c.s5,v5:p.volume?.m5??c.v5,
@@ -430,16 +435,16 @@ async function rpcCheck(c){
     const ownList=Object.keys(by);let prog=new Set();
     try{const oa=await rpc('getMultipleAccounts',[ownList,{encoding:'base64',dataSlice:{offset:0,length:0}}]);
       ownList.forEach((o,i)=>{const v=oa?.value?.[i];if(v&&v.owner&&v.owner!==SYS)prog.add(o)})}catch{}
-    const poolTok=c.liq&&c.price?c.liq/2/c.price:null;
-    owners=Object.entries(by).filter(([o,amt])=>!(o===c.pair||POOL_AUTH.has(o)||prog.has(o)||(poolTok&&Math.abs(amt-poolTok)/poolTok<0.25)))
+    owners=Object.entries(by).filter(([o,amt])=>!(o===c.pair||POOL_AUTH.has(o)||prog.has(o)))
       .map(([o,amt])=>({o,p:supply?amt/supply*100:0})).sort((a,b)=>b.p-a.p)}
   // кривая pump.fun: есть и завершена → настоящая миграция, пул сожжён
-  let bc=null;
+  let bc=null,canon=null;
   if(isPumpSwap(c.dex)){
     if(Math.abs(supply-1e9)>1||dec!==6)bc='none';
-    else{let bca=null;try{bca=await bondingCurveOf(c.addr)}catch{}if(!bca)bc='none';else{const ai=await rpc('getAccountInfo',[bca,{encoding:'base64'}]);const v2=ai?.value;
+    else{try{canon=c.pair?(await canonicalPoolOf(c.addr))===c.pair:null}catch{}
+      let bca=null;try{bca=await bondingCurveOf(c.addr)}catch{}if(!bca)bc='none';else{const ai=await rpc('getAccountInfo',[bca,{encoding:'base64'}]);const v2=ai?.value;
       if(!v2||v2.owner!==PUMP)bc='none';else{const raw=atob(v2.data?.[0]||'');bc=raw.length>48&&raw.charCodeAt(48)===1?'complete':'open'}}}}
-  c.rpc={at:Date.now(),is22,supply,dec,bc,mint:!!info.mintAuthority,freeze:!!info.freezeAuthority,bad,
+  c.rpc={at:Date.now(),is22,supply,dec,bc,canon,mint:!!info.mintAuthority,freeze:!!info.freezeAuthority,bad,
     maxOwner:owners[0]?.p||0,maxOwnerAddr:owners[0]?.o||'',top10:owners.slice(0,10).reduce((s,x)=>s+x.p,0)};
   c.rpcErr='';
 }
@@ -488,7 +493,7 @@ function checks(c){
   put('safe','liq',S.c_liq,c.liq?(c.liq>=S.liqMin?'pass':'fail'):'unk','В пуле ≥ '+money(S.liqMin),'Сейчас '+money(c.liq),'мало в пуле');
   if(isPumpSwap(c.dex)){const m=migr(c,R);
     put('safe','lock',S.c_lock,m==='yes'?'pass':m==='no'?'fail':rpcSt,'Пул не вытащат',
-      m==='yes'?'Настоящая миграция с pump.fun (кривая завершена) — пул сожжён':m==='no'?'Пул создан вручную, не миграция с pump.fun ('+migrWhy(c,R)+') — создатель может забрать деньги':(R?.src==='rc'?'Нужен ответ блокчейна (ключ Helius), rugcheck этого не показывает':'Проверяю кривую pump.fun…'),'пул вручную')}
+      m==='yes'?'Настоящая миграция с pump.fun: кривая завершена, это канонический пул миграции — LP сожжены':m==='no'?'Пул создан вручную, не миграция с pump.fun ('+migrWhy(c,R)+') — создатель может забрать деньги':(R?.src==='rc'?'Нужен ответ блокчейна (ключ Helius), rugcheck этого не показывает':'Проверяю кривую pump.fun…'),'пул вручную')}
   else{const lk=L?.lock;put('safe','lock',S.c_lock,lk!=null?(lk>=S.lockMin?'pass':'fail'):(c.rcTried?(c.rcErr?'err':'fail'):'unk'),'Пул заблокирован ≥ '+S.lockMin+'%',lk!=null?('Заблокировано '+Math.round(lk)+'% ('+esc(c.dex)+')'):(c.rcTried?(c.rcErr?'rugcheck не ответил':'Данных о блокировке нет — риск'):'Жду rugcheck…'),'пул не залочен')}
   // сигналы
   if(c.b5==null)put('sig','press',S.c_press,'unk','Покупок ≥ ×'+S.pressMin+' от продаж за 5 мин','Жду данные…','');
@@ -516,10 +521,10 @@ function checks(c){
 function getR(c){const L=c.rcLite;return c.rpc||(L?.has?{src:'rc',supply:L.supply,dec:L.dec,mint:L.mint,freeze:L.freeze,bad:L.risk22||[],is22:false,maxOwner:L.maxOwner,top10:L.top10}:null)}
 const isMig=c=>isPumpSwap(c.dex)&&migr(c,getR(c))==='yes';
 // настоящая миграция с pump.fun: 1 млрд монет, 6 знаков, адрес …pump, была кривая раньше пула
-function migr(c,R){if(!R||R.supply==null)return 'unk';if(migrWhy(c,R))return 'no';return R.bc==='complete'?'yes':'unk'}
+function migr(c,R){if(!R||R.supply==null)return 'unk';if(migrWhy(c,R))return 'no';return R.bc==='complete'&&R.canon===true?'yes':'unk'}
 function migrWhy(c,R){const w=[];if(Math.abs(R.supply-1e9)>1)w.push('монет '+(R.supply>=1e6?Math.round(R.supply/1e6)+' млн':Math.round(R.supply)));
   if(R.dec!=null&&R.dec!==6)w.push(R.dec+' знаков');if(!/pump$/.test(c.addr))w.push('адрес не …pump');
-  if(R.bc==='none')w.push('нет кривой pump.fun');if(R.bc==='open')w.push('кривая pump.fun не завершена');return w.join(', ')}
+  if(R.bc==='none')w.push('нет кривой pump.fun');if(R.bc==='open')w.push('кривая pump.fun не завершена');if(R.bc==='complete'&&R.canon===false)w.push('это не тот пул, куда pump.fun перенёс монету — ручной пул рядом с настоящим');return w.join(', ')}
 const RULE_NAMES={sells:'Лесенка',contract:'Контракт',owner:'Кит',dev:'Дев',liq:'Деньги в пуле',lock:'Лок пула',press:'Давление покупок',vol5:'Объём 5 мин',buyers:'Покупатели',dd:'Не сливают',rug:'Rugcheck'};
 
 function evalCoin(c){
@@ -531,7 +536,7 @@ function evalCoin(c){
   if(fails.length&&!c.firstFail)c.firstFail=fails[0].k;
   if(inWin(c)){if(!fails.length&&!waits.length){c.status='pass';c.passAt=Date.now();finalize(c,ck)}return}
   c.status=fails.length?'fail':'nodata';finalize(c,ck)}
-function cfgKey(){return['r4','win','c_contract','c_owner','ownerMax','c_dev','devMax','devStrict','c_liq','liqMin','c_lock','lockMin','c_press','pressMin','c_sells','sellMin2','c_vol5','vol5Min','c_buyers','buyersMin','c_dd','ddMax'].map(k=>S[k]).join('|')}
+function cfgKey(){return['r5','win','c_contract','c_owner','ownerMax','c_dev','devMax','devStrict','c_liq','liqMin','c_lock','lockMin','c_press','pressMin','c_sells','sellMin2','c_vol5','vol5Min','c_buyers','buyersMin','c_dd','ddMax'].map(k=>S[k]).join('|')}
 function finalize(c,ck){if(c.final)return;
   c.final={cfg:cfgKey(),fails:ck.filter(x=>x.sec!=='warn'&&x.st==='fail').map(x=>x.k),first:c.firstFail||null,
     unk:ck.filter(x=>x.sec!=='warn'&&(x.st==='unk'||x.st==='err')).map(x=>x.k),api:ck.some(x=>x.st==='err')}}
@@ -743,9 +748,11 @@ function fetchHist(){histPass().forEach(c=>fetchH(c,6));histFail().forEach(c=>fe
 setInterval(()=>{if(tab==='hist')fetchHist()},60000);
 // вход: прошедшие — момент прохождения + время на покупку; завалившие — конец окна + время на покупку (для сравнения)
 function entryOf(c){const h=H[c.addr];if(!h||!h.pts.length)return null;
-  const te=(c.status==='pass'?c.passAt:c.listedAt+S.win*60e3)+S.delay*60e3;
+  const te=(c.status==='pass'?c.passAt:c.listedAt+passOff())+S.delay*60e3;
   const k=h.pts.find(p=>p[0]>=te);if(!k)return null;return{te,p0:(k[4]||k[1])*(1+S.fee/100)}}
 const net=p=>p*(1-S.fee/100);
+// у заваливших вход через то же время после появления, что и у прошедших (медиана)
+function passOff(){const v=histPass().map(c=>c.passAt-c.listedAt).filter(x=>x>=0);return v.length?med(v):S.win*60e3/2}
 function xAt(c,min){const h=H[c.addr],e=entryOf(c);if(!e)return null;const t=e.te+min*60e3;
   if(h.pts[h.pts.length-1][0]<t-90e3)return null;let b=null;for(const p of h.pts){if(p[0]<=t)b=p;else break}return b?net(b[4])/e.p0:null}
 function pathOf(c){const h=H[c.addr],e=entryOf(c);if(!e)return null;let mx=0,mt=0,mn=Infinity;const hit={};
@@ -768,7 +775,7 @@ function renderHist(){
   hrows+=`<tr><td>пик (медиана)</td><td class="up">${xf(med(ps.map(p=>p.peak)))}</td><td>${xf(med(pf.map(p=>p.peak)))}</td></tr>`;
   hrows+=`<tr><td>просадка (медиана)</td><td class="dn">${ps.length?'−'+Math.round(med(ps.map(p=>p.dd).filter(x=>x!=null)))+'%':'—'}</td><td class="dn">${pf.length?'−'+Math.round(med(pf.map(p=>p.dd).filter(x=>x!=null)))+'%':'—'}</td></tr>`;
   box.innerHTML=head+`<div class="agg big"><h3>Прошли (${cs.length}) против завалили (${fs.length})</h3>
-    <p class="mut" style="margin:0;font-size:12px">Вход у прошедших — прохождение правил + ${S.delay} мин. У заваливших — конец окна + ${S.delay} мин, как если бы ты купил их. Медиана, ×1 = в ноль после комиссий.</p>
+    <p class="mut" style="margin:0;font-size:12px">Вход у прошедших — прохождение правил + ${S.delay} мин. У заваливших — через то же время после появления (медиана прошедших) + ${S.delay} мин. Медиана, ×1 = в ноль после комиссий.</p>
     ${overlaySvg(cs)}
     <div class="tbl"><table><tr><th>После входа</th><th>прошли</th><th>в плюсе</th><th>завалили</th><th>в плюсе</th></tr>${rows}</table></div>
     <div class="tbl"><table><tr><th>За 5 ч</th><th>прошли</th><th>завалили</th></tr>${hrows}</table></div>
