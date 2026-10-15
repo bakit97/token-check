@@ -38,7 +38,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .store.bad{color:var(--dn)}
 .gear{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--panel);font-size:17px}
 .tabs{display:flex;gap:4px;padding-bottom:8px;overflow-x:auto}
-.tab{flex:1 1 auto;min-width:0;padding:8px 6px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--mut);font-weight:700;font-size:13px;white-space:nowrap}
+.tab{flex:1 0 auto;min-width:max-content;padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--mut);font-weight:700;font-size:13px;white-space:nowrap}
 .tab.on{background:var(--acc);border-color:var(--acc);color:#fff}
 .tab b{font-family:var(--mono);font-weight:700;opacity:.8;margin-left:3px}
 .stat{font:11px var(--mono);color:var(--mut);padding:8px 0 2px;display:flex;gap:10px;flex-wrap:wrap}
@@ -187,6 +187,15 @@ button{font:inherit;color:inherit;cursor:pointer}
 .tr.big .tu{font-size:13px}.tr.big{background:rgba(245,192,74,.06)}
 .tr .tw{color:var(--mut);text-decoration:none;text-align:right;overflow:hidden;text-overflow:ellipsis}
 .tr.enter{animation:trin 1.6s ease-out}@keyframes trin{0%{background:rgba(91,140,255,.35)}100%{background:transparent}}
+/* исследование */
+.rtab td,.rtab th{font-size:11px}.rtab td:first-child{white-space:normal;min-width:150px;font-family:var(--sans);font-size:12px}
+.rtab tr.rh td{color:var(--mut);font:700 10px var(--mono);text-transform:uppercase;letter-spacing:.06em;padding-top:12px;text-align:left}
+.rtab tr.star td{background:rgba(245,192,74,.07)}.rtab tr.star td:first-child{color:var(--warn);font-weight:700}
+.rgrp{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-top:6px;padding:8px 10px}
+.rgrp summary{cursor:pointer;font-weight:700}
+.rrow{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 0;border-top:1px solid var(--line);color:var(--fg);text-decoration:none}
+.rrow .av{width:30px;height:30px}.rrow .rt{display:flex;flex-direction:column;align-items:flex-end}.rrow .nm{display:block}
+.sum div small{display:block}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
@@ -201,6 +210,7 @@ button{font:inherit;color:inherit;cursor:pointer}
     <button class="tab on" data-t="all">Все<b id="nAll">0</b></button>
     <button class="tab" data-t="pass">Прошли<b id="nPass">0</b></button>
     <button class="tab" data-t="hist">История</button>
+    <button class="tab" data-t="research">Исследование</button>
     <button class="tab" data-t="rules">Правила</button>
     <button class="tab" data-t="check">Проверка</button>
   </nav>
@@ -219,6 +229,7 @@ button{font:inherit;color:inherit;cursor:pointer}
   <section id="v-hist" hidden>
     <div id="hist"></div>
   </section>
+  <section id="v-research" hidden><div id="research"></div></section>
   <section id="v-rules" hidden><div class="stat"><span id="rulesHead"></span></div><div id="rules"></div></section>
   <section id="v-check" hidden>
     <div class="inrow"><input id="addr" placeholder="Адрес контракта" autocomplete="off" spellcheck="false"><button class="btn" id="go">Проверить</button></div>
@@ -365,7 +376,7 @@ function upsertGT(p){
   const c=C[p.addr];
   if(!c){if(Date.now()-p.listedAt>S.keepH*3600e3)return;
     const fresh=Date.now()-p.listedAt<=S.win*60e3;
-    C[p.addr]={...p,spark:p.price?[[Date.now(),p.price]]:[],peak:p.price||0,status:fresh?'wait':'miss',isNew:booted,seenAt:Date.now(),
+    seenAdd(p);C[p.addr]={...p,spark:p.price?[[Date.now(),p.price]]:[],peak:p.price||0,status:fresh?'wait':'miss',isNew:booted,seenAt:Date.now(),
       firstPrice:Date.now()-p.listedAt<150e3?(p.price||null):null};
     if(fresh&&!C[p.addr].firstPrice)wantOhlcv(p.addr);setCanon(C[p.addr]);return}
   if(p.pair!==c.pair)considerPool(c,p.pair,p.dex,p.listedAt);
@@ -659,7 +670,7 @@ setInterval(()=>{evalAll();render()},5000); // окно закрывается �
 /* =================== вкладки =================== */
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.t;
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));
-  ['all','pass','hist','rules','check'].forEach(k=>$('#v-'+k).hidden=k!==tab);
+  ['all','pass','hist','research','rules','check'].forEach(k=>$('#v-'+k).hidden=k!==tab);if(tab==='research')renderResearch();
   if(tab==='hist')renderHist();if(tab==='rules')renderRules();render();window.scrollTo(0,0)});
 $('#fFresh').onclick=()=>{S.f_fresh=!S.f_fresh;sset('sc_set',S);render()};
 $('#fScam').onclick=()=>{S.f_scam=!S.f_scam;sset('sc_set',S);render()};
@@ -907,6 +918,132 @@ function renderRules(){
   $('#hsave').onclick=()=>{S.helius=$('#hkey').value.trim();sset('sc_set',S);$('#hst').textContent=S.helius?'Ключ сохранён, проверяю…':'Ключ удалён';
     rpc('getHealth',[]).then(()=>{$('#hst').textContent=S.helius?'✓ Ключ работает':'✓ Блокчейн отвечает'}).catch(e=>{$('#hst').textContent='✕ Не отвечает: '+e.message})};
   updRuleCounts()}
+
+/* =================== исследование, часть 1: рождение и миграция =================== */
+// все пулы, которые видел сканер (лёгкая запись, хранится 26 ч) — честная выборка, в ней есть и скамы
+const SEEN=sget('sc_seen',{});
+function seenAdd(p){if(SEEN[p.addr])return;SEEN[p.addr]={addr:p.addr,name:p.name,sym:p.sym,img:p.img,pair:p.pair,dex:p.dex,listedAt:p.listedAt}}
+setInterval(()=>{const lim=Date.now()-26*3600e3;const ks=Object.keys(SEEN);ks.forEach(k=>{if(SEEN[k].listedAt<lim)delete SEEN[k]});
+  const rest=Object.values(SEEN).sort((a,b)=>b.listedAt-a.listedAt);if(rest.length>1500)rest.slice(1500).forEach(x=>delete SEEN[x.addr]);sset('sc_seen',SEEN)},30000);
+const RES=sget('sc_research',{});
+const GROUPS=[['grow','Растёт и жива','up'],['pd','Выросла, потом слилась','warn'],['rug','Сразу слилась','dn'],['dead','Тихо умерла','mut']];
+let resBusy=false,resMsg='';
+
+// вид запуска
+function launchType(r){const d=(r.dex||'').toLowerCase(),ps=(r.dexes||[]).join(' ').toLowerCase();
+  if(/pump-?swap/.test(d))return r.canon===true?'pump.fun → PumpSwap':r.canon===false?'Пул вручную (PumpSwap)':'PumpSwap';
+  if(/dbc|dynamic-bonding/.test(d))return 'Meteora DBC (кривая)';
+  if(/launch/.test(d))return 'LaunchLab (кривая)';
+  if(/meteora/.test(d))return /dbc|dynamic/.test(ps)?'Meteora DBC → Meteora':'Пул вручную (Meteora)';
+  if(/raydium/.test(d))return /launch/.test(ps)?'LaunchLab → Raydium':'Пул вручную (Raydium)';
+  return 'Другое ('+(r.dex||'?')+')'}
+const isManual=t=>/вручную/.test(t);
+
+// признаки первых 10 минут и итог по минутным свечам [t,o,h,l,c,v]
+function featOf(r,k){
+  const t0=r.listedAt,m=x=>Math.floor((x[0]-t0)/60000);
+  const f10=k.filter(x=>m(x)>=0&&m(x)<10),after=k.filter(x=>m(x)>=10);
+  if(!f10.length)return null;
+  const p0=f10[0][1]||f10[0][4],p10=f10[f10.length-1][4];
+  const v1=f10.filter(x=>m(x)===0).reduce((s,x)=>s+x[5],0),v5=f10.filter(x=>m(x)<5).reduce((s,x)=>s+x[5],0),v510=f10.filter(x=>m(x)>=5).reduce((s,x)=>s+x[5],0);
+  let hi=0,dd=0;f10.forEach(x=>{hi=Math.max(hi,x[2]);dd=Math.max(dd,1-x[3]/hi)});
+  const green=f10.filter(x=>x[4]>x[1]).length,active=new Set(f10.map(m)).size;
+  const f={v1,v5,v510,trend:v5?v510/v5:null,x10:p0?p10/p0:null,dd10:dd*100,green,active,p0,p10};
+  // итог: от цены на 10-й минуте
+  const last=k[k.length-1];f.peak=after.length&&p10?Math.max(...after.map(x=>x[2]))/p10:null;f.now=p10?last[4]/p10:null;f.lastAt=last[0];
+  return f}
+function groupOf(r){const f=r.f;if(!f||f.peak==null)return null;if(Date.now()-r.listedAt<2*3600e3)return 'early';
+  if(f.peak>=2&&f.now>=1&&Date.now()-f.lastAt<60*60e3)return 'grow';
+  if(f.peak>=2)return 'pd';if(f.now<=0.3)return 'rug';return 'dead'}
+
+async function runResearch(){if(resBusy)return;resBusy=true;const btn=$('#resGo');btn.disabled=true;
+  const now=Date.now(),okAge=x=>now-x.listedAt>=2*3600e3&&now-x.listedAt<=24*3600e3;
+  const cand={};
+  try{
+    // 1. топ сегодняшнего дня (растущие и активные)
+    for(const path of ['/trending_pools?duration=24h&page=1','/trending_pools?duration=24h&page=2','/trending_pools?duration=24h&page=3','/pools?sort=h24_volume_usd_desc&page=1','/pools?sort=h24_volume_usd_desc&page=2']){
+      resMsg='Ищу топ монет дня…';renderResearch();
+      try{const r=await gt(path+'&include=base_token,quote_token,dex',3);const inc={};(r.included||[]).forEach(x=>inc[x.id]=x);
+        (r.data||[]).forEach(d=>{const p=gtParse(d,inc);if(p&&okAge(p))cand[p.addr]={...p,src:'top'}})}catch{}}
+    // 2. все, что видел сканер (в том числе скамы и тихо умершие)
+    Object.values(SEEN).filter(okAge).forEach(x=>{if(!cand[x.addr])cand[x.addr]={...x,src:'seen'}});
+    // не повторять свежие замеры; монеты старше 16 ч уже не меняются
+    let list=Object.values(cand).filter(x=>{const o=RES[x.addr];return !o||(Date.now()-o.at>30*60e3&&Date.now()-o.listedAt<16*3600e3+30*60e3)});
+    const tops=list.filter(x=>x.src==='top'),rest=list.filter(x=>x.src!=='top').sort(()=>Math.random()-.5);
+    list=[...tops,...rest].slice(0,60);
+    if(!list.length){resMsg=Object.keys(SEEN).length?'Новых монет для замера нет: нужны монеты старше 2 часов. Держи страницу открытой — сканер их копит.':'Сканер ещё не накопил монет. Подожди пару часов с открытой страницей.';return}
+    // 3. DEX Screener: время рождения токена, все его пулы, соцсети
+    for(let i=0;i<list.length;i+=30){resMsg='Узнаю время рождения монет…';renderResearch();
+      try{const ps=await j(`${DS}/tokens/v1/solana/${list.slice(i,i+30).map(x=>x.addr).join(',')}`);
+        ps.forEach(p=>{const x=cand[p.baseToken?.address];if(!x)return;x.dexes=[...new Set([...(x.dexes||[]),p.dexId])];
+          if(p.pairCreatedAt)x.tokAt=Math.min(x.tokAt||Infinity,p.pairCreatedAt);x.soc=Math.max(x.soc||0,(p.info?.socials||[]).length+(p.info?.websites||[]).length);
+          if(!x.img&&p.info?.imageUrl)x.img=p.info.imageUrl})}catch{}}
+    // 4. по каждой: настоящий ли пул и первые минуты жизни
+    let done=0;
+    for(const x of list){
+      resMsg=`Изучаю монеты: ${done} из ${list.length} · осталось ~${Math.ceil((list.length-done)*6.5/60)} мин`;renderResearch();
+      if(/pump-?swap/i.test(x.dex)&&x.canon==null){try{x.canon=await isCanonical(x.addr,x.pair)}catch(e){if(/base58/.test(e?.message||''))x.canon=false}}
+      try{const before=Math.floor(Math.min(Date.now(),x.listedAt+16*3600e3)/1000);
+        const r=await gt(`/pools/${x.pair}/ohlcv/minute?aggregate=1&limit=1000&before_timestamp=${before}&currency=usd`,3);
+        const k=(r.data?.attributes?.ohlcv_list||[]).map(c=>[c[0]*1000,+c[1],+c[2],+c[3],+c[4],+c[5]]).filter(c=>c[0]>=x.listedAt-60e3).sort((a,b)=>a[0]-b[0]);
+        const sup=x.mc&&x.price?x.mc/x.price:null;
+        const rec={addr:x.addr,name:x.name,sym:x.sym,img:x.img,pair:x.pair,dex:x.dex,dexes:x.dexes||[],canon:x.canon,listedAt:x.listedAt,
+          tokAt:isFinite(x.tokAt)?Math.min(x.tokAt,x.listedAt):null,soc:x.soc||0,src:x.src,at:Date.now(),f:featOf(x,k)};
+        rec.type=launchType(rec);rec.migMin=rec.tokAt?(rec.listedAt-rec.tokAt)/60000:null;
+        rec.mcMig=sup&&rec.f?rec.f.p0*sup:null;rec.g=groupOf(rec);RES[rec.addr]=rec;sset('sc_research',RES)}catch{}
+      done++;if(tab==='research')renderResearch()}
+    resMsg=`Готово: изучено ${done} монет. Нажми ещё раз позже — добавятся новые.`;
+  }finally{resBusy=false;btn.disabled=false;renderResearch()}}
+
+// клоны: такое же имя у другой монеты в выборке
+function cloneOf(r,all){const n=(r.name||'').trim().toLowerCase();return !!n&&all.some(o=>o!==r&&(o.name||'').trim().toLowerCase()===n)}
+const pctOf=(arr,fn)=>arr.length?Math.round(arr.filter(fn).length/arr.length*100):null;
+function renderResearch(){const box=$('#research');if(!box)return;
+  const all=Object.values(RES).filter(r=>r.f);const by={};GROUPS.forEach(([g])=>by[g]=all.filter(r=>r.g===g));
+  const early=all.filter(r=>r.g==='early').length,others=all.filter(r=>r.g&&r.g!=='grow'&&r.g!=='early');
+  const types=[...new Set(all.map(r=>r.type))].sort();
+  // строки сравнения: [название, функция значения, вид: num|pct, формат]
+  const ROWS=[
+    ['h','Как родилась'],
+    ...types.map(t=>['Вид: '+t,r=>r.type===t,'pct']),
+    ['Время от создания до миграции',r=>r.migMin,'num',v=>dur(v)],
+    ['Капа в момент появления на витрине',r=>r.mcMig,'num',money],
+    ['Есть сайт/соцсети',r=>r.soc>0,'pct'],
+    ['Клон (имя уже было)',r=>cloneOf(r,all),'pct'],
+    ['h','Первые 10 минут на витрине'],
+    ['Объём в 1-ю минуту',r=>r.f.v1,'num',money],
+    ['Объём минуты 1–5',r=>r.f.v5,'num',money],
+    ['Объём минуты 6–10',r=>r.f.v510,'num',money],
+    ['Объём растёт (6–10 больше 1–5)',r=>r.f.trend!=null&&r.f.trend>1,'pct'],
+    ['Цена через 10 минут',r=>r.f.x10,'num',xf],
+    ['Самая глубокая просадка за 10 мин',r=>r.f.dd10,'num',v=>'−'+Math.round(v)+'%'],
+    ['Минут со сделками из 10',r=>r.f.active,'num',v=>Math.round(v)+''],
+    ['Зелёных свечей из 10',r=>r.f.green,'num',v=>Math.round(v)+'']];
+  const cell=(arr,row)=>{if(!arr.length)return{t:'—',v:null};
+    if(row[2]==='pct'){const v=pctOf(arr,row[1]);return{t:v+'%',v}}
+    const vs=arr.map(row[1]).filter(v=>v!=null&&isFinite(v));const v=med(vs);return{t:v==null?'—':row[3](v),v}};
+  const star=(row,a,b)=>{if(a.v==null||b.v==null)return false;if(row[2]==='pct')return Math.abs(a.v-b.v)>=20;
+    if(!a.v&&!b.v)return false;const r=(a.v||1e-9)/(b.v||1e-9);return r>=1.5||r<=0.67};
+  let rows='';for(const row of ROWS){if(row[0]==='h'){rows+=`<tr class="rh"><td colspan="6">${row[1]}</td></tr>`;continue}
+    const g=by.grow.length?cell(by.grow,row):{t:'—',v:null},o=cell(others,row),st=by.grow.length>=3&&star(row,g,o);
+    rows+=`<tr class="${st?'star':''}"><td>${st?'⭐ ':''}${esc(row[0])}</td><td class="up">${g.t}</td><td>${o.t}</td>${GROUPS.slice(1).map(([gk])=>`<td>${cell(by[gk],row).t}</td>`).join('')}</tr>`}
+  const cards=GROUPS.map(([g,l,c])=>`<div><b class="${c}">${by[g].length}</b><small>${l}</small></div>`).join('');
+  const lists=GROUPS.map(([g,l,c])=>by[g].length?`<details class="rgrp"><summary><span class="${c}">●</span> ${l} · ${by[g].length}</summary>${by[g].sort((a,b)=>(b.f.peak||0)-(a.f.peak||0)).map(r=>`
+    <a class="rrow" href="https://dexscreener.com/solana/${encodeURIComponent(r.pair)}" target="_blank" rel="noopener">${avHtml(r)}<span class="mid"><b class="nm">${esc(r.name)}<span>${esc(r.sym)}</span></b>
+    <span class="l2">${esc(r.type)} · миграция за ${r.migMin!=null?dur(r.migMin):'—'} · ${ago(r.listedAt)} назад</span></span>
+    <span class="rt"><span class="px up">пик ${xf(r.f.peak)}</span><span class="l2 ${r.f.now>=1?'up':'dn'}">сейчас ${xf(r.f.now)}</span></span></a>`).join('')}</details>`:'').join('');
+  box.innerHTML=`<div class="agg">
+    <h3>Часть 1 · Рождение и миграция</h3>
+    <p class="mut" style="margin:0 0 8px;font-size:12px">Берёт монеты за сутки: топ дня и всё, что видел сканер (там есть и скамы). Смотрит, как каждая родилась и как вела себя первые 10 минут, и сравнивает с тем, чем она кончилась. Результат меряется от цены на 10-й минуте.</p>
+    <button class="btn" id="resGo" style="width:100%" ${resBusy?'disabled':''}>${resBusy?'Идёт исследование…':'Запустить исследование'}</button>
+    <p class="mut" id="resMsg" style="font-size:12px;margin:6px 0 0">${esc(resMsg||(all.length?'Изучено монет: '+all.length:'Нажми кнопку. Займёт 5–7 минут — держи страницу открытой.'))}</p>
+    <div class="sum" style="grid-template-columns:repeat(2,minmax(0,1fr))">${cards}</div>
+    <p class="mut" style="font-size:11px;margin:6px 0 0">Растёт и жива: от 10-й минуты дошла до ×2 и сейчас не ниже входа · Выросла, потом слилась: была ×2, сейчас ниже входа · Сразу слилась: ×2 не было, упала на 70%+ · Тихо умерла: остальные.${early?' Ещё рано судить (моложе 2 ч): '+early+'.':''}</p></div>
+  ${all.length?`<div class="agg"><h3>Что отличает растущие</h3>
+    <p class="mut" style="margin:0;font-size:12px">Медиана или доля в каждой группе. ⭐ — у растущих заметно не так, как у остальных: это кандидаты в правила.${by.grow.length<5?' <b class="warn">Растущих пока '+by.grow.length+' — выводы ненадёжны, нужно хотя бы 5–10.</b>':''}</p>
+    <div class="tbl"><table class="rtab"><tr><th></th><th class="up">Растёт</th><th>Все остальные</th><th class="warn">Выросла→слилась</th><th class="dn">Сразу слилась</th><th>Умерла</th></tr>${rows}</table></div></div>
+    <div class="sec-h">Монеты по группам</div>${lists}`:''}`;
+  $('#resGo').onclick=runResearch}
 
 /* =================== старт =================== */
 Object.values(C).forEach(setCanon);evalAll();render();boot();rcLoop();rpcLoop();microLoop();setTimeout(pollDS,4000);
