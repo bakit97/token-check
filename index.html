@@ -353,14 +353,17 @@ function gtParse(d,inc){
     b5:t.m5?.buys,s5:t.m5?.sells,v5:v.m5!=null?+v.m5:null,
     buyers:(older1h?t.h24?.buyers:t.h1?.buyers)??null}
 }
+// пул по этому адресу может создать только программа pump.fun при миграции → совпадение = настоящая миграция. Считается в телефоне, 0 запросов
+function setCanon(c){if(!c||!isPumpSwap(c.dex)||!c.pair||c.canon!=null||c._cq)return;c._cq=1;
+  isCanonical(c.addr,c.pair).then(v=>{c.canon=v}).catch(e=>{if(/base58/.test(e?.message||''))c.canon=false}).finally(()=>{c._cq=0;evalAll();render()})}
 function upsertGT(p){
   const c=C[p.addr];
   if(!c){if(Date.now()-p.listedAt>S.keepH*3600e3)return;
     const fresh=Date.now()-p.listedAt<=S.win*60e3;
     C[p.addr]={...p,spark:p.price?[[Date.now(),p.price]]:[],peak:p.price||0,status:fresh?'wait':'miss',isNew:booted,seenAt:Date.now(),
       firstPrice:Date.now()-p.listedAt<150e3?(p.price||null):null};
-    if(fresh&&!C[p.addr].firstPrice)wantOhlcv(p.addr);return}
-  if(p.listedAt<c.listedAt){c.listedAt=p.listedAt;c.pair=p.pair;c.dex=p.dex}
+    if(fresh&&!C[p.addr].firstPrice)wantOhlcv(p.addr);setCanon(C[p.addr]);return}
+  if(p.listedAt<c.listedAt){c.listedAt=p.listedAt;c.pair=p.pair;c.dex=p.dex;c.canon=undefined;setCanon(c)}
   if(p.buyers!=null)c.buyers=p.buyers;
   if(!c.dsAt){Object.assign(c,{price:p.price||c.price,liq:p.liq,mc:p.mc,b24:p.b24,s24:p.s24,v24:p.v24,ch5:p.ch5,ch1:p.ch1,b5:p.b5,s5:p.s5,v5:p.v5});pushSpark(c)}
   if(!c.img&&p.img)c.img=p.img;
@@ -424,29 +427,24 @@ function wantOhlcv(a){if(ohlcvWant.has(a))return;const c=C[a];if(!c?.pair)return
 //  • контракт, кривая, supply не меняются — запрашиваются один раз
 //  • держатели обновляются раз в 90 сек и только пока монета может пройти
 async function rpcCheck(c){
-  if(S.c_lock&&isPumpSwap(c.dex)&&c.pair&&!c.st){let canon=null;try{canon=await isCanonical(c.addr,c.pair)}catch{canon=false}
-    if(canon===false){c.st={canon:false,skip:true};c.rpc={at:Date.now(),skip:true,canon:false};c.rpcErr='';rpcUsed(0);return}}
   if(!c.st){
-    const mi=await rpc('getAccountInfo',[c.addr,{encoding:'jsonParsed'}]);rpcUsed(1);
-    const v=mi?.value;if(!v)throw new Error('токен не найден');
-    const info=v.data?.parsed?.info||{};const is22=v.owner===T22;const bad=[];
-    (info.extensions||[]).forEach(e=>{const s=e.state||{};
-      if(e.extension==='transferFeeConfig'){const bps=Math.max(+(s.newerTransferFee?.transferFeeBasisPoints||0),+(s.olderTransferFee?.transferFeeBasisPoints||0));if(bps>0)bad.push('комиссия '+bps/100+'% на перевод')}
-      if(e.extension==='transferHook'&&s.programId)bad.push('перехват переводов');
-      if(e.extension==='permanentDelegate'&&s.delegate)bad.push('вечный делегат');
-      if(e.extension==='nonTransferable')bad.push('нельзя переводить');
-      if(e.extension==='defaultAccountState'&&/frozen/i.test(s.accountState||''))bad.push('счета заморожены');
-      if(/pausable/i.test(e.extension))bad.push('можно поставить на паузу')});
-    const dec=+info.decimals||0,supply=(+info.supply||0)/10**dec;
-    let bc=null,canon=null;
-    if(isPumpSwap(c.dex)){try{canon=c.pair?await isCanonical(c.addr,c.pair):null}catch{canon=null}
-      if(Math.abs(supply-1e9)>1||dec!==6)bc='none';
-      else{let bca=null;try{bca=await bondingCurveOf(c.addr)}catch{}
-        if(!bca)bc='none';else{const ai=await rpc('getAccountInfo',[bca,{encoding:'base64'}]);rpcUsed(1);const v2=ai?.value;
-          if(!v2||v2.owner!==PUMP)bc='none';else{const raw=atob(v2.data?.[0]||'');bc=raw.length>48&&raw.charCodeAt(48)===1?'complete':'open'}}}}
-    c.st={is22,supply,dec,bc,canon,mint:!!info.mintAuthority,freeze:!!info.freezeAuthority,bad}}
+    if(isPumpSwap(c.dex)&&c.canon===true){ // монету создал pump.fun: mint/freeze отключены платформой, лишних функций нет — контракт не запрашиваем
+      c.st={pumpfun:true,is22:false,supply:1e9,dec:6,mint:false,freeze:false,bad:[]}}
+    else{
+      const mi=await rpc('getAccountInfo',[c.addr,{encoding:'jsonParsed'}]);rpcUsed(1);
+      const v=mi?.value;if(!v)throw new Error('токен не найден');
+      const info=v.data?.parsed?.info||{};const is22=v.owner===T22;const bad=[];
+      (info.extensions||[]).forEach(e=>{const s=e.state||{};
+        if(e.extension==='transferFeeConfig'){const bps=Math.max(+(s.newerTransferFee?.transferFeeBasisPoints||0),+(s.olderTransferFee?.transferFeeBasisPoints||0));if(bps>0)bad.push('комиссия '+bps/100+'% на перевод')}
+        if(e.extension==='transferHook'&&s.programId)bad.push('перехват переводов');
+        if(e.extension==='permanentDelegate'&&s.delegate)bad.push('вечный делегат');
+        if(e.extension==='nonTransferable')bad.push('нельзя переводить');
+        if(e.extension==='defaultAccountState'&&/frozen/i.test(s.accountState||''))bad.push('счета заморожены');
+        if(/pausable/i.test(e.extension))bad.push('можно поставить на паузу')});
+      const dec=+info.decimals||0,supply=(+info.supply||0)/10**dec;
+      c.st={is22,supply,dec,mint:!!info.mintAuthority,freeze:!!info.freezeAuthority,bad}}}
   const st=c.st;let owners=[];
-  const hard=st.mint||st.freeze||st.bad.length||(S.c_lock&&isPumpSwap(c.dex)&&(st.bc!=='complete'||st.canon===false));
+  const hard=st.mint||st.freeze||st.bad.length;
   if(!hard){ // держателей смотрим, только если монета ещё может пройти
     const la=await rpc('getTokenLargestAccounts',[c.addr]);rpcUsed(1);
     const accs=(la?.value||[]).filter(a=>+a.uiAmount>0);
@@ -461,10 +459,12 @@ async function rpcCheck(c){
   c.rpc={at:Date.now(),...st,holders:!hard,maxOwner:owners[0]?.p||0,maxOwnerAddr:owners[0]?.o||'',top10:owners.slice(0,10).reduce((s,x)=>s+x.p,0)};
   c.rpcErr='';
 }
+// монета уже не проходит правила, которым блокчейн не нужен → Helius не тратим
+const otherFails=c=>checks(c).some(x=>x.sec!=='warn'&&x.st==='fail'&&x.k!=='contract'&&x.k!=='owner');
 // счётчик запросов к блокчейну за сессию
 let rpcN=0;function rpcUsed(n){rpcN+=n}
 async function rpcLoop(){for(;;){
-  const cand=Object.values(C).filter(c=>c.status==='wait'&&inWin(c)&&!c.rpc?.skip&&!(c.st&&c.rpc&&!c.rpc.holders)&&(!c.rpc||Date.now()-c.rpc.at>90000)&&(!c.rpcTry||Date.now()-c.rpcTry>15000))
+  const cand=Object.values(C).filter(c=>c.status==='wait'&&inWin(c)&&(!isPumpSwap(c.dex)||c.canon!=null)&&!(c.st&&c.rpc&&!c.rpc.holders)&&(!c.rpc||Date.now()-c.rpc.at>90000)&&(!c.rpcTry||Date.now()-c.rpcTry>15000)&&!otherFails(c))
     .sort((a,b)=>(!!a.rpc-!!b.rpc)||b.listedAt-a.listedAt);
   const c=cand[0];
   if(c){c.rpcTry=Date.now();try{await rpcCheck(c);c.rpcFails=0}catch(e){c.rpcErr=e.message||'ошибка';c.rpcFails=(c.rpcFails||0)+1}evalAll();render();await sleep(700)}
@@ -499,7 +499,9 @@ function checks(c){
   const put=(sec,k,on,st,t,d,w)=>out.push({sec,k,st:on?st:'off',t,d,w});
   const rpcSt=c.rpcErr&&(c.rpcFails||0)>=3?'err':'unk';
   // безопасность
-  if(R?.skip){put('safe','contract',S.c_contract,'na','Контракт чистый','Не проверял — пул вручную, экономлю запросы','');put('safe','owner',S.c_owner,'na','Один владелец ≤ '+S.ownerMax+'%','Не проверял — пул вручную','')}
+  const PF=isPumpSwap(c.dex)&&c.canon===true;
+  if(PF)put('safe','contract',S.c_contract,'pass','Контракт чистый','Монету создал pump.fun: mint и freeze отключены платформой, скрытых функций нет','');
+  else if(R?.skip){put('safe','contract',S.c_contract,'na','Контракт чистый','Не проверял — пул вручную, экономлю запросы','');put('safe','owner',S.c_owner,'na','Один владелец ≤ '+S.ownerMax+'%','Не проверял — пул вручную','')}
   else if(R){const pr=[...(R.mint?['можно допечатать монеты']:[]),...(R.freeze?['можно заморозить твои токены']:[]),...R.bad];
     put('safe','contract',S.c_contract,pr.length?'fail':'pass','Контракт чистый',pr.length?pr.join(', '):('Mint и freeze отключены'+(R.src==='rc'?' (по rugcheck — блокчейн не ответил)':(R.is22?', Token-2022 без опасных функций':''))),R.mint?'mint':R.freeze?'freeze':R.bad.length?'Token-2022':'контракт')}
   else put('safe','contract',S.c_contract,rpcSt,'Контракт чистый',c.rpcErr?'Блокчейн не ответил: '+c.rpcErr:'Проверяю в блокчейне…','контракт');
@@ -508,8 +510,8 @@ function checks(c){
   put('safe','dev',S.c_dev,dev!=null?(dev<=S.devMax?'pass':'fail'):(c.rcTried?(S.devStrict?(c.rcErr?'err':'unk'):'na'):'unk'),'Дев ≤ '+S.devMax+'%',dev!=null?('Создатель держит '+f1(dev)+'%'):(c.rcTried?(S.devStrict?'Данных о создателе нет — не пропускаю':'Данных о создателе нет — правило пропущено'):'Жду rugcheck…'),'дев '+(dev!=null?Math.round(dev)+'%':''));
   put('safe','liq',S.c_liq,c.liq?(c.liq>=S.liqMin?'pass':'fail'):'unk','В пуле ≥ '+money(S.liqMin),'Сейчас '+money(c.liq),'мало в пуле');
   if(isPumpSwap(c.dex)){const m=migr(c,R);
-    put('safe','lock',S.c_lock,m==='yes'?'pass':m==='no'?'fail':rpcSt,'Пул не вытащат',
-      m==='yes'?'Настоящая миграция с pump.fun: кривая завершена, это канонический пул миграции — LP сожжены':m==='no'?'Пул создан вручную, не миграция с pump.fun ('+migrWhy(c,R)+') — создатель может забрать деньги':(R?.src==='rc'?'Нужен ответ блокчейна (ключ Helius), rugcheck этого не показывает':'Проверяю кривую pump.fun…'),'пул вручную')}
+    put('safe','lock',S.c_lock,m==='yes'?'pass':m==='no'?'fail':'unk','Пул не вытащат',
+      m==='yes'?'Настоящая миграция с pump.fun: это пул, который создал сам pump.fun, LP сожжены':m==='no'?'Пул создан вручную, а не pump.fun при миграции — создатель может забрать деньги':'Считаю адрес пула…','пул вручную')}
   else{const lk=L?.lock;put('safe','lock',S.c_lock,lk!=null?(lk>=S.lockMin?'pass':'fail'):(c.rcTried?(c.rcErr?'err':'unk'):'unk'),'Пул заблокирован ≥ '+S.lockMin+'%',lk!=null?('Заблокировано '+Math.round(lk)+'% ('+esc(c.dex)+')'):(c.rcTried?(c.rcErr?'rugcheck не ответил':'Rugcheck не знает этот пул — не пропускаю'):'Жду rugcheck…'),'пул не залочен')}
   // сигналы
   if(c.b5==null)put('sig','press',S.c_press,'unk','Покупок ≥ ×'+S.pressMin+' от продаж за 5 мин','Жду данные…','');
@@ -533,14 +535,13 @@ function checks(c){
   const twin=Object.values(C).find(o=>o!==c&&o.listedAt<c.listedAt&&((nm&&o.name?.trim().toLowerCase()===nm)||(sy.length>1&&o.sym?.trim().toLowerCase()===sy)));
   put('warn','clone',S.w_clone,twin?'fail':'pass','Не клон',twin?('Такое же название было '+ago(twin.listedAt)+' назад'):'Название уникальное','');
   if(L?.rugged)put('safe','rug',true,'fail','Rugcheck: RUGGED','Токен уже признан скамом','rugged');
+  if(!c.rpc&&!(R?.src)&&out.some(x=>x.sec!=='warn'&&x.st==='fail'&&x.k!=='contract'&&x.k!=='owner'))
+    out.forEach(x=>{if((x.k==='contract'||x.k==='owner')&&(x.st==='unk'||x.st==='err')){x.st='na';x.d='Не проверял — монета уже не проходит другие правила (экономлю Helius)'}});
   return out}
 function getR(c){const L=c.rcLite;return c.rpc||(L?.has?{src:'rc',supply:L.supply,dec:L.dec,mint:L.mint,freeze:L.freeze,bad:L.risk22||[],is22:false,maxOwner:L.maxOwner,top10:L.top10}:null)}
-const isMig=c=>isPumpSwap(c.dex)&&migr(c,getR(c))==='yes';
-// настоящая миграция с pump.fun: 1 млрд монет, 6 знаков, адрес …pump, была кривая раньше пула
-function migr(c,R){if(R?.canon===false)return 'no';if(!R||R.supply==null)return 'unk';if(migrWhy(c,R))return 'no';return R.bc==='complete'&&R.canon===true?'yes':'unk'}
-function migrWhy(c,R){if(R.skip)return 'это не тот пул, куда pump.fun переносит монету при миграции';const w=[];if(Math.abs(R.supply-1e9)>1)w.push('монет '+(R.supply>=1e6?Math.round(R.supply/1e6)+' млн':Math.round(R.supply)));
-  if(R.dec!=null&&R.dec!==6)w.push(R.dec+' знаков');if(!/pump$/.test(c.addr))w.push('адрес не …pump');
-  if(R.bc==='none')w.push('нет кривой pump.fun');if(R.bc==='open')w.push('кривая pump.fun не завершена');if(R.bc==='complete'&&R.canon===false)w.push('это не тот пул, куда pump.fun перенёс монету — ручной пул рядом с настоящим');return w.join(', ')}
+const isMig=c=>isPumpSwap(c.dex)&&c.canon===true;
+function migr(c){return c.canon===true?'yes':c.canon===false?'no':'unk'}
+function migrWhy(){return 'это не пул, который pump.fun создаёт при миграции'}
 const RULE_NAMES={sells:'Лесенка',contract:'Контракт',owner:'Кит',dev:'Дев',liq:'Деньги в пуле',lock:'Лок пула',press:'Давление покупок',vol5:'Объём 5 мин',buyers:'Покупатели',dd:'Не сливают',rug:'Rugcheck'};
 
 function evalCoin(c){
@@ -552,7 +553,7 @@ function evalCoin(c){
   if(fails.length&&!c.firstFail)c.firstFail=fails[0].k;
   if(inWin(c)){if(!fails.length&&!waits.length){c.status='pass';c.passAt=Date.now();finalize(c,ck)}return}
   c.status=fails.length?'fail':'nodata';finalize(c,ck)}
-function cfgKey(){return['r6','win','c_contract','c_owner','ownerMax','c_dev','devMax','devStrict','c_liq','liqMin','c_lock','lockMin','c_press','pressMin','c_sells','sellMin2','c_vol5','vol5Min','c_buyers','buyersMin','c_dd','ddMax'].map(k=>S[k]).join('|')}
+function cfgKey(){return['r7','win','c_contract','c_owner','ownerMax','c_dev','devMax','devStrict','c_liq','liqMin','c_lock','lockMin','c_press','pressMin','c_sells','sellMin2','c_vol5','vol5Min','c_buyers','buyersMin','c_dd','ddMax'].map(k=>S[k]).join('|')}
 function finalize(c,ck){if(c.final)return;
   c.final={cfg:cfgKey(),fails:ck.filter(x=>x.sec!=='warn'&&x.st==='fail').map(x=>x.k),first:c.firstFail||null,
     unk:ck.filter(x=>x.sec!=='warn'&&(x.st==='unk'||x.st==='err')).map(x=>x.k),api:ck.some(x=>x.st==='err')}}
@@ -612,7 +613,7 @@ function render(){
   $('#fLiq').textContent='💧 Ликв. '+(S.f_liq?'от '+money(S.f_liq):'любая');$('#fLiq').classList.toggle('on',!!S.f_liq);
   const shown=all.filter(c=>(!S.f_mig||isMig(c))&&(!S.f_fresh||inWin(c))&&(!S.f_scam||!(c.status==='fail'||c.failNow))&&(c.liq||0)>=S.f_liq);
   const apiBad=(gtErr&&Date.now()-gtOkAt>60000)?`<span class="dn">GeckoTerminal: ${esc(gtErr)}</span>`:'';
-  const nMig=all.filter(isMig).length,nFake=all.filter(c=>isPumpSwap(c.dex)&&migr(c,getR(c))==='no').length;
+  const nMig=all.filter(isMig).length,nFake=all.filter(c=>isPumpSwap(c.dex)&&c.canon===false).length;
   $('#statAll').innerHTML=`<span>показано ${shown.length} из ${all.length}</span><span class="up">🎓 миграций: ${nMig}</span><span>пулов вручную: ${nFake}</span><span>⏳ проверяю: ${w}</span>${apiBad}${rpcErr?'<span class="warn">блокчейн: '+esc(rpcErr)+'</span>':''}`;
   $('#statPass').innerHTML=`<span>прошли все текущие правила в первые ${S.win} мин</span>`;
   if(tab==='all')reconcile($('#lAll'),shown.slice(0,250),'all');
@@ -835,7 +836,7 @@ const RULES=[
  {n:3,t:'Дев',k:'dev',tg:['c_dev'],text:()=>`Создатель держит не больше <em>${S.devMax}%</em>. Если данных о создателе нет — правило пропускается.`,why:'Дев с большой долей обычно продаёт первым.',sl:[['devMax',0,30,0.5,v=>v+'%']]},
  {n:'3а',t:'Дев обязателен',k:null,tg:['devStrict'],text:()=>'Если rugcheck не знает создателя — монета <b>не проходит</b>. Выключено: правило «Дев» просто пропускается.',why:'Строже, но часть монет будет «нет данных».'},
  {n:4,t:'Деньги в пуле',k:'liq',tg:['c_liq'],text:()=>`В пуле минимум <em>${money(S.liqMin)}</em>.`,why:'При $5K в пуле на каждую сторону всего ~$2.5K — даже небольшая продажа сильно двигает цену.',sl:[['liqMin',1000,50000,500,v=>money(v)]]},
- {n:5,t:'Лок пула',k:'lock',tg:['c_lock'],text:()=>`PumpSwap: только настоящая миграция с pump.fun (1 млрд монет, адрес …pump, монета была на кривой раньше пула) — тогда пул сожжён. Пул, созданный вручную, не проходит. Raydium/Meteora: заблокировано не меньше <em>${S.lockMin}%</em> пула.`,why:'Пул, созданный вручную, создатель может забрать вместе с деньгами — так сливаются «лесенки».',sl:[['lockMin',50,100,5,v=>v+'%']]},
+ {n:5,t:'Лок пула',k:'lock',tg:['c_lock'],text:()=>`PumpSwap: только пул, который создал сам pump.fun при миграции (его адрес вычисляется из адреса монеты, подделать нельзя) — у него LP сожжены. Пул, созданный вручную, не проходит. Raydium/Meteora: заблокировано не меньше <em>${S.lockMin}%</em> пула.`,why:'Пул, созданный вручную, создатель может забрать вместе с деньгами — так сливаются «лесенки».',sl:[['lockMin',50,100,5,v=>v+'%']]},
  {h:'Сигналы для входа'},
  {n:6,t:'Давление покупок',k:'press',tg:['c_press'],text:()=>`За последние 5 мин покупок в <em>×${S.pressMin}</em> больше, чем продаж.`,why:'Покупают сильнее, чем продают — спрос есть прямо сейчас.',sl:[['pressMin',0.5,3,0.1,v=>'×'+v]]},
  {n:'6а',t:'Лесенка',k:'sells',tg:['c_sells'],text:()=>`За 5 мин продаж хотя бы <em>${S.sellMin2}%</em> от покупок (если сделок 15 и больше).`,why:'Только зелёные свечи и никто не продаёт — график рисуют боты. Живая монета всегда кто-то продаёт.',sl:[['sellMin2',0,40,1,v=>v+'%']]},
@@ -876,7 +877,7 @@ function renderRules(){
   updRuleCounts()}
 
 /* =================== старт =================== */
-evalAll();render();boot();rcLoop();rpcLoop();setTimeout(pollDS,4000);
+Object.values(C).forEach(setCanon);evalAll();render();boot();rcLoop();rpcLoop();setTimeout(pollDS,4000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollDS()});
 </script>
 </body>
