@@ -471,7 +471,7 @@ const LAZY=new Set(['contract','owner','micro']);
 // true, если какое-то из остальных правил ещё не пройдено (провалено или ещё неизвестно)
 const otherFails=c=>checks(c).some(x=>x.sec!=='warn'&&!LAZY.has(x.k)&&(x.st==='fail'||x.st==='unk'||x.st==='err'));
 /* --- микро-сделки: последние сделки смотрим только у монет, которые проходят всё остальное (экономим лимит GeckoTerminal) --- */
-function microOf(list){const v=list.map(x=>x.usd);const n=v.length;if(!n)return{n:0,share:0,avg:0};
+function microOf(list){const from=Date.now()-5*60e3;const v=list.filter(x=>x.t>=from).map(x=>x.usd);const n=v.length;if(!n)return{n:0,share:0,avg:0};
   return{n,share:v.filter(u=>u<S.microUsd).length/n*100,avg:v.reduce((a,b)=>a+b,0)/n}}
 async function microLoop(){for(;;){
   const c=Object.values(C).filter(c=>S.c_micro&&c.status==='wait'&&inWin(c)&&c.pair&&(!c.microAt||Date.now()-c.microAt>60000)
@@ -504,7 +504,8 @@ function rcLite(r,pair){
   const hs=(r.topHolders||[]).filter(h=>!pools.has(h.address)&&!pools.has(h.owner));
   const sup=Number(r.token?.supply)||0;
   const rdec=+r.token?.decimals||0;
-  return{has:!!r.token,supply:r.token?.supply!=null?(+r.token.supply)/10**rdec:null,dec:r.token?.decimals!=null?rdec:null,mint:!!r.token?.mintAuthority,freeze:!!r.token?.freezeAuthority,maxOwner:hs[0]?.pct||0,top10:hs.slice(0,10).reduce((s,h)=>s+(h.pct||0),0),
+  const hasH=(r.topHolders||[]).length>0;
+  return{has:!!r.token,hasH,supply:r.token?.supply!=null?(+r.token.supply)/10**rdec:null,dec:r.token?.decimals!=null?rdec:null,mint:!!r.token?.mintAuthority,freeze:!!r.token?.freezeAuthority,maxOwner:hasH?(hs[0]?.pct||0):null,top10:hasH?hs.slice(0,10).reduce((s,h)=>s+(h.pct||0),0):null,
     risk22:(r.risks||[]).filter(x=>/transfer fee|permanent delegate|transfer hook|non.?transferable/i.test(x.name||'')).map(x=>x.name),
     ins:hs.filter(h=>h.insider).reduce((s,h)=>s+(h.pct||0),0),
     dev:sup&&r.creatorBalance!=null?(Number(r.creatorBalance)||0)/sup*100:null,
@@ -526,7 +527,7 @@ function checks(c){
   else if(R){const pr=[...(R.mint?['можно допечатать монеты']:[]),...(R.freeze?['можно заморозить твои токены']:[]),...R.bad];
     put('safe','contract',S.c_contract,pr.length?'fail':'pass','Контракт чистый',pr.length?pr.join(', '):('Mint и freeze отключены'+(R.src==='rc'?' (по rugcheck — блокчейн не ответил)':(R.is22?', Token-2022 без опасных функций':''))),R.mint?'mint':R.freeze?'freeze':R.bad.length?'Token-2022':'контракт')}
   else put('safe','contract',S.c_contract,rpcSt,'Контракт чистый',c.rpcErr?'Блокчейн не ответил: '+c.rpcErr:'Проверяю в блокчейне…','контракт');
-  if(!R?.skip)put('safe','owner',S.c_owner,R&&R.holders===false?'na':R?(R.maxOwner<=S.ownerMax?'pass':'fail'):rpcSt,'Один владелец ≤ '+S.ownerMax+'%',R?('Крупнейший (кроме пула) держит '+f1(R.maxOwner)+'%'+(R.src==='rc'?' (по rugcheck)':'')):'Проверяю в блокчейне…','кит '+(R?Math.round(R.maxOwner)+'%':''));
+  if(!R?.skip)put('safe','owner',S.c_owner,R&&R.holders===false?'na':R&&R.maxOwner!=null?(R.maxOwner<=S.ownerMax?'pass':'fail'):rpcSt,'Один владелец ≤ '+S.ownerMax+'%',R&&R.maxOwner!=null?('Крупнейший (кроме пула) держит '+f1(R.maxOwner)+'%'+(R.src==='rc'?' (по rugcheck)':'')):(R?.src==='rc'?'Rugcheck не дал список держателей — жду блокчейн':'Проверяю в блокчейне…'),'кит '+(R&&R.maxOwner!=null?Math.round(R.maxOwner)+'%':''));
   const dev=L?.dev;
   put('safe','dev',S.c_dev,dev!=null?(dev<=S.devMax?'pass':'fail'):(c.rcTried?(S.devStrict?(c.rcErr?'err':'unk'):'na'):'unk'),'Дев ≤ '+S.devMax+'%',dev!=null?('Создатель держит '+f1(dev)+'%'):(c.rcTried?(S.devStrict?'Данных о создателе нет — не пропускаю':'Данных о создателе нет — правило пропущено'):'Жду rugcheck…'),'дев '+(dev!=null?Math.round(dev)+'%':''));
   put('safe','liq',S.c_liq,c.liq?(c.liq>=S.liqMin?'pass':'fail'):'unk','В пуле ≥ '+money(S.liqMin),'Сейчас '+money(c.liq),'мало в пуле');
@@ -543,15 +544,15 @@ function checks(c){
   else{const b=c.b5||0,sl=c.s5||0,r2=sl/Math.max(b,1)*100;
     if(b+sl<15)put('sig','sells',S.c_sells,'pass','Продажи ≥ '+S.sellMin2+'% от покупок за 5 мин','Сделок пока мало ('+(b+sl)+') — не оценить','');
     else put('sig','sells',S.c_sells,r2>=S.sellMin2?'pass':'fail','Продажи ≥ '+S.sellMin2+'% от покупок за 5 мин','Продаж '+sl+' на '+b+' покупок'+(r2<S.sellMin2?' — лесенка, график рисуют боты':''),'лесенка')}
-  {const m=c.micro;put('sig','micro',S.c_micro,m==null?'unk':m.n<20?'pass':(m.share<=S.microMax?'pass':'fail'),'Микро-сделки (меньше $'+S.microUsd+') ≤ '+S.microMax+'%',
-    m==null?'Проверю, когда пройдут остальные правила':m.n<20?'Сделок пока мало ('+m.n+') — не оценить':(Math.round(m.share)+'% из последних '+m.n+' сделок меньше $'+S.microUsd+(m.share>S.microMax?' — боты накручивают активность':'')+', средняя $'+m.avg.toFixed(1)),'микро-сделки')}
+  {const m=c.micro;put('sig','micro',S.c_micro,m==null||m.n<10?'unk':(m.share<=S.microMax?'pass':'fail'),'Микро-сделки (меньше $'+S.microUsd+') ≤ '+S.microMax+'%',
+    m==null?'Проверю, когда пройдут остальные правила':m.n<10?'За 5 мин сделок пока мало ('+m.n+') — жду хотя бы 10':(Math.round(m.share)+'% из '+m.n+' сделок за 5 мин меньше $'+S.microUsd+(m.share>S.microMax?' — боты накручивают активность':'')+', средняя $'+m.avg.toFixed(1)),'микро-сделки')}
   put('sig','vol5',S.c_vol5,c.v5==null?'unk':(c.v5>=S.vol5Min?'pass':'fail'),'Объём за 5 мин ≥ '+money(S.vol5Min),c.v5==null?'Жду данные…':'Сейчас '+money(c.v5),'мало объёма');
   put('sig','buyers',S.c_buyers,c.buyers==null?'unk':(c.buyers>=S.buyersMin?'pass':'fail'),'Уникальных покупателей ≥ '+S.buyersMin,c.buyers==null?'Жду данные…':('Купили '+c.buyers+' разных кошельков'),'мало покупателей');
   const dd=c.peak&&c.price?(1-c.price/c.peak)*100:null;
   put('sig','dd',S.c_dd,dd==null?'unk':(dd<=S.ddMax?'pass':'fail'),'Не упала > '+S.ddMax+'% от пика',dd==null?'Жду цену…':('От пика '+(dd<0.5?'на пике':'−'+Math.round(dd)+'%')),'сливают');
   // предупреждения
   const ins=L?.ins;put('warn','ins',S.w_ins,ins==null?'na':(ins<=S.insMax?'pass':'fail'),'Инсайдеры ≤ '+S.insMax+'%',ins==null?'Нет данных rugcheck':('Связанные с созданием кошельки: '+Math.round(ins)+'%'),'');
-  put('warn','top10',S.w_top10,R&&R.holders!==false&&!R.skip?(R.top10<=S.top10Max?'pass':'fail'):'na','Топ-10 владельцев ≤ '+S.top10Max+'%',R?('Держат '+Math.round(R.top10)+'% (кроме пула)'):'Нет данных','');
+  put('warn','top10',S.w_top10,R&&R.holders!==false&&!R.skip&&R.top10!=null?(R.top10<=S.top10Max?'pass':'fail'):'na','Топ-10 владельцев ≤ '+S.top10Max+'%',R&&R.top10!=null?('Держат '+Math.round(R.top10)+'% (кроме пула)'):'Нет данных','');
   const g=c.firstPrice&&c.price?c.price/c.firstPrice:null;
   put('warn','pump',S.w_pump,g==null?'na':(g<=S.pumpMax?'pass':'fail'),'Рост с появления ≤ ×'+S.pumpMax,g==null?'Цена в момент появления неизвестна':('Сейчас '+xf(g)+' от цены появления'),'');
   const nm=(c.name||'').trim().toLowerCase(),sy=(c.sym||'').trim().toLowerCase();
@@ -864,7 +865,7 @@ const RULES=[
  {h:'Сигналы для входа'},
  {n:6,t:'Давление покупок',k:'press',tg:['c_press'],text:()=>`За последние 5 мин покупок в <em>×${S.pressMin}</em> больше, чем продаж.`,why:'Покупают сильнее, чем продают — спрос есть прямо сейчас.',sl:[['pressMin',0.5,3,0.1,v=>'×'+v]]},
  {n:'6а',t:'Лесенка',k:'sells',tg:['c_sells'],text:()=>`За 5 мин продаж хотя бы <em>${S.sellMin2}%</em> от покупок (если сделок 15 и больше).`,why:'Только зелёные свечи и никто не продаёт — график рисуют боты. Живая монета всегда кто-то продаёт.',sl:[['sellMin2',0,40,1,v=>v+'%']]},
- {n:'6б',t:'Микро-сделки',k:'micro',tg:['c_micro'],text:()=>`Из последних 100 сделок не больше <em>${S.microMax}%</em> мельче <em>$${S.microUsd}</em>.`,why:'Боты раскидывают сотни сделок по $0–1 с разных кошельков — счётчики покупателей и сделок растут, а денег нет. Так рисуют «живой» график.',sl:[['microMax',10,90,5,v=>v+'%'],['microUsd',1,20,1,v=>'$'+v]]},
+ {n:'6б',t:'Микро-сделки',k:'micro',tg:['c_micro'],text:()=>`Из сделок за последние 5 минут (до 100, минимум 10) не больше <em>${S.microMax}%</em> мельче <em>$${S.microUsd}</em>.`,why:'Боты раскидывают сотни сделок по $0–1 с разных кошельков — счётчики покупателей и сделок растут, а денег нет. Так рисуют «живой» график.',sl:[['microMax',10,90,5,v=>v+'%'],['microUsd',1,20,1,v=>'$'+v]]},
  {n:7,t:'Живой объём',k:'vol5',tg:['c_vol5'],text:()=>`Объём торгов за 5 мин не меньше <em>${money(S.vol5Min)}</em>.`,why:'Монета реально торгуется, а не стоит.',sl:[['vol5Min',0,20000,250,v=>money(v)]]},
  {n:8,t:'Покупатели',k:'buyers',tg:['c_buyers'],text:()=>`С момента появления купили минимум <em>${S.buyersMin}</em> разных кошельков.`,why:'Много сделок от пары кошельков — это боты. Важно количество людей.',sl:[['buyersMin',0,200,5,v=>v+' кошельков']]},
  {n:9,t:'Не сливают',k:'dd',tg:['c_dd'],text:()=>`Цена не упала больше чем на <em>${S.ddMax}%</em> от своего пика с момента появления.`,why:'Если уже идёт слив — не лезь под него.',sl:[['ddMax',10,80,5,v=>v+'%']]},
