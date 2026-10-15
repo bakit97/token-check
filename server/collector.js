@@ -58,8 +58,8 @@ function gtPending(key){return gtQ.some(x=>x.key===key)}
 function gt(path,prio,key){key=key||path;const ex=gtQ.find(x=>x.key===key);if(ex)return ex.p;
   let res,rej;const p=new Promise((a,b)=>{res=a;rej=b});gtQ.push({path,prio,res,rej,t:Date.now(),key,p});gtQ.sort((a,b)=>a.prio-b.prio||a.t-b.t);return p}
 (async function gtLoop(){for(;;){if(gtQ.length&&Date.now()>gtPause){const t=gtQ.shift();
-    try{const j=await getJSON(GT+t.path);gtOK++;gtLog.push([Date.now(),1,Date.now()-t.t]);if(++gtRun>=30){gtRun=0;gtSp=Math.max(6200,gtSp-250)}t.res(j)}
-    catch(e){gtFail++;gtLog.push([Date.now(),e.rl?0:2,Date.now()-t.t]);if(e.rl){gtPause=Date.now()+60e3;gtSp=Math.min(15000,gtSp+1000);gtRun=0;
+    try{const j=await getJSON(GT+t.path);gtOK++;gtLog.push([Date.now(),1,Date.now()-t.t]);if(++gtRun>=20){gtRun=0;gtSp=Math.max(6000,gtSp-250)}t.res(j)}
+    catch(e){gtFail++;gtLog.push([Date.now(),e.rl?0:2,Date.now()-t.t]);if(e.rl){gtPause=Date.now()+30e3;gtSp=Math.min(15000,gtSp+500);gtRun=0;
         if(t.prio<=2&&!t.retry){t.retry=1;gtQ.unshift(t);continue}}t.rej(e)}
     while(gtLog.length&&gtLog[0][0]<Date.now()-3600e3)gtLog.shift()}
   await sleep(gtSp)}})();
@@ -238,7 +238,7 @@ async function pollNew(){if(gtPending('new'))return;try{const n=await addFromGT(
 
 /* ---------- 2. DEX Screener: ряд снимков [время получения (с), цена, ликв.$, mc, покупки 5м, продажи 5м, объём 5м, покупки 1ч, продажи 1ч, объём 1ч]
    Витрина: каждую минуту первые 15 минут, потом каждые 5 минут до 24 ч. Остальные пулы: раз в 15 минут первые 6 ч (только «торгуется ли»). ---------- */
-function dsDue(c,now){const a=ageMin(c,now);if(isOk(c)){if(a<-1||a>24*60+10)return false;return now-(c.dsAt||0)>=(a<15?55e3:5*60e3-15e3)}
+function dsDue(c,now){const a=ageMin(c,now);if(isOk(c)){if(a<-1||a>24*60+10)return false;return now-(c.dsAt||0)>=(a<120?55e3:5*60e3-15e3)}
   return a<6*60&&now-(c.dsAt||0)>=15*60e3}
 async function pollDS(){const now=Date.now();const need=[...C.values()].filter(c=>dsDue(c,now)).sort((a,b)=>isOk(b)-isOk(a)||b.t-a.t);
   for(let i=0;i<need.length&&i<900;i+=30){const part=need.slice(i,i+30);
@@ -252,7 +252,7 @@ async function pollDS(){const now=Date.now();const need=[...C.values()].filter(c
         const p=arr.find(x=>x.pairAddress===c.p);if(!p)continue; // только пул витрины, сравнение по текущему адресу
         const e=[Math.round(at/1000),+(+p.priceUsd||0).toPrecision(6),p.liquidity?.usd!=null?Math.round(p.liquidity.usd):null,p.marketCap||p.fdv||null,
           p.txns?.m5?.buys??null,p.txns?.m5?.sells??null,p.volume?.m5!=null?Math.round(p.volume.m5):null,p.txns?.h1?.buys??null,p.txns?.h1?.sells??null,p.volume?.h1!=null?Math.round(p.volume.h1):null];
-        if(isOk(c)){(c.ds=c.ds||[]).push(e);if(c.ds.length>420)c.ds.splice(15,1)}else c.ds=[e];
+        if(isOk(c)){(c.ds=c.ds||[]).push(e);if(c.ds.length>520)c.ds.splice(130,1)}else c.ds=[e];
         if((e[4]||0)+(e[5]||0)>0)c.lastTrade=at;else if((e[7]||0)+(e[8]||0)>0&&!c.lastTrade)c.lastTrade=at-30*60e3}
     }catch(e){err('ds '+e.message);await sleep(5000)}
     await sleep(400)}}
@@ -264,7 +264,7 @@ function mergeK(a,b){const m=new Map();for(const x of [...(a||[]),...b])m.set(x[
 function candleTasks(){const now=Date.now();
   for(const c of C.values()){if(!isOk(c))continue;const a=ageMin(c,now),pool=c.p,ts=Math.floor;
     // первые 10 минут: запрос на 11-й минуте, чтобы минута с 10-й отметкой была закрыта
-    if(!c.k10&&!c.kTry&&a>=11&&a<6*60){c.kTry=1;gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=15&before_timestamp=${ts((c.t+11*60e3)/1000)}&currency=usd`,a<20?2:3,'k10:'+pool)
+    if(!c.k10&&!c.kTry&&c.trDone&&a>=11&&a<6*60){c.kTry=1;gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=15&before_timestamp=${ts((c.t+11*60e3)/1000)}&currency=usd`,a<20?2:3,'k10:'+pool)
       .then(r=>{if(c.p===pool)c.k10={at:Date.now(),c:kList(r)}}).catch(e=>err('k10 '+e.message)).finally(()=>{c.kTry=0})}
     // график: 5 ч (одним запросом) и 24 ч (двумя)
     const upto=c.path?.upto||0;
@@ -281,11 +281,11 @@ function tradeTasks(now){for(const c of C.values()){if(!isOk(c)||c.trDone||c.trT
     const tr=c.tr=c.tr||{f:[],x:{}},last=tr.f[tr.f.length-1];
     if(a>13){finishTrades(c,'опоздали');continue}
     const busy=last&&last[1]>=250,since=last?(now-last[0])/1000:1e9;
-    const due=!last?a>=4:(busy&&since>=60)||(a>=10.25&&last[0]<c.t+10*60e3+10e3);
+    const due=!last?a>=5.5:(busy&&since>=60)||(a>=10.25&&last[0]<c.t+10*60e3+10e3);
     if(!due)continue;const pool=c.p;c.trTry=1;
     gt(`/pools/${pool}/trades`,1,'tr:'+pool).then(r=>{if(c.p!==pool)return;const at=Date.now();let lo=Infinity,hi=0;
         for(const d of r.data||[]){const x=d.attributes||{};const ts=Math.floor(Date.parse(x.block_timestamp)/1000);if(!ts)continue;lo=Math.min(lo,ts);hi=Math.max(hi,ts);
-          tr.x[x.tx_hash||d.id]=[ts,x.kind==='buy'?1:0,+(+x.volume_in_usd||0).toFixed(2),(x.tx_from_address||'').slice(0,12)]}
+          const pr=+(x.kind==='buy'?x.price_to_in_usd:x.price_from_in_usd)||0;tr.x[x.tx_hash||d.id]=[ts,x.kind==='buy'?1:0,+(+x.volume_in_usd||0).toFixed(2),(x.tx_from_address||'').slice(0,12),pr?+pr.toPrecision(6):null]}
         tr.f.push([at,(r.data||[]).length,isFinite(lo)?lo:null,hi||null]);
         if(at>=c.t+10*60e3+10e3)finishTrades(c,null)})
       .catch(e=>err('trades '+e.message)).finally(()=>{c.trTry=0})}}
@@ -301,6 +301,9 @@ function finishTrades(c,why){const tr=c.tr;c.trDone=1;if(!tr||!tr.f.length){c.bx
   c.bx={at:lastAt,cov,n:L.length,buys,sells,buyUsd:Math.round(bu),sellUsd:Math.round(su),payers:Object.keys(B).length,sellers:S.size,
     repeat:Object.values(B).filter(x=>x[0]>=2).length,both:Object.keys(B).filter(k=>S.has(k)).length,
     top1:bu?+(bv[0]/bu).toFixed(3):null,top5:bu?+(sum(bv.slice(0,5))/bu).toFixed(3):null,fetches:tr.f.length,why:why||null};
+  if(cov&&!c.k10){const M=new Map();for(const x of Object.values(tr.x).filter(x=>x[0]>=t0-60&&x[0]<end+60&&x[4]).sort((a,b)=>a[0]-b[0])){const m=Math.floor(x[0]/60)*60;const k=M.get(m);
+      if(!k)M.set(m,[m,x[4],x[4],x[4],x[4],x[2]]);else{k[2]=Math.max(k[2],x[4]);k[3]=Math.min(k[3],x[4]);k[4]=x[4];k[5]+=x[2]}}
+    if(M.size)c.k10={at:lastAt,src:'trades',c:[...M.values()].map(k=>[k[0],k[1],k[2],k[3],k[4],Math.round(k[5])])}}
   uploadLater(`raw/${dayKey(c.t)}/${c.a}-trades.json`,{a:c.a,p:c.p,t:c.t,f:tr.f,x:tr.x});c.tr={f:tr.f}}
 
 /* ---------- 4. блокчейн в моменте: держатели (3/5/10 мин), состояние пула и хранилищ (ключевые моменты + каждые 5 минут) ---------- */
@@ -419,7 +422,7 @@ let diagGen=null;async function diagCheck(){try{const tk=await token();const r=a
 const STARTED=Date.now();
 (async()=>{fs.mkdirSync(DIR,{recursive:true});load();log('старт, версия',VERSION);
   for(const pg of [1,2,3])try{await addFromGT(await gt(`/new_pools?page=${pg}&include=base_token,quote_token,dex`,0,'boot'+pg))}catch(e){err('boot '+e.message)}
-  setInterval(pollNew,30000);
+  setInterval(pollNew,60000);
   (async()=>{for(;;){try{await pollDS()}catch(e){err('dsloop '+e.message)}await sleep(15000)}})();
   setInterval(()=>{try{candleTasks()}catch(e){err('candles '+e.message)}},15000);
   chainLoop();chainObsLoop();setInterval(diagCheck,60000);diagCheck();
