@@ -237,6 +237,28 @@ const T22='TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
 const med=a=>{if(!a.length)return null;const s=a.slice().sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
 const avg=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:null;
 
+/* base58 + ed25519 on-curve + findProgramAddress — для проверки кривой pump.fun */
+const B58='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+function b58dec(s){let n=0n;for(const ch of s){const i=B58.indexOf(ch);if(i<0)throw new Error('base58');n=n*58n+BigInt(i)}
+  const out=[];while(n>0n){out.push(Number(n&255n));n>>=8n}for(const ch of s){if(ch==='1')out.push(0);else break}return new Uint8Array(out.reverse())}
+function b58enc(b){let n=0n;for(const x of b)n=(n<<8n)+BigInt(x);let s='';while(n>0n){s=B58[Number(n%58n)]+s;n/=58n}for(const x of b){if(x===0)s='1'+s;else break}return s}
+const EP=(1n<<255n)-19n;
+const emod=a=>((a%EP)+EP)%EP;
+function epow(b,e){let r=1n;b=emod(b);while(e>0n){if(e&1n)r=r*b%EP;b=b*b%EP;e>>=1n}return r}
+const ED=emod(-121665n*epow(121666n,EP-2n));
+const ESQ=epow(2n,(EP-1n)/4n);
+function onCurve(bytes){let y=0n;for(let i=31;i>=0;i--)y=(y<<8n)+BigInt(bytes[i]);y&=(1n<<255n)-1n;if(y>=EP)return false;
+  const y2=y*y%EP,u=emod(y2-1n),v=emod(ED*y2+1n);
+  const v3=v*v%EP*v%EP,v7=v3*v3%EP*v%EP;let x=u*v3%EP*epow(u*v7%EP,(EP-5n)/8n)%EP;
+  const vx2=v*x%EP*x%EP;if(vx2===u)return true;if(vx2===emod(-u))return true;return false}
+async function sha256(b){return new Uint8Array(await crypto.subtle.digest('SHA-256',b))}
+async function findPDA(seeds,prog){const pb=b58dec(prog);
+  for(let bump=255;bump>=0;bump--){const parts=[...seeds,new Uint8Array([bump]),pb,new TextEncoder().encode('ProgramDerivedAddress')];
+    const len=parts.reduce((s,p)=>s+p.length,0),buf=new Uint8Array(len);let o=0;parts.forEach(p=>{buf.set(p,o);o+=p.length});
+    const h=await sha256(buf);if(!onCurve(h))return b58enc(h)}throw new Error('no PDA')}
+const PUMP='6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
+const bondingCurveOf=mint=>findPDA([new TextEncoder().encode('bonding-curve'),b58dec(mint)],PUMP);
+
 /* =================== память =================== */
 const mem={};let storeOk=true;
 function sget(k,d){try{const v=localStorage.getItem(k);if(v!=null)return JSON.parse(v)}catch{storeOk=false}return k in mem?mem[k]:d}
@@ -390,7 +412,13 @@ async function rpcCheck(c){
     const poolTok=c.liq&&c.price?c.liq/2/c.price:null;
     owners=Object.entries(by).filter(([o,amt])=>!(o===c.pair||POOL_AUTH.has(o)||prog.has(o)||(poolTok&&Math.abs(amt-poolTok)/poolTok<0.25)))
       .map(([o,amt])=>({o,p:supply?amt/supply*100:0})).sort((a,b)=>b.p-a.p)}
-  c.rpc={at:Date.now(),is22,supply,dec,mint:!!info.mintAuthority,freeze:!!info.freezeAuthority,bad,
+  // кривая pump.fun: есть и завершена → настоящая миграция, пул сожжён
+  let bc=null;
+  if(isPumpSwap(c.dex)){
+    if(Math.abs(supply-1e9)>1||dec!==6)bc='none';
+    else{let bca=null;try{bca=await bondingCurveOf(c.addr)}catch{}if(!bca)bc='none';else{const ai=await rpc('getAccountInfo',[bca,{encoding:'base64'}]);const v2=ai?.value;
+      if(!v2||v2.owner!==PUMP)bc='none';else{const raw=atob(v2.data?.[0]||'');bc=raw.length>48&&raw.charCodeAt(48)===1?'complete':'open'}}}}
+  c.rpc={at:Date.now(),is22,supply,dec,bc,mint:!!info.mintAuthority,freeze:!!info.freezeAuthority,bad,
     maxOwner:owners[0]?.p||0,maxOwnerAddr:owners[0]?.o||'',top10:owners.slice(0,10).reduce((s,x)=>s+x.p,0)};
   c.rpcErr='';
 }
@@ -439,7 +467,7 @@ function checks(c){
   put('safe','liq',S.c_liq,c.liq?(c.liq>=S.liqMin?'pass':'fail'):'unk','В пуле ≥ '+money(S.liqMin),'Сейчас '+money(c.liq),'мало в пуле');
   if(isPumpSwap(c.dex)){const m=migr(c,R);
     put('safe','lock',S.c_lock,m==='yes'?'pass':m==='no'?'fail':rpcSt,'Пул не вытащат',
-      m==='yes'?'Настоящая миграция с pump.fun — пул сожжён':m==='no'?'Пул создан вручную, не миграция с pump.fun ('+migrWhy(c,R)+') — создатель может забрать деньги':'Проверяю происхождение…','пул вручную')}
+      m==='yes'?'Настоящая миграция с pump.fun (кривая завершена) — пул сожжён':m==='no'?'Пул создан вручную, не миграция с pump.fun ('+migrWhy(c,R)+') — создатель может забрать деньги':(R?.src==='rc'?'Нужен ответ блокчейна (ключ Helius), rugcheck этого не показывает':'Проверяю кривую pump.fun…'),'пул вручную')}
   else{const lk=L?.lock;put('safe','lock',S.c_lock,lk!=null?(lk>=S.lockMin?'pass':'fail'):(c.rcTried?(c.rcErr?'err':'fail'):'unk'),'Пул заблокирован ≥ '+S.lockMin+'%',lk!=null?('Заблокировано '+Math.round(lk)+'% ('+esc(c.dex)+')'):(c.rcTried?(c.rcErr?'rugcheck не ответил':'Данных о блокировке нет — риск'):'Жду rugcheck…'),'пул не залочен')}
   // сигналы
   if(c.b5==null)put('sig','press',S.c_press,'unk','Покупок ≥ ×'+S.pressMin+' от продаж за 5 мин','Жду данные…','');
@@ -465,10 +493,10 @@ function checks(c){
   if(L?.rugged)put('safe','rug',true,'fail','Rugcheck: RUGGED','Токен уже признан скамом','rugged');
   return out}
 // настоящая миграция с pump.fun: 1 млрд монет, 6 знаков, адрес …pump, была кривая раньше пула
-function migr(c,R){if(!R||R.supply==null)return 'unk';return migrWhy(c,R)?'no':'yes'}
+function migr(c,R){if(!R||R.supply==null)return 'unk';if(migrWhy(c,R))return 'no';return R.bc==='complete'?'yes':'unk'}
 function migrWhy(c,R){const w=[];if(Math.abs(R.supply-1e9)>1)w.push('монет '+(R.supply>=1e6?Math.round(R.supply/1e6)+' млн':Math.round(R.supply)));
   if(R.dec!=null&&R.dec!==6)w.push(R.dec+' знаков');if(!/pump$/.test(c.addr))w.push('адрес не …pump');
-  if(c.curveAt&&c.listedAt-c.curveAt<60e3)w.push('токен создан вместе с пулом');return w.join(', ')}
+  if(R.bc==='none')w.push('нет кривой pump.fun');if(R.bc==='open')w.push('кривая pump.fun не завершена');return w.join(', ')}
 const RULE_NAMES={sells:'Лесенка',contract:'Контракт',owner:'Кит',dev:'Дев',liq:'Деньги в пуле',lock:'Лок пула',press:'Давление покупок',vol5:'Объём 5 мин',buyers:'Покупатели',dd:'Не сливают',rug:'Rugcheck'};
 
 function evalCoin(c){
@@ -480,7 +508,7 @@ function evalCoin(c){
   if(fails.length&&!c.firstFail)c.firstFail=fails[0].k;
   if(inWin(c)){if(!fails.length&&!waits.length){c.status='pass';c.passAt=Date.now();finalize(c,ck)}return}
   c.status=fails.length?'fail':'nodata';finalize(c,ck)}
-function cfgKey(){return['win','c_contract','c_owner','ownerMax','c_dev','devMax','devStrict','c_liq','liqMin','c_lock','lockMin','c_press','pressMin','c_sells','sellMin2','c_vol5','vol5Min','c_buyers','buyersMin','c_dd','ddMax'].map(k=>S[k]).join('|')}
+function cfgKey(){return['r4','win','c_contract','c_owner','ownerMax','c_dev','devMax','devStrict','c_liq','liqMin','c_lock','lockMin','c_press','pressMin','c_sells','sellMin2','c_vol5','vol5Min','c_buyers','buyersMin','c_dd','ddMax'].map(k=>S[k]).join('|')}
 function finalize(c,ck){if(c.final)return;
   c.final={cfg:cfgKey(),fails:ck.filter(x=>x.sec!=='warn'&&x.st==='fail').map(x=>x.k),first:c.firstFail||null,
     unk:ck.filter(x=>x.sec!=='warn'&&(x.st==='unk'||x.st==='err')).map(x=>x.k),api:ck.some(x=>x.st==='err')}}
@@ -532,7 +560,7 @@ function reconcile(box,items,mode){
 let tab='all';
 function render(){
   const all=Object.values(C).filter(c=>Date.now()-c.listedAt<=S.keepH*3600e3).sort((a,b)=>b.listedAt-a.listedAt);
-  const pass=Object.values(C).filter(c=>c.status==='pass').sort((a,b)=>b.passAt-a.passAt);
+  const pass=Object.values(C).filter(c=>c.status==='pass'&&curCfg(c)).sort((a,b)=>b.passAt-a.passAt);
   $('#nAll').textContent=all.length;$('#nPass').textContent=pass.length;
   const w=all.filter(c=>c.status==='wait').length;
   $('#fFresh').textContent='⚡ Свежие < '+S.win+' мин';$('#fFresh').classList.toggle('on',S.f_fresh);
@@ -541,7 +569,7 @@ function render(){
   const shown=all.filter(c=>(!S.f_fresh||inWin(c))&&(!S.f_scam||!(c.status==='fail'||c.failNow))&&(c.liq||0)>=S.f_liq);
   const apiBad=(gtErr&&Date.now()-gtOkAt>60000)?`<span class="dn">GeckoTerminal: ${esc(gtErr)}</span>`:'';
   $('#statAll').innerHTML=`<span>показано ${shown.length} из ${all.length}</span><span>⏳ проверяю: ${w}</span>${apiBad}${rpcErr?'<span class="warn">блокчейн: '+esc(rpcErr)+'</span>':''}`;
-  $('#statPass').innerHTML=`<span>прошли все правила в первые ${S.win} мин</span>`;
+  $('#statPass').innerHTML=`<span>прошли все текущие правила в первые ${S.win} мин</span>`;
   if(tab==='all')reconcile($('#lAll'),shown.slice(0,250),'all');
   if(tab==='pass')reconcile($('#lPass'),pass,'pass');
   if(tab==='rules')updRuleCounts();
