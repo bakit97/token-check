@@ -414,42 +414,52 @@ function wantOhlcv(a){if(ohlcvWant.has(a))return;const c=C[a];if(!c?.pair)return
     evalAll();render()}).catch(()=>{ohlcvWant.delete(a)});}
 
 /* --- блокчейн (Solana RPC): mint, freeze, Token-2022, реальные владельцы --- */
+// Экономия кредитов Helius:
+//  • ручной пул PumpSwap определяется без запросов (адрес канонического пула считается локально) — 0 кредитов
+//  • контракт, кривая, supply не меняются — запрашиваются один раз
+//  • держатели обновляются раз в 90 сек и только пока монета может пройти
 async function rpcCheck(c){
-  const mi=await rpc('getAccountInfo',[c.addr,{encoding:'jsonParsed'}]);
-  const v=mi?.value;if(!v)throw new Error('токен не найден');
-  const info=v.data?.parsed?.info||{};const is22=v.owner===T22;const bad=[];
-  (info.extensions||[]).forEach(e=>{const s=e.state||{};
-    if(e.extension==='transferFeeConfig'){const bps=Math.max(+(s.newerTransferFee?.transferFeeBasisPoints||0),+(s.olderTransferFee?.transferFeeBasisPoints||0));if(bps>0)bad.push('комиссия '+bps/100+'% на перевод')}
-    if(e.extension==='transferHook'&&s.programId)bad.push('перехват переводов');
-    if(e.extension==='permanentDelegate'&&s.delegate)bad.push('вечный делегат');
-    if(e.extension==='nonTransferable')bad.push('нельзя переводить');
-    if(e.extension==='defaultAccountState'&&/frozen/i.test(s.accountState||''))bad.push('счета заморожены');
-    if(/pausable/i.test(e.extension))bad.push('можно поставить на паузу')});
-  const dec=+info.decimals||0,supply=(+info.supply||0)/10**dec;
-  const la=await rpc('getTokenLargestAccounts',[c.addr]);
-  const accs=(la?.value||[]).filter(a=>+a.uiAmount>0);
-  let owners=[];
-  if(accs.length){const ma=await rpc('getMultipleAccounts',[accs.map(a=>a.address),{encoding:'jsonParsed'}]);
-    const by={};accs.forEach((a,i)=>{const own=ma?.value?.[i]?.data?.parsed?.info?.owner||a.address;by[own]=(by[own]||0)+(+a.uiAmount)});
-    // владелец-программа (пул, кривая pump.fun, хранилище) — не кит. Кит = обычный кошелёк (System Program)
-    const ownList=Object.keys(by);let prog=new Set();
-    try{const oa=await rpc('getMultipleAccounts',[ownList,{encoding:'base64',dataSlice:{offset:0,length:0}}]);
-      ownList.forEach((o,i)=>{const v=oa?.value?.[i];if(v&&v.owner&&v.owner!==SYS)prog.add(o)})}catch{}
-    owners=Object.entries(by).filter(([o,amt])=>!(o===c.pair||POOL_AUTH.has(o)||prog.has(o)))
-      .map(([o,amt])=>({o,p:supply?amt/supply*100:0})).sort((a,b)=>b.p-a.p)}
-  // кривая pump.fun: есть и завершена → настоящая миграция, пул сожжён
-  let bc=null,canon=null;
-  if(isPumpSwap(c.dex)){
-    if(Math.abs(supply-1e9)>1||dec!==6)bc='none';
-    else{try{canon=c.pair?(await canonicalPoolOf(c.addr))===c.pair:null}catch{}
-      let bca=null;try{bca=await bondingCurveOf(c.addr)}catch{}if(!bca)bc='none';else{const ai=await rpc('getAccountInfo',[bca,{encoding:'base64'}]);const v2=ai?.value;
-      if(!v2||v2.owner!==PUMP)bc='none';else{const raw=atob(v2.data?.[0]||'');bc=raw.length>48&&raw.charCodeAt(48)===1?'complete':'open'}}}}
-  c.rpc={at:Date.now(),is22,supply,dec,bc,canon,mint:!!info.mintAuthority,freeze:!!info.freezeAuthority,bad,
-    maxOwner:owners[0]?.p||0,maxOwnerAddr:owners[0]?.o||'',top10:owners.slice(0,10).reduce((s,x)=>s+x.p,0)};
+  if(isPumpSwap(c.dex)&&c.pair&&!c.st){let canon=null;try{canon=(await canonicalPoolOf(c.addr))===c.pair}catch{canon=false}
+    if(canon===false){c.st={canon:false,skip:true};c.rpc={at:Date.now(),skip:true,canon:false};c.rpcErr='';rpcUsed(0);return}}
+  if(!c.st){
+    const mi=await rpc('getAccountInfo',[c.addr,{encoding:'jsonParsed'}]);rpcUsed(1);
+    const v=mi?.value;if(!v)throw new Error('токен не найден');
+    const info=v.data?.parsed?.info||{};const is22=v.owner===T22;const bad=[];
+    (info.extensions||[]).forEach(e=>{const s=e.state||{};
+      if(e.extension==='transferFeeConfig'){const bps=Math.max(+(s.newerTransferFee?.transferFeeBasisPoints||0),+(s.olderTransferFee?.transferFeeBasisPoints||0));if(bps>0)bad.push('комиссия '+bps/100+'% на перевод')}
+      if(e.extension==='transferHook'&&s.programId)bad.push('перехват переводов');
+      if(e.extension==='permanentDelegate'&&s.delegate)bad.push('вечный делегат');
+      if(e.extension==='nonTransferable')bad.push('нельзя переводить');
+      if(e.extension==='defaultAccountState'&&/frozen/i.test(s.accountState||''))bad.push('счета заморожены');
+      if(/pausable/i.test(e.extension))bad.push('можно поставить на паузу')});
+    const dec=+info.decimals||0,supply=(+info.supply||0)/10**dec;
+    let bc=null,canon=null;
+    if(isPumpSwap(c.dex)){canon=true; // сюда доходят только канонические пулы
+      if(Math.abs(supply-1e9)>1||dec!==6)bc='none';
+      else{let bca=null;try{bca=await bondingCurveOf(c.addr)}catch{}
+        if(!bca)bc='none';else{const ai=await rpc('getAccountInfo',[bca,{encoding:'base64'}]);rpcUsed(1);const v2=ai?.value;
+          if(!v2||v2.owner!==PUMP)bc='none';else{const raw=atob(v2.data?.[0]||'');bc=raw.length>48&&raw.charCodeAt(48)===1?'complete':'open'}}}}
+    c.st={is22,supply,dec,bc,canon,mint:!!info.mintAuthority,freeze:!!info.freezeAuthority,bad}}
+  const st=c.st;let owners=[];
+  const hard=st.mint||st.freeze||st.bad.length||(isPumpSwap(c.dex)&&st.bc!=='complete');
+  if(!hard){ // держателей смотрим, только если монета ещё может пройти
+    const la=await rpc('getTokenLargestAccounts',[c.addr]);rpcUsed(1);
+    const accs=(la?.value||[]).filter(a=>+a.uiAmount>0);
+    if(accs.length){const ma=await rpc('getMultipleAccounts',[accs.map(a=>a.address),{encoding:'jsonParsed'}]);rpcUsed(1);
+      const by={};accs.forEach((a,i)=>{const own=ma?.value?.[i]?.data?.parsed?.info?.owner||a.address;by[own]=(by[own]||0)+(+a.uiAmount)});
+      // владелец-программа (пул, кривая pump.fun, хранилище) — не кит; кит = обычный кошелёк
+      const ownList=Object.keys(by);c.prog=c.prog||{};const need=ownList.filter(o=>!(o in c.prog));
+      if(need.length){try{const oa=await rpc('getMultipleAccounts',[need,{encoding:'base64',dataSlice:{offset:0,length:0}}]);rpcUsed(1);
+        need.forEach((o,i)=>{const v=oa?.value?.[i];c.prog[o]=!!(v&&v.owner&&v.owner!==SYS)})}catch{}}
+      owners=Object.entries(by).filter(([o])=>!(o===c.pair||POOL_AUTH.has(o)||c.prog[o]))
+        .map(([o,amt])=>({o,p:st.supply?amt/st.supply*100:0})).sort((a,b)=>b.p-a.p)}}
+  c.rpc={at:Date.now(),...st,holders:!hard,maxOwner:owners[0]?.p||0,maxOwnerAddr:owners[0]?.o||'',top10:owners.slice(0,10).reduce((s,x)=>s+x.p,0)};
   c.rpcErr='';
 }
+// счётчик запросов к блокчейну за сессию
+let rpcN=0;function rpcUsed(n){rpcN+=n}
 async function rpcLoop(){for(;;){
-  const cand=Object.values(C).filter(c=>c.status==='wait'&&inWin(c)&&(!c.rpc||Date.now()-c.rpc.at>45000)&&(!c.rpcTry||Date.now()-c.rpcTry>15000))
+  const cand=Object.values(C).filter(c=>c.status==='wait'&&inWin(c)&&!c.rpc?.skip&&!(c.st&&c.rpc&&!c.rpc.holders)&&(!c.rpc||Date.now()-c.rpc.at>90000)&&(!c.rpcTry||Date.now()-c.rpcTry>15000))
     .sort((a,b)=>(!!a.rpc-!!b.rpc)||b.listedAt-a.listedAt);
   const c=cand[0];
   if(c){c.rpcTry=Date.now();try{await rpcCheck(c);c.rpcFails=0}catch(e){c.rpcErr=e.message||'ошибка';c.rpcFails=(c.rpcFails||0)+1}evalAll();render();await sleep(700)}
@@ -484,10 +494,11 @@ function checks(c){
   const put=(sec,k,on,st,t,d,w)=>out.push({sec,k,st:on?st:'off',t,d,w});
   const rpcSt=c.rpcErr&&(c.rpcFails||0)>=3?'err':'unk';
   // безопасность
-  if(R){const pr=[...(R.mint?['можно допечатать монеты']:[]),...(R.freeze?['можно заморозить твои токены']:[]),...R.bad];
+  if(R?.skip){put('safe','contract',S.c_contract,'na','Контракт чистый','Не проверял — пул вручную, экономлю запросы','');put('safe','owner',S.c_owner,'na','Один владелец ≤ '+S.ownerMax+'%','Не проверял — пул вручную','')}
+  else if(R){const pr=[...(R.mint?['можно допечатать монеты']:[]),...(R.freeze?['можно заморозить твои токены']:[]),...R.bad];
     put('safe','contract',S.c_contract,pr.length?'fail':'pass','Контракт чистый',pr.length?pr.join(', '):('Mint и freeze отключены'+(R.src==='rc'?' (по rugcheck — блокчейн не ответил)':(R.is22?', Token-2022 без опасных функций':''))),R.mint?'mint':R.freeze?'freeze':R.bad.length?'Token-2022':'контракт')}
   else put('safe','contract',S.c_contract,rpcSt,'Контракт чистый',c.rpcErr?'Блокчейн не ответил: '+c.rpcErr:'Проверяю в блокчейне…','контракт');
-  put('safe','owner',S.c_owner,R?(R.maxOwner<=S.ownerMax?'pass':'fail'):rpcSt,'Один владелец ≤ '+S.ownerMax+'%',R?('Крупнейший (кроме пула) держит '+f1(R.maxOwner)+'%'+(R.src==='rc'?' (по rugcheck)':'')):'Проверяю в блокчейне…','кит '+(R?Math.round(R.maxOwner)+'%':''));
+  if(!R?.skip)put('safe','owner',S.c_owner,R&&R.holders===false?'na':R?(R.maxOwner<=S.ownerMax?'pass':'fail'):rpcSt,'Один владелец ≤ '+S.ownerMax+'%',R?('Крупнейший (кроме пула) держит '+f1(R.maxOwner)+'%'+(R.src==='rc'?' (по rugcheck)':'')):'Проверяю в блокчейне…','кит '+(R?Math.round(R.maxOwner)+'%':''));
   const dev=L?.dev;
   put('safe','dev',S.c_dev,dev!=null?(dev<=S.devMax?'pass':'fail'):(c.rcTried?(S.devStrict?(c.rcErr?'err':'unk'):'na'):'unk'),'Дев ≤ '+S.devMax+'%',dev!=null?('Создатель держит '+f1(dev)+'%'):(c.rcTried?(S.devStrict?'Данных о создателе нет — не пропускаю':'Данных о создателе нет — правило пропущено'):'Жду rugcheck…'),'дев '+(dev!=null?Math.round(dev)+'%':''));
   put('safe','liq',S.c_liq,c.liq?(c.liq>=S.liqMin?'pass':'fail'):'unk','В пуле ≥ '+money(S.liqMin),'Сейчас '+money(c.liq),'мало в пуле');
@@ -510,7 +521,7 @@ function checks(c){
   put('sig','dd',S.c_dd,dd==null?'unk':(dd<=S.ddMax?'pass':'fail'),'Не упала > '+S.ddMax+'% от пика',dd==null?'Жду цену…':('От пика '+(dd<0.5?'на пике':'−'+Math.round(dd)+'%')),'сливают');
   // предупреждения
   const ins=L?.ins;put('warn','ins',S.w_ins,ins==null?'na':(ins<=S.insMax?'pass':'fail'),'Инсайдеры ≤ '+S.insMax+'%',ins==null?'Нет данных rugcheck':('Связанные с созданием кошельки: '+Math.round(ins)+'%'),'');
-  put('warn','top10',S.w_top10,R?(R.top10<=S.top10Max?'pass':'fail'):'na','Топ-10 владельцев ≤ '+S.top10Max+'%',R?('Держат '+Math.round(R.top10)+'% (кроме пула)'):'Нет данных','');
+  put('warn','top10',S.w_top10,R&&R.holders!==false&&!R.skip?(R.top10<=S.top10Max?'pass':'fail'):'na','Топ-10 владельцев ≤ '+S.top10Max+'%',R?('Держат '+Math.round(R.top10)+'% (кроме пула)'):'Нет данных','');
   const g=c.firstPrice&&c.price?c.price/c.firstPrice:null;
   put('warn','pump',S.w_pump,g==null?'na':(g<=S.pumpMax?'pass':'fail'),'Рост с появления ≤ ×'+S.pumpMax,g==null?'Цена в момент появления неизвестна':('Сейчас '+xf(g)+' от цены появления'),'');
   const nm=(c.name||'').trim().toLowerCase(),sy=(c.sym||'').trim().toLowerCase();
@@ -521,8 +532,8 @@ function checks(c){
 function getR(c){const L=c.rcLite;return c.rpc||(L?.has?{src:'rc',supply:L.supply,dec:L.dec,mint:L.mint,freeze:L.freeze,bad:L.risk22||[],is22:false,maxOwner:L.maxOwner,top10:L.top10}:null)}
 const isMig=c=>isPumpSwap(c.dex)&&migr(c,getR(c))==='yes';
 // настоящая миграция с pump.fun: 1 млрд монет, 6 знаков, адрес …pump, была кривая раньше пула
-function migr(c,R){if(!R||R.supply==null)return 'unk';if(migrWhy(c,R))return 'no';return R.bc==='complete'&&R.canon===true?'yes':'unk'}
-function migrWhy(c,R){const w=[];if(Math.abs(R.supply-1e9)>1)w.push('монет '+(R.supply>=1e6?Math.round(R.supply/1e6)+' млн':Math.round(R.supply)));
+function migr(c,R){if(R?.canon===false)return 'no';if(!R||R.supply==null)return 'unk';if(migrWhy(c,R))return 'no';return R.bc==='complete'&&R.canon===true?'yes':'unk'}
+function migrWhy(c,R){if(R.skip)return 'это не тот пул, куда pump.fun переносит монету при миграции';const w=[];if(Math.abs(R.supply-1e9)>1)w.push('монет '+(R.supply>=1e6?Math.round(R.supply/1e6)+' млн':Math.round(R.supply)));
   if(R.dec!=null&&R.dec!==6)w.push(R.dec+' знаков');if(!/pump$/.test(c.addr))w.push('адрес не …pump');
   if(R.bc==='none')w.push('нет кривой pump.fun');if(R.bc==='open')w.push('кривая pump.fun не завершена');if(R.bc==='complete'&&R.canon===false)w.push('это не тот пул, куда pump.fun перенёс монету — ручной пул рядом с настоящим');return w.join(', ')}
 const RULE_NAMES={sells:'Лесенка',contract:'Контракт',owner:'Кит',dev:'Дев',liq:'Деньги в пуле',lock:'Лок пула',press:'Давление покупок',vol5:'Объём 5 мин',buyers:'Покупатели',dd:'Не сливают',rug:'Rugcheck'};
@@ -853,7 +864,7 @@ function renderRules(){
       if(k==='win')$('#rulesHead b').textContent=S.win+' мин';saveRules()})});
   const hk=document.createElement('div');hk.className='rule';
   hk.innerHTML=`<div class="rh"><h3>🔑 Ключ Helius (необязательно)</h3></div><p class="rtx">Бесплатные узлы Solana часто не отвечают сайтам. С бесплатным ключом Helius проверка контракта и китов работает стабильно. Получить: <b>helius.dev</b> → Sign up → скопировать API key.</p>
-    <div class="inrow"><input id="hkey" placeholder="вставь ключ сюда" autocomplete="off" spellcheck="false" value="${esc(S.helius)}"><button class="btn" id="hsave">Сохранить</button></div><div class="why" id="hst">${S.helius?'Ключ сохранён':'Без ключа — запасной вариант через rugcheck'}</div>`;
+    <div class="inrow"><input id="hkey" placeholder="вставь ключ сюда" autocomplete="off" spellcheck="false" value="${esc(S.helius)}"><button class="btn" id="hsave">Сохранить</button></div><div class="why" id="hst">${S.helius?'Ключ сохранён':'Без ключа — запасной вариант через rugcheck'}</div><div class="why">Запросов к блокчейну за эту сессию: <b id="rpcN">${rpcN}</b> (≈ столько же кредитов Helius)</div>`;
   $('#rules').appendChild(hk);
   $('#hsave').onclick=()=>{S.helius=$('#hkey').value.trim();sset('sc_set',S);$('#hst').textContent=S.helius?'Ключ сохранён, проверяю…':'Ключ удалён';
     rpc('getHealth',[]).then(()=>{$('#hst').textContent=S.helius?'✓ Ключ работает':'✓ Блокчейн отвечает'}).catch(e=>{$('#hst').textContent='✕ Не отвечает: '+e.message})};
