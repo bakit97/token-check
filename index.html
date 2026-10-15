@@ -1055,7 +1055,7 @@ const provedAt=c=>{let t=c.mSeen||Infinity;for(const h of c.mH||[])if(h[2]==='ok
 function featsAt(c,T){const F={};const ok=x=>x!=null&&isFinite(x);
   F.known=c.seen<=T&&provedAt(c)<=T;
   F.fam=c.mk;F.hour=new Date(c.t+5*3600e3).getUTCHours();
-  if(c.tk)F.premig=(c.t-c.tk)/60000;
+  if(c.tk&&c.tkAt&&c.tkAt<=T)F.premig=(c.t-c.tk)/60000;
   const ct=c.ct;if(ct&&(c.ctAt||0)<=T){F.danger=!!(ct.mint||ct.freeze||ct.fee>0||ct.hook||ct.deleg||ct.pause||ct.nontr||ct.defFrozen);F.metaMut=ct.metaMut;F.t22=ct.prog==='token2022'}
   const k=k10feats(c,T);if(k)Object.assign(F,{x10:k.x10,dd10:k.dd10,v1:k.v1,v05:k.v05,v510:k.v510,trend:k.trend,green:k.green,act:k.act});
   const d=lastBefore(c.ds,T);if(d){F.liq=d[2];F.mc=d[3];F.b5=d[4];F.s5=d[5];F.v5=d[6];if(ok(d[4])&&ok(d[5]))F.bs=d[5]?d[4]/d[5]:d[4];if(ok(d[2])&&ok(d[3])&&d[3])F.liqmc=d[2]/d[3]*100;F.pxT=d[1];F.dsAge=(T/1000-d[0])}
@@ -1103,11 +1103,12 @@ const FAM={pump:'pump.fun',dbc:'Meteora',launch:'LaunchLab','launch-v4':'LaunchL
 
 /* ---------- результат по настройке «живой» ---------- */
 // путь цены после входа: свечи 1 мин (точно) или снимки DEX Screener (приблизительно)
-function pathAfter(c,T){const out=[];let exact=false;
-  if(c.path?.c?.length){exact=true;for(const x of c.path.c){if(x[0]*1000>=T)out.push([x[0]*1000,x[1],x[2],x[3],x[4]])}}
+function pathAfter(c,T,G=GOAL){const out=[];let nK=0,nD=0;
+  if(c.path?.c?.length){for(const x of c.path.c){if(x[0]*1000>=T){out.push([x[0]*1000,x[1],x[2],x[3],x[4]]);nK++}}}
   const lastP=out.length?out[out.length-1][0]:T;
-  for(const d of c.ds||[]){const ts=d[0]*1000;if(ts>=T&&ts>lastP&&d[1])out.push([ts,d[1],d[1],d[1],d[1]])}
-  return{pts:out,exact,coverEnd:out.length?out[out.length-1][0]:null}}
+  for(const d of c.ds||[]){const ts=d[0]*1000;if(ts>=T&&ts>lastP&&d[1]){out.push([ts,d[1],d[1],d[1],d[1]]);if(ts<=T+G.win*60e3)nD++}}
+  // точно: только минутные свечи на всём окне; смешано: часть окна по снимкам; по снимкам: только снимки
+  const exact=nK>0&&nD===0;return{pts:out,exact,mixed:nK>0&&nD>0,coverEnd:out.length?out[out.length-1][0]:null}}
 function labEntry(c,T){const p=pathAfter(c,T);if(!p.pts.length)return null;const e=p.pts[0];if(e[0]-T>6*60e3)return null;return{price:e[1],at:e[0],p}}
 function outcome(c,G=GOAL){const T=c.t+G.dec*60e3;const F=featsAt(c,T);
   if(c.legacy)return{st:'legacy',T,F};if(!F.known)return{st:'late',T,F};
@@ -1118,7 +1119,7 @@ function outcome(c,G=GOAL){const T=c.t+G.dec*60e3;const F=featsAt(c,T);
     if(hu&&hd){amb=true;res={win:x[0]}}else if(hu)res={win:x[0]};else if(hd)res={stop:x[0]}}
   const covered=e.p.coverEnd!=null&&e.p.coverEnd>=Math.min(end,now)-10*60e3;
   let st;if(res&&res.win)st=amb?'amb':'live';else if(res&&res.stop)st='dead';else if(now<end)st='early';else st=covered?'dead':'nodata';
-  return{st,T,F,entry:e.price,entryAt:e.at,exact:e.p.exact,peak:peak/e.price,low:low/e.price,hitAt:res?(res.win||res.stop):null,why:res?.stop?'stop':(st==='dead'?'flat':null)}}
+  return{st,T,F,entry:e.price,entryAt:e.at,exact:e.p.exact,mixed:e.p.mixed,peak:peak/e.price,low:low/e.price,hitAt:res?(res.win||res.stop):null,why:res?.stop?'stop':(st==='dead'?'flat':null)}}
 
 /* ---------- статистика ---------- */
 const medN=a=>{const v=a.filter(x=>x!=null&&isFinite(x)).sort((x,y)=>x-y);if(!v.length)return null;const m=v.length>>1;return v.length%2?v[m]:(v[m-1]+v[m])/2};
@@ -1143,6 +1144,8 @@ let SEL=LS.get('lab_sel','f1');if(!FILTERS.find(f=>f.id===SEL))SEL=FILTERS[0].id
 const saveF=()=>{LS.set('lab_filters',FILTERS);LS.set('lab_sel',SEL)};
 const curF=()=>FILTERS.find(f=>f.id===SEL)||FILTERS[0];
 function passes(F,rules){for(const [k,op,v] of rules){const x=F[k];if(x==null)return false;if(op==='='&&x!==v)return false;if(op==='>='&&!(x>=v))return false;if(op==='<='&&!(x<=v))return false}return true}
+async function fprint(f){const txt=JSON.stringify({r:f.rules,g:f.goal||null,z:f.frozen});const h=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(txt));
+  return [...new Uint8Array(h)].slice(0,6).map(b=>b.toString(16).padStart(2,'0')).join('')}
 const ruleTxt=([k,op,v])=>FK[k]?(FK[k][3]==='b'?FK[k][1]+': '+(v?'да':'нет'):FK[k][1]+(op==='>='?' от ':' до ')+fmtF(k,v)):k;
 
 /* ---------- расчёт дня ---------- */
@@ -1232,7 +1235,7 @@ function coinSheet(D,a){const c=D.coins.find(x=>x.a===a);if(!c)return;const r=ou
   const late=s=>s==null?'':(s<=T?'вовремя':'<b class="warn">поздно</b>');
   const pts=pathAfter(c,T).pts;
   openSheetHtml(`<div class="dh">${avHtml({img:c.i,sym:c.s})}<div><b style="font-size:16px">${esc(c.n||'')}</b> <span class="mut">${esc(c.s||'')}</span><div class="addr">${esc(c.a)}</div></div></div>
-    <div class="verdict v-${r.st==='live'?'pass':r.st==='dead'?'fail':'miss'}">${(ST[r.st]||['',r.st])[1]}<small>${r.entry?`вход ${price(r.entry)} в ${tm(r.entryAt)} · максимум ${pct((r.peak-1)*100)} · минимум ${pct((r.low-1)*100)}${r.exact?'':' · по снимкам (приблизительно)'}`:'нет цены входа'}</small></div>
+    <div class="verdict v-${r.st==='live'?'pass':r.st==='dead'?'fail':'miss'}">${(ST[r.st]||['',r.st])[1]}<small>${r.entry?`вход ${price(r.entry)} в ${tm(r.entryAt)} · максимум ${pct((r.peak-1)*100)} · минимум ${pct((r.low-1)*100)}${r.exact?' · по минутным свечам':r.mixed?' · свечи + снимки (частично приблизительно)':' · по снимкам (приблизительно)'}`:'нет цены входа'}</small></div>
     ${r.entry?`<div class="hcard big">${spark(pts,r.entry,T,GOAL)}</div>`:''}
     <div class="grp"><h4>Этапы (на момент решения ${tm(T)})</h4>
       ${stp(true,'Миграция: '+esc(FAM[c.mk]||c.mk),`блок ${tm(c.mT)} · сервер увидел пул ${tm(c.seen)} · доказал ${tm(c.mSeen)} — ${late(Math.max(c.seen,c.mSeen||0))}${c.disc==='chain'?' · найдена сверкой':''}`)}
@@ -1275,6 +1278,7 @@ function renderFilters(){const box=$('#rules');if(!box)return;const f=curF();con
     <div class="big3"><div><b>${pass.length}</b><small>прошли из ${rows.length}</small></div><div><b class="up">${S.live}</b><small>живые (из ${A.live})</small></div><div><b class="dn">${S.dead}</b><small>мёртвые (из ${A.dead})</small></div></div>
     <p class="mut" style="font-size:11px;margin:6px 0 0;font-family:var(--mono)">${fin?`живых среди прошедших ${Math.round(S.live/fin*100)}% (вероятно ${Math.round(wi[0])}–${Math.round(wi[1])}%) · без фильтра ${A.live+A.dead?Math.round(A.live/(A.live+A.dead)*100):'—'}%`:'итогов пока нет'} · день ${esc(D.d)}</p>
     <div class="tbl"><table><tr><th>День</th><th>прошли</th><th class="up">живые</th><th class="dn">мёртвые</th><th>%</th></tr>${days.map(x=>`<tr><td>${x.d.slice(5)}${x.honest?' ✓':''}</td><td>${x.all}</td><td class="up">${x.live}</td><td class="dn">${x.dead}</td><td>${x.fin?Math.round(x.live/x.fin*100)+'%':'—'}</td></tr>`).join('')}</table></div>
+    ${f.frozen?`<p class="mut" style="font-size:11px;margin:4px 0 0;font-family:var(--mono)">отпечаток: <b id="fFp">…</b> — сохрани его (скрин) при заморозке: если условия изменятся, отпечаток станет другим. Хранится только в этом телефоне.</p>`:''}
     <p class="mut" style="font-size:11px;margin:4px 0 0">${f.frozen?`✓ — дни после заморозки: честная проверка (${hon.l+hon.d?Math.round(hon.l/(hon.l+hon.d)*100)+'% живых из '+(hon.l+hon.d):'пока нет'}). Остальные дни — подбор.`:'Фильтр не заморожен: все дни — подбор. Заморозь, и следующие дни станут честной проверкой.'} Загружены дни: ${Object.keys(LAB.days).length}.</p>
     <button class="chip" id="fLoad7" style="margin-top:6px">Загрузить 7 дней</button>
   </div>
@@ -1285,7 +1289,7 @@ function renderFilters(){const box=$('#rules');if(!box)return;const f=curF();con
     <div class="sec-h">Монета и контракт</div><div class="chips wrapc">${FEATS.filter(x=>x[2]==='coin'&&!used.has(x[0])).map(x=>`<button class="chip" data-tg="${x[0]}">${esc(x[1])}</button>`).join('')}</div>
     <div class="sec-h">Первые 10 минут</div><div class="chips wrapc">${FEATS.filter(x=>x[2]==='m10'&&!used.has(x[0])).map(x=>`<button class="chip" data-tg="${x[0]}">${esc(x[1])}</button>`).join('')}</div></details>`}</div>
   <div class="sec-h">Прошли в этот день · ${pass.length}</div><div class="list">${pass.slice().sort((a,b)=>b.c.t-a.c.t).map(coinRow).join('')||'<div class="empty">Никто не прошёл.</div>'}</div>`;
-  const re=()=>{saveF();renderFilters();updPassCount()};
+  const re=()=>{saveF();renderFilters();updPassCount()};if(f.frozen)fprint(f).then(h=>{const e=$('#fFp');if(e)e.textContent=h});
   box.querySelectorAll('[data-sel]').forEach(b=>b.onclick=()=>{SEL=b.dataset.sel;re()});
   $('#fCopy').onclick=()=>{const n={...JSON.parse(JSON.stringify(f)),id:'f'+Date.now(),name:f.name+' (копия)',created:Date.now(),frozen:null};FILTERS.unshift(n);SEL=n.id;re()};
   $('#fRen').onclick=()=>{const n=prompt('Имя фильтра',f.name);if(n){f.name=n.slice(0,40);re()}};
@@ -1337,7 +1341,7 @@ function renderHistory(){const box=$('#hist');if(!box)return;const f=curF();cons
     <p class="mut" style="font-size:11px;margin:4px 0 0">${fin?`живых ${Math.round(S.live/fin*100)}%`:''}${S.early?' · ещё идут: '+S.early:''}${S.amb?' · неясно: '+S.amb:''}${S.nodata?' · нет данных: '+S.nodata:''} · это подбор на известном дне, не доказательство.</p></div>
   ${rows.map(r=>{const c=r.c,p=pathAfter(c,r.T).pts;return `<div class="hcard" data-a="${esc(c.a)}"><div class="hh">${avHtml({img:c.i,sym:c.s})}<b class="nm" style="flex:1">${esc(c.n||'')}</b>
     <span class="l2">${new Date(r.T+5*3600e3).toISOString().slice(11,16)}</span><span class="badge b-${r.st==='live'?'pass':r.st==='dead'?'fail':'miss'}">${(ST[r.st]||['',r.st])[1]}</span></div>
-    ${spark(p,r.entry,r.T,G)}<div class="l2">макс <span class="up">${r.peak?pct((r.peak-1)*100):'—'}</span> · мин <span class="dn">${r.low&&isFinite(r.low)?pct((r.low-1)*100):'—'}</span>${r.hitAt?` · ${r.st==='dead'?'стоп':'цель'} через ${dur((r.hitAt-r.entryAt)/60000)}`:''}${r.exact?'':' · по снимкам'}</div></div>`}).join('')}`;
+    ${spark(p,r.entry,r.T,G)}<div class="l2">макс <span class="up">${r.peak?pct((r.peak-1)*100):'—'}</span> · мин <span class="dn">${r.low&&isFinite(r.low)?pct((r.low-1)*100):'—'}</span>${r.hitAt?` · ${r.st==='dead'?'стоп':'цель'} через ${dur((r.hitAt-r.entryAt)/60000)}`:''}${r.exact?'':r.mixed?' · частично по снимкам':' · по снимкам'}</div></div>`}).join('')}`;
   box.querySelectorAll('[data-hd]').forEach(b=>b.onclick=async()=>{HDAY=+b.dataset.hd;await loadDay(HDAY);renderHistory()});
   box.querySelectorAll('.hcard').forEach(el=>el.onclick=()=>coinSheet(D,el.dataset.a))}
 

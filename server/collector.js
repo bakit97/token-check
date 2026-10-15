@@ -247,7 +247,7 @@ async function pollDS(){const now=Date.now();const need=[...C.values()].filter(c
       for(const c of part){const arr=by[c.a]||[];c.dsAt=at;if(!arr.length)continue;
         if(!c.n&&arr[0].baseToken){c.n=(arr[0].baseToken.name||'').slice(0,40);c.s=(arr[0].baseToken.symbol||'').slice(0,16)}
         const cv=arr.filter(p=>isCurve(p.dexId)||/dbc|launch/i.test(p.dexId||'')).map(p=>p.pairCreatedAt).filter(Boolean);
-        const all=arr.map(p=>p.pairCreatedAt).filter(Boolean);const born=Math.min(...(cv.length?cv:all));if(isFinite(born)&&born<c.t-60e3)c.tk=Math.min(c.tk||Infinity,born);
+        const all=arr.map(p=>p.pairCreatedAt).filter(Boolean);const born=Math.min(...(cv.length?cv:all));if(isFinite(born)&&born<c.t-60e3){const nt=Math.min(c.tk||Infinity,born);if(nt!==c.tk){c.tk=nt;c.tkAt=at}}
         c.soc=Math.max(c.soc||0,(arr[0].info?.socials||[]).length+(arr[0].info?.websites||[]).length);if(!c.i&&arr[0].info?.imageUrl)c.i=arr[0].info.imageUrl;
         const p=arr.find(x=>x.pairAddress===c.p);if(!p)continue; // только пул витрины, сравнение по текущему адресу
         const e=[Math.round(at/1000),+(+p.priceUsd||0).toPrecision(6),p.liquidity?.usd!=null?Math.round(p.liquidity.usd):null,p.marketCap||p.fdv||null,
@@ -379,7 +379,7 @@ async function flushUploads(){while(UPQ.length){const [n,o]=UPQ.shift();try{awai
 function rec(c,full){const mg=c.mg||{};
   const r={a:c.a,n:c.n,s:c.s,i:c.i,p:c.p,d:c.d,q:c.q,t:c.t,tSrc:c.tSrc||'gt',t0:c.t0||null,seen:c.seen,disc:c.disc||null,rcSeen:c.rcSeen||null,ty:launchType(c),
     mk:mg.k||null,mst:mg.st||null,mw:mg.why||'',mT:mg.mT||null,mSig:mg.sig||null,mSeen:mg.seenAt||null,mCr:mg.creator??null,mH:c.mgH||[],mk0:c.mg0?.k||null,
-    origs:(c.origs||[]).map(o=>({p:o.p,t:o.t,d:o.d,movedAt:o.movedAt})),ct:c.ct||null,soc:c.soc||0,tk:c.tk&&isFinite(c.tk)?c.tk:null,
+    origs:(c.origs||[]).map(o=>({p:o.p,t:o.t,d:o.d,movedAt:o.movedAt})),ct:c.ct||null,soc:c.soc||0,tk:c.tk&&isFinite(c.tk)?c.tk:null,tkAt:c.tkAt||null,
     live:c.lastTrade?Date.now()-c.lastTrade<30*60e3:false,lastTrade:c.lastTrade||null,legacy:c.legacy?1:0};
   if(isOk(c)){r.k10=c.k10||null;r.hold=c.hold||{};r.bx=c.bx||null;r.vdec=c.vdec||null;r.vmint=c.vmint||null;
     r.raw=c.raw?Object.fromEntries(Object.entries(c.raw).map(([m,x])=>[m,{at:x.at,slot:x.slot,miss:x.miss}])):{};
