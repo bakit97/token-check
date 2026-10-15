@@ -206,7 +206,7 @@ async function chainLoop(){let lastSweep=0;for(;;){const now=Date.now();
    Правило: каждое наблюдение хранит абсолютное время, когда сервер его ПОЛУЧИЛ (at, мс) — данные никогда не привязываются
    к минуте «задним числом». Всё, что относится к пулу, при переезде витрины уходит в origs и начинается заново. */
 const C=new Map();const FV=2; // версия формата наблюдений
-const OBS_KEYS=['ds','k10','path','hold','bx','lq','vaults','vmint','vdec','legacy'],OBS_TMP=['tr','raw','dsAt','lastTrade','kTry','pTry','trTry','trDone','lqAt','rawUp','vTry'];
+const OBS_KEYS=['ds','k10','path','hold','bx','lq','gx','vaults','vmint','vdec','legacy'],OBS_TMP=['tr','raw','dsAt','tokAt','gxAt','lastTrade','kTry','pTry','trTry','trDone','lqAt','rawUp','vTry'];
 function takeObs(c){const o={};for(const k of OBS_KEYS){if(c[k]!=null)o[k]=c[k];delete c[k]}for(const k of OBS_TMP)delete c[k];return o}
 function load(){try{const a=JSON.parse(fs.readFileSync(DIR+'/state.json','utf8'));a.forEach(c=>{
     if(c.fv!==FV){c.legacy={snap:c.snap,act:c.act,k:c.k};for(const k of ['snap','act','k','o','cur','cn','orig'])delete c[k];c.fv=FV}
@@ -272,7 +272,7 @@ function mergeK(a,b){const m=new Map();for(const x of [...(a||[]),...b])m.set(x[
 function candleTasks(){const now=Date.now();
   for(const c of C.values()){if(!isOk(c))continue;const a=ageMin(c,now),pool=c.p,ts=Math.floor;
     // первые 10 минут: запрос на 11-й минуте, чтобы минута с 10-й отметкой была закрыта
-    if(!c.k10&&!c.kTry&&c.trDone&&a>=11&&a<6*60){c.kTry=1;gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=15&before_timestamp=${ts((c.t+11*60e3)/1000)}&currency=usd`,a<20?2:3,'k10:'+pool)
+    if(!c.k10&&!c.kTry&&c.trDone&&a>=11&&a<6*60){c.kTry=1;gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=15&before_timestamp=${ts((c.t+11*60e3)/1000)}&currency=usd`,3,'k10:'+pool)
       .then(r=>{if(c.p===pool)c.k10={at:Date.now(),c:kList(r)}}).catch(e=>err('k10 '+e.message)).finally(()=>{c.kTry=0})}
     // график: 5 ч (одним запросом) и 24 ч (двумя)
     const upto=c.path?.upto||0;
@@ -285,13 +285,19 @@ function candleTasks(){const now=Date.now();
         .catch(e=>err('path24 '+e.message)).finally(()=>{c.pTry=0})}}
   tradeTasks(now)}
 // сделки: последние 300 сделок пула; чаще, если монета активная. Покрытие проверяется по перекрытию запросов.
-function tradeTasks(now){for(const c of C.values()){if(!isOk(c)||c.trDone||c.trTry)continue;const a=ageMin(c,now);if(a<1)continue;
+function gxTasks(now){if(gtPending('gx'))return;const list=[...C.values()].filter(c=>isOk(c)&&ageMin(c,now)>=2&&ageMin(c,now)<16&&now-(c.gxAt||0)>=55e3).sort((a,b)=>a.t-b.t).slice(0,30);
+  if(!list.length)return;const pools=list.map(c=>c.p);
+  gt(`/pools/multi/${pools.join(',')}`,1,'gx').then(r=>{const at=Date.now(),by={};(r.data||[]).forEach(d=>by[d.attributes?.address]=d.attributes);
+    for(const c of list){if(!pools.includes(c.p))continue;c.gxAt=at;const x=by[c.p];if(!x)continue;const T=x.transactions||{},V=x.volume_usd||{};
+      const e=[Math.round(at/1000),T.m5?.buys??null,T.m5?.sells??null,T.m5?.buyers??null,T.m5?.sellers??null,T.m15?.buys??null,T.m15?.sells??null,T.m15?.buyers??null,T.m15?.sellers??null,
+        V.m5!=null?Math.round(+V.m5):null,V.m15!=null?Math.round(+V.m15):null];(c.gx=c.gx||[]).push(e)}}).catch(e=>err('gx '+e.message))}
+function tradeTasks(now){gxTasks(now);for(const c of C.values()){if(!isOk(c)||c.trDone||c.trTry)continue;const a=ageMin(c,now);if(a<1)continue;
     const tr=c.tr=c.tr||{f:[],x:{}},last=tr.f[tr.f.length-1];
-    if(a>13){finishTrades(c,'опоздали');continue}
+    if(a>40&&!last){finishTrades(c,'не успели (очередь)');continue}
     const busy=last&&last[1]>=250,since=last?(now-last[0])/1000:1e9;
-    const due=!last?a>=5.5:(busy&&since>=60)||(a>=10.25&&last[0]<c.t+10*60e3+10e3);
+    const due=!last&&a>=10.25;
     if(!due)continue;const pool=c.p;c.trTry=1;
-    gt(`/pools/${pool}/trades`,1,'tr:'+pool).then(r=>{if(c.p!==pool)return;const at=Date.now();let lo=Infinity,hi=0;
+    gt(`/pools/${pool}/trades`,2,'tr:'+pool).then(r=>{if(c.p!==pool)return;const at=Date.now();let lo=Infinity,hi=0;
         for(const d of r.data||[]){const x=d.attributes||{};const ts=Math.floor(Date.parse(x.block_timestamp)/1000);if(!ts)continue;lo=Math.min(lo,ts);hi=Math.max(hi,ts);
           const pr=+(x.kind==='buy'?x.price_to_in_usd:x.price_from_in_usd)||0;tr.x[x.tx_hash||d.id]=[ts,x.kind==='buy'?1:0,+(+x.volume_in_usd||0).toFixed(2),(x.tx_from_address||'').slice(0,12),pr?+pr.toPrecision(6):null]}
         tr.f.push([at,(r.data||[]).length,isFinite(lo)?lo:null,hi||null]);
@@ -389,7 +395,7 @@ function rec(c,full){const mg=c.mg||{};
     mk:mg.k||null,mst:mg.st||null,mw:mg.why||'',mT:mg.mT||null,mSig:mg.sig||null,mSeen:mg.seenAt||null,mCr:mg.creator??null,mH:c.mgH||[],mk0:c.mg0?.k||null,
     origs:(c.origs||[]).map(o=>({p:o.p,t:o.t,d:o.d,movedAt:o.movedAt})),ct:c.ct||null,soc:c.soc||0,tk:c.tk&&isFinite(c.tk)?c.tk:null,tkAt:c.tkAt||null,
     live:c.lastTrade?Date.now()-c.lastTrade<30*60e3:false,lastTrade:c.lastTrade||null,legacy:c.legacy?1:0};
-  if(isOk(c)){r.k10=c.k10||null;r.hold=c.hold||{};r.bx=c.bx||null;r.vdec=c.vdec||null;r.vmint=c.vmint||null;
+  if(isOk(c)){r.k10=c.k10||null;r.hold=c.hold||{};r.bx=c.bx||null;r.gx=c.gx||[];r.vdec=c.vdec||null;r.vmint=c.vmint||null;
     r.raw=c.raw?Object.fromEntries(Object.entries(c.raw).map(([m,x])=>[m,{at:x.at,slot:x.slot,miss:x.miss}])):{};
     const lim=Math.floor(c.t/1000)+20*60;r.ds=full?(c.ds||[]):(c.ds||[]).filter(x=>x[0]<=lim);r.lq=full?(c.lq||[]):(c.lq||[]).filter(x=>x[0]<=lim);
     if(full)r.path=c.path?{at:c.path.at,upto:c.path.upto,c:c.path.c}:null;else r.pathUpto=c.path?.upto||0}

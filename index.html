@@ -1060,6 +1060,7 @@ function featsAt(c,T){const F={};const ok=x=>x!=null&&isFinite(x);
   const k=k10feats(c,T);if(k)Object.assign(F,{x10:k.x10,dd10:k.dd10,v1:k.v1,v05:k.v05,v510:k.v510,trend:k.trend,green:k.green,act:k.act});
   const d=lastBefore(c.ds,T);if(d){F.liq=d[2];F.mc=d[3];F.b5=d[4];F.s5=d[5];F.v5=d[6];if(ok(d[4])&&ok(d[5]))F.bs=d[5]?d[4]/d[5]:d[4];if(ok(d[2])&&ok(d[3])&&d[3])F.liqmc=d[2]/d[3]*100;F.pxT=d[1];F.dsAge=(T/1000-d[0])}
   let h=null;for(const m of ['10','5','3']){const x=c.hold?.[m];if(x&&!x.miss&&x.at<=T){h=x;break}}if(h){F.top1=h.top1*100;F.top10=h.top10*100;F.pda=h.pda*100}
+  const g=lastBefore(c.gx,T);if(g){F.buyers15=g[7];F.sellers15=g[8];F.tx15=(g[5]??0)+(g[6]??0);if(g[7]!=null&&g[8]!=null)F.bsU=g[8]?g[7]/g[8]:g[7];F.vol15=g[10]}
   const b=c.bx;if(b&&!b.miss&&b.at<=T){F.payers=b.payers;F.trades=b.n;F.repeat=b.payers?b.repeat/b.payers*100:null;F.btop1=b.top1!=null?b.top1*100:null;F.bsUsd=b.sellUsd?b.buyUsd/b.sellUsd:null;F.trCov=b.cov}
   const l=lastBefore(c.lq,T);if(l&&c.vmint&&c.vdec){const qi=c.vmint[0]===c.a?1:0;const q=l[2+qi]/10**(c.vdec[qi]||0);if(c.vmint[qi]==='So11111111111111111111111111111111111111112')F.liqSol=q}
   return F}
@@ -1088,7 +1089,12 @@ const FEATS=[
   ['liqSol','Деньги в пуле, SOL (из блокчейна)','m10','n',v=>v.toFixed(1)+' SOL'],
   ['mc','Капитализация','m10','n',money],
   ['liqmc','Деньги в пуле к капе','m10','n',v=>Math.round(v)+'%'],
-  ['payers','Разных покупателей (кошельков)','m10','n',v=>Math.round(v)+''],
+  ['buyers15','Уникальных покупателей за 15 мин','m10','n',v=>Math.round(v)+''],
+  ['sellers15','Уникальных продавцов за 15 мин','m10','n',v=>Math.round(v)+''],
+  ['bsU','Покупателей на одного продавца','m10','n',v=>'×'+v.toFixed(2)],
+  ['tx15','Сделок за 15 мин','m10','n',v=>Math.round(v)+''],
+  ['vol15','Объём за 15 мин','m10','n',money],
+  ['payers','Разных покупателей (по списку сделок)','m10','n',v=>Math.round(v)+''],
   ['trades','Сделок за 10 минут','m10','n',v=>Math.round(v)+''],
   ['repeat','Покупали повторно','m10','n',v=>Math.round(v)+'%'],
   ['btop1','Доля самого крупного покупателя','m10','n',v=>Math.round(v)+'%'],
@@ -1242,7 +1248,8 @@ function coinSheet(D,a){const c=D.coins.find(x=>x.a===a);if(!c)return;const r=ou
       ${stp(F.danger==null?null:!F.danger,'Контракт',F.danger==null?'нет данных к моменту решения':F.danger?'есть опасные права':'чистый'+(F.metaMut?' · название можно менять':''))}
       ${stp(F.x10!=null?true:null,'Свечи первых 10 минут',F.x10!=null?`цена ${xf(F.x10)} · просадка −${Math.round(F.dd10)}% · объём ${money(F.v05)} → ${money(F.v510)}`:(c.k10?'пришли позже решения ('+tm(c.k10.at)+')':'нет'))}
       ${stp(F.b5!=null?true:null,'Снимок торговли',F.b5!=null?`${F.b5} покупок / ${F.s5} продаж за 5 мин · в пуле ${money(F.liq)} · капа ${money(F.mc)}`:'нет')}
-      ${stp(F.payers!=null?true:null,'Покупатели',F.payers!=null?`${F.payers} кошельков · крупнейший ${Math.round(F.btop1||0)}% покупок · повторно ${Math.round(F.repeat||0)}%${F.trCov?'':' · <span class="warn">сделки неполные</span>'}`:(c.bx?.miss?'не собраны: '+esc(c.bx.miss):'нет'))}
+      ${stp(F.buyers15!=null?true:null,'Покупатели и продавцы (15 мин)',F.buyers15!=null?`${F.buyers15} покупателей · ${F.sellers15} продавцов · ${F.tx15} сделок · объём ${money(F.vol15)}`:'нет снимка к моменту решения')}
+      ${stp(F.payers!=null?true:null,'Список сделок',F.payers!=null?`${F.payers} кошельков · крупнейший ${Math.round(F.btop1||0)}% покупок · повторно ${Math.round(F.repeat||0)}%${F.trCov?'':' · <span class="warn">сделки неполные</span>'}`:(c.bx?.miss?'не собраны: '+esc(c.bx.miss):'нет'))}
       ${stp(F.top10!=null?true:null,'Держатели',F.top10!=null?`крупнейший ${F.top1.toFixed(1)}% · топ-10 ${Math.round(F.top10)}% · у программ ${F.pda.toFixed(1)}%`:'нет снимка к моменту решения')}
     </div>
     <div class="links"><a href="https://dexscreener.com/solana/${encodeURIComponent(c.p)}" target="_blank" rel="noopener">DEX Screener</a><a href="https://solscan.io/tx/${encodeURIComponent(c.mSig||'')}" target="_blank" rel="noopener">Миграция</a><a href="https://solscan.io/token/${encodeURIComponent(c.a)}" target="_blank" rel="noopener">Solscan</a></div>`)}
