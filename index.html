@@ -300,7 +300,7 @@ $('#store').textContent=storeOk?'память: ок':'память: нет';$('#
 /* =================== настройки =================== */
 const DEF={win:10,keepH:5,delay:1,poll:30,
   c_contract:true,c_owner:true,ownerMax:15,c_dev:true,devMax:5,c_liq:true,liqMin:5000,c_lock:true,lockMin:90,
-  c_press:true,pressMin:1,c_sells:true,sellMin2:10,c_vol5:true,vol5Min:2000,c_buyers:true,buyersMin:20,c_dd:true,ddMax:30,
+  c_press:true,pressMin:1,c_sells:true,sellMin2:10,c_micro:true,microMax:50,microUsd:5,c_vol5:true,vol5Min:2000,c_buyers:true,buyersMin:20,c_dd:true,ddMax:30,
   w_ins:true,insMax:15,w_top10:true,top10Max:30,w_pump:true,pumpMax:3,w_clone:true,
   devStrict:false,fee:3,helius:'',h_all:false,f_fresh:false,f_scam:false,f_mig:false,f_liq:0,ver:2};
 const old=sget('sc_set',{});
@@ -356,6 +356,11 @@ function gtParse(d,inc){
 // пул по этому адресу может создать только программа pump.fun при миграции → совпадение = настоящая миграция. Считается в телефоне, 0 запросов
 function setCanon(c){if(!c||!isPumpSwap(c.dex)||!c.pair||c.canon!=null||c._cq)return;c._cq=1;
   isCanonical(c.addr,c.pair).then(v=>{c.canon=v}).catch(e=>{if(/base58/.test(e?.message||''))c.canon=false}).finally(()=>{c._cq=0;evalAll();render()})}
+// у монеты несколько пулов: если среди них есть настоящий миграционный — переключаемся на него (витрина = момент миграции)
+function considerPool(c,pair,dex,at){if(!c||!pair||pair===c.pair||c.canon===true||!isPumpSwap(dex))return;c._seenP=c._seenP||{};if(c._seenP[pair])return;c._seenP[pair]=1;
+  isCanonical(c.addr,pair).then(v=>{if(!v||c.canon===true)return;
+    Object.assign(c,{pair,dex,canon:true,listedAt:at||c.listedAt,st:undefined,rpc:undefined,micro:undefined,microAt:0,final:undefined,firstFail:undefined,passAt:undefined,firstPrice:null,peak:0,spark:[]});
+    c.status=Date.now()-c.listedAt<=S.win*60e3?'wait':'miss';if(c.status==='wait')wantOhlcv(c.addr);evalAll();render()}).catch(()=>{})}
 function upsertGT(p){
   const c=C[p.addr];
   if(!c){if(Date.now()-p.listedAt>S.keepH*3600e3)return;
@@ -363,7 +368,8 @@ function upsertGT(p){
     C[p.addr]={...p,spark:p.price?[[Date.now(),p.price]]:[],peak:p.price||0,status:fresh?'wait':'miss',isNew:booted,seenAt:Date.now(),
       firstPrice:Date.now()-p.listedAt<150e3?(p.price||null):null};
     if(fresh&&!C[p.addr].firstPrice)wantOhlcv(p.addr);setCanon(C[p.addr]);return}
-  if(p.listedAt<c.listedAt){c.listedAt=p.listedAt;c.pair=p.pair;c.dex=p.dex;c.canon=undefined;setCanon(c)}
+  if(p.pair!==c.pair)considerPool(c,p.pair,p.dex,p.listedAt);
+  if(p.listedAt<c.listedAt&&c.canon!==true){c.listedAt=p.listedAt;c.pair=p.pair;c.dex=p.dex;c.canon=undefined;setCanon(c)}
   if(p.buyers!=null)c.buyers=p.buyers;
   if(!c.dsAt){Object.assign(c,{price:p.price||c.price,liq:p.liq,mc:p.mc,b24:p.b24,s24:p.s24,v24:p.v24,ch5:p.ch5,ch1:p.ch1,b5:p.b5,s5:p.s5,v5:p.v5});pushSpark(c)}
   if(!c.img&&p.img)c.img=p.img;
@@ -399,6 +405,7 @@ function applyDS(ps){
   Object.entries(by).forEach(([a,arr])=>{const c=C[a];
     const cv=arr.filter(p=>isCurve(p.dexId)&&p.pairCreatedAt).map(p=>p.pairCreatedAt);if(cv.length)c.curveAt=Math.min(...cv);
     const created=Math.min(...arr.map(p=>p.pairCreatedAt||Infinity));if(isFinite(created)&&(!c.tokAt||created<c.tokAt))c.tokAt=created;
+    arr.forEach(p=>considerPool(c,p.pairAddress,p.dexId,p.pairCreatedAt));
     const pools=arr.filter(p=>!isCurve(p.dexId));c.pairs=[...new Set([...(c.pairs||[]),...arr.map(p=>p.pairAddress).filter(Boolean)])];if(!pools.length)return;
     const p=pools.find(x=>x.pairAddress===c.pair)||pools.sort((x,y)=>(y.liquidity?.usd||0)-(x.liquidity?.usd||0))[0];const prev=c.price;
     Object.assign(c,{price:+p.priceUsd||c.price,liq:(p.liquidity?.usd>0?p.liquidity.usd:c.liq),mc:p.marketCap||p.fdv||c.mc,
@@ -413,13 +420,13 @@ setInterval(pollDS,15000);
 
 /* --- цена в момент появления + пик (если не застали сами) --- */
 const ohlcvWant=new Set();
-function wantOhlcv(a){if(ohlcvWant.has(a))return;const c=C[a];if(!c?.pair)return;ohlcvWant.add(a);
+function wantOhlcv(a){if(ohlcvWant.has(a+(C[a]?.pair||'')))return;const c=C[a];if(!c?.pair)return;ohlcvWant.add(a+c.pair);
   gt(`/pools/${c.pair}/ohlcv/minute?aggregate=1&limit=30&currency=usd`,4).then(r=>{
     const l=(r.data?.attributes?.ohlcv_list||[]).slice().reverse();const c2=C[a];if(!l.length||!c2)return;
     const first=l.find(k=>k[0]*1000>=c2.listedAt-60e3)||l[0];if(!c2.firstPrice)c2.firstPrice=+first[1]||+first[4];
     l.forEach(k=>{if(k[0]*1000>=c2.listedAt-60e3)c2.peak=Math.max(c2.peak||0,+k[2])});
     const pts=l.map(k=>[k[0]*1000,+k[4]]);c2.spark=[...pts,...(c2.spark||[]).filter(s=>s[0]>pts[pts.length-1][0])].slice(-80);
-    evalAll();render()}).catch(()=>{ohlcvWant.delete(a)});}
+    evalAll();render()}).catch(()=>{ohlcvWant.delete(a+c.pair)});}
 
 /* --- блокчейн (Solana RPC): mint, freeze, Token-2022, реальные владельцы --- */
 // Экономия кредитов Helius:
@@ -460,7 +467,21 @@ async function rpcCheck(c){
   c.rpcErr='';
 }
 // монета уже не проходит правила, которым блокчейн не нужен → Helius не тратим
-const otherFails=c=>checks(c).some(x=>x.sec!=='warn'&&x.st==='fail'&&x.k!=='contract'&&x.k!=='owner');
+const LAZY=new Set(['contract','owner','micro']);
+// true, если какое-то из остальных правил ещё не пройдено (провалено или ещё неизвестно)
+const otherFails=c=>checks(c).some(x=>x.sec!=='warn'&&!LAZY.has(x.k)&&(x.st==='fail'||x.st==='unk'||x.st==='err'));
+/* --- микро-сделки: последние сделки смотрим только у монет, которые проходят всё остальное (экономим лимит GeckoTerminal) --- */
+function microOf(list){const v=list.map(x=>x.usd);const n=v.length;if(!n)return{n:0,share:0,avg:0};
+  return{n,share:v.filter(u=>u<S.microUsd).length/n*100,avg:v.reduce((a,b)=>a+b,0)/n}}
+async function microLoop(){for(;;){
+  const c=Object.values(C).filter(c=>S.c_micro&&c.status==='wait'&&inWin(c)&&c.pair&&(!c.microAt||Date.now()-c.microAt>60000)
+    &&!otherFails(c)).sort((a,b)=>b.listedAt-a.listedAt)[0];
+  if(c){c.microAt=Date.now();
+    try{const r=await gt(`/pools/${c.pair}/trades`,2);
+      const l=(r.data||[]).map(d=>({t:Date.parse(d.attributes?.block_timestamp)||0,usd:+d.attributes?.volume_in_usd||0})).sort((a,b)=>b.t-a.t).slice(0,100);
+      c.micro=microOf(l)}catch{}
+    evalAll();render()}
+  await sleep(3000)}}
 // счётчик запросов к блокчейну за сессию
 let rpcN=0;function rpcUsed(n){rpcN+=n}
 async function rpcLoop(){for(;;){
@@ -522,6 +543,8 @@ function checks(c){
   else{const b=c.b5||0,sl=c.s5||0,r2=sl/Math.max(b,1)*100;
     if(b+sl<15)put('sig','sells',S.c_sells,'pass','Продажи ≥ '+S.sellMin2+'% от покупок за 5 мин','Сделок пока мало ('+(b+sl)+') — не оценить','');
     else put('sig','sells',S.c_sells,r2>=S.sellMin2?'pass':'fail','Продажи ≥ '+S.sellMin2+'% от покупок за 5 мин','Продаж '+sl+' на '+b+' покупок'+(r2<S.sellMin2?' — лесенка, график рисуют боты':''),'лесенка')}
+  {const m=c.micro;put('sig','micro',S.c_micro,m==null?'unk':m.n<20?'pass':(m.share<=S.microMax?'pass':'fail'),'Микро-сделки (меньше $'+S.microUsd+') ≤ '+S.microMax+'%',
+    m==null?'Проверю, когда пройдут остальные правила':m.n<20?'Сделок пока мало ('+m.n+') — не оценить':(Math.round(m.share)+'% из последних '+m.n+' сделок меньше $'+S.microUsd+(m.share>S.microMax?' — боты накручивают активность':'')+', средняя $'+m.avg.toFixed(1)),'микро-сделки')}
   put('sig','vol5',S.c_vol5,c.v5==null?'unk':(c.v5>=S.vol5Min?'pass':'fail'),'Объём за 5 мин ≥ '+money(S.vol5Min),c.v5==null?'Жду данные…':'Сейчас '+money(c.v5),'мало объёма');
   put('sig','buyers',S.c_buyers,c.buyers==null?'unk':(c.buyers>=S.buyersMin?'pass':'fail'),'Уникальных покупателей ≥ '+S.buyersMin,c.buyers==null?'Жду данные…':('Купили '+c.buyers+' разных кошельков'),'мало покупателей');
   const dd=c.peak&&c.price?(1-c.price/c.peak)*100:null;
@@ -537,12 +560,13 @@ function checks(c){
   if(L?.rugged)put('safe','rug',true,'fail','Rugcheck: RUGGED','Токен уже признан скамом','rugged');
   if(!c.rpc&&!(R?.src)&&out.some(x=>x.sec!=='warn'&&x.st==='fail'&&x.k!=='contract'&&x.k!=='owner'))
     out.forEach(x=>{if((x.k==='contract'||x.k==='owner')&&(x.st==='unk'||x.st==='err')){x.st='na';x.d='Не проверял — монета уже не проходит другие правила (экономлю Helius)'}});
+  if(out.some(x=>x.sec!=='warn'&&x.st==='fail'&&x.k!=='micro'))out.forEach(x=>{if(x.k==='micro'&&x.st==='unk'){x.st='na';x.d='Не проверял — монета уже не проходит другие правила'}});
   return out}
 function getR(c){const L=c.rcLite;return c.rpc||(L?.has?{src:'rc',supply:L.supply,dec:L.dec,mint:L.mint,freeze:L.freeze,bad:L.risk22||[],is22:false,maxOwner:L.maxOwner,top10:L.top10}:null)}
 const isMig=c=>isPumpSwap(c.dex)&&c.canon===true;
 function migr(c){return c.canon===true?'yes':c.canon===false?'no':'unk'}
 function migrWhy(){return 'это не пул, который pump.fun создаёт при миграции'}
-const RULE_NAMES={sells:'Лесенка',contract:'Контракт',owner:'Кит',dev:'Дев',liq:'Деньги в пуле',lock:'Лок пула',press:'Давление покупок',vol5:'Объём 5 мин',buyers:'Покупатели',dd:'Не сливают',rug:'Rugcheck'};
+const RULE_NAMES={micro:'Микро-сделки',sells:'Лесенка',contract:'Контракт',owner:'Кит',dev:'Дев',liq:'Деньги в пуле',lock:'Лок пула',press:'Давление покупок',vol5:'Объём 5 мин',buyers:'Покупатели',dd:'Не сливают',rug:'Rugcheck'};
 
 function evalCoin(c){
   if(c.status==='pass'||c.status==='miss'||c.status==='fail'||c.status==='nodata')return;
@@ -553,7 +577,7 @@ function evalCoin(c){
   if(fails.length&&!c.firstFail)c.firstFail=fails[0].k;
   if(inWin(c)){if(!fails.length&&!waits.length){c.status='pass';c.passAt=Date.now();finalize(c,ck)}return}
   c.status=fails.length?'fail':'nodata';finalize(c,ck)}
-function cfgKey(){return['r7','win','c_contract','c_owner','ownerMax','c_dev','devMax','devStrict','c_liq','liqMin','c_lock','lockMin','c_press','pressMin','c_sells','sellMin2','c_vol5','vol5Min','c_buyers','buyersMin','c_dd','ddMax'].map(k=>S[k]).join('|')}
+function cfgKey(){return['r7','win','c_contract','c_owner','ownerMax','c_dev','devMax','devStrict','c_liq','liqMin','c_lock','lockMin','c_press','pressMin','c_sells','sellMin2','c_micro','microMax','microUsd','c_vol5','vol5Min','c_buyers','buyersMin','c_dd','ddMax'].map(k=>S[k]).join('|')}
 function finalize(c,ck){if(c.final)return;
   c.final={cfg:cfgKey(),fails:ck.filter(x=>x.sec!=='warn'&&x.st==='fail').map(x=>x.k),first:c.firstFail||null,
     unk:ck.filter(x=>x.sec!=='warn'&&(x.st==='unk'||x.st==='err')).map(x=>x.k),api:ck.some(x=>x.st==='err')}}
@@ -699,7 +723,7 @@ function startTrades(c){stopTrades();if(!c.pair)return;trCoin=c;c._tr=c._tr||new
       (r.data||[]).forEach(d=>{const a=d.attributes||{};const key=a.tx_hash||d.id;if(!key||c._tr.has(key))return;
         const buy=a.kind==='buy';c._tr.set(key,{t:Date.parse(a.block_timestamp)||Date.now(),buy,usd:+a.volume_in_usd||0,w:a.tx_from_address||'',
           price:buy?+a.price_to_in_usd:+a.price_from_in_usd});if(c._trInit)fresh.add(key)});
-      c._trInit=true;c._trAt=Date.now();c._trErr='';renderTrades(c,fresh)})
+      c._trInit=true;c._trAt=Date.now();c._trErr='';c.micro=microOf([...c._tr.values()].sort((a,b)=>b.t-a.t).slice(0,100));c.microAt=Date.now();renderTrades(c,fresh)})
     .catch(e=>{c._trErr=e.message;renderTrades(c,new Set())}).finally(()=>{c._trq=0})};
   renderTrades(c,new Set());tick();trT=setInterval(tick,12000)}
 function renderTrades(c,fresh){const box=$('#trBox');if(!box||box.dataset.a!==c.addr)return;
@@ -840,6 +864,7 @@ const RULES=[
  {h:'Сигналы для входа'},
  {n:6,t:'Давление покупок',k:'press',tg:['c_press'],text:()=>`За последние 5 мин покупок в <em>×${S.pressMin}</em> больше, чем продаж.`,why:'Покупают сильнее, чем продают — спрос есть прямо сейчас.',sl:[['pressMin',0.5,3,0.1,v=>'×'+v]]},
  {n:'6а',t:'Лесенка',k:'sells',tg:['c_sells'],text:()=>`За 5 мин продаж хотя бы <em>${S.sellMin2}%</em> от покупок (если сделок 15 и больше).`,why:'Только зелёные свечи и никто не продаёт — график рисуют боты. Живая монета всегда кто-то продаёт.',sl:[['sellMin2',0,40,1,v=>v+'%']]},
+ {n:'6б',t:'Микро-сделки',k:'micro',tg:['c_micro'],text:()=>`Из последних 100 сделок не больше <em>${S.microMax}%</em> мельче <em>$${S.microUsd}</em>.`,why:'Боты раскидывают сотни сделок по $0–1 с разных кошельков — счётчики покупателей и сделок растут, а денег нет. Так рисуют «живой» график.',sl:[['microMax',10,90,5,v=>v+'%'],['microUsd',1,20,1,v=>'$'+v]]},
  {n:7,t:'Живой объём',k:'vol5',tg:['c_vol5'],text:()=>`Объём торгов за 5 мин не меньше <em>${money(S.vol5Min)}</em>.`,why:'Монета реально торгуется, а не стоит.',sl:[['vol5Min',0,20000,250,v=>money(v)]]},
  {n:8,t:'Покупатели',k:'buyers',tg:['c_buyers'],text:()=>`С момента появления купили минимум <em>${S.buyersMin}</em> разных кошельков.`,why:'Много сделок от пары кошельков — это боты. Важно количество людей.',sl:[['buyersMin',0,200,5,v=>v+' кошельков']]},
  {n:9,t:'Не сливают',k:'dd',tg:['c_dd'],text:()=>`Цена не упала больше чем на <em>${S.ddMax}%</em> от своего пика с момента появления.`,why:'Если уже идёт слив — не лезь под него.',sl:[['ddMax',10,80,5,v=>v+'%']]},
@@ -877,7 +902,7 @@ function renderRules(){
   updRuleCounts()}
 
 /* =================== старт =================== */
-Object.values(C).forEach(setCanon);evalAll();render();boot();rcLoop();rpcLoop();setTimeout(pollDS,4000);
+Object.values(C).forEach(setCanon);evalAll();render();boot();rcLoop();rpcLoop();microLoop();setTimeout(pollDS,4000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollDS()});
 </script>
 </body>
