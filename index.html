@@ -194,7 +194,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .rgrp{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-top:6px;padding:8px 10px}
 .rgrp summary{cursor:pointer;font-weight:700}
 .rrow{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 0;border-top:1px solid var(--line);color:var(--fg);text-decoration:none}
-.rrow .av{width:30px;height:30px}.rrow .rt{display:flex;flex-direction:column;align-items:flex-end}.rrow .nm{display:block}
+.rrow .av{width:30px;height:30px}.rrow .rt{display:flex;flex-direction:column;align-items:flex-end;white-space:nowrap}.rrow .nm,.rrow .l2{display:block}.rrow .mid{min-width:0;overflow:hidden}
 .sum div small{display:block}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
@@ -928,7 +928,7 @@ setInterval(()=>{const lim=Date.now()-26*3600e3;const ks=Object.keys(SEEN);ks.fo
 Object.values(C).forEach(c=>{if(c.addr&&c.pair&&c.listedAt)seenAdd(c)});
 const RES=sget('sc_research',{});
 const GROUPS=[['grow','Растёт и жива','up'],['pd','Выросла, потом слилась','warn'],['rug','Сразу слилась','dn'],['dead','Тихо умерла','mut']];
-let resBusy=false,resMsg='';
+let resBusy=false,resMsg='',resStop=false;
 
 // вид запуска
 function launchType(r){const d=(r.dex||'').toLowerCase(),ps=(r.dexes||[]).join(' ').toLowerCase();
@@ -957,21 +957,25 @@ function groupOf(r){const f=r.f;if(!f||f.peak==null)return null;if(Date.now()-r.
   if(f.peak>=2&&f.now>=1&&Date.now()-f.lastAt<60*60e3)return 'grow';
   if(f.peak>=2)return 'pd';if(f.now<=0.3)return 'rug';return 'dead'}
 
-async function runResearch(){if(resBusy)return;resBusy=true;const btn=$('#resGo');btn.disabled=true;
+async function runResearch(){if(resBusy){resStop=true;resMsg='Останавливаю…';renderResearch();return}resBusy=true;resStop=false;renderResearch();
   const now=Date.now(),okAge=x=>now-x.listedAt>=2*3600e3&&now-x.listedAt<=24*3600e3;
   const cand={};
   try{
     // 1. топ сегодняшнего дня (растущие и активные)
-    for(const path of ['/trending_pools?duration=24h&page=1','/trending_pools?duration=24h&page=2','/trending_pools?duration=24h&page=3','/pools?sort=h24_volume_usd_desc&page=1','/pools?sort=h24_volume_usd_desc&page=2']){
-      resMsg='Ищу топ монет дня…';renderResearch();
+    const paths=[...[1,2,3,4,5,6,7,8].map(n=>'/dexes/pumpswap/pools?sort=h24_volume_usd_desc&page='+n),
+      ...['meteora-dbc','meteora-damm-v2','raydium-launchlab'].flatMap(d=>[1,2].map(n=>'/dexes/'+d+'/pools?sort=h24_volume_usd_desc&page='+n)),
+      '/trending_pools?duration=24h&page=1','/trending_pools?duration=24h&page=2'];
+    let pi=0,vol={};
+    for(const path of paths){if(resStop)break;pi++;
+      resMsg=`Ищу топ монет дня: ${pi} из ${paths.length} · найдено ${Object.keys(cand).length}`;renderResearch();
       try{const r=await gt(path+'&include=base_token,quote_token,dex',1);const inc={};(r.included||[]).forEach(x=>inc[x.id]=x);
-        (r.data||[]).forEach(d=>{const p=gtParse(d,inc);if(p&&okAge(p))cand[p.addr]={...p,src:'top'}})}catch{}}
+        (r.data||[]).forEach(d=>{const p=gtParse(d,inc);if(p&&okAge(p)&&(!cand[p.addr]||p.v24>(cand[p.addr].v24||0)))cand[p.addr]={...p,src:'top'}})}catch{}}
     // 2. все, что видел сканер (в том числе скамы и тихо умершие)
     Object.values(SEEN).filter(okAge).forEach(x=>{if(!cand[x.addr])cand[x.addr]={...x,src:'seen'}});
     // не повторять свежие замеры; монеты старше 16 ч уже не меняются
     let list=Object.values(cand).filter(x=>{const o=RES[x.addr];return !o||(Date.now()-o.at>30*60e3&&Date.now()-o.listedAt<16*3600e3+30*60e3)});
-    const tops=list.filter(x=>x.src==='top'),rest=list.filter(x=>x.src!=='top').sort(()=>Math.random()-.5);
-    list=[...tops,...rest].slice(0,45);
+    const tops=list.filter(x=>x.src==='top').sort((a,b)=>(b.v24||0)-(a.v24||0)),rest=list.filter(x=>x.src!=='top').sort(()=>Math.random()-.5);
+    list=[...tops,...rest];
     if(!list.length){resMsg=Object.keys(SEEN).length?'Новых монет для замера нет: нужны монеты старше 2 часов. Держи страницу открытой — сканер их копит.':'Сканер ещё не накопил монет. Подожди пару часов с открытой страницей.';return}
     // 3. DEX Screener: время рождения токена, все его пулы, соцсети
     for(let i=0;i<list.length;i+=30){resMsg='Узнаю время рождения монет…';renderResearch();
@@ -981,7 +985,7 @@ async function runResearch(){if(resBusy)return;resBusy=true;const btn=$('#resGo'
           if(!x.img&&p.info?.imageUrl)x.img=p.info.imageUrl})}catch{}}
     // 4. по каждой: настоящий ли пул и первые минуты жизни
     let done=0;
-    for(const x of list){
+    for(const x of list){if(resStop)break;
       resMsg=`Изучаю монеты: ${done} из ${list.length} · осталось ~${Math.ceil((list.length-done)*13/60)} мин · живая лента на паузе`;renderResearch();
       if(/pump-?swap/i.test(x.dex)&&x.canon==null){try{x.canon=await isCanonical(x.addr,x.pair)}catch(e){if(/base58/.test(e?.message||''))x.canon=false}}
       try{const before=Math.floor(Math.min(Date.now(),x.listedAt+16*3600e3)/1000);
@@ -996,8 +1000,8 @@ async function runResearch(){if(resBusy)return;resBusy=true;const btn=$('#resGo'
         rec.type=launchType(rec);rec.migMin=rec.tokAt&&rec.listedAt-rec.tokAt>60e3?(rec.listedAt-rec.tokAt)/60000:(isManual(rec.type)?0:null);
         rec.mcMig=sup&&rec.f?rec.f.p0*sup:null;rec.g=groupOf(rec);RES[rec.addr]=rec;sset('sc_research',RES)}catch{}
       done++;if(tab==='research')renderResearch()}
-    resMsg=`Готово: изучено ${done} монет. Нажми ещё раз позже — добавятся новые.`;
-  }finally{resBusy=false;btn.disabled=false;renderResearch()}}
+    resMsg=resStop?`Остановлено: изучено ${done} из ${list.length}. Нажми «Запустить» — продолжит с того же места.`:`Готово: изучено ${done} монет. Позже нажми ещё раз — добавятся новые.`;
+  }finally{resBusy=false;resStop=false;renderResearch()}}
 
 // клоны: такое же имя у другой монеты в выборке
 function cloneOf(r,all){const n=(r.name||'').trim().toLowerCase();return !!n&&all.some(o=>o!==r&&(o.name||'').trim().toLowerCase()===n)}
@@ -1034,13 +1038,13 @@ function renderResearch(){const box=$('#research');if(!box)return;
   const cards=GROUPS.map(([g,l,c])=>`<div><b class="${c}">${by[g].length}</b><small>${l}</small></div>`).join('');
   const lists=GROUPS.map(([g,l,c])=>by[g].length?`<details class="rgrp"><summary><span class="${c}">●</span> ${l} · ${by[g].length}</summary>${by[g].sort((a,b)=>(b.f.peak||0)-(a.f.peak||0)).map(r=>`
     <a class="rrow" href="https://dexscreener.com/solana/${encodeURIComponent(r.pair)}" target="_blank" rel="noopener">${avHtml(r)}<span class="mid"><b class="nm">${esc(r.name)}<span>${esc(r.sym)}</span></b>
-    <span class="l2">${esc(r.type)} · миграция за ${r.migMin!=null?dur(r.migMin):'—'} · ${ago(r.listedAt)} назад</span></span>
+    <span class="l2">${esc(r.type)}</span><span class="l2">до миграции ${r.migMin!=null?dur(r.migMin):'—'} · ${ago(r.listedAt)} назад</span></span>
     <span class="rt"><span class="px up">пик ${xf(r.f.peak)}</span><span class="l2 ${r.f.now>=1?'up':'dn'}">сейчас ${xf(r.f.now)}</span></span></a>`).join('')}</details>`:'').join('');
   box.innerHTML=`<div class="agg">
     <h3>Часть 1 · Рождение и миграция</h3>
-    <p class="mut" style="margin:0 0 8px;font-size:12px">Берёт монеты за сутки: топ дня и всё, что видел сканер (там есть и скамы). Смотрит, как каждая родилась и как вела себя первые 10 минут, и сравнивает с тем, чем она кончилась. Результат меряется от цены на 10-й минуте.</p>
-    <button class="btn" id="resGo" style="width:100%" ${resBusy?'disabled':''}>${resBusy?'Идёт исследование…':'Запустить исследование'}</button>
-    <p class="mut" id="resMsg" style="font-size:12px;margin:6px 0 0">${esc(resMsg||(all.length?'Изучено монет: '+all.length:'Нажми кнопку. Займёт около 10 минут, живая лента на это время встанет на паузу. Держи страницу открытой.'))}</p>
+    <p class="mut" style="margin:0 0 8px;font-size:12px">Монеты, родившиеся сегодня: топ дня по объёму и всё, что видел сканер (там есть и скамы). Смотрит, как каждая родилась и как вела себя первые 10 минут, и сравнивает с тем, чем она кончилась. Результат меряется от цены на 10-й минуте.</p>
+    <button class="btn" id="resGo" style="width:100%;${resBusy?'background:var(--panel2);border:1px solid var(--line)':''}">${resBusy?'■ Стоп':'Запустить исследование'}</button>
+    <p class="mut" id="resMsg" style="font-size:12px;margin:6px 0 0">${esc(resMsg||(all.length?'Изучено монет: '+all.length:'Берёт топ монет за сегодня с PumpSwap, Meteora, LaunchLab и всё, что видел сканер. Первый прогон — около 25–30 минут, живая лента на это время на паузе. Держи страницу открытой, можно остановить и продолжить.'))}</p>
     <div class="sum" style="grid-template-columns:repeat(2,minmax(0,1fr))">${cards}</div>
     <p class="mut" style="font-size:11px;margin:6px 0 0">Растёт и жива: от 10-й минуты дошла до ×2 и сейчас не ниже входа · Выросла, потом слилась: была ×2, сейчас ниже входа · Сразу слилась: ×2 не было, упала на 70%+ · Тихо умерла: остальные.${early?' Ещё рано судить (моложе 2 ч): '+early+'.':''}</p></div>
   ${all.length?`<div class="agg"><h3>Что отличает растущие</h3>
