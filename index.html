@@ -166,6 +166,27 @@ button{font:inherit;color:inherit;cursor:pointer}
 .sum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:6px}
 .sum div{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:7px;text-align:center}
 .sum b{display:block;font:700 16px var(--mono)}.sum small{font:10px var(--mono);color:var(--mut)}
+/* сделки */
+.trs{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;margin-top:10px}
+.trs h4{margin:0;font:700 11px var(--mono);color:var(--mut);text-transform:uppercase;letter-spacing:.06em;display:flex;justify-content:space-between;gap:8px}
+.tseg{display:flex;gap:4px;margin-top:8px}
+.tseg button{flex:1;padding:6px 4px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--mut);font-size:12px;font-weight:700}
+.tseg button.on{color:var(--fg);border-color:var(--acc)}
+.trsum{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+.trsum div{border-radius:9px;padding:8px;text-align:center;border:1px solid}
+.trsum .b{background:rgba(34,209,123,.08);border-color:rgba(34,209,123,.35);color:var(--up)}
+.trsum .s{background:rgba(255,77,94,.08);border-color:rgba(255,77,94,.35);color:var(--dn)}
+.trsum b{display:block;font:700 16px var(--mono)}.trsum small{font:11px var(--mono);opacity:.85}
+.trbar{display:flex;height:6px;border-radius:3px;overflow:hidden;margin-top:6px;background:var(--line)}
+.trbar i{display:block;background:var(--up)}.trbar u{display:block;background:var(--dn);flex:1}
+.trmeta{font:11px var(--mono);color:var(--mut);margin-top:6px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.trl{max-height:380px;overflow-y:auto;margin-top:6px}
+.tr{display:grid;grid-template-columns:42px 16px minmax(0,1fr) auto 64px;gap:6px;align-items:center;padding:6px 2px;border-top:1px solid var(--line);font:12px var(--mono)}
+.tr .tt{color:var(--mut)}.tr .tu{font-weight:700}.tr .tp{color:var(--mut);text-align:right}
+.tr.buy .tk,.tr.buy .tu{color:var(--up)}.tr.sell .tk,.tr.sell .tu{color:var(--dn)}
+.tr.big .tu{font-size:13px}.tr.big{background:rgba(245,192,74,.06)}
+.tr .tw{color:var(--mut);text-decoration:none;text-align:right;overflow:hidden;text-overflow:ellipsis}
+.tr.enter{animation:trin 1.6s ease-out}@keyframes trin{0%{background:rgba(91,140,255,.35)}100%{background:transparent}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
@@ -521,7 +542,7 @@ function stats(){const cs=Object.values(C).filter(c=>c.status!=='miss'&&Date.now
 
 /* =================== отрисовка =================== */
 const BADGE={pass:['b-pass','✓ прошла'],wait:['b-wait','⏳ проверка'],nodata:['b-late','? нет данных'],miss:['b-miss','пропущена']};
-function badge(c){if((c.status==='wait'&&c.failNow)||c.status==='fail')return['b-fail','✕ '+(c.why||'скам')];
+function badge(c){if(c.status==='pass'&&!curCfg(c))return['b-miss','✓ по старым правилам'];if((c.status==='wait'&&c.failNow)||c.status==='fail')return['b-fail','✕ '+(c.why||'скам')];
   if(c.status==='wait'&&c.waitErr)return['b-late','⚠ API'];return BADGE[c.status]||BADGE.miss}
 function sparkSvg(pts,w=64,h=28){
   if(!pts||pts.length<2)return `<svg class="spark" viewBox="0 0 ${w} ${h}"></svg>`;
@@ -549,12 +570,12 @@ function reconcile(box,items,mode){
   const em=box.querySelector('.empty');if(em)em.remove();
   const keep=new Set();let prev=null;
   for(const c of items){keep.add(c.addr);let el=m.get(c.addr);
-    const sig=[c.price,c.mc,c.liq,c.status,c.failNow,c.why,c.waitErr,c.warnN,c.img,c.tokAt,(c.spark||[]).length,c.passAt,inWin(c)].join('|');
+    const sig=[curCfg(c),c.price,c.mc,c.liq,c.status,c.failNow,c.why,c.waitErr,c.warnN,c.img,c.tokAt,(c.spark||[]).length,c.passAt,inWin(c)].join('|');
     if(!el){el=document.createElement('div');el.className='row';el.dataset.a=c.addr;el.onclick=()=>openCoin(c.addr);
       if(c.isNew&&Date.now()-(c.seenAt||0)<60000)el.classList.add('enter');m.set(c.addr,el)}
     if(el._sig!==sig){el.innerHTML=rowInner(c,mode);el._sig=sig;
       if(c.flash&&!el.classList.contains('enter')){el.classList.remove('fl-up','fl-dn');void el.offsetWidth;el.classList.add('fl-'+c.flash)}}
-    el.classList.toggle('inwin',inWin(c)&&c.status!=='fail'&&!c.failNow);
+    el.classList.toggle('inwin',inWin(c)&&c.status!=='fail'&&!c.failNow&&!(c.status==='pass'&&!curCfg(c)));
     const want=prev?prev.nextSibling:box.firstChild;if(want!==el)box.insertBefore(el,want);prev=el}
   for(const[a,el]of m){if(!keep.has(a)){el.remove();m.delete(a)}}}
 let tab='all';
@@ -591,7 +612,7 @@ $('#fLiq').onclick=()=>{const L=[0,1000,5000,20000];S.f_liq=L[(L.indexOf(S.f_liq
 /* =================== карточка монеты =================== */
 let sheetAddr=null,sheetCoin=null;
 function openSheet(html){$('#sheetBody').innerHTML=html;$('#sheet').hidden=false;document.body.style.overflow='hidden'}
-function closeSheet(){$('#sheet').hidden=true;$('#sheetBody').innerHTML='';sheetAddr=null;sheetCoin=null;document.body.style.overflow=''}
+function closeSheet(){stopTrades();$('#sheet').hidden=true;$('#sheetBody').innerHTML='';sheetAddr=null;sheetCoin=null;document.body.style.overflow=''}
 document.querySelectorAll('[data-close]').forEach(e=>e.onclick=closeSheet);
 function chartUrl(pair,src){return src==='gt'
   ?`https://www.geckoterminal.com/solana/pools/${pair}?embed=1&info=0&swaps=0&grayscale=0&light_chart=0&chart_type=price&resolution=1m`
@@ -600,7 +621,8 @@ function detailHtml(c){const a=encodeURIComponent(c.addr);const t=tokTs(c);
   return `<div class="dh">${avHtml(c)}<div style="min-width:0"><div class="nm" style="font-size:17px">${esc(c.name)}<span>${esc(c.sym)}</span></div>
     <div class="addr">${esc(c.addr)}</div><button class="copy" id="cp">Скопировать адрес</button></div></div>
   ${c.pair?`<div class="seg"><button class="on" data-src="ds">График DEX Screener</button><button data-src="gt">GeckoTerminal</button></div>
-  <iframe class="chart" id="chart" src="${chartUrl(c.pair,'ds')}" loading="lazy"></iframe>`:''}
+  <iframe class="chart" id="chart" src="${chartUrl(c.pair,'ds')}" loading="lazy"></iframe>
+  <div class="trs" id="trBox" data-a="${esc(c.addr)}"><h4><span>Сделки вживую</span><span id="trUpd">загружаю…</span></h4></div>`:''}
   <div class="grid">
     <div class="cell"><small>Цена</small><b>${price(c.price)}</b></div>
     <div class="cell"><small>Капа</small><b>${money(c.mc)}</b></div>
@@ -641,7 +663,44 @@ function fillChecks(c){const box=$('#ckBox');if(!box)return;
 function bindDetail(c){
   const cp=$('#cp');if(cp)cp.onclick=async()=>{try{await navigator.clipboard.writeText(c.addr);cp.textContent='Скопировано'}catch{cp.textContent='Не удалось — выдели адрес выше'}};
   document.querySelectorAll('.seg button[data-src]').forEach(b=>b.onclick=()=>{document.querySelectorAll('.seg button[data-src]').forEach(x=>x.classList.toggle('on',x===b));$('#chart').src=chartUrl(c.pair,b.dataset.src)});
-  fillChecks(c)}
+  fillChecks(c);startTrades(c)}
+/* --- сделки вживую (GeckoTerminal) --- */
+let trT=null,trCoin=null;const TV={per:5,side:'all'};
+function stopTrades(){clearInterval(trT);trT=null;trCoin=null}
+function startTrades(c){stopTrades();if(!c.pair)return;trCoin=c;c._tr=c._tr||new Map();
+  const tick=()=>{const box=$('#trBox');if(!box||box.dataset.a!==c.addr){stopTrades();return}if(c._trq)return;c._trq=1;
+    gt(`/pools/${c.pair}/trades`,2).then(r=>{const fresh=new Set();
+      (r.data||[]).forEach(d=>{const a=d.attributes||{};const key=a.tx_hash||d.id;if(!key||c._tr.has(key))return;
+        const buy=a.kind==='buy';c._tr.set(key,{t:Date.parse(a.block_timestamp)||Date.now(),buy,usd:+a.volume_in_usd||0,w:a.tx_from_address||'',
+          price:buy?+a.price_to_in_usd:+a.price_from_in_usd});if(c._trInit)fresh.add(key)});
+      c._trInit=true;c._trAt=Date.now();c._trErr='';renderTrades(c,fresh)})
+    .catch(e=>{c._trErr=e.message;renderTrades(c,new Set())}).finally(()=>{c._trq=0})};
+  renderTrades(c,new Set());tick();trT=setInterval(tick,12000)}
+function renderTrades(c,fresh){const box=$('#trBox');if(!box||box.dataset.a!==c.addr)return;
+  const all=[...(c._tr||new Map()).entries()].map(([k,v])=>({k,...v})).sort((a,b)=>b.t-a.t);
+  const from=TV.per?Date.now()-TV.per*60e3:0;const inP=all.filter(x=>x.t>=from);
+  const B=inP.filter(x=>x.buy),Sl=inP.filter(x=>!x.buy),sb=B.reduce((s,x)=>s+x.usd,0),ss=Sl.reduce((s,x)=>s+x.usd,0);
+  const uw=new Set(inP.map(x=>x.w)).size,ub=new Set(B.map(x=>x.w)).size,us=new Set(Sl.map(x=>x.w)).size;
+  const list=inP.filter(x=>TV.side==='all'||(TV.side==='buy')===x.buy).slice(0,80);
+  const sh=sb+ss?Math.round(sb/(sb+ss)*100):50;
+  const segP=[[5,'5 мин'],[60,'1 час'],[0,'все']].map(([v,l])=>`<button data-per="${v}" class="${TV.per===v?'on':''}">${l}</button>`).join('');
+  const segS=[['all','все'],['buy','покупки'],['sell','продажи']].map(([v,l])=>`<button data-side="${v}" class="${TV.side===v?'on':''}">${l}</button>`).join('');
+  const short=w=>w?w.slice(0,4)+'…'+w.slice(-3):'—';
+  box.innerHTML=`<h4><span>Сделки вживую</span><span id="trUpd">${c._trErr?'<span class="dn">'+esc(c._trErr)+'</span>':c._trAt?'обновлено '+ago(c._trAt)+' назад':'загружаю…'}</span></h4>
+    <div class="tseg">${segP}</div>
+    <div class="trsum"><div class="b"><small>▲ Покупки</small><b>${B.length}</b><small>${money(sb)} · ${ub} кош.</small></div>
+      <div class="s"><small>▼ Продажи</small><b>${Sl.length}</b><small>${money(ss)} · ${us} кош.</small></div></div>
+    <div class="trbar"><i style="width:${sh}%"></i><u></u></div>
+    <div class="trmeta"><span>покупки ${sh}% по сумме</span><span>разных кошельков: ${uw}</span><span>${sb-ss>=0?'<span class="up">чистые покупки +'+money(sb-ss)+'</span>':'<span class="dn">чистые продажи −'+money(ss-sb)+'</span>'}</span></div>
+    <div class="tseg">${segS}</div>
+    <div class="trl">${list.length?list.map(x=>`<div class="tr ${x.buy?'buy':'sell'}${x.usd>=500?' big':''}${fresh.has(x.k)?' enter':''}">
+      <span class="tt" data-ts="${x.t}">${ago(x.t)}</span><span class="tk">${x.buy?'▲':'▼'}</span><span class="tu">${money(x.usd)}</span><span class="tp">${price(x.price)}</span>
+      <a class="tw" href="https://solscan.io/account/${encodeURIComponent(x.w)}" target="_blank" rel="noopener">${esc(short(x.w))}</a></div>`).join('')
+      :`<div class="empty" style="padding:14px">${c._trAt?'За этот период сделок нет':'Загружаю сделки…'}</div>`}</div>
+    <div class="trmeta"><span>последние до 300 сделок · обновление каждые 12 сек</span></div>`;
+  box.querySelectorAll('[data-per]').forEach(b=>b.onclick=()=>{TV.per=+b.dataset.per;renderTrades(c,new Set())});
+  box.querySelectorAll('[data-side]').forEach(b=>b.onclick=()=>{TV.side=b.dataset.side;renderTrades(c,new Set())})}
+setInterval(()=>{const u=$('#trUpd');const c=trCoin;if(u&&c&&c._trAt&&!c._trErr)u.textContent='обновлено '+ago(c._trAt)+' назад'},1000);
 function openCoin(a){const c=C[a];if(!c)return;sheetAddr=a;openSheet(detailHtml(c));bindDetail(c);
   if(!c.rpc&&!c.rpcBusy){c.rpcBusy=1;rpcCheck(c).catch(e=>{c.rpcErr=e.message}).finally(()=>{c.rpcBusy=0;evalAll();render()})}
   if(!c.rcTried&&!c.rcBusy){c.rcBusy=1;rcFetch(c).finally(()=>{c.rcBusy=0;evalAll();render()})}}
