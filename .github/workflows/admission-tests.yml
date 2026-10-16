@@ -1,0 +1,28 @@
+name: admission-tests
+on:
+  push:
+    branches:
+      - 'feature/v2-*'
+    paths:
+      - 'server/admission.js'
+      - 'server/admission.test.js'
+      - '.github/workflows/admission-tests.yml'
+  pull_request:
+    paths:
+      - 'server/admission.js'
+      - 'server/admission.test.js'
+      - '.github/workflows/admission-tests.yml'
+permissions:
+  contents: read
+jobs:
+  node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check
+        run: node --check server/admission.js && node --check server/admission.test.js
+      - name: Admission tests
+        run: node --test server/admission.test.js
