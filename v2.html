@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0d14">
+<title>SOL·СКАН · v2</title>
+<link rel="stylesheet" href="./v2.css?v=20261017-1">
+</head>
+<body>
+<header><div class="app">
+<div class="bar"><div class="brand">SOL·СКАН <span class="badge">v2</span></div><span id="net" class="live">● Подключение…</span><a class="legacy" href="./classic.html">Старая версия ↗</a></div>
+<nav class="tabs" id="tabs" aria-label="Разделы">
+<button class="active" data-page="all">Все <span id="todayTab"></span></button>
+<button data-page="mine">Мои фильтры</button>
+<button data-page="passed">Прошли <span id="passedTab"></span></button>
+<button data-page="r1">Исследование 1</button>
+<button data-page="r2">Исследование 2</button>
+<button data-page="library">Библиотека</button>
+</nav></div></header>
+<main class="app">
+<div id="dataState" role="status">Загрузка данных настоящего сервера…</div>
+<section class="page" id="p-all">
+<h1>Все</h1><p class="muted">Главный источник. Монета входит один раз: либо до, либо после миграции. Ни один другой раздел не может добавить её сюда.</p>
+<div class="chips" id="allStreams"><button class="active" data-stream="all">Общие</button><button data-stream="before">🌱 До миграции</button><button data-stream="after">🎓 После миграции</button></div>
+<details class="card"><summary>⚙ Фильтры возраста и лента</summary>
+<div class="controls" style="margin-top:13px">
+<label class="control"><span>🌱 Возраст до миграции</span><select class="input" id="ageBefore"></select></label>
+<label class="control"><span>🎓 Возраст после миграции</span><select class="input" id="ageAfter"></select></label>
+<label class="control"><span>Последних карточек</span><select class="input" id="cardLimit"><option>10</option><option>20</option><option>30</option><option>50</option><option>100</option></select></label>
+</div><button class="primary" id="applySource" style="margin-top:12px">Применить</button>
+<p class="hint">Возраст отсчитывается от начала открытой торговли либо от подтверждённой миграции. Запоздалое обнаружение не обнуляет возраст.</p>
+</details>
+<div class="statgrid"><div class="stat"><span>Допущено за сегодня · доступная выгрузка</span><strong id="admitCount">—</strong></div><div class="stat"><span>На витрине сейчас</span><strong id="visibleCount">—</strong></div></div>
+<div id="sourceNote" class="notice">Источник до миграции ещё подключается. Не показываем непроверенные данные.</div>
+<div id="coinList" class="list"><div class="empty-state">Получение новых событий…</div></div>
+</section>
+<section class="page" id="p-mine" hidden>
+<h1>Мои фильтры</h1><p class="muted">Два потока. В каждом отдельные кнопки «+» для модулей первого и второго уровня. Модули работают независимо.</p>
+<div class="grid2" id="moduleGrid"></div>
+<div id="filterPicker" class="card" hidden><div class="row"><h2 id="pickerTitle">Добавить модуль</h2><button id="pickerClose">Закрыть</button></div><div id="pickerItems"></div></div>
+<div class="card"><div class="row"><span>Включено модулей</span><strong id="activeModules" class="accent">0</strong></div><p class="hint">Новые фильтры создавай и проверяй во вкладке «Библиотека», затем подключай здесь.</p></div>
+</section>
+<section class="page" id="p-passed" hidden>
+<h1>Прошли</h1><p class="muted">Здесь только монеты из главного источника, прошедшие хотя бы один из твоих активных фильтров.</p>
+<div class="card"><div class="row"><label for="decisionMins">Таймер решения</label><b id="decisionValue">10 минут</b></div><input type="range" min="1" max="30" step="1" id="decisionMins"><p class="hint">Таймер от первого допуска. После завершения наблюдения идут в исследование второго уровня.</p></div>
+<div id="passedStats" class="muted"></div><div class="list" id="passedList"></div>
+</section>
+<section class="page" id="p-r1" hidden>
+<h1>Исследование 1-го уровня</h1><p class="muted">Из главного источника, через собственный путь. Живые и мёртвые определяются торговой активностью, а НЕ ростом цены.</p>
+<div class="card"><h2>Наблюдение и разметка</h2>
+<div class="row"><label for="r1Hours">Период от обнаружения</label><b id="r1HoursValue">5 часов</b></div><input id="r1Hours" type="range" min="1" max="24" step="1">
+<div class="row" style="margin-top:8px"><label for="r1Activity">Минимум времени с реальными сделками</label><b id="r1ActivityValue">70%</b></div><input id="r1Activity" type="range" min="0" max="100" step="5">
+<div class="row" style="margin-top:8px"><label for="r1Idle">Допустимый непрерывный простой</label><b id="r1IdleValue">60 минут</b></div><input id="r1Idle" type="range" min="5" max="120" step="5">
+<button class="primary" id="applyR1">Применить</button>
+<p class="hint">Зелёная зона — подробные данные до конца решения; дальше достаточно цены, времени и реальных сделок. При плохом покрытии — «недостаточно данных».</p></div>
+<div class="statgrid"><div class="stat"><span>🟢 Живые, подтверждены данными</span><strong id="r1Live">—</strong></div><div class="stat"><span>🔴 Мёртвые, подтверждены данными</span><strong id="r1Dead">—</strong></div></div>
+<div class="card"><h2>Автоматическое исследование</h2><div class="muted" id="r1Auto">Нужно минимум 100 живых монет. Серверный движок нового исследования ещё не подключён.</div><div class="meter" style="margin-top:10px"><div id="r1Meter" style="width:0"></div></div></div>
+<div id="r1Rows" class="card"><div class="muted">Нет завершённых наблюдений.</div></div>
+</section>
+<section class="page" id="p-r2" hidden>
+<h1>Исследование 2-го уровня</h1><p class="muted">Источник: «Прошли». Одна общая кривая, точка 0 — окончание таймера решения, следующие 300 минут — только для оценки результата.</p>
+<div class="chips" id="r2Streams"><button class="active" data-stream="after">🎓 После</button><button data-stream="before">🌱 До</button></div>
+<div class="card"><h2>Среднее изменение цены</h2><div id="r2Graph" class="graph"><div class="empty-state">Ожидание полной пятчасовой истории после точки 0</div></div>
+<div class="row" style="margin-top:12px"><span class="muted">Шаг таблицы</span><select id="r2Step" class="input" style="width:135px"><option value="5">5 минут</option><option value="1">1 минута</option><option value="10">10 минут</option><option value="15">15 минут</option><option value="30">30 минут</option><option value="60">60 минут</option></select></div>
+<div class="tablewrap"><table><thead><tr><th>Мин от 0</th><th>Средняя цена</th><th>Монет с данными</th></tr></thead><tbody id="r2Table"></tbody></table></div>
+<div class="row"><span class="muted" id="r2Paging"></span><div class="action-bar"><button id="r2Prev">←</button><button id="r2Next">→</button></div></div></div>
+<div class="card"><h2>Ручная классификация</h2><div class="row"><label for="r2Strong">Доля 300 минут выше цены в точке 0</label><b id="r2StrongValue">70%</b></div><input type="range" id="r2Strong" min="1" max="100" value="70">
+<button id="applyR2" class="primary">Применить</button><div id="r2Stats" class="muted" style="margin-top:10px"></div></div>
+<div class="card"><h2>Непрерывное автоисследование</h2><p class="muted">План: обучающие 40 сильных + 40 слабых; независимая проверка на 100 размеченных монет; пользовательский порог точности. Фоновый серверный процесс ещё не внедрён — фиктивный запуск не показываем.</p><button disabled title="Сначала требуется серверное исследование">▶ Исследовать · ожидает сервер</button></div>
+</section>
+<section class="page" id="p-library" hidden>
+<h1>Библиотека фильтров</h1><p class="muted">Сохраняй правила, изменяй версии и проверяй каждый уровень на своём полигоне. В этой первой версии пользовательские правила сохраняются в браузере.</p>
+<div class="chips" id="levels"><button class="active" data-level="1">Первый уровень</button><button data-level="2">Второй уровень</button></div>
+<div class="card"><div class="row"><h2>🧪 Полигон <span id="polyTitle">Живые / мёртвые</span></h2><span class="badge">до 5 000 каждой</span></div>
+<div class="row"><label id="polyNameA" for="polyA">Живые</label><b id="polyAValue">2 000</b></div><input type="range" min="500" max="5000" value="2000" step="100" id="polyA">
+<div class="row"><label id="polyNameB" for="polyB">Мёртвые</label><b id="polyBValue">2 000</b></div><input type="range" min="500" max="5000" value="2000" step="100" id="polyB">
+<button class="primary" id="polyApply">Применить</button>
+<div id="polyProgress" style="margin-top:12px"></div>
+<button id="testAll" class="primary" style="width:100%;margin-top:12px">Проверить все фильтры</button>
+<div class="hint">Накопление на сервере ещё в разработке. Локальные записи помогают проверять интерфейс; исчезнувшие с устройства записи сервер пока не восстанавливает.</div>
+<div id="testResults"></div></div>
+<div class="row" style="margin:20px 0 8px"><h2>Сохранённые фильтры</h2><button id="createFilter" class="primary">+ Создать</button></div>
+<div id="libraryList"></div>
+<form id="editor" class="card" hidden>
+<div class="row"><h2 id="editorTitle">Новый фильтр</h2><button type="button" id="closeEditor">Закрыть</button></div>
+<label class="control" style="margin-top:10px"><span>Название</span><input type="text" class="input" id="filterName" maxlength="64" required></label>
+<div class="controls" style="margin-top:11px"><label class="control"><span>Показатель</span><select id="filterKey" class="input"><option value="buyers">Покупатели</option><option value="trades">Сделки за 5 мин</option><option value="volume">Объём за 5 мин ($)</option><option value="liq">Ликвидность ($)</option></select></label>
+<label class="control"><span>Условие</span><select class="input" id="filterOp"><option value=">=">Не меньше ≥</option><option value="<=">Не больше ≤</option></select></label></div>
+<label class="control" style="margin-top:11px"><span>Значение</span><input class="input" type="number" min="0" max="1000000000000" step="any" id="filterValue" value="20" required></label>
+<div class="action-bar"><button class="primary" type="submit">Сохранить</button><button id="deleteFilter" type="button" class="dangerbtn">Удалить</button></div><p class="hint" id="editorNote">Для изменённых условий результаты прошлой версии не переписываются.</p></form>
+</section>
+<p id="toast" role="status" aria-live="polite"></p>
+<footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — постепенный переход. Новые источники и серверное обучение подключаются отдельно; неполные данные не выдаются за результат. <a href="./classic.html">Открыть прежний сайт</a></footer>
+</main>
+<script src="./v2.js?v=20261017-1" defer></script>
+</body></html>
