@@ -90,19 +90,6 @@ body[data-ui-mode="updated"] .only-classic-label{display:none!important}
 .source-foot{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;color:var(--up)}
 .source-foot button{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 12px;color:var(--mut)}
 .source-note{font-size:11px;line-height:1.4;color:var(--mut);margin:9px 0 0}
-.module-group{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:13px;margin:12px 0}
-.module-head{font-size:15px;font-weight:800;margin-bottom:12px}
-.module-level{border-top:1px solid var(--line);padding:11px 0 3px}
-.module-level-title{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;font-weight:700}
-.module-plus{background:var(--acc);color:white;border:0;border-radius:9px;padding:8px 11px;font-size:12px;font-weight:800;min-height:40px}
-.module-card{display:flex;gap:8px;align-items:center;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px;margin:8px 0}
-.module-card label{display:flex;align-items:center;gap:8px;flex:1;min-width:0;font-size:13px;overflow-wrap:anywhere}
-.module-card input{width:20px;height:20px;accent-color:var(--acc)}
-.module-remove{background:transparent;color:var(--mut);border:1px solid var(--line);border-radius:8px;min-height:36px;min-width:36px}
-.module-dialog{background:var(--panel);border:1px solid var(--acc);border-radius:12px;padding:12px;margin:12px 0}
-.module-dialog button{min-height:40px;margin:6px 6px 0 0;border-radius:9px;background:var(--bg);color:var(--fg);border:1px solid var(--line);padding:8px 12px}
-#moduleChoices{display:grid;gap:4px;margin:8px 0}
-#moduleChoices button{text-align:left}
 .all-tools{display:flex;align-items:center;gap:8px;margin:10px 0 4px}
 .all-tools input{width:100%;min-width:0;min-height:43px;background:var(--panel);border:1px solid var(--line);color:var(--fg);border-radius:11px;padding:10px 13px;font:13px var(--sans)}
 .all-tools input:focus{outline:2px solid var(--acc);outline-offset:1px}
@@ -339,18 +326,23 @@ body[data-ui-mode="updated"] #lAll .row{padding:7px 9px}
   <section id="v-research" hidden><div id="research"></div></section>
   <section id="v-auto" hidden><div id="auto"></div></section>
   <section id="v-rules" hidden>
-    <div class="updated-ui-only" id="moduleWorkspace">
-      <p class="source-note">Готовые модули. Можно включать несколько одновременно.</p>
-      <div id="moduleGroups"></div>
-      <div id="moduleDialog" class="module-dialog" hidden>
-        <strong id="moduleDialogTitle">Добавить модуль</strong>
-        <div id="moduleChoices"></div>
-        <button type="button" id="moduleClose">Закрыть</button>
+    <div class="source-box updated-ui-only" id="personalSourceFilters">
+      <div class="source-inside" style="border-top:0">
+        <h3 style="margin:0 0 4px;font-size:14px">Мои условия для источников</h3>
+        <p class="source-note" style="margin:0 0 10px">Отдельные настройки до и после миграции.</p>
+        <div class="source-modes"><button type="button" data-source-mode="birth">🌱 До миграции</button><button type="button" data-source-mode="migration">🎓 После миграции</button></div>
+        <p class="source-section-label">Дополнительные условия этого источника</p>
+        <div class="source-fields">
+          <label>Ликвидность от, $<select data-source-key="liq"><option value="0">Любая</option><option value="1000">1 000</option><option value="5000">5 000</option><option value="10000">10 000</option><option value="25000">25 000</option></select></label>
+          <label>Объём за 5 мин, $<select data-source-key="v5"><option value="0">Любой</option><option value="500">500</option><option value="2000">2 000</option><option value="5000">5 000</option><option value="10000">10 000</option></select></label>
+          <label>Покупок за 5 мин<select data-source-key="b5"><option value="0">Любое</option><option value="5">5</option><option value="10">10</option><option value="20">20</option><option value="50">50</option></select></label>
+        </div>
+        <div class="source-foot"><button type="button" id="sourceReset">Сбросить условия</button><span>✓ Автосохранение</span></div>
+        <p class="source-note" id="sourceHint">Пока до миграции данные не собираются. Эти условия только скрывают карточки и не удаляют монеты из архива.</p>
+
       </div>
     </div>
-    <div class="classic-ui-only">
     <div id="rules"></div>
-      </div>
   </section>
   <section id="v-check" hidden>
     <div class="inrow"><input id="addr" placeholder="Адрес контракта" autocomplete="off" spellcheck="false"><button class="btn" id="go">Проверить</button></div>
@@ -525,7 +517,7 @@ document.querySelectorAll('[data-source-key]').forEach(el=>el.onchange=()=>{
 $('#sourceReset').onclick=()=>{SOURCE_RULES[SOURCE_EDIT]=cleanSource({});sset('sc_source_filters_v1',SOURCE_RULES);sourceUi();render()};
 sourceUi();
 // Переключение меняет только вид интерфейса, не переписывает фильтры и историю.
-let UI_MODE=sget('sc_ui_mode_v1','classic');
+let UI_MODE='classic';
 if(!['classic','updated'].includes(UI_MODE))UI_MODE='classic';
 function paintUiMode(){
   document.body.dataset.uiMode=UI_MODE;
@@ -535,8 +527,9 @@ function paintUiMode(){
   })
 }
 function selectUiMode(mode){
-  if(!['classic','updated'].includes(mode))return;
-  UI_MODE=mode;sset('sc_ui_mode_v1',mode);paintUiMode();
+  if(mode==='updated'){window.location.assign('./dev.html');return}
+  if(mode!=='classic')return;
+  UI_MODE=mode;paintUiMode();
   if(typeof render==='function')render();
   if(typeof labRender==='function')labRender();
 }
@@ -1726,58 +1719,7 @@ async function renderAuto(){const box=$('#auto');if(!box)return;
 
 /* ---------- общее ---------- */
 function openSheetHtml(html){openSheet(html)}
-// UI only: module assignments do not alter the existing filter engine.
-const MOD_KEY='sc_module_slots_v1';
-const MOD_GROUPS=['birth','migration'],MOD_LEVELS=['research','history'];
-const MOD_NAMES={birth:'🌱 До миграции',migration:'🎓 После миграции',research:'Исследование',history:'Второй уровень · История'};
-let MODS=LS.get(MOD_KEY,{});
-if(!MODS||typeof MODS!=='object')MODS={};
-for(const group of MOD_GROUPS)for(const level of MOD_LEVELS){
- const key=group+'_'+level;if(!Array.isArray(MODS[key]))MODS[key]=[];
-}
-function saveModSlots(){LS.set(MOD_KEY,MODS)}
-function renderModuleSlots(){
- const root=document.getElementById('moduleGroups');if(!root)return;
- root.replaceChildren();
- for(const group of MOD_GROUPS){
-  const section=document.createElement('section');section.className='module-group';
-  const head=document.createElement('div');head.className='module-head';head.textContent=MOD_NAMES[group];section.append(head);
-  for(const level of MOD_LEVELS){
-   const key=group+'_'+level,part=document.createElement('div');part.className='module-level';
-   const title=document.createElement('div');title.className='module-level-title';
-   const label=document.createElement('span');label.textContent=MOD_NAMES[level];
-   const plus=document.createElement('button');plus.type='button';plus.className='module-plus';plus.textContent='＋ Добавить';plus.onclick=()=>openModPicker(key);
-   title.append(label,plus);part.append(title);
-   for(const item of MODS[key]){
-    const card=document.createElement('div');card.className='module-card';
-    const lab=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.checked=!!item.on;
-    input.onchange=()=>{item.on=input.checked;saveModSlots()};
-    const name=document.createElement('span');name.textContent=FILTERS.find(f=>f.id===item.id)?.name||item.name||'Модуль недоступен';
-    lab.append(input,name);
-    const remove=document.createElement('button');remove.type='button';remove.className='module-remove';remove.textContent='×';remove.setAttribute('aria-label','Убрать модуль');
-    remove.onclick=()=>{MODS[key]=MODS[key].filter(x=>x!==item);saveModSlots();renderModuleSlots()};
-    card.append(lab,remove);part.append(card);
-   }
-   if(!MODS[key].length){const empty=document.createElement('p');empty.className='source-note';empty.textContent='Нет модулей';part.append(empty)}
-   section.append(part);
-  }
-  root.append(section);
- }
-}
-function openModPicker(key){
- const dialog=document.getElementById('moduleDialog'),choices=document.getElementById('moduleChoices');
- document.getElementById('moduleDialogTitle').textContent='Добавить · '+MOD_NAMES[key.split('_')[0]]+' · '+MOD_NAMES[key.split('_')[1]];
- choices.replaceChildren();
- const available=key.endsWith('_research')?FILTERS:[]; // История пока не публикует отдельные модули.
- const unused=available.filter(f=>!MODS[key].some(x=>x.id===f.id));
- if(!unused.length){const p=document.createElement('p');p.className='source-note';p.textContent=key.endsWith('_history')?'Готовых модулей второго уровня пока нет.':'Новых готовых фильтров пока нет.';choices.append(p)}
- for(const f of unused){
-  const b=document.createElement('button');b.type='button';b.textContent=f.name;b.onclick=()=>{MODS[key].push({id:f.id,on:true});saveModSlots();dialog.hidden=true;renderModuleSlots()};choices.append(b)
- }
- dialog.hidden=false;
-}
-document.getElementById('moduleClose').onclick=()=>document.getElementById('moduleDialog').hidden=true;
-function labRender(){if(tab==='auto')renderAuto();if(tab==='research')renderLab();if(tab==='rules'){if(UI_MODE==='updated')renderModuleSlots();else renderFilters()};if(tab==='pass')renderPass();if(tab==='hist')renderHistory()}
+function labRender(){if(tab==='auto')renderAuto();if(tab==='research')renderLab();if(tab==='rules')renderFilters();if(tab==='pass')renderPass();if(tab==='hist')renderHistory()}
 function switchTab(t){const b=document.querySelector(`.tab[data-t="${t}"]`);if(b)b.click()}
 // обновление: сегодня — раз в 2 минуты, живая лента — раз в 30 секунд
 setInterval(async()=>{await loadLive();try{journalAdd(buyable(),curF())}catch{}if(document.hidden)return;if(tab==='pass')renderPass();else updPassCount()},30000);
