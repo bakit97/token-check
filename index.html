@@ -1214,10 +1214,10 @@ function renderLab(){const box=$('#research');if(!box)return;const d=almatyDay(L
   box.querySelectorAll('.lrow').forEach(el=>el.onclick=()=>coinSheet(D,el.dataset.a))}
 
 /* настройка «живой» */
-function goalSheet(after,target){const G=target||GOAL;const F=[['win','Окно после входа',15,1440,15,v=>dur(v)],['up','Цель, рост от входа',10,500,5,v=>'+'+v+'%'],['dn','Стоп, падение до цели',5,90,5,v=>'−'+v+'%'],['dec','Вход на минуте',10,20,1,v=>v+'-я мин']];
+function goalSheet(after,target){const G=target||GOAL;const F=[['win','Окно после входа',15,1440,15,v=>dur(v)],['up','Цель, рост от входа',10,500,5,v=>'+'+v+'%'],['dn','Стоп, падение до цели',5,90,5,v=>'−'+v+'%'],['dec','Время исследования до вердикта',1,30,1,v=>v+' мин']];
   openSheetHtml(`<h3 style="margin:4px 0">Что считать живой монетой</h3><p class="mut" style="font-size:12px;margin:0 0 6px">Всё считается от цены входа. Живая — за окно хоть раз выросла до цели, не упав сначала до стопа. Остальные — мёртвые.</p>
     ${F.map(([k,l,mn,mx,stp,f])=>`<div class="slw"><div class="sll"><span>${l}</span><b id="gv_${k}">${f(G[k])}</b></div><input type="range" min="${mn}" max="${mx}" step="${stp}" value="${G[k]}" data-k="${k}"></div>`).join('')}
-    <p class="mut" style="font-size:12px">Вход на 10-й минуте невозможен на практике: данные первых 10 минут приходят к серверу с задержкой. Поэтому по умолчанию вход на 12-й.</p>
+    <p class="mut" style="font-size:12px">Ранний вердикт использует только данные, которые сервер успел получить к выбранной минуте. При коротком окне часть признаков может быть ещё недоступна; пропуск данных не означает плохую монету.</p>
     <button class="btn" id="gOk" style="width:100%;margin-top:6px">Готово</button>`);
   document.querySelectorAll('#sheetBody input[type=range]').forEach(inp=>inp.oninput=()=>{const k=inp.dataset.k;G[k]=+inp.value;$('#gv_'+k).textContent=F.find(x=>x[0]===k)[5](G[k])});
   $('#gOk').onclick=()=>{if(!target)saveGoal();else saveF();closeSheet();after&&after()}}
@@ -1325,15 +1325,15 @@ function renderPass(){const box=$('#lPass');if(!box)return;const f=curF();const 
   const G=f.goal||GOAL,now=Date.now();const rows=buyable().sort((a,b)=>b.T-a.T);
   const waiting=D.coins.filter(c=>c.mst==='ok'&&c.t+G.dec*60e3>now).length;
   journalAdd(rows,f);
-  $('#statPass').innerHTML=fChips()+`<span>сигнал на ${G.dec}-й мин · окно покупки <b>${BUY.win} мин</b> <button class="chip" id="bWin" style="padding:2px 8px">изменить</button></span><span>скоро решение: ${waiting}</span>`;
+  $('#statPass').innerHTML=fChips()+`<span>вердикт через ${G.dec} мин · окно решения <b>${BUY.win} мин</b> <button class="chip" id="bWin" style="padding:2px 8px">изменить</button></span><span>скоро решение: ${waiting}</span>`;
   box.innerHTML=rows.length?rows.map(r=>{const c=r.c,cur=lastBefore(c.ds,now);const chg=cur&&r.entry?(cur[1]/r.entry-1)*100:null;const left=r.T+BUY.win*60e3;
     return `<div class="lrow" data-a="${esc(c.a)}" style="border-left:3px solid ${fColor(f)}">${avHtml({img:c.i,sym:c.s})}<span class="mid"><b class="nm">${esc(c.n||c.a.slice(0,6))}<span>${esc(c.s||'')}</span></b>
       <span class="l2">${esc(FAM[c.mk]||'')}${c.clone?' · <span class="warn">клон</span>':''} · на витрине ${dur((now-c.t)/60000)}</span></span>
-      <span class="rt"><span class="badge b-pass">купить: <span data-left="${left}">${fmtLeft(left)}</span></span><span class="l2 ${chg>0?'up':chg<0?'dn':''}">${chg==null?'':pct(chg)+' с сигнала'}</span></span></div>`}).join('')
-    :`<div class="empty">Сейчас купить нечего: ни одна монета не прошла фильтр за последние ${BUY.win} мин.<br>Новые появятся здесь сами. Прошедшие раньше — во вкладке «История».</div>`;
+      <span class="rt"><span class="badge b-pass">окно: <span data-left="${left}">${fmtLeft(left)}</span></span><span class="l2 ${chg>0?'up':chg<0?'dn':''}">${chg==null?'':pct(chg)+' с сигнала'}</span></span></div>`}).join('')
+    :`<div class="empty">Пока нет действующих сигналов: ни одна монета не прошла фильтр за последние ${BUY.win} мин.<br>Новые появятся здесь сами. Прошедшие раньше — во вкладке «История».</div>`;
   box.querySelectorAll('.lrow').forEach(el=>el.onclick=()=>coinSheet(D,el.dataset.a));
   bindFChips($('#statPass'),renderPass);
-  $('#bWin').onclick=()=>{const v=prompt('Окно покупки, минут после сигнала',BUY.win);if(v&&+v>0){BUY.win=Math.min(60,+v);saveBuy();renderPass()}};updPassCount()}
+  $('#bWin').onclick=()=>{const v=prompt('Окно принятия решения, минут после вердикта',BUY.win);if(v&&+v>0){BUY.win=Math.min(60,+v);saveBuy();renderPass()}};updPassCount()}
 const fmtLeft=t=>{const s=Math.max(0,Math.round((t-Date.now())/1000));return s?Math.floor(s/60)+':'+String(s%60).padStart(2,'0'):'закрыто'};
 setInterval(()=>{let gone=false;document.querySelectorAll('[data-left]').forEach(e=>{e.textContent=fmtLeft(+e.dataset.left);if(+e.dataset.left<Date.now())gone=true});if(gone&&tab==='pass')renderPass()},1000);
 
