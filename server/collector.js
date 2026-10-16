@@ -70,10 +70,10 @@ function gtStats(){const ok=gtLog.filter(x=>x[1]===1),rl=gtLog.filter(x=>x[1]===
 
 /* ---------- Solana RPC (Helius). Ключ лежит в метаданных сервера, не в коде ---------- */
 let HKEY='';async function heliusKey(){if(HKEY)return HKEY;try{const r=await fetch('http://metadata.google.internal/computeMetadata/v1/instance/attributes/helius-key',{headers:{'Metadata-Flavor':'Google'}});if(r.ok)HKEY=(await r.text()).trim()}catch{}return HKEY}
-let rpcN=0,rpcFail=0,rpcCredits=0,rpcBusy=Promise.resolve();const crLog=[];
+let rpcN=0,rpcFail=0,rpcCredits=0,rpcBusy=Promise.resolve();const crLog=[];const RPCCTX={};let CTX='?';
 async function rpc(method,params){const key=await heliusKey();if(!key)throw new Error('нет ключа Helius');
   const go=async()=>{for(let t=0;t<3;t++){const r=await fetch('https://mainnet.helius-rpc.com/?api-key='+key,{signal:AbortSignal.timeout(60000),method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
-      rpcN++;{const cr=method==='getProgramAccounts'?10:1;rpcCredits+=cr;crLog.push([Date.now(),cr]);while(crLog.length&&crLog[0][0]<Date.now()-3600e3)crLog.shift()}if(r.status===429){await sleep(1500*(t+1));continue}if(!r.ok)throw new Error('rpc HTTP '+r.status);const d=await r.json();if(d.error)throw new Error('rpc '+d.error.message);return d.result}
+      rpcN++;{const cr=method==='getProgramAccounts'?10:1;rpcCredits+=cr;crLog.push([Date.now(),cr,method]);RPCCTX[CTX]=(RPCCTX[CTX]||0)+cr;while(crLog.length&&crLog[0][0]<Date.now()-3600e3)crLog.shift()}if(r.status===429){await sleep(1500*(t+1));continue}if(!r.ok)throw new Error('rpc HTTP '+r.status);const d=await r.json();if(d.error)throw new Error('rpc '+d.error.message);return d.result}
     throw new Error('rpc 429')};
   const p=rpcBusy.then(go,go);rpcBusy=p.then(()=>sleep(150),()=>sleep(150));return p}
 const b64=s=>Uint8Array.from(Buffer.from(s||'','base64'));
@@ -115,10 +115,10 @@ async function officialPools(fam,mint,quote){const te=new TextEncoder(),out=[];
   return out}
 const MIG_PROG={pump:PUMP,launch:LAUNCH,'launch-v4':LAUNCH,dbc:DBC};
 // первая успешная транзакция пула (листаем подписи до самой старой, максимум 60 страниц)
-async function firstOkSig(pool){let before,pages=[];for(let n=0;n<60;n++){const sg=await rpc('getSignaturesForAddress',[pool,before?{limit:1000,before}:{limit:1000}]);
+async function firstOkSig(pool){let before,pages=[];for(let n=0;n<10;n++){const sg=await rpc('getSignaturesForAddress',[pool,before?{limit:1000,before}:{limit:1000}]);
     if(!sg?.length){before=null;break}pages.push(sg);if(pages.length>2)pages.shift();before=sg[sg.length-1].signature;if(sg.length<1000){before=null;break}}
   if(before)return{tooLong:1};const all=pages.flat().reverse();return all.find(x=>!x.err)||null}
-async function proveMig(pool,fam,curve){const f=await firstOkSig(pool);if(!f)return{why:'у пула нет успешных транзакций'};if(f.tooLong)return{why:'история пула длиннее 60 000 транзакций',tooLong:1};
+async function proveMig(pool,fam,curve){const f=await firstOkSig(pool);if(!f)return{why:'у пула нет успешных транзакций'};if(f.tooLong)return{why:'история пула длиннее 10 000 транзакций',tooLong:1};
   const t=await rpc('getTransaction',[f.signature,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}]);if(!t||t.meta?.err)return{why:'транзакция создания недоступна'};
   const keys=[...t.transaction.message.accountKeys,...(t.meta.loadedAddresses?.writable||[]),...(t.meta.loadedAddresses?.readonly||[])];
   const pi=keys.indexOf(pool);const created=pi>=0&&t.meta.preBalances[pi]===0&&t.meta.postBalances[pi]>0;
@@ -192,12 +192,12 @@ async function curveSweep(){const now=Date.now();const list=[...C.values()].filt
   for(let i=0;i<list.length;i+=100){const part=list.slice(i,i+100);try{const v=(await rpc('getMultipleAccounts',[part.map(c=>c.mg.watch),{encoding:'base64',dataSlice:{offset:0,length:320}}]))?.value||[];
     part.forEach((c,j)=>{if(!v[j]||curveDone(v[j]))c.mg.force=1;else c.mg.lastAt=now})}catch(e){err('sweep '+e.message)}}}
 function needMig(c,now){if(now-c.t>24*3600e3&&c.mg)return false;if(!c.mg||c.mg.v!==MGV||c.mg.force)return true;
-  return c.mg.st==='unk'&&!c.mg.final&&now-c.mg.lastAt>=RECHECK&&now-c.t<6*3600e3}
+  const BACK=[2,5,10,20,40];const n=c.mg.n||1;return c.mg.st==='unk'&&!c.mg.final&&n<=BACK.length&&now-c.mg.lastAt>=BACK[n-1]*60e3&&now-c.t<6*3600e3}
 async function chainLoop(){let lastSweep=0;for(;;){const now=Date.now();
-  if(now-lastSweep>120e3){lastSweep=now;await curveSweep()}
+  if(now-lastSweep>120e3){lastSweep=now;CTX='кривые';await curveSweep()}
   const c=[...C.values()].filter(c=>!c.chTry&&((!c.ct&&now-c.t<6*3600e3)||needMig(c,now))).sort((a,b)=>b.t-a.t)[0];
   if(!c){await sleep(2000);continue}c.chTry=1;
-  try{if(!c.ct)await ctCheck(c);if(needMig(c,Date.now())){if(c.mg&&c.mg.v!==MGV&&!c.mg0)c.mg0=c.mg;await migCheck(c)}}
+  try{CTX='контракт';if(!c.ct)await ctCheck(c);CTX='миграция';if(needMig(c,Date.now())){if(c.mg&&c.mg.v!==MGV&&!c.mg0)c.mg0=c.mg;await migCheck(c)}}
   catch(e){rpcFail++;err('chain '+e.message);if(/ключа/.test(e.message))await sleep(60000);
     else if(c.ct&&(c.mgErr=(c.mgErr||0)+1)>=3){c.mgErr=0;setMg(c,'unk','unk-err','ошибка проверки: '+e.message.slice(0,80))}}
   finally{setTimeout(()=>{c.chTry=0},30000)}}}
@@ -323,7 +323,7 @@ function finishTrades(c,why){const tr=c.tr;c.trDone=1;if(!tr||!tr.f.length){c.bx
 /* ---------- 4. блокчейн в моменте: держатели (3/5/10 мин), состояние пула и хранилищ (ключевые моменты + каждые 5 минут) ---------- */
 const VAULT_OFF={[PUMP_AMM]:[139,171],[CPMM]:[72,104],[DAMM2]:[232,264],[AMM4]:[336,368]};
 const qDec=new Map([[WSOL,9],[USDC,6],[USDT,6]]);
-const HOLD_M=[3,5,10],RAW_M=[1,3,5,10,15,30,60,120,240,480,720,1440];
+const HOLD_M=[5,10],RAW_M=[1,3,5,10,15,30,60,120,240,480,720,1440];
 const u64=(u,o)=>{let x=0n;for(let i=7;i>=0;i--)x=(x<<8n)+BigInt(u[o+i]);return Number(x)};
 async function ensureVaults(c,pv){if(c.vaults||c.vTry>=3)return;c.vTry=(c.vTry||0)+1;pv=pv||(await rpc('getAccountInfo',[c.p,{encoding:'base64'}]))?.value;if(!pv)return;
   const v=parseVaults(c,pv.owner,b64(pv.data?.[0]));if(!v)return;const ch=(await rpc('getMultipleAccounts',[v,{encoding:'base64'}]))?.value||[];
@@ -338,10 +338,10 @@ async function holdersSnap(c,m){const sup=c.ct?.supply;await ensureVaults(c);con
 function parseVaults(c,owner,u){const off=VAULT_OFF[owner];if(!off||u.length<off[1]+32)return null;return off.map(o=>pk(u,o))}
 async function chainObsLoop(){for(;;){const now=Date.now();
   try{
-    // держатели
+    CTX='держатели';
     for(const c of C.values()){if(!isOk(c)||!c.ct)continue;c.hold=c.hold||{};const a=ageMin(c,now);
       for(const m of HOLD_M){if(c.hold[m])continue;if(a>=m+2){c.hold[m]={at:now,miss:'опоздали'};continue}if(a>=m){await holdersSnap(c,m).catch(e=>{c.hold[m]={at:Date.now(),miss:'ошибка'};err('hold '+e.message)})}}}
-    // состояние пула + хранилища, пакетами
+    CTX='пулы';if(now-(globalThis.lastPools||0)>=60e3){globalThis.lastPools=now;
     const jobs=[];for(const c of C.values()){if(!isOk(c))continue;const a=ageMin(c,now);if(a<0||a>24*60+15)continue;c.raw=c.raw||{};
       const rm=RAW_M.find(m=>!c.raw[m]&&a>=m&&a<m+Math.max(2,m*0.1));const lqDue=now-(c.lqAt||0)>=(a<120?5*60e3:30*60e3)-10e3;
       for(const m of RAW_M)if(!c.raw[m]&&a>=m+Math.max(2,m*0.1))c.raw[m]={at:now,miss:1};
@@ -353,7 +353,7 @@ async function chainObsLoop(){for(;;){const now=Date.now();
         if(!c.vaults)await ensureVaults(c,pv);
         if(rm!=null)c.raw[rm]={at,slot,b:[pv.data?.[0],...vs.map(x=>x?.data?.[0]||null)]};
         if(c.vaults&&vs.length===2&&vs.every(Boolean)){const am=vs.map(x=>u64(b64(x.data?.[0]),64));c.lq=c.lq||[];c.lq.push([Math.round(at/1000),slot,...am]);if(c.lq.length>320)c.lq.splice(10,1)}
-        c.lqAt=at}}
+        c.lqAt=at}}}
     for(const c of C.values())if(isOk(c)&&c.vmint&&!c.vdec){c.vdec=await Promise.all(c.vmint.map(async mt=>{if(mt===c.a)return c.ct?.dec??null;if(qDec.has(mt))return qDec.get(mt);
         const v=(await rpc('getAccountInfo',[mt,{encoding:'jsonParsed'}]))?.value;const d=v?.data?.parsed?.info?.decimals;if(d!=null)qDec.set(mt,+d);return d??null}))}
     // через 24 ч 15 мин сырые состояния уходят в отдельный файл
@@ -373,7 +373,7 @@ async function snapshotSet(key){
   for(const v of [slot,nowS])for(const d of [0,1]){const r=await rpc('getProgramAccounts',[DBC,{encoding:'base64',dataSlice:{offset:0,length:0},
       filters:[{dataSize:424},{memcmp:{offset:305,bytes:'2'}},{memcmp:{offset:298,bytes:hiWin((v>>>16)-d)}}],withContext:true}]);(r?.value||[]).forEach(x=>out.add(x.pubkey))}
   return [...out]}
-async function reconcile(){const now=Date.now();
+async function reconcile(){const now=Date.now();CTX='сверка';
   for(const [key,mOff,qOff] of [['ll',205,237],['dbc',136,null]]){
     try{const cur=await snapshotSet(key);const prev=RC[key]?new Set(RC[key]):null;RC[key]=cur;
       if(!prev){RC.log.push([now,key,'база',cur.length]);continue}
@@ -415,7 +415,7 @@ async function exportDays(){const now=Date.now(),today=dayKey(now),yest=dayKey(n
     if(d===yest)lastYest=now}
   await flushUploads();
   await upload('status.json',{updated:now,version:VERSION,coins:C.size,today:[...C.values()].filter(c=>dayKey(c.t)===today).length,okToday:[...C.values()].filter(c=>dayKey(c.t)===today&&isOk(c)).length,
-    gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),helius:!!HKEY,recon:RC.log.slice(-12),mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})}
+    gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),creditsBy:crLog.reduce((o,x)=>(o[x[2]]=(o[x[2]]||0)+x[1],o),{}),rpcCtx:RPCCTX,helius:!!HKEY,recon:RC.log.slice(-12),mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})}
 // живая лента для «Прошли»: монеты витрины младше 40 минут, раз в 30 секунд
 async function exportLive(){const now=Date.now();const list=[...C.values()].filter(c=>isOk(c)&&now-c.t<40*60e3);
   await upload('live.json',{updated:now,coins:list.map(c=>rec(c,true))})}

@@ -1059,7 +1059,7 @@ function featsAt(c,T){const F={};const ok=x=>x!=null&&isFinite(x);
   const ct=c.ct;if(ct&&(c.ctAt||0)<=T){F.danger=!!(ct.mint||ct.freeze||ct.fee>0||ct.hook||ct.deleg||ct.pause||ct.nontr||ct.defFrozen);F.metaMut=ct.metaMut;F.t22=ct.prog==='token2022'}
   const k=k10feats(c,T);if(k)Object.assign(F,{x10:k.x10,dd10:k.dd10,v1:k.v1,v05:k.v05,v510:k.v510,trend:k.trend,green:k.green,act:k.act});
   const d=lastBefore(c.ds,T);if(d){F.liq=d[2];F.mc=d[3];F.b5=d[4];F.s5=d[5];F.v5=d[6];if(ok(d[4])&&ok(d[5]))F.bs=d[5]?d[4]/d[5]:d[4];if(ok(d[2])&&ok(d[3])&&d[3])F.liqmc=d[2]/d[3]*100;F.pxT=d[1];F.dsAge=(T/1000-d[0])}
-  let h=null;for(const m of ['10','5','3']){const x=c.hold?.[m];if(x&&!x.miss&&x.at<=T){h=x;break}}if(h){F.top1=h.top1*100;F.top10=h.top10*100;F.pda=h.pda*100}
+  let h=null;for(const m of ['10','5']){const x=c.hold?.[m];if(x&&!x.miss&&x.at<=T){h=x;break}}if(h){F.top1=h.top1*100;F.top10=h.top10*100;F.pda=h.pda*100}
   const g=lastBefore(c.gx,T);if(g){F.buyers15=g[7];F.sellers15=g[8];F.tx15=(g[5]??0)+(g[6]??0);if(g[7]!=null&&g[8]!=null)F.bsU=g[8]?g[7]/g[8]:g[7];F.vol15=g[10]}
   const b=c.bx;if(b&&!b.miss&&b.at<=T){F.payers=b.payers;F.trades=b.n;F.repeat=b.payers?b.repeat/b.payers*100:null;F.btop1=b.top1!=null?b.top1*100:null;F.bsUsd=b.sellUsd?b.buyUsd/b.sellUsd:null;F.trCov=b.cov}
   const l=lastBefore(c.lq,T);if(l&&c.vmint&&c.vdec){const qi=c.vmint[0]===c.a?1:0;const q=l[2+qi]/10**(c.vdec[qi]||0);if(c.vmint[qi]==='So11111111111111111111111111111111111111112')F.liqSol=q}
