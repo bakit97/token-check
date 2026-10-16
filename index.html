@@ -1379,6 +1379,38 @@ function coinChart5h(r){const base=historyAnchor(r);if(!base)return '<p class="m
     <line x1="0" x2="${W}" y1="${Y(base.price).toFixed(1)}" y2="${Y(base.price).toFixed(1)}" stroke="#22d17b" stroke-dasharray="3 3" opacity=".6"/>
     <path d="${d}" fill="none" stroke="#e6e9ee" stroke-width="1.4"/></svg>`}
 let HDAY=0,HMODE=LS.get('lab_hmode','replay');
+/* Второй уровень: сравнивать только монеты, прошедшие первый фильтр.
+   Признаки берутся на момент сигнала; сильная/слабая определяется позже. */
+let H2=Object.assign({minutes:45,target:1},LS.get('lab_h2',{}));
+function secondLevel(rows,now){
+  const yes=[],no=[];
+  for(const o of rows){
+    if(now<o.r.T+BUY.win*60e3+H2.minutes*60e3)continue;
+    const x=hAt(o.s,H2.minutes);
+    if(x==null)continue;
+    (x>=H2.target?yes:no).push(o.r)
+  }
+  const diffs=yes.length>=5&&no.length>=5
+    ?FEATS.map(f=>cmpFeat(f[0],yes,no))
+      .filter(x=>x.nL>=5&&x.nD>=5&&x.score>=0.3)
+      .sort((a,b)=>b.score-a.score)
+    :[];
+  return {yes,no,diffs}
+}
+function makeSecondLevel(base,report,G){
+  if(!report.diffs.length)return;
+  const added=report.diffs.slice(0,3).map(x=>{
+    const meta=FK[x.key];
+    if(meta[3]==='b')return[x.key,'=',x.L>=50];
+    const greater=x.L>x.Dv;
+    const threshold=qt(report.yes.map(r=>r.F[x.key]),greater?0.2:0.8);
+    return[x.key,greater?'>=':'<=',+Number(threshold).toPrecision(3)]
+  }).filter(x=>!base.rules.some(r=>r[0]===x[0]));
+  if(!added.length){alert('Эти признаки уже есть в выбранном фильтре.');return}
+  FILTERS.unshift({id:'f'+Date.now(),name:('Уровень 2 · '+base.name).slice(0,40),created:Date.now(),frozen:null,
+    rules:[...base.rules.map(r=>[...r]),...added],goal:{...G}});
+  SEL=FILTERS[0].id;saveF();switchTab('rules')
+}
 function renderHistory(){const box=$('#hist');if(!box)return;const f=curF();const D=LAB.days[almatyDay(HDAY)];
   if(!D){box.innerHTML='<div class="empty">Загружаю данные…</div>';loadDay(HDAY).then(renderHistory);return}
   const G=f.goal||GOAL,now=Date.now();
@@ -1394,6 +1426,18 @@ function renderHistory(){const box=$('#hist');if(!box)return;const f=curF();cons
     const v30=both.map(v=>v[0]),v60=both.map(v=>v[1]),hit=fin.filter(o=>o.s.some(p=>p[1]>=1.5)).length;
     return `<tr${x.id===SEL?' style="background:rgba(91,140,255,.08)"':''}><td><i class="fdot" style="--fc:${fColor(x)}"></i>${esc(x.name)}</td><td>${rr.length}</td><td class="${(medN(v30)||0)>=1?'up':'dn'}">${xf(medN(v30))}</td><td class="${(medN(v60)||0)>=1?'up':'dn'}">${xf(medN(v60))}</td><td>${v60.length?Math.round(v60.filter(v=>v>=1).length/v60.length*100)+'%':'—'}</td><td class="mut">${both.length}</td><td>${fin.length?Math.round(hit/fin.length*100)+'%':'—'}</td><td class="mut">${fin.length}</td></tr>`}).join('');
   const ps=cs.map(r=>({r,s:hPath(r)})).filter(x=>x.s),pf=fs.map(r=>({r,s:hPath(r)})).filter(x=>x.s);
+  const stage2=HMODE==='replay'?secondLevel(ps,now):null;
+  const stage2html=stage2?`<div class="agg">
+    <h3>Второй уровень · сильные против слабых среди прошедших</h3>
+    <div class="chips"><label>Через <select id="s2minutes">${[15,30,45,60,120].map(n=>`<option value="${n}"${H2.minutes===n?' selected':''}>${n} мин</option>`).join('')}</select></label>
+    <label>Сильная от <select id="s2target">${[1,1.5,2].map(n=>`<option value="${n}"${H2.target===n?' selected':''}>×${n}</option>`).join('')}</select></label></div>
+    <p class="mut">Сильных: <b class="up">${stage2.yes.length}</b> · слабых: <b class="dn">${stage2.no.length}</b>. Только монеты, для которых уже наступила отметка и есть цена.</p>
+    ${stage2.diffs.length?`<div class="tbl"><table><tr><th>Признак на момент вердикта</th><th>Сильные</th><th>Слабые</th><th>n</th></tr>
+      ${stage2.diffs.slice(0,8).map(x=>`<tr><td>${esc(FK[x.key][1])}</td><td class="up">${x.t(x.L)}</td><td class="dn">${x.t(x.Dv)}</td><td>${x.nL}/${x.nD}</td></tr>`).join('')}</table></div>
+      <button class="btn" id="s2make" style="width:100%">Создать отдельный фильтр второго уровня</button>`
+      :'<p class="mut">Пока нет достаточно подтверждённых различий: нужно не меньше 5 сильных, 5 слабых и отличающиеся ранние признаки.</p>'}
+    <p class="mut" style="font-size:11px">Это анализ уже известных результатов. Новый фильтр необходимо проверить на будущих днях; доходность не гарантируется.</p>
+  </div>`:''; 
   const col=v=>v==null?'':v>=1?'up':'dn',plus=a=>a.length?Math.round(a.filter(x=>x>=1).length/a.length*100)+'%':'—';
   let rows='';for(const m of H_OFF){const v=ps.map(x=>hAt(x.s,m)).filter(x=>x!=null),w=pf.map(x=>hAt(x.s,m)).filter(x=>x!=null);
     rows+=`<tr><td>через ${dur(m)}</td><td class="${col(medN(v))}">${xf(medN(v))}</td><td>${plus(v)}</td><td class="${col(medN(w))}">${xf(medN(w))}</td><td>${plus(w)}</td><td class="mut">${v.length}/${w.length}</td></tr>`}
@@ -1414,6 +1458,7 @@ function renderHistory(){const box=$('#hist');if(!box)return;const f=curF();cons
     <div class="tbl"><table><tr><th>После покупки</th><th>прошли</th><th>в плюсе</th><th>не прошли</th><th>в плюсе</th><th>n</th></tr>${rows}</table></div>
     <div class="tbl"><table><tr><th>За 5 ч</th><th>прошли</th><th>не прошли</th></tr>${hrows}</table></div>
     <p class="mut" style="font-size:11px;margin:6px 0 0">Если «прошли» не лучше «не прошли» — фильтр не работает. Точный минутный график у ${exact} из ${ps.length}, остальные — по снимкам цены. Подбор на известном дне — не доказательство.</p></div>
+    ${stage2html}
     <div class="sec-h">Прошедшие · 5 ч после окна решения · зелёная полоса — окно решения · линия ×1 — цена в конце окна</div>
     ${ps.map(({r,s})=>{const c=r.c,st=hStats(s),nowX=s[s.length-1][3];
       return `<div class="hcard" data-a="${esc(c.a)}" style="border-left:3px solid ${r.J?r.J.fcol:fColor(f)}"><div class="hh">${avHtml({img:c.i,sym:c.s})}<div class="mid" style="flex:1;min-width:0"><div class="nm">${esc(c.n||'')}<span>${esc(c.s||'')}</span></div>
@@ -1423,7 +1468,10 @@ function renderHistory(){const box=$('#hist');if(!box)return;const f=curF();cons
   box.querySelectorAll('[data-hd]').forEach(b=>b.onclick=async()=>{HDAY=+b.dataset.hd;await loadDay(HDAY);renderHistory()});
   box.querySelectorAll('[data-hm]').forEach(b=>b.onclick=()=>{HMODE=b.dataset.hm;LS.set('lab_hmode',HMODE);renderHistory()});bindFChips(box,renderHistory);
   box.querySelectorAll('.hcard').forEach(el=>el.onclick=()=>coinSheet(D,el.dataset.a));
-  $('#hFee').onclick=()=>{const v=prompt('Комиссия + проскальзывание, % на вход и на выход',BUY.fee);if(v!=null&&+v>=0){BUY.fee=Math.min(20,+v);saveBuy();renderHistory()}}}
+  $('#hFee').onclick=()=>{const v=prompt('Комиссия + проскальзывание, % на вход и на выход',BUY.fee);if(v!=null&&+v>=0){BUY.fee=Math.min(20,+v);saveBuy();renderHistory()}};
+  for(const [id,k] of [['s2minutes','minutes'],['s2target','target']]){
+    const el=$('#'+id);if(el)el.onchange=()=>{H2[k]=+el.value;LS.set('lab_h2',H2);renderHistory()}}
+  if($('#s2make'))$('#s2make').onclick=()=>makeSecondLevel(f,stage2,G)}
 
 /* ---------- «Авто»: что сервер сам нашёл (считает каждый час без телефона) ---------- */
 let AREP=null,AREPat=0;
