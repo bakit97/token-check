@@ -1,0 +1,21 @@
+name: v2-ui-smoke
+on:
+  push:
+    branches: [main]
+    paths: ['index.html', 'v2.html', 'v2.css', 'v2.js', 'tests/v2-smoke.cjs', '.github/workflows/v2-ui-smoke.yml']
+  pull_request:
+    paths: ['index.html', 'v2.html', 'v2.css', 'v2.js', 'tests/v2-smoke.cjs', '.github/workflows/v2-ui-smoke.yml']
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax
+        run: node --check v2.js && node --check tests/v2-smoke.cjs
+      - name: Browser-simulation smoke tests
+        run: node --test tests/v2-smoke.cjs
