@@ -70,10 +70,10 @@ function gtStats(){const ok=gtLog.filter(x=>x[1]===1),rl=gtLog.filter(x=>x[1]===
 
 /* ---------- Solana RPC (Helius). Ключ лежит в метаданных сервера, не в коде ---------- */
 let HKEY='';async function heliusKey(){if(HKEY)return HKEY;try{const r=await fetch('http://metadata.google.internal/computeMetadata/v1/instance/attributes/helius-key',{headers:{'Metadata-Flavor':'Google'}});if(r.ok)HKEY=(await r.text()).trim()}catch{}return HKEY}
-let rpcN=0,rpcFail=0,rpcCredits=0,rpcBusy=Promise.resolve();
+let rpcN=0,rpcFail=0,rpcCredits=0,rpcBusy=Promise.resolve();const crLog=[];
 async function rpc(method,params){const key=await heliusKey();if(!key)throw new Error('нет ключа Helius');
   const go=async()=>{for(let t=0;t<3;t++){const r=await fetch('https://mainnet.helius-rpc.com/?api-key='+key,{signal:AbortSignal.timeout(60000),method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
-      rpcN++;rpcCredits+=method==='getProgramAccounts'?10:1;if(r.status===429){await sleep(1500*(t+1));continue}if(!r.ok)throw new Error('rpc HTTP '+r.status);const d=await r.json();if(d.error)throw new Error('rpc '+d.error.message);return d.result}
+      rpcN++;{const cr=method==='getProgramAccounts'?10:1;rpcCredits+=cr;crLog.push([Date.now(),cr]);while(crLog.length&&crLog[0][0]<Date.now()-3600e3)crLog.shift()}if(r.status===429){await sleep(1500*(t+1));continue}if(!r.ok)throw new Error('rpc HTTP '+r.status);const d=await r.json();if(d.error)throw new Error('rpc '+d.error.message);return d.result}
     throw new Error('rpc 429')};
   const p=rpcBusy.then(go,go);rpcBusy=p.then(()=>sleep(150),()=>sleep(150));return p}
 const b64=s=>Uint8Array.from(Buffer.from(s||'','base64'));
@@ -188,13 +188,13 @@ const MIGNAME={pump:'pump.fun → PumpSwap',dbc:'Meteora DBC → Meteora',launch
 // кривые: раз в 10 минут одним запросом на 100 монет читаем флаг «кривая завершена» (монеты на кривой и ручные пулы монет с кривой);
 // флаг сменился — полная перепроверка
 function curveDone(acc){const u=b64(acc.data?.[0]);if(acc.owner===PUMP)return !!u[48];if(acc.owner===LAUNCH)return u[17]!==0;if(acc.owner===DBC)return !!u[305];return true}
-async function curveSweep(){const now=Date.now();const list=[...C.values()].filter(c=>c.mg?.v===MGV&&c.mg.watch&&(c.mg.st==='curve'||c.mg.st==='manual')&&now-c.mg.lastAt>=55e3&&now-c.t<24*3600e3);
+async function curveSweep(){const now=Date.now();const list=[...C.values()].filter(c=>c.mg?.v===MGV&&c.mg.watch&&(c.mg.st==='curve'||c.mg.st==='manual')&&now-c.mg.lastAt>=115e3&&now-c.t<24*3600e3);
   for(let i=0;i<list.length;i+=100){const part=list.slice(i,i+100);try{const v=(await rpc('getMultipleAccounts',[part.map(c=>c.mg.watch),{encoding:'base64',dataSlice:{offset:0,length:320}}]))?.value||[];
     part.forEach((c,j)=>{if(!v[j]||curveDone(v[j]))c.mg.force=1;else c.mg.lastAt=now})}catch(e){err('sweep '+e.message)}}}
 function needMig(c,now){if(now-c.t>24*3600e3&&c.mg)return false;if(!c.mg||c.mg.v!==MGV||c.mg.force)return true;
   return c.mg.st==='unk'&&!c.mg.final&&now-c.mg.lastAt>=RECHECK&&now-c.t<6*3600e3}
 async function chainLoop(){let lastSweep=0;for(;;){const now=Date.now();
-  if(now-lastSweep>60e3){lastSweep=now;await curveSweep()}
+  if(now-lastSweep>120e3){lastSweep=now;await curveSweep()}
   const c=[...C.values()].filter(c=>!c.chTry&&((!c.ct&&now-c.t<6*3600e3)||needMig(c,now))).sort((a,b)=>b.t-a.t)[0];
   if(!c){await sleep(2000);continue}c.chTry=1;
   try{if(!c.ct)await ctCheck(c);if(needMig(c,Date.now())){if(c.mg&&c.mg.v!==MGV&&!c.mg0)c.mg0=c.mg;await migCheck(c)}}
@@ -343,7 +343,7 @@ async function chainObsLoop(){for(;;){const now=Date.now();
       for(const m of HOLD_M){if(c.hold[m])continue;if(a>=m+2){c.hold[m]={at:now,miss:'опоздали'};continue}if(a>=m){await holdersSnap(c,m).catch(e=>{c.hold[m]={at:Date.now(),miss:'ошибка'};err('hold '+e.message)})}}}
     // состояние пула + хранилища, пакетами
     const jobs=[];for(const c of C.values()){if(!isOk(c))continue;const a=ageMin(c,now);if(a<0||a>24*60+15)continue;c.raw=c.raw||{};
-      const rm=RAW_M.find(m=>!c.raw[m]&&a>=m&&a<m+Math.max(2,m*0.1));const lqDue=now-(c.lqAt||0)>=5*60e3-10e3;
+      const rm=RAW_M.find(m=>!c.raw[m]&&a>=m&&a<m+Math.max(2,m*0.1));const lqDue=now-(c.lqAt||0)>=(a<120?5*60e3:30*60e3)-10e3;
       for(const m of RAW_M)if(!c.raw[m]&&a>=m+Math.max(2,m*0.1))c.raw[m]={at:now,miss:1};
       if(rm!=null||lqDue)jobs.push([c,rm])}
     for(let i=0;i<jobs.length;i+=33){const part=jobs.slice(i,i+33);const keys=[];
@@ -415,7 +415,7 @@ async function exportDays(){const now=Date.now(),today=dayKey(now),yest=dayKey(n
     if(d===yest)lastYest=now}
   await flushUploads();
   await upload('status.json',{updated:now,version:VERSION,coins:C.size,today:[...C.values()].filter(c=>dayKey(c.t)===today).length,okToday:[...C.values()].filter(c=>dayKey(c.t)===today&&isOk(c)).length,
-    gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,helius:!!HKEY,recon:RC.log.slice(-12),mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})}
+    gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),helius:!!HKEY,recon:RC.log.slice(-12),mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})}
 // живая лента для «Прошли»: монеты витрины младше 40 минут, раз в 30 секунд
 async function exportLive(){const now=Date.now();const list=[...C.values()].filter(c=>isOk(c)&&now-c.t<40*60e3);
   await upload('live.json',{updated:now,coins:list.map(c=>rec(c,true))})}
@@ -440,7 +440,7 @@ const STARTED=Date.now();
   (async()=>{for(;;){try{await pollDS()}catch(e){err('dsloop '+e.message)}await sleep(15000)}})();
   setInterval(()=>{try{candleTasks()}catch(e){err('candles '+e.message)}},15000);
   chainLoop();chainObsLoop();setInterval(diagCheck,60000);diagCheck();
-  setTimeout(()=>{reconcile();setInterval(reconcile,30*60e3)},60000);
+  setTimeout(()=>{reconcile();setInterval(reconcile,60*60e3)},60000);
   setInterval(()=>{prune();save()},120000);
   (async()=>{for(;;){await sleep(120000);try{await exportDays()}catch(e){err('export '+e.message)}}})();
   (async()=>{await sleep(45000);for(;;){try{await exportLive()}catch(e){err('live '+e.message)}await sleep(30000)}})();
