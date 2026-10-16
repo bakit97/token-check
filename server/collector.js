@@ -191,18 +191,18 @@ const MIGNAME={pump:'pump.fun → PumpSwap',dbc:'Meteora DBC → Meteora',launch
 // кривые: раз в 10 минут одним запросом на 100 монет читаем флаг «кривая завершена» (монеты на кривой и ручные пулы монет с кривой);
 // флаг сменился — полная перепроверка
 function curveDone(acc){const u=b64(acc.data?.[0]);if(acc.owner===PUMP)return !!u[48];if(acc.owner===LAUNCH)return u[17]!==0;if(acc.owner===DBC)return !!u[305];return true}
-async function curveSweep(){const now=Date.now();const list=[...C.values()].filter(c=>c.mg?.v===MGV&&c.mg.watch&&(c.mg.st==='curve'||c.mg.st==='manual')&&now-c.mg.lastAt>=115e3&&now-c.t<24*3600e3);
+async function curveSweep(){const now=Date.now();const list=[...C.values()].filter(c=>c.mg?.v===MGV&&c.mg.watch&&c.mg.k==='manual-pump'&&now-c.mg.lastAt>=115e3&&now-c.t<24*3600e3); // Meteora и LaunchLab — по подписке
   for(let i=0;i<list.length;i+=100){const part=list.slice(i,i+100);try{const v=(await rpc('getMultipleAccounts',[part.map(c=>c.mg.watch),{encoding:'base64',dataSlice:{offset:0,length:320}}]))?.value||[];
     part.forEach((c,j)=>{if(!v[j]||curveDone(v[j]))c.mg.force=1;else c.mg.lastAt=now})}catch(e){err('sweep '+e.message)}}}
 function needMig(c,now){if(now-c.t>24*3600e3&&c.mg)return false;if(!c.mg||c.mg.v!==MGV||c.mg.force)return true;
   const BACK=[2,5,10,20,40];const n=c.mg.n||1;return c.mg.st==='unk'&&!c.mg.final&&n<=BACK.length&&now-c.mg.lastAt>=BACK[n-1]*60e3&&now-c.t<6*3600e3}
 async function chainLoop(){let lastSweep=0;for(;;){const now=Date.now();
   if(now-lastSweep>120e3){lastSweep=now;CTX='кривые';await curveSweep()}
-  const c=[...C.values()].filter(c=>!c.chTry&&((!c.ct&&now-c.t<6*3600e3)||needMig(c,now))).sort((a,b)=>b.t-a.t)[0];
+  const c=[...C.values()].filter(c=>!c.chTry&&((!c.ct&&isOk(c)&&now-c.t<6*3600e3)||needMig(c,now))).sort((a,b)=>b.t-a.t)[0];
   if(!c){await sleep(2000);continue}c.chTry=1;
-  try{CTX='контракт';if(!c.ct)await ctCheck(c);CTX='миграция';if(needMig(c,Date.now())){if(c.mg&&c.mg.v!==MGV&&!c.mg0)c.mg0=c.mg;await migCheck(c)}}
+  try{CTX='контракт';if(!c.ct&&isOk(c))await ctCheck(c);CTX='миграция';if(needMig(c,Date.now())){if(c.mg&&c.mg.v!==MGV&&!c.mg0)c.mg0=c.mg;await migCheck(c)}}
   catch(e){rpcFail++;err('chain '+e.message);if(/ключа/.test(e.message))await sleep(60000);
-    else if(c.ct&&(c.mgErr=(c.mgErr||0)+1)>=3){c.mgErr=0;setMg(c,'unk','unk-err','ошибка проверки: '+e.message.slice(0,80))}}
+    else if((c.mgErr=(c.mgErr||0)+1)>=3){c.mgErr=0;setMg(c,'unk','unk-err','ошибка проверки: '+e.message.slice(0,80))}}
   finally{setTimeout(()=>{c.chTry=0},30000)}}}
 
 /* ---------- состояние ----------
