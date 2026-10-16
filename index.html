@@ -63,6 +63,13 @@ body[data-ui-mode="updated"] .classic-ui-only{display:none!important}
 .source-box summary{list-style:none;display:flex;justify-content:space-between;align-items:center;padding:12px;cursor:pointer}
 .source-box summary::-webkit-details-marker{display:none}
 .source-box summary b{font-size:13px}.source-box summary small{display:block;margin-top:3px;color:var(--mut);font-size:11px}
+.source-box .source-arrow{font-size:20px;color:var(--mut);transition:transform .2s}
+.source-box[open] .source-arrow{transform:rotate(180deg)}
+.source-timebox{margin:7px 0 10px;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:9px}
+.source-timebox[hidden]{display:none!important}
+.source-timebox label{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;font-weight:700}
+.source-timebox select{width:110px;min-height:40px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--fg);padding:7px;font:700 13px var(--mono)}
+.source-section-label{font-size:11px;color:var(--mut);font-weight:700;margin:10px 0 7px}
 .source-inside{padding:10px 12px 12px;border-top:1px solid var(--line)}
 .source-modes{display:flex;gap:6px;margin-bottom:10px}
 .source-modes button{flex:1;min-width:0;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--mut);padding:9px 3px;font-size:12px;font-weight:700}
@@ -273,29 +280,24 @@ body[data-ui-mode="updated"] .classic-ui-only{display:none!important}
 <main class="wrap">
   <section id="v-all">
     <div class="chips updated-ui-only" id="allStreams"><button class="chip" data-stream="all" data-panel="all">Общие</button><button class="chip" data-stream="birth" data-panel="all">До миграции</button><button class="chip" data-stream="migration" data-panel="all">После миграции</button></div>
-    <div class="discovery-windows updated-ui-only" id="discoveryWindows">
-      <h3>Время появления на витрине</h3>
-      <div class="discovery-grid">
-        <label for="windowBirth">🌱 До миграции
-          <select id="windowBirth" data-discovery-window="birth" aria-label="До миграции, от 1 до 10 минут"></select>
-        </label>
-        <label for="windowMigration">🎓 После миграции
-          <select id="windowMigration" data-discovery-window="migration" aria-label="После миграции, от 1 до 10 минут"></select>
-        </label>
-      </div>
-      <p>Настройки независимы и запоминаются. До миграции сбор ещё не подключён; здесь пока работает только окно новых пулов.</p>
-    </div>
     <details class="source-box updated-ui-only" id="sourceBox">
-      <summary><span><b>⚙ Фильтры источников</b><small id="sourceCount">Без ограничений</small></span><span>⌄</span></summary>
+      <summary><span><b>⚙ Настроить источники</b><small id="sourceCount">До: 2 мин · После: 2 мин</small></span><span class="source-arrow">⌄</span></summary>
       <div class="source-inside">
         <div class="source-modes"><button type="button" data-source-mode="birth">🌱 До миграции</button><button type="button" data-source-mode="migration">🎓 После миграции</button></div>
+        <div class="source-timebox" data-source-window-wrap="birth">
+          <label for="windowBirth">⏱ Показывать на витрине <select id="windowBirth" data-discovery-window="birth" aria-label="До миграции, 1–10 минут"></select></label>
+        </div>
+        <div class="source-timebox" data-source-window-wrap="migration">
+          <label for="windowMigration">⏱ Показывать на витрине <select id="windowMigration" data-discovery-window="migration" aria-label="После миграции, 1–10 минут"></select></label>
+        </div>
+        <p class="source-section-label">Дополнительные условия этого источника</p>
         <div class="source-fields">
           <label>Ликвидность от, $<select data-source-key="liq"><option value="0">Любая</option><option value="1000">1 000</option><option value="5000">5 000</option><option value="10000">10 000</option><option value="25000">25 000</option></select></label>
-          <label>Объём 5 мин, $<select data-source-key="v5"><option value="0">Любой</option><option value="500">500</option><option value="2000">2 000</option><option value="5000">5 000</option><option value="10000">10 000</option></select></label>
-          <label>Покупки 5 мин<select data-source-key="b5"><option value="0">Любые</option><option value="5">5</option><option value="10">10</option><option value="20">20</option><option value="50">50</option></select></label>
+          <label>Объём за 5 мин, $<select data-source-key="v5"><option value="0">Любой</option><option value="500">500</option><option value="2000">2 000</option><option value="5000">5 000</option><option value="10000">10 000</option></select></label>
+          <label>Покупок за 5 мин<select data-source-key="b5"><option value="0">Любое</option><option value="5">5</option><option value="10">10</option><option value="20">20</option><option value="50">50</option></select></label>
         </div>
-        <div class="source-foot"><button type="button" id="sourceReset">Сбросить</button><span>✓ Сохраняется автоматически</span></div>
-        <p class="source-note">Эти условия скрывают карточки на витрине, но не исключают монеты из исследования. До миграции данные пока не подключены.</p>
+        <div class="source-foot"><button type="button" id="sourceReset">Сбросить условия</button><span>✓ Автосохранение</span></div>
+        <p class="source-note" id="sourceHint">Пока до миграции данные не собираются. Эти условия только скрывают карточки и не удаляют монеты из архива.</p>
       </div>
     </details>
     <div class="chips classic-ui-only"><button class="chip" id="fFresh"></button><button class="chip" id="fMig">🎓 Миграции</button><button class="chip" id="fScam">🚫 Без скама</button><button class="chip" id="fLiq"></button></div>
@@ -444,7 +446,7 @@ function setDiscoveryMinutes(mode,value){
   const n=Number(value);
   if(!Number.isInteger(n)||n<1||n>10)return false;
   DISCOVERY_WINDOWS[mode]=n;sset('sc_discovery_windows_v1',DISCOVERY_WINDOWS);
-  renderDiscoveryControls();if(typeof render==='function')render();return true
+  renderDiscoveryControls();if(typeof sourceUi==='function')sourceUi();if(typeof render==='function')render();return true
 }
 function renderDiscoveryControls(){
   document.querySelectorAll('[data-discovery-window]').forEach(el=>{
@@ -470,8 +472,12 @@ function sourceAllowed(c,mode){
 function sourceUi(){
   document.querySelectorAll('[data-source-mode]').forEach(b=>b.classList.toggle('on',b.dataset.sourceMode===SOURCE_EDIT));
   document.querySelectorAll('[data-source-key]').forEach(el=>el.value=String(SOURCE_RULES[SOURCE_EDIT][el.dataset.sourceKey]));
+  document.querySelectorAll('[data-source-window-wrap]').forEach(el=>{el.hidden=el.dataset.sourceWindowWrap!==SOURCE_EDIT});
   const cnt=x=>Object.values(SOURCE_RULES[x]).filter(Boolean).length;
-  $('#sourceCount').textContent='До: '+cnt('birth')+' · После: '+cnt('migration')+' условий';
+  $('#sourceCount').textContent='До: '+DISCOVERY_WINDOWS.birth+' мин · После: '+DISCOVERY_WINDOWS.migration+' мин · Условий: '+(cnt('birth')+cnt('migration'));
+  $('#sourceHint').textContent=SOURCE_EDIT==='birth'?
+    'До миграции: поток пока не подключён. Настройки сохраняются на будущее.':
+    'Условия скрывают карточки на витрине; исходные данные для исследований не удаляются.';
 }
 document.querySelectorAll('[data-source-mode]').forEach(b=>b.onclick=()=>{SOURCE_EDIT=b.dataset.sourceMode;sset('sc_source_edit_v1',SOURCE_EDIT);sourceUi()});
 document.querySelectorAll('[data-source-key]').forEach(el=>el.onchange=()=>{
@@ -796,7 +802,7 @@ function rowInner(c,mode){
   <div class="rt"><span class="px">${price(c.price)}</span><span class="badge ${bc}">${bt}</span></div>`}
 function reconcile(box,items,mode){
   if(!box._m)box._m=new Map();const m=box._m;
-  if(!items.length){m.clear();box.innerHTML=`<div class="empty">${mode==='pass'?'Пока ни одна монета не прошла все правила в первые '+S.win+' мин.<br>Держи страницу открытой — проверка идёт, только пока она открыта.':'Под фильтр ничего не попало. Жду новые пары…'}</div>`;return}
+  if(!items.length){m.clear();box.innerHTML=`<div class="empty">${mode==='pass'?'Пока ни одна монета не прошла все правила в первые '+S.win+' мин.<br>Держи страницу открытой — проверка идёт, только пока она открыта.':mode==='newAll'?'За выбранное время новых монет пока нет.':'Под фильтр ничего не попало. Жду новые пары…'}</div>`;return}
   const em=box.querySelector('.empty');if(em)em.remove();
   const keep=new Set();let prev=null;
   for(const c of items){keep.add(c.addr);let el=m.get(c.addr);
@@ -827,12 +833,14 @@ function render(){
     (!S.f_scam||!(c.status==='fail'||c.failNow))&&(c.liq||0)>=S.f_liq);
   const apiBad=(gtErr&&now-gtOkAt>60000)?`<span class="dn">GeckoTerminal: ${esc(gtErr)}</span>`:'';
   const nMig=visible.filter(isMig).length,nFake=visible.filter(c=>isPumpSwap(c.dex)&&c.canon===false).length;
-  const coverage=updated?`<span>старые/найдены поздно: ${all.length-visible.length}</span>`:'';
-  $('#statAll').innerHTML=`<span>показано ${shown.length} из ${visible.length}</span>${coverage}<span class="up">🎓 миграций: ${nMig}</span><span>пулов вручную: ${nFake}</span><span>⏳ проверяю: ${w}</span>${apiBad}${rpcErr?'<span class="warn">блокчейн: '+esc(rpcErr)+'</span>':''}`;
+  const coverage=updated?`<span>вне окна: ${all.length-visible.length}</span>`:'';
+  $('#statAll').innerHTML=updated?
+    `<span>Новых: <b>${shown.length}</b></span>${coverage}${apiBad}${rpcErr?'<span class="warn">блокчейн: '+esc(rpcErr)+'</span>':''}`:
+    `<span>показано ${shown.length} из ${visible.length}</span><span class="up">🎓 миграций: ${nMig}</span><span>пулов вручную: ${nFake}</span><span>⏳ проверяю: ${w}</span>${apiBad}${rpcErr?'<span class="warn">блокчейн: '+esc(rpcErr)+'</span>':''}`;
   if(tab==='all'&&updated&&streamMode('all')==='birth'){
     $('#lAll').innerHTML='<div class="empty">🌱 До миграции: интерфейс готов, сбор первых торгов пока не подключён.</div>';
     $('#lAll')._m=null;
-  }else if(tab==='all')reconcile($('#lAll'),shown.slice(0,250),'all');
+  }else if(tab==='all')reconcile($('#lAll'),shown.slice(0,250),updated?'newAll':'all');
   Object.values(C).forEach(c=>{c.flash=null;if(booted&&c.isNew&&Date.now()-(c.seenAt||0)>60000)c.isNew=false});
   if(sheetAddr&&C[sheetAddr])fillChecks(C[sheetAddr]);
 }
