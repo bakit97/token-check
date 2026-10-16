@@ -27,16 +27,25 @@ function featsAt(c,T){const F={};const ok=x=>x!=null&&isFinite(x);
 const FKEYS=[['danger','b'],['clone','b'],['metaMut','b'],['t22','b'],['premig','n'],['hour','n'],['x10','n'],['dd10','n'],['v1','n'],['v05','n'],['v510','n'],['trend','n'],['green','n'],['act','n'],
   ['b5','n'],['s5','n'],['bs','n'],['v5','n'],['liq','n'],['liqSol','n'],['mc','n'],['liqmc','n'],['buyers15','n'],['sellers15','n'],['bsU','n'],['tx15','n'],['vol15','n'],
   ['payers','n'],['trades','n'],['repeat','n'],['btop1','n'],['bsUsd','n'],['top1','n'],['top10','n'],['pda','n']];
-function pathAfter(c,T,G){const out=[];let nK=0,nD=0;
-  if(c.path?.c?.length){for(const x of c.path.c){if(x[0]*1000>=T){out.push([x[0]*1000,x[1],x[2],x[3],x[4]]);nK++}}}
+// слив по блокчейну: SOL/валюта в хранилище пула упала ниже 5% от своего максимума
+function chainRugAt(c){if(!c.lq||!c.vmint)return null;const qi=c.vmint[0]===c.a?1:0;let mx=0;for(const l of c.lq){const q=l[2+qi];if(q>mx)mx=q;else if(mx>0&&q<mx*0.05)return l[0]*1000}return null}
+function pathAfter(c,T,G){const out=[];let nK=0,nD=0;const rugAt=chainRugAt(c);
+  if(c.path?.c?.length){for(const x of c.path.c){if(x[0]*1000>=T&&!(rugAt&&x[0]*1000>=rugAt)){out.push([x[0]*1000,x[1],x[2],x[3],x[4]]);nK++}}}
   const lastP=out.length?out[out.length-1][0]:T;
-  for(const d of c.ds||[]){const ts=d[0]*1000;if(ts>=T&&ts>lastP&&d[1]){const rug=d[2]!=null&&d[2]<200;const v=rug?1e-12:d[1];out.push([ts,v,v,v,v,rug?1:0]);if(ts<=T+G.win*60e3)nD++}}
+  // снимок DEX Screener считается сливом, только если раньше в пуле были деньги (≥ $2000), а стало < $200:
+  // у пулов Meteora DEX Screener часто показывает $0 — это не слив, а отсутствие данных
+  let dsMax=0;for(const d of c.ds||[]){const ts=d[0]*1000;if(d[2]!=null)dsMax=Math.max(dsMax,d[2]);if(ts>=T&&ts>lastP&&d[1]){
+    const rug=(d[2]!=null&&d[2]<200&&dsMax>=2000)||(rugAt!=null&&ts>=rugAt);const v=rug?1e-12:d[1];out.push([ts,v,v,v,v,rug?1:0]);if(ts<=T+G.win*60e3)nD++}}
+  if(rugAt&&rugAt>=T&&!out.some(x=>x[5])){out.push([rugAt,1e-12,1e-12,1e-12,1e-12,1]);out.sort((a,b)=>a[0]-b[0])}
   const exact=nK>0&&nD===0;return{pts:out,exact,mixed:nK>0&&nD>0,coverEnd:out.length?out[out.length-1][0]:null}}
 function labEntry(c,T,G){const p=pathAfter(c,T,G);if(!p.pts.length)return null;const e=p.pts[0];if(e[5])return null;if(e[0]-T>6*60e3)return null;return{price:e[1],at:e[0],p}}
 function outcome(c,G,now){const T=c.t+G.dec*60e3;const F=featsAt(c,T);
   if(c.legacy)return{st:'legacy',T,F};if(!F.known)return{st:'late',T,F};
   const e=labEntry(c,T,G);
-  if(!e){return{st:now<T+15*60e3?'early':'nodata',T,F}}
+  if(!e){const p=pathAfter(c,T,G);const f0=p.pts[0];
+    // пул слили ещё до входа — купить было невозможно, монета мёртвая
+    if(f0&&f0[5])return{st:'dead',T,F,why:'слив до входа',rugBefore:1};
+    return{st:now<T+15*60e3?'early':'nodata',T,F}}
   const up=e.price*(1+G.up/100),dn=e.price*(1-G.dn/100),end=T+G.win*60e3;let res=null,amb=false,peak=0,low=Infinity;
   for(const x of e.p.pts){if(x[0]>end)break;const bt=Math.max(x[1],x[4]),bb=Math.min(x[1],x[4]);peak=Math.max(peak,bt);low=Math.min(low,bb);if(res)continue;const hu=bt>=up,hd=bb<=dn;
     if(hu&&hd){amb=true;res={win:x[0]}}else if(hu)res={win:x[0]};else if(hd)res={stop:x[0]}}
@@ -48,5 +57,5 @@ function xAfter(o,m){if(!o.entry)return null;const tt=o.T+m*60e3;let v=null,last
 // клоны: сколько монет с тем же именем вышло раньше в этот день
 function markClones(coins){const nm=x=>(x.n||'').trim().toLowerCase();const first={};coins.slice().sort((a,b)=>a.t-b.t).forEach(c=>{const k=nm(c);if(!k){c.clone=0;return}c.clone=first[k]||0;first[k]=(first[k]||0)+1})}
 function passes(F,rules){for(const [k,op,v] of rules){const x=F[k];if(x==null)return false;if(op==='='&&x!==v)return false;if(op==='>='&&!(x>=v))return false;if(op==='<='&&!(x<=v))return false}return true}
-root.LC={lastBefore,k10feats,provedAt,featsAt,FKEYS,pathAfter,labEntry,outcome,xAfter,markClones,passes};
+root.LC={chainRugAt,lastBefore,k10feats,provedAt,featsAt,FKEYS,pathAfter,labEntry,outcome,xAfter,markClones,passes};
 })(typeof window!=='undefined'?window:globalThis);

@@ -1229,7 +1229,7 @@ function coinSheet(D,a){const c=D.coins.find(x=>x.a===a);if(!c)return;const r=ou
   const late=s=>s==null?'':(s<=T?'вовремя':'<b class="warn">поздно</b>');
   const pts=pathAfter(c,T).pts;
   openSheetHtml(`<div class="dh">${avHtml({img:c.i,sym:c.s})}<div><b style="font-size:16px">${esc(c.n||'')}</b> <span class="mut">${esc(c.s||'')}</span><div class="addr">${esc(c.a)}</div></div></div>
-    <div class="verdict v-${r.st==='live'?'pass':r.st==='dead'?'fail':'miss'}">${(ST[r.st]||['',r.st])[1]}<small>${r.entry?`вход ${price(r.entry)} в ${tm(r.entryAt)} · максимум ${pct((r.peak-1)*100)} · минимум ${pct((r.low-1)*100)}${r.exact?' · по минутным свечам':r.mixed?' · свечи + снимки (частично приблизительно)':' · по снимкам (приблизительно)'}`:'нет цены входа'}</small></div>
+    <div class="verdict v-${r.st==='live'?'pass':r.st==='dead'?'fail':'miss'}">${(ST[r.st]||['',r.st])[1]}<small>${r.entry?`вход ${price(r.entry)} в ${tm(r.entryAt)} · максимум ${pct((r.peak-1)*100)} · минимум ${pct((r.low-1)*100)}${r.exact?' · по минутным свечам':r.mixed?' · свечи + снимки (частично приблизительно)':' · по снимкам (приблизительно)'}`:esc(r.why||'нет цены входа')}</small></div>
     <div class="seg" id="cSrc"><button class="on" data-src="ds">DEX Screener</button><button data-src="gt">GeckoTerminal</button></div>
     <iframe class="chart" id="cFrame" src="${chartUrl(c.p,'ds')}" loading="lazy" allow="clipboard-write"></iframe>
     <div class="hcard"><div class="l2">Цена от выхода на витрину · синяя линия — вход · зелёная — цель · красная — стоп</div>${fullChart(c,r)}</div>
