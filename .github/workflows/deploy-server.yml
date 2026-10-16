@@ -1,0 +1,28 @@
+name: deploy-server
+on:
+  push:
+    branches: [main]
+    paths: ['server/collector.js', 'lab-core.js']
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: check syntax
+        run: node --check server/collector.js && node --check lab-core.js
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/421351476653/locations/global/workloadIdentityPools/github/providers/github
+          service_account: helper-ai@sol-scan-511718.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: upload
+        run: |
+          gcloud storage cp lab-core.js gs://sol-scan-511718-data/code/lab-core.js
+          gcloud storage cp server/collector.js gs://sol-scan-511718-data/code/collector.js
