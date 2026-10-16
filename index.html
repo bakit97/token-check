@@ -41,6 +41,16 @@ button{font:inherit;color:inherit;cursor:pointer}
 .tab{flex:1 0 auto;min-width:max-content;padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--mut);font-weight:700;font-size:13px;white-space:nowrap}
 .tab.on{background:var(--acc);border-color:var(--acc);color:#fff}
 .tab b{font-family:var(--mono);font-weight:700;opacity:.8;margin-left:3px}
+/* Два интерфейса поверх одного и того же набора данных: старый без изменений и обновлённый. */
+.ui-version{display:grid;grid-template-columns:1fr 1fr;gap:5px;background:var(--panel);padding:4px;border:1px solid var(--line);border-radius:12px;margin:7px 0 10px}
+.ui-version button{padding:10px 6px;min-height:42px;border:0;border-radius:9px;background:transparent;color:var(--mut);font-size:13px;font-weight:800}
+.ui-version button.on{background:var(--acc);color:#fff}
+body[data-ui-mode="classic"] .updated-ui-only{display:none!important}
+body[data-ui-mode="updated"] .classic-ui-only{display:none!important}
+.ui-status{font-size:11px;line-height:1.4;color:var(--mut);margin:6px 0}
+#allStreams,#passStreams{flex-wrap:nowrap}
+#allStreams .chip,#passStreams .chip{flex:1 1 0;min-width:0;text-align:center;white-space:normal;padding:8px 4px;line-height:1.3}
+@media(max-width:375px){#allStreams .chip,#passStreams .chip{font-size:11px}}
 .stat{font:11px var(--mono);color:var(--mut);padding:8px 0 2px;display:flex;gap:10px;flex-wrap:wrap}
 
 /* rows */
@@ -223,6 +233,10 @@ button{font:inherit;color:inherit;cursor:pointer}
     <div class="live" id="live"><i></i><span>LIVE</span></div>
     <div class="store" id="store">память…</div>
   </div>
+  <div class="ui-version" role="group" aria-label="Версия интерфейса">
+    <button type="button" data-ui-select="classic">Текущий</button>
+    <button type="button" data-ui-select="updated">Обновлённый</button>
+  </div>
   <nav class="tabs">
     <button class="tab on" data-t="all">Все<b id="nAll">0</b></button>
     <button class="tab" data-t="pass">Прошли<b id="nPass">0</b></button>
@@ -236,14 +250,14 @@ button{font:inherit;color:inherit;cursor:pointer}
 
 <main class="wrap">
   <section id="v-all">
-    <div class="chips" id="allStreams"><button class="chip" data-stream="all" data-panel="all">Общие</button><button class="chip" data-stream="birth" data-panel="all">До миграции</button><button class="chip" data-stream="migration" data-panel="all">После миграции</button></div>
-    <p class="mut" style="font-size:11px;margin:5px 0">Показ новых событий — 2 минуты. До миграции: сбор сервером ещё не подключён.</p>
-    <div class="chips"><span class="chip on" id="fFresh"></span><button class="chip" id="fMig">🎓 Миграции</button><button class="chip" id="fScam">🚫 Без скама</button><button class="chip" id="fLiq"></button></div>
+    <div class="chips updated-ui-only" id="allStreams"><button class="chip" data-stream="all" data-panel="all">Общие</button><button class="chip" data-stream="birth" data-panel="all">До миграции</button><button class="chip" data-stream="migration" data-panel="all">После миграции</button></div>
+    <p class="ui-status updated-ui-only">Витрина: 2 минуты с появления события. До миграции сбор пока не подключён.</p>
+    <div class="chips classic-ui-only"><button class="chip" id="fFresh"></button><button class="chip" id="fMig">🎓 Миграции</button><button class="chip" id="fScam">🚫 Без скама</button><button class="chip" id="fLiq"></button></div>
     <div class="stat" id="statAll"></div>
     <div class="list" id="lAll"><div class="empty">Загружаю новые пары…</div></div>
   </section>
   <section id="v-pass" hidden>
-    <div class="chips" id="passStreams"><button class="chip" data-stream="all" data-panel="pass">Общие</button><button class="chip" data-stream="birth" data-panel="pass">До миграции</button><button class="chip" data-stream="migration" data-panel="pass">После миграции</button></div>
+    <div class="chips updated-ui-only" id="passStreams"><button class="chip" data-stream="all" data-panel="pass">Общие</button><button class="chip" data-stream="birth" data-panel="pass">До миграции</button><button class="chip" data-stream="migration" data-panel="pass">После миграции</button></div>
     <div class="stat" id="statPass"></div>
     <div class="list" id="lPass"></div>
   </section>
@@ -374,6 +388,24 @@ function liveListingEligible(c,N,now=Date.now()){
 }
 // 2 минуты — только для появления события в ленте, не для N минут анализа.
 const liveListingMinutes=()=>2;
+// Переключение меняет только вид интерфейса, не переписывает фильтры и историю.
+let UI_MODE=sget('sc_ui_mode_v1','classic');
+if(!['classic','updated'].includes(UI_MODE))UI_MODE='classic';
+function paintUiMode(){
+  document.body.dataset.uiMode=UI_MODE;
+  document.querySelectorAll('[data-ui-select]').forEach(b=>{
+    const on=b.dataset.uiSelect===UI_MODE;b.classList.toggle('on',on);
+    b.setAttribute('aria-pressed',String(on));
+  })
+}
+function selectUiMode(mode){
+  if(!['classic','updated'].includes(mode))return;
+  UI_MODE=mode;sset('sc_ui_mode_v1',mode);paintUiMode();
+  if(typeof render==='function')render();
+  if(typeof labRender==='function')labRender();
+}
+document.querySelectorAll('[data-ui-select]').forEach(b=>b.onclick=()=>selectUiMode(b.dataset.uiSelect));
+paintUiMode();
 const STREAMS=sget('sc_streams_v1',{all:'all',pass:'all'});
 function streamMode(panel){return ['all','birth','migration'].includes(STREAMS[panel])?STREAMS[panel]:'all'}
 function streamUi(panel){document.querySelectorAll('[data-panel="'+panel+'"][data-stream]').forEach(b=>b.classList.toggle('on',b.dataset.stream===streamMode(panel)))}
@@ -685,20 +717,28 @@ function reconcile(box,items,mode){
   for(const[a,el]of m){if(!keep.has(a)){el.remove();m.delete(a)}}}
 let tab='all';
 function render(){
-  const now=Date.now(),N=liveListingMinutes();
+  const now=Date.now(),updated=UI_MODE==='updated',N=liveListingMinutes();
   const all=Object.values(C).filter(c=>now-c.listedAt<=S.keepH*3600e3).sort((a,b)=>b.listedAt-a.listedAt);
-  const live=streamMode('all')==='birth'?[]:all.filter(c=>liveListingEligible(c,N,now) && (streamMode('all')!=='migration'||isMig(c)));streamUi('all');
-  $('#nAll').textContent=live.length;
-  const w=live.filter(c=>c.status==='wait').length;
-  $('#fFresh').textContent='⚡ Витрина ≤ '+N+' мин';
+  // В текущем режиме оставляем прежнюю рабочую ленту (S.win, все старые фильтры).
+  // В обновлённом — только вовремя найденные события за 2 минуты; другие настройки не скрывают монеты.
+  const visible=updated?(streamMode('all')==='birth'?[]:all.filter(c=>
+    liveListingEligible(c,N,now)&&(streamMode('all')!=='migration'||isMig(c)))):all;
+  streamUi('all');paintUiMode();
+  $('#nAll').textContent=visible.length;
+  const w=visible.filter(c=>c.status==='wait').length;
+  $('#fFresh').textContent='⚡ Свежие < '+S.win+' мин';$('#fFresh').classList.toggle('on',S.f_fresh);
   $('#fScam').classList.toggle('on',S.f_scam);$('#fMig').classList.toggle('on',S.f_mig);
   $('#fLiq').textContent='💧 Ликв. '+(S.f_liq?'от '+money(S.f_liq):'любая');$('#fLiq').classList.toggle('on',!!S.f_liq);
-  const shown=live.filter(c=>(!S.f_mig||isMig(c))&&(!S.f_scam||!(c.status==='fail'||c.failNow))&&(c.liq||0)>=S.f_liq);
+  const shown=updated?visible:visible.filter(c=>(!S.f_mig||isMig(c))&&(!S.f_fresh||inWin(c))&&
+    (!S.f_scam||!(c.status==='fail'||c.failNow))&&(c.liq||0)>=S.f_liq);
   const apiBad=(gtErr&&now-gtOkAt>60000)?`<span class="dn">GeckoTerminal: ${esc(gtErr)}</span>`:'';
-  const nMig=live.filter(isMig).length,nFake=live.filter(c=>isPumpSwap(c.dex)&&c.canon===false).length;
-  $('#statAll').innerHTML=`<span>показано ${shown.length} из ${live.length} свежих</span><span>старые/обнаружены поздно: ${all.length-live.length}</span><span class="up">🎓 миграций: ${nMig}</span><span>пулов вручную: ${nFake}</span><span>⏳ проверяю: ${w}</span>${apiBad}${rpcErr?'<span class="warn">блокчейн: '+esc(rpcErr)+'</span>':''}`;
-  if(tab==='all'&&streamMode('all')==='birth'){$('#lAll').innerHTML='<div class="empty">🌱 До миграции: витрина подготовлена. Сбор подтверждённых первых торгов на кривой пока не подключён.</div>';$('#lAll')._m=null}
-  else if(tab==='all')reconcile($('#lAll'),shown.slice(0,250),'all');
+  const nMig=visible.filter(isMig).length,nFake=visible.filter(c=>isPumpSwap(c.dex)&&c.canon===false).length;
+  const coverage=updated?`<span>старые/найдены поздно: ${all.length-visible.length}</span>`:'';
+  $('#statAll').innerHTML=`<span>показано ${shown.length} из ${visible.length}</span>${coverage}<span class="up">🎓 миграций: ${nMig}</span><span>пулов вручную: ${nFake}</span><span>⏳ проверяю: ${w}</span>${apiBad}${rpcErr?'<span class="warn">блокчейн: '+esc(rpcErr)+'</span>':''}`;
+  if(tab==='all'&&updated&&streamMode('all')==='birth'){
+    $('#lAll').innerHTML='<div class="empty">🌱 До миграции: интерфейс готов, сбор первых торгов пока не подключён.</div>';
+    $('#lAll')._m=null;
+  }else if(tab==='all')reconcile($('#lAll'),shown.slice(0,250),'all');
   Object.values(C).forEach(c=>{c.flash=null;if(booted&&c.isNew&&Date.now()-(c.seenAt||0)>60000)c.isNew=false});
   if(sheetAddr&&C[sheetAddr])fillChecks(C[sheetAddr]);
 }
@@ -709,6 +749,7 @@ setInterval(()=>{evalAll();render()},5000); // окно закрывается �
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.t;
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));
   ['all','pass','hist','research','auto','rules','check'].forEach(k=>$('#v-'+k).hidden=k!==tab);labRender();render();window.scrollTo(0,0)});
+$('#fFresh').onclick=()=>{S.f_fresh=!S.f_fresh;sset('sc_set',S);render()};
 $('#fScam').onclick=()=>{S.f_scam=!S.f_scam;sset('sc_set',S);render()};
 $('#fMig').onclick=()=>{S.f_mig=!S.f_mig;sset('sc_set',S);render()};
 $('#fLiq').onclick=()=>{const L=[0,1000,5000,20000];S.f_liq=L[(L.indexOf(S.f_liq)+1)%L.length];sset('sc_set',S);render()};
@@ -1341,10 +1382,10 @@ function journalAdd(rows,f){let ch=false;const fp=fprintSync(f);for(const r of r
   if(ch){if(JOUR.length>3000)JOUR=JOUR.slice(-3000);LS.set('lab_journal',JOUR)}}
 // окно покупки и комиссия (комиссия + проскальзывание, % на вход и на выход)
 let BUY=Object.assign({win:5,fee:2},LS.get('lab_buy',{}));const saveBuy=()=>LS.set('lab_buy',BUY);
-function buyable(off=0){if(streamMode('pass')==='birth')return[];const now=Date.now();return passRows(off).filter(r=>now-r.T<=BUY.win*60e3)}
+function buyable(off=0){if(UI_MODE==='updated'&&streamMode('pass')==='birth')return[];const now=Date.now();return passRows(off).filter(r=>now-r.T<=BUY.win*60e3)}
 function updPassCount(){const el=$('#nPass');if(el)el.textContent=buyable().length}
 function renderPass(){const box=$('#lPass');if(!box)return;streamUi('pass');const f=curF();
-  if(streamMode('pass')==='birth'){$('#statPass').innerHTML='<span class="mut">До миграции · серверный сбор ранних торгов ещё не подключён</span>';box.innerHTML='<div class="empty">🌱 Здесь будут монеты, прошедшие выбранный фильтр ДО миграции. Пока данных нет — сигналы не показываются.</div>';updPassCount();return}
+  if(UI_MODE==='updated'&&streamMode('pass')==='birth'){$('#statPass').innerHTML='<span class="mut">До миграции · серверный сбор ранних торгов ещё не подключён</span>';box.innerHTML='<div class="empty">🌱 Здесь будут монеты, прошедшие выбранный фильтр ДО миграции. Пока данных нет — сигналы не показываются.</div>';updPassCount();return}
   const D=LAB.days[almatyDay(0)];
   if(!D){box.innerHTML='<div class="empty">Загружаю данные сервера…</div>';loadDay(0).then(renderPass);return}
   const G=f.goal||GOAL,now=Date.now();const rows=buyable().sort((a,b)=>b.T-a.T);
