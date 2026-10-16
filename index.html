@@ -1036,6 +1036,7 @@ async function loadDay2(d){LAB.loading=true;
   try{const [day,obs,st]=await Promise.all([getJ('day/'+d+'.json'),getJ('obs/'+d+'.json'),getJ('status.json')]);LAB.status=st||LAB.status;
     const ob={};(obs?.coins||[]).forEach(o=>ob[o.a]=o);
     const coins=(day?.coins||[]).map(c=>{const o=ob[c.a];if(o){c.ds=o.ds&&o.ds.length>=(c.ds||[]).length?o.ds:c.ds;c.lq=o.lq&&o.lq.length>=(c.lq||[]).length?o.lq:c.lq;c.path=o.path||null}return c});
+    const nm=x=>(x.n||'').trim().toLowerCase();const first={};coins.slice().sort((a,b)=>a.t-b.t).forEach(c=>{const k=nm(c);if(!k){c.clone=0;return}c.clone=first[k]||0;first[k]=(first[k]||0)+1});
     LAB.days[d]={d,at:Date.now(),updated:day?.updated||null,coins,none:!day};LAB.err=''}
   catch(e){LAB.err='Не удалось загрузить данные сервера: '+e.message}
   LAB.loading=false;return LAB.days[d]}
@@ -1054,14 +1055,14 @@ function k10feats(c,T){const k=c.k10;if(!k||k.at>T||!k.c?.length)return null;con
 const provedAt=c=>{let t=c.mSeen||Infinity;for(const h of c.mH||[])if(h[2]==='ok'&&h[1]===c.mk)t=Math.min(t,h[0]);return t};
 function featsAt(c,T){const F={};const ok=x=>x!=null&&isFinite(x);
   F.known=c.seen<=T&&provedAt(c)<=T;
-  F.fam=c.mk;F.hour=new Date(c.t+5*3600e3).getUTCHours();
+  F.fam=c.mk;F.hour=new Date(c.t+5*3600e3).getUTCHours();F.clone=(c.clone||0)>0;
   if(c.tk&&c.tkAt&&c.tkAt<=T)F.premig=(c.t-c.tk)/60000;
   const ct=c.ct;if(ct&&(c.ctAt||0)<=T){F.danger=!!(ct.mint||ct.freeze||ct.fee>0||ct.hook||ct.deleg||ct.pause||ct.nontr||ct.defFrozen);F.metaMut=ct.metaMut;F.t22=ct.prog==='token2022'}
   const k=k10feats(c,T);if(k)Object.assign(F,{x10:k.x10,dd10:k.dd10,v1:k.v1,v05:k.v05,v510:k.v510,trend:k.trend,green:k.green,act:k.act});
   const d=lastBefore(c.ds,T);if(d){F.liq=d[2];F.mc=d[3];F.b5=d[4];F.s5=d[5];F.v5=d[6];if(ok(d[4])&&ok(d[5]))F.bs=d[5]?d[4]/d[5]:d[4];if(ok(d[2])&&ok(d[3])&&d[3])F.liqmc=d[2]/d[3]*100;F.pxT=d[1];F.dsAge=(T/1000-d[0])}
   let h=null;for(const m of ['10','5']){const x=c.hold?.[m];if(x&&!x.miss&&x.at<=T){h=x;break}}if(h){F.top1=h.top1*100;F.top10=h.top10*100;F.pda=h.pda*100}
   const g=lastBefore(c.gx,T);if(g){F.buyers15=g[7];F.sellers15=g[8];F.tx15=(g[5]??0)+(g[6]??0);if(g[7]!=null&&g[8]!=null)F.bsU=g[8]?g[7]/g[8]:g[7];F.vol15=g[10]}
-  const b=c.bx;if(b&&!b.miss&&b.at<=T){F.payers=b.payers;F.trades=b.n;F.repeat=b.payers?b.repeat/b.payers*100:null;F.btop1=b.top1!=null?b.top1*100:null;F.bsUsd=b.sellUsd?b.buyUsd/b.sellUsd:null;F.trCov=b.cov}
+  const b=c.bx;if(b&&!b.miss&&b.cov&&b.at<=T){F.payers=b.payers;F.trades=b.n;F.repeat=b.payers?b.repeat/b.payers*100:null;F.btop1=b.top1!=null?b.top1*100:null;F.bsUsd=b.sellUsd?b.buyUsd/b.sellUsd:null;F.trCov=b.cov}
   const l=lastBefore(c.lq,T);if(l&&c.vmint&&c.vdec){const qi=c.vmint[0]===c.a?1:0;const q=l[2+qi]/10**(c.vdec[qi]||0);if(c.vmint[qi]==='So11111111111111111111111111111111111111112')F.liqSol=q}
   return F}
 
@@ -1069,6 +1070,7 @@ function featsAt(c,T){const F={};const ok=x=>x!=null&&isFinite(x);
 const FEATS=[
   // [ключ, подпись, группа, тип: n=число/b=да-нет, формат]
   ['danger','Контракт: можно отнять или заморозить','coin','b'],
+  ['clone','Клон: такое имя уже было сегодня','coin','b'],
   ['metaMut','Можно менять название и картинку','coin','b'],
   ['t22','Стандарт Token-2022','coin','b'],
   ['premig','Время от создания до миграции, мин','coin','n',v=>dur(v)],
@@ -1112,20 +1114,22 @@ const FAM={pump:'pump.fun',dbc:'Meteora',launch:'LaunchLab','launch-v4':'LaunchL
 function pathAfter(c,T,G=GOAL){const out=[];let nK=0,nD=0;
   if(c.path?.c?.length){for(const x of c.path.c){if(x[0]*1000>=T){out.push([x[0]*1000,x[1],x[2],x[3],x[4]]);nK++}}}
   const lastP=out.length?out[out.length-1][0]:T;
-  for(const d of c.ds||[]){const ts=d[0]*1000;if(ts>=T&&ts>lastP&&d[1]){out.push([ts,d[1],d[1],d[1],d[1]]);if(ts<=T+G.win*60e3)nD++}}
+  // снимок с пустым пулом (меньше $200) — деньги ушли: цена бессмысленна, считаем как слив
+  for(const d of c.ds||[]){const ts=d[0]*1000;if(ts>=T&&ts>lastP&&d[1]){const rug=d[2]!=null&&d[2]<200;const v=rug?1e-12:d[1];out.push([ts,v,v,v,v,rug?1:0]);if(ts<=T+G.win*60e3)nD++}}
   // точно: только минутные свечи на всём окне; смешано: часть окна по снимкам; по снимкам: только снимки
   const exact=nK>0&&nD===0;return{pts:out,exact,mixed:nK>0&&nD>0,coverEnd:out.length?out[out.length-1][0]:null}}
-function labEntry(c,T){const p=pathAfter(c,T);if(!p.pts.length)return null;const e=p.pts[0];if(e[0]-T>6*60e3)return null;return{price:e[1],at:e[0],p}}
+function labEntry(c,T){const p=pathAfter(c,T);if(!p.pts.length)return null;const e=p.pts[0];if(e[5])return null;if(e[0]-T>6*60e3)return null;return{price:e[1],at:e[0],p}}
 function outcome(c,G=GOAL){const T=c.t+G.dec*60e3;const F=featsAt(c,T);
   if(c.legacy)return{st:'legacy',T,F};if(!F.known)return{st:'late',T,F};
   const e=labEntry(c,T);const now=LAB.live?.updated||Date.now();
   if(!e){return{st:now<T+15*60e3?'early':'nodata',T,F}}
   const up=e.price*(1+G.up/100),dn=e.price*(1-G.dn/100),end=T+G.win*60e3;let res=null,amb=false,peak=0,low=Infinity;
-  for(const x of e.p.pts){if(x[0]>end)break;peak=Math.max(peak,x[2]);low=Math.min(low,x[3]);if(res)continue;const hu=x[2]>=up,hd=x[3]<=dn;
+  // касания — по телу свечи (открытие/закрытие): одиночные принты-фитили часто неисполнимы
+  for(const x of e.p.pts){if(x[0]>end)break;const bt=Math.max(x[1],x[4]),bb=Math.min(x[1],x[4]);peak=Math.max(peak,bt);low=Math.min(low,bb);if(res)continue;const hu=bt>=up,hd=bb<=dn;
     if(hu&&hd){amb=true;res={win:x[0]}}else if(hu)res={win:x[0]};else if(hd)res={stop:x[0]}}
   const covered=e.p.coverEnd!=null&&e.p.coverEnd>=Math.min(end,now)-10*60e3;
-  let st;if(res&&res.win)st=amb?'amb':'live';else if(res&&res.stop)st='dead';else if(now<end)st='early';else st=covered?'dead':'nodata';
-  return{st,T,F,entry:e.price,entryAt:e.at,exact:e.p.exact,mixed:e.p.mixed,peak:peak/e.price,low:low/e.price,hitAt:res?(res.win||res.stop):null,why:res?.stop?'stop':(st==='dead'?'flat':null)}}
+  let st,why2=null;if(res&&res.win)st=amb?'amb':'live';else if(res&&res.stop)st='dead';else if(now<end)st='early';else if(!covered)st='nodata';else if(e.p.exact)st='dead';else{st='amb';why2='снимки'}
+  return{st,T,F,entry:e.price,entryAt:e.at,exact:e.p.exact,mixed:e.p.mixed,peak:peak/e.price,low:low/e.price,hitAt:res?(res.win||res.stop):null,why:res?.stop?'stop':(st==='dead'?'flat':null),why2}}
 
 /* ---------- статистика ---------- */
 const medN=a=>{const v=a.filter(x=>x!=null&&isFinite(x)).sort((x,y)=>x-y);if(!v.length)return null;const m=v.length>>1;return v.length%2?v[m]:(v[m-1]+v[m])/2};
@@ -1165,17 +1169,32 @@ function quality(D){const ok=D.coins.filter(c=>c.mst==='ok'),T=c=>c.t+GOAL.dec*6
 
 /* ---------- отрисовка: общие куски ---------- */
 function spark(pts,entry,T,G,w=300,h=70){if(!pts||pts.length<2||!entry)return '';const end=T+G.win*60e3;const P=pts.filter(x=>x[0]<=end);if(P.length<2)return '';
-  const xs=P.map(x=>x[0]),x0=xs[0],x1=Math.max(xs[xs.length-1],x0+1);const ys=P.map(x=>x[4]/entry);const lo=Math.min(1-G.dn/100,...ys)*0.97,hi=Math.max(1+G.up/100,...ys)*1.03;
+  const xs=P.map(x=>x[0]),x0=xs[0],x1=Math.max(xs[xs.length-1],x0+1);const ys=P.map(x=>Math.max(0.01,x[4]/entry));const lo=Math.min(1-G.dn/100,...ys)*0.97,hi=Math.max(1+G.up/100,...ys)*1.03;
   const X=t=>((t-x0)/(x1-x0)*w).toFixed(1),Y=v=>(h-(Math.log(v)-Math.log(lo))/(Math.log(hi)-Math.log(lo))*h).toFixed(1);
-  const d=P.map((x,i)=>(i?'L':'M')+X(x[0])+' '+Y(x[4]/entry)).join(' ');
+  const d=P.map((x,i)=>(i?'L':'M')+X(x[0])+' '+Y(Math.max(0.01,x[4]/entry))).join(' ');
   return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><line x1="0" x2="${w}" y1="${Y(1)}" y2="${Y(1)}" stroke="#7d8796" stroke-dasharray="3 3" stroke-width="1"/>
     <line x1="0" x2="${w}" y1="${Y(1+G.up/100)}" y2="${Y(1+G.up/100)}" stroke="#22d17b" stroke-opacity=".45" stroke-width="1"/><line x1="0" x2="${w}" y1="${Y(1-G.dn/100)}" y2="${Y(1-G.dn/100)}" stroke="#ff4d5e" stroke-opacity=".45" stroke-width="1"/>
     <path d="${d}" fill="none" stroke="#e6e9ee" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`}
 const ST={live:['up','живая'],dead:['dn','мёртвая'],amb:['warn','неясно'],early:['mut','рано'],nodata:['mut','нет данных'],late:['mut','поздно'],legacy:['mut','старая запись']};
 function coinRow(r){const c=r.c,s=ST[r.st]||['mut',r.st];const pk=r.peak!=null?pct((r.peak-1)*100):'—',lw=r.low!=null&&isFinite(r.low)?pct((r.low-1)*100):'—';
   return `<div class="lrow" data-a="${esc(c.a)}">${avHtml({img:c.i,sym:c.s})}<span class="mid"><b class="nm">${esc(c.n||c.a.slice(0,6))}<span>${esc(c.s||'')}</span></b>
-    <span class="l2">${esc(FAM[c.mk]||c.mk)} · ${new Date(c.t+5*3600e3).toISOString().slice(11,16)}${c.disc==='chain'?' · найдена сверкой':''}</span></span>
+    <span class="l2">${esc(FAM[c.mk]||c.mk)} · ${new Date(c.t+5*3600e3).toISOString().slice(11,16)}${c.clone?' · <span class="warn">клон ×'+(c.clone+1)+'</span>':''}${c.disc==='chain'?' · найдена сверкой':''}</span></span>
     <span class="rt"><span class="badge b-${s[0]==='up'?'pass':s[0]==='dn'?'fail':'miss'}">${s[1]}</span><span class="l2"><span class="up">${pk}</span> / <span class="dn">${lw}</span></span></span></div>`}
+// обзор цены от витрины: свечи первых 10 минут, затем минутные свечи или снимки; вертикаль — момент входа
+function fullChart(c,r,G=GOAL,w=340,h=150){const P=[];
+  for(const x of c.k10?.c||[])P.push([x[0]*1000,x[4]]);for(const x of c.path?.c||[])P.push([x[0]*1000,x[4]]);
+  const lastK=P.length?Math.max(...P.map(x=>x[0])):0;for(const d of c.ds||[])if(d[1]&&d[0]*1000>lastK)P.push([d[0]*1000,d[2]!=null&&d[2]<200?1e-12:d[1]]);
+  P.sort((a,b)=>a[0]-b[0]);if(P.length<2)return '<p class="mut" style="font-size:12px">Данных о цене пока мало.</p>';
+  const ref=r.entry||P[0][1],end=r.T+G.win*60e3,Q=P.filter(x=>x[0]<=end+30*60e3);const x0=c.t,x1=Math.max(Q[Q.length-1][0],r.T+60e3);
+  const vs=Q.map(x=>Math.max(0.01,x[1]/ref));const lo=Math.min(1-G.dn/100,...vs)*0.95,hi=Math.max(1+G.up/100,...vs)*1.05;
+  const X=t=>((t-x0)/(x1-x0)*w).toFixed(1),Y=v=>(h-(Math.log(v)-Math.log(lo))/(Math.log(hi)-Math.log(lo))*h).toFixed(1);
+  const d=Q.map((x,i)=>(i?'L':'M')+X(x[0])+' '+Y(Math.max(0.01,x[1]/ref))).join(' ');const tm=ms=>new Date(ms+5*3600e3).toISOString().slice(11,16);
+  return `<svg viewBox="0 0 ${w} ${h+14}" style="width:100%;height:190px;display:block"><line x1="${X(r.T)}" x2="${X(r.T)}" y1="0" y2="${h}" stroke="#5b8cff" stroke-dasharray="4 3"/>
+    <line x1="0" x2="${w}" y1="${Y(1+G.up/100)}" y2="${Y(1+G.up/100)}" stroke="#22d17b" stroke-opacity=".5"/><line x1="0" x2="${w}" y1="${Y(1-G.dn/100)}" y2="${Y(1-G.dn/100)}" stroke="#ff4d5e" stroke-opacity=".5"/>
+    ${r.entry?`<line x1="0" x2="${w}" y1="${Y(1)}" y2="${Y(1)}" stroke="#7d8796" stroke-dasharray="2 3"/>`:''}
+    <path d="${d}" fill="none" stroke="#e6e9ee" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+    <text x="2" y="${h+12}" fill="#7d8796" font-size="10" font-family="monospace">${tm(x0)} витрина</text><text x="${Math.min(w-70,+X(r.T)+3)}" y="12" fill="#5b8cff" font-size="10" font-family="monospace">вход ${tm(r.T)}</text>
+    <text x="${w-2}" y="${h+12}" fill="#7d8796" font-size="10" font-family="monospace" text-anchor="end">${tm(x1)}</text></svg>`}
 function goalLine(G=GOAL){return `+${G.up}% за ${dur(G.win)}, стоп −${G.dn}% · вход на ${G.dec}-й мин`}
 
 /* ---------- вкладка «Исследование» ---------- */
@@ -1242,17 +1261,21 @@ function coinSheet(D,a){const c=D.coins.find(x=>x.a===a);if(!c)return;const r=ou
   const pts=pathAfter(c,T).pts;
   openSheetHtml(`<div class="dh">${avHtml({img:c.i,sym:c.s})}<div><b style="font-size:16px">${esc(c.n||'')}</b> <span class="mut">${esc(c.s||'')}</span><div class="addr">${esc(c.a)}</div></div></div>
     <div class="verdict v-${r.st==='live'?'pass':r.st==='dead'?'fail':'miss'}">${(ST[r.st]||['',r.st])[1]}<small>${r.entry?`вход ${price(r.entry)} в ${tm(r.entryAt)} · максимум ${pct((r.peak-1)*100)} · минимум ${pct((r.low-1)*100)}${r.exact?' · по минутным свечам':r.mixed?' · свечи + снимки (частично приблизительно)':' · по снимкам (приблизительно)'}`:'нет цены входа'}</small></div>
-    ${r.entry?`<div class="hcard big">${spark(pts,r.entry,T,GOAL)}</div>`:''}
+    <div class="seg" id="cSrc"><button class="on" data-src="ds">DEX Screener</button><button data-src="gt">GeckoTerminal</button></div>
+    <iframe class="chart" id="cFrame" src="${chartUrl(c.p,'ds')}" loading="lazy" allow="clipboard-write"></iframe>
+    <div class="hcard"><div class="l2">Цена от выхода на витрину · синяя линия — вход · зелёная — цель · красная — стоп</div>${fullChart(c,r)}</div>
     <div class="grp"><h4>Этапы (на момент решения ${tm(T)})</h4>
       ${stp(true,'Миграция: '+esc(FAM[c.mk]||c.mk),`блок ${tm(c.mT)} · сервер увидел пул ${tm(c.seen)} · доказал ${tm(c.mSeen)} — ${late(Math.max(c.seen,c.mSeen||0))}${c.disc==='chain'?' · найдена сверкой':''}`)}
       ${stp(F.danger==null?null:!F.danger,'Контракт',F.danger==null?'нет данных к моменту решения':F.danger?'есть опасные права':'чистый'+(F.metaMut?' · название можно менять':''))}
       ${stp(F.x10!=null?true:null,'Свечи первых 10 минут',F.x10!=null?`цена ${xf(F.x10)} · просадка −${Math.round(F.dd10)}% · объём ${money(F.v05)} → ${money(F.v510)}`:(c.k10?'пришли позже решения ('+tm(c.k10.at)+')':'нет'))}
       ${stp(F.b5!=null?true:null,'Снимок торговли',F.b5!=null?`${F.b5} покупок / ${F.s5} продаж за 5 мин · в пуле ${money(F.liq)} · капа ${money(F.mc)}`:'нет')}
       ${stp(F.buyers15!=null?true:null,'Покупатели и продавцы (15 мин)',F.buyers15!=null?`${F.buyers15} покупателей · ${F.sellers15} продавцов · ${F.tx15} сделок · объём ${money(F.vol15)}`:'нет снимка к моменту решения')}
-      ${stp(F.payers!=null?true:null,'Список сделок',F.payers!=null?`${F.payers} кошельков · крупнейший ${Math.round(F.btop1||0)}% покупок · повторно ${Math.round(F.repeat||0)}%${F.trCov?'':' · <span class="warn">сделки неполные</span>'}`:(c.bx?.miss?'не собраны: '+esc(c.bx.miss):'нет'))}
+      ${c.bx&&!c.bx.miss&&!c.bx.cov?stp(null,'Список сделок','неполный: сделок больше, чем отдаёт GeckoTerminal (300) — не учитывается'):''}
+      ${c.bx&&!c.bx.miss&&!c.bx.cov?'':stp(F.payers!=null?true:null,'Список сделок',F.payers!=null?`${F.payers} кошельков · крупнейший ${Math.round(F.btop1||0)}% покупок · повторно ${Math.round(F.repeat||0)}%${F.trCov?'':' · <span class="warn">сделки неполные</span>'}`:(c.bx?.miss?'не собраны: '+esc(c.bx.miss):'нет'))}
       ${stp(F.top10!=null?true:null,'Держатели',F.top10!=null?`крупнейший ${F.top1.toFixed(1)}% · топ-10 ${Math.round(F.top10)}% · у программ ${F.pda.toFixed(1)}%`:'нет снимка к моменту решения')}
     </div>
-    <div class="links"><a href="https://dexscreener.com/solana/${encodeURIComponent(c.p)}" target="_blank" rel="noopener">DEX Screener</a><a href="https://solscan.io/tx/${encodeURIComponent(c.mSig||'')}" target="_blank" rel="noopener">Миграция</a><a href="https://solscan.io/token/${encodeURIComponent(c.a)}" target="_blank" rel="noopener">Solscan</a></div>`)}
+    <div class="links"><a href="https://dexscreener.com/solana/${encodeURIComponent(c.p)}" target="_blank" rel="noopener">DEX Screener</a><a href="https://solscan.io/tx/${encodeURIComponent(c.mSig||'')}" target="_blank" rel="noopener">Миграция</a><a href="https://solscan.io/token/${encodeURIComponent(c.a)}" target="_blank" rel="noopener">Solscan</a></div>`);
+  document.querySelectorAll('#cSrc button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#cSrc button').forEach(x=>x.classList.toggle('on',x===b));$('#cFrame').src=chartUrl(c.p,b.dataset.src)})}
 
 /* ---------- вкладка «Фильтры» ---------- */
 function makeFilterFrom(L,D){const cmp=FEATS.map(f=>cmpFeat(f[0],L,D)).filter(x=>x.score>=0.3&&x.nL>=5&&x.nD>=5).sort((a,b)=>b.score-a.score).slice(0,5);

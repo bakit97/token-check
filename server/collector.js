@@ -1,3 +1,5 @@
+if(typeof WebSocket==='undefined'&&!process.env.WSX){const ch=require('child_process').spawn(process.execPath,['--experimental-websocket','--max-old-space-size=600',__filename],{stdio:'inherit',env:{...process.env,WSX:'1'}});
+  ['SIGTERM','SIGINT'].forEach(sg=>process.on(sg,()=>ch.kill(sg)));ch.on('exit',code=>process.exit(code??0))}else{
 'use strict';
 /* SOL·СКАН — сборщик. Круглосуточно записывает все новые пулы Solana:
    вид запуска (точная проверка миграции по блокчейну), контракт токена, снимки на 1/3/5/10 минуте,
@@ -165,7 +167,8 @@ async function migCheck(c){
   else if(owner===DBC){fam='dbc';curve=c.p;
     if(!u[305]){base='curve';baseK='curve-dbc';why='торгуется на кривой DBC';watch=c.p}
     else{base='unk';baseK='unk-dbc';why='DBC завершила кривую, пул миграции ещё не найден';
-      for(const q of [...new Set([c.q,WSOL,USDC].filter(Boolean))])cands.push(...await officialPools('dbc',mint,q))}}
+      let cq=null;try{const cf=(await rpc('getAccountInfo',[pk(u,72),{encoding:'base64',dataSlice:{offset:8,length:32}}]))?.value;if(cf)cq=b58enc(b64(cf.data?.[0]))}catch{}
+      if(cq&&!c.q)c.q=cq;for(const q of [...new Set([cq,c.q,WSOL,USDC].filter(Boolean))])cands.push(...await officialPools('dbc',mint,q))}}
   else if(owner===LAUNCH){fam='launch';curve=c.p;const st=u[17],mt=u[20];quote=pk(u,237);
     if(st===0){base='curve';baseK='curve-launch';why='торгуется на кривой LaunchLab';watch=c.p}
     else{base='unk';baseK='unk-launch';why=st===1?'LaunchLab в процессе миграции':'LaunchLab завершила, пул миграции ещё не найден';
@@ -299,7 +302,7 @@ function tradeTasks(now){gxTasks(now);for(const c of C.values()){if(!isOk(c)||c.
     if(!due)continue;const pool=c.p;c.trTry=1;
     gt(`/pools/${pool}/trades`,2,'tr:'+pool).then(r=>{if(c.p!==pool)return;const at=Date.now();let lo=Infinity,hi=0;
         for(const d of r.data||[]){const x=d.attributes||{};const ts=Math.floor(Date.parse(x.block_timestamp)/1000);if(!ts)continue;lo=Math.min(lo,ts);hi=Math.max(hi,ts);
-          const pr=+(x.kind==='buy'?x.price_to_in_usd:x.price_from_in_usd)||0;tr.x[x.tx_hash||d.id]=[ts,x.kind==='buy'?1:0,+(+x.volume_in_usd||0).toFixed(2),(x.tx_from_address||'').slice(0,12),pr?+pr.toPrecision(6):null]}
+          const pr=+(x.kind==='buy'?x.price_to_in_usd:x.price_from_in_usd)||0;tr.x[d.id||x.tx_hash]=[ts,x.kind==='buy'?1:0,+(+x.volume_in_usd||0).toFixed(2),(x.tx_from_address||'').slice(0,12),pr?+pr.toPrecision(6):null]}
         tr.f.push([at,(r.data||[]).length,isFinite(lo)?lo:null,hi||null]);
         if(at>=c.t+10*60e3+10e3)finishTrades(c,null)})
       .catch(e=>err('trades '+e.message)).finally(()=>{c.trTry=0})}}
@@ -377,7 +380,7 @@ async function reconcile(){const now=Date.now();CTX='сверка';
   for(const [key,mOff,qOff] of [['ll',205,237],['dbc',136,null]]){
     try{const cur=await snapshotSet(key);const prev=RC[key]?new Set(RC[key]):null;RC[key]=cur;
       if(!prev){RC.log.push([now,key,'база',cur.length]);continue}
-      const nw=cur.filter(x=>!prev.has(x)).slice(0,200);let known=0,added=0,forced=0;
+      RC.pend=RC.pend||{};const all=[...(RC.pend[key]||[]),...cur.filter(x=>!prev.has(x))];const nw=[...new Set(all)].slice(0,300);RC.pend[key]=[...new Set(all)].slice(300);let known=0,added=0,forced=0;
       for(let i=0;i<nw.length;i+=100){const v=(await rpc('getMultipleAccounts',[nw.slice(i,i+100),{encoding:'base64'}]))?.value||[];
         v.forEach((acc,j)=>{if(!acc)return;const u=b64(acc.data?.[0]);const mint=pk(u,mOff),quote=qOff?pk(u,qOff):null;const c=C.get(mint);
           if(c&&isOk(c)){known++;c.rcSeen=c.rcSeen||now;return}
@@ -386,12 +389,40 @@ async function reconcile(){const now=Date.now();CTX='сверка';
       RC.log.push([now,key,'новых',nw.length,known,forced,added])}catch(e){err('recon '+key+' '+e.message)}}
   while(RC.log.length>200)RC.log.shift()}
 
+/* ---------- 5б. подписки на блокчейн: миграции видны сразу, без GeckoTerminal ----------
+   Meteora DBC: кривые с флагом «мигрировала»; LaunchLab: кривые со статусом 2; PumpSwap: аккаунты пулов с index = 0 (создаются один раз).
+   Это только кандидаты — миграция всё равно доказывается транзакцией. */
+const WS={on:false,bytes:0,msgs:{},cand:{},err:0,since:0};const wsSeen=new Map();
+function wsCandidate(kind,acc,u){const now=Date.now();if(wsSeen.has(acc)&&now-wsSeen.get(acc)<6*3600e3)return;wsSeen.set(acc,now);
+  if(wsSeen.size>20000)for(const [k,t] of wsSeen)if(now-t>6*3600e3)wsSeen.delete(k);
+  let mint=null,quote=null,pool=acc;
+  if(kind==='dbc'){mint=pk(u,136)}
+  else if(kind==='ll'){mint=pk(u,205);quote=pk(u,237)}
+  else if(kind==='pump'){const b=pk(u,43),q=pk(u,75);if(SKIP.has(b)){mint=q;quote=b}else{mint=b;quote=q}if(SKIP.has(mint))return}
+  if(!mint)return;WS.cand[kind]=(WS.cand[kind]||0)+1;const c=C.get(mint);
+  if(c){if(!isOk(c)&&c.mg)c.mg.force=1;c.wsSeen=c.wsSeen||now;return}
+  C.set(mint,{a:mint,n:'',s:'',i:'',p:pool,d:kind==='pump'?'pumpswap':kind==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'ws',seen:now,disc:'ws',wsSeen:now,pools:[pool],fv:FV})}
+function chainWatch(){let ws,ping;const subs={};
+  const start=async()=>{const key=await heliusKey();if(!key){setTimeout(start,60e3);return}
+    ws=new WebSocket('wss://mainnet.helius-rpc.com/?api-key='+key);
+    ws.onopen=()=>{WS.on=true;WS.since=Date.now();
+      [['dbc',DBC,[{dataSize:424},{memcmp:{offset:305,bytes:'2'}}]],['ll',LAUNCH,[{memcmp:{offset:17,bytes:'3'}}]],['pump',PUMP_AMM,[{dataSize:301},{memcmp:{offset:9,bytes:'11'}}]]]
+        .forEach(([n,prog,f],i)=>{subs[100+i]=n;ws.send(JSON.stringify({jsonrpc:'2.0',id:100+i,method:'programSubscribe',params:[prog,{encoding:'base64',commitment:'confirmed',filters:f}]}))});
+      ping=setInterval(()=>{try{ws.send(JSON.stringify({jsonrpc:'2.0',id:1,method:'getHealth'}))}catch{}},30e3)};
+    ws.onmessage=e=>{const txt=typeof e.data==='string'?e.data:'';WS.bytes+=txt.length;let m;try{m=JSON.parse(txt)}catch{return}
+      if(m.id&&subs[m.id]){subs['s'+m.result]=subs[m.id];return}
+      const n=subs['s'+m.params?.subscription];const v=m.params?.result?.value;if(!n||!v)return;WS.msgs[n]=(WS.msgs[n]||0)+1;
+      try{wsCandidate(n,v.pubkey,b64(v.account?.data?.[0]))}catch(x){err('ws '+x.message)}};
+    ws.onerror=()=>{WS.err++};
+    ws.onclose=()=>{WS.on=false;clearInterval(ping);err('ws закрыт — переподключение');setTimeout(()=>{start();reconcile().catch(()=>{})},5000)}};
+  start()}
+
 /* ---------- 6. выгрузка ---------- */
 const dayKey=t=>new Date(t+TZ).toISOString().slice(0,10);
 const UPQ=[];function uploadLater(name,obj){UPQ.push([name,obj])}
 async function flushUploads(){while(UPQ.length){const [n,o]=UPQ.shift();try{await upload(n,o)}catch(e){err('up '+e.message);UPQ.push([n,o]);break}}}
 function rec(c,full){const mg=c.mg||{};
-  const r={a:c.a,n:c.n,s:c.s,i:c.i,p:c.p,d:c.d,q:c.q,t:c.t,tSrc:c.tSrc||'gt',t0:c.t0||null,seen:c.seen,disc:c.disc||null,rcSeen:c.rcSeen||null,ty:launchType(c),
+  const r={a:c.a,n:c.n,s:c.s,i:c.i,p:c.p,d:c.d,q:c.q,t:c.t,tSrc:c.tSrc||'gt',t0:c.t0||null,seen:c.seen,disc:c.disc||null,rcSeen:c.rcSeen||null,wsSeen:c.wsSeen||null,ty:launchType(c),
     mk:mg.k||null,mst:mg.st||null,mw:mg.why||'',mT:mg.mT||null,mSig:mg.sig||null,mSeen:mg.seenAt||null,mCr:mg.creator??null,mH:c.mgH||[],mk0:c.mg0?.k||null,
     origs:(c.origs||[]).map(o=>({p:o.p,t:o.t,d:o.d,movedAt:o.movedAt})),ct:c.ct||null,soc:c.soc||0,tk:c.tk&&isFinite(c.tk)?c.tk:null,tkAt:c.tkAt||null,
     live:c.lastTrade?Date.now()-c.lastTrade<30*60e3:false,lastTrade:c.lastTrade||null,legacy:c.legacy?1:0};
@@ -415,7 +446,7 @@ async function exportDays(){const now=Date.now(),today=dayKey(now),yest=dayKey(n
     if(d===yest)lastYest=now}
   await flushUploads();
   await upload('status.json',{updated:now,version:VERSION,coins:C.size,today:[...C.values()].filter(c=>dayKey(c.t)===today).length,okToday:[...C.values()].filter(c=>dayKey(c.t)===today&&isOk(c)).length,
-    gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),creditsBy:crLog.reduce((o,x)=>(o[x[2]]=(o[x[2]]||0)+x[1],o),{}),rpcCtx:RPCCTX,helius:!!HKEY,recon:RC.log.slice(-12),mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})}
+    gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),creditsBy:crLog.reduce((o,x)=>(o[x[2]]=(o[x[2]]||0)+x[1],o),{}),rpcCtx:RPCCTX,helius:!!HKEY,recon:RC.log.slice(-12),ws:{on:WS.on,since:WS.since,kb:Math.round(WS.bytes/1024),credits:+(WS.bytes/1e6*20).toFixed(1),msgs:WS.msgs,cand:WS.cand,err:WS.err},mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})}
 // живая лента для «Прошли»: монеты витрины младше 40 минут, раз в 30 секунд
 async function exportLive(){const now=Date.now();const list=[...C.values()].filter(c=>isOk(c)&&now-c.t<40*60e3);
   await upload('live.json',{updated:now,coins:list.map(c=>rec(c,true))})}
@@ -436,10 +467,10 @@ let diagGen=null;async function diagCheck(){try{const tk=await token();const r=a
 const STARTED=Date.now();
 (async()=>{fs.mkdirSync(DIR,{recursive:true});load();log('старт, версия',VERSION);
   for(const pg of [1,2,3])try{await addFromGT(await gt(`/new_pools?page=${pg}&include=base_token,quote_token,dex`,0,'boot'+pg))}catch(e){err('boot '+e.message)}
-  setInterval(pollNew,60000);
+  setInterval(pollNew,90000);
   (async()=>{for(;;){try{await pollDS()}catch(e){err('dsloop '+e.message)}await sleep(15000)}})();
   setInterval(()=>{try{candleTasks()}catch(e){err('candles '+e.message)}},15000);
-  chainLoop();chainObsLoop();setInterval(diagCheck,60000);diagCheck();
+  chainLoop();chainObsLoop();chainWatch();setInterval(diagCheck,60000);diagCheck();
   setTimeout(()=>{reconcile();setInterval(reconcile,60*60e3)},60000);
   setInterval(()=>{prune();save()},120000);
   (async()=>{for(;;){await sleep(120000);try{await exportDays()}catch(e){err('export '+e.message)}}})();
@@ -448,3 +479,5 @@ const STARTED=Date.now();
   setInterval(async()=>{try{const g=await codeGen();if(g&&VERSION!=='dev'&&g!==VERSION){log('новая версия кода',g,'— перезапуск');save();process.exit(0)}}catch{}},60000);
 })();
 process.on('SIGTERM',()=>{save();process.exit(0)});
+
+}
