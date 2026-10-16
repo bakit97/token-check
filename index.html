@@ -80,6 +80,12 @@ body[data-ui-mode="updated"] .classic-ui-only{display:none!important}
 .source-foot{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;color:var(--up)}
 .source-foot button{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 12px;color:var(--mut)}
 .source-note{font-size:11px;line-height:1.4;color:var(--mut);margin:9px 0 0}
+.all-tools{display:flex;align-items:center;gap:8px;margin:10px 0 4px}
+.all-tools input{width:100%;min-width:0;min-height:43px;background:var(--panel);border:1px solid var(--line);color:var(--fg);border-radius:11px;padding:10px 13px;font:13px var(--sans)}
+.all-tools input:focus{outline:2px solid var(--acc);outline-offset:1px}
+.all-more{width:100%;margin:12px 0 8px;background:var(--panel);border:1px solid var(--line);border-radius:11px;min-height:44px;color:var(--fg);font-weight:750}
+body[data-ui-mode="updated"] #lAll{gap:5px}
+body[data-ui-mode="updated"] #lAll .row{padding:7px 9px}
 .stat{font:11px var(--mono);color:var(--mut);padding:8px 0 2px;display:flex;gap:10px;flex-wrap:wrap}
 
 /* rows */
@@ -301,8 +307,10 @@ body[data-ui-mode="updated"] .classic-ui-only{display:none!important}
       </div>
     </details>
     <div class="chips classic-ui-only"><button class="chip" id="fFresh"></button><button class="chip" id="fMig">🎓 Миграции</button><button class="chip" id="fScam">🚫 Без скама</button><button class="chip" id="fLiq"></button></div>
+    <div class="all-tools updated-ui-only"><input type="search" id="allSearch" autocomplete="off" placeholder="⌕ Поиск монеты или адреса" aria-label="Поиск монеты по названию, тикеру или адресу"></div>
     <div class="stat" id="statAll"></div>
     <div class="list" id="lAll"><div class="empty">Загружаю новые пары…</div></div>
+    <button type="button" id="allMore" class="all-more updated-ui-only" hidden>Показать ещё</button>
   </section>
   <section id="v-pass" hidden>
     <div class="chips updated-ui-only" id="passStreams"><button class="chip" data-stream="all" data-panel="pass">Общие</button><button class="chip" data-stream="birth" data-panel="pass">До миграции</button><button class="chip" data-stream="migration" data-panel="pass">После миграции</button></div>
@@ -506,11 +514,18 @@ function selectUiMode(mode){
 document.querySelectorAll('[data-ui-select]').forEach(b=>b.onclick=()=>selectUiMode(b.dataset.uiSelect));
 paintUiMode();
 const STREAMS=sget('sc_streams_v1',{all:'all',pass:'all'});
+// Ограничиваем количество видимых карточек, но не сбор монет.
+const ALL_PAGE=20;
+let ALL_VISIBLE=ALL_PAGE,ALL_QUERY='';
+function resetAllPaging(){ALL_VISIBLE=ALL_PAGE}
+function matchCoin(c,q){return !q||[c.name,c.sym,c.addr].some(v=>String(v||'').toLowerCase().includes(q))}
+$('#allSearch').oninput=e=>{ALL_QUERY=e.target.value.trim().toLowerCase();resetAllPaging();render()};
+$('#allMore').onclick=()=>{ALL_VISIBLE+=ALL_PAGE;render()};
 function streamMode(panel){return ['all','birth','migration'].includes(STREAMS[panel])?STREAMS[panel]:'all'}
 function streamUi(panel){document.querySelectorAll('[data-panel="'+panel+'"][data-stream]').forEach(b=>b.classList.toggle('on',b.dataset.stream===streamMode(panel)))}
 function attachStreamUi(){document.querySelectorAll('[data-panel][data-stream]').forEach(b=>b.onclick=()=>{
  STREAMS[b.dataset.panel]=b.dataset.stream;sset('sc_streams_v1',STREAMS);
- if(b.dataset.panel==='all')render();else{renderPass();updPassCount()}
+ if(b.dataset.panel==='all'){resetAllPaging();render()}else{renderPass();updPassCount()}
 })}
 attachStreamUi();
 function pruneOld(){const lim=Date.now()-S.keepH*3600e3,limP=Date.now()-72*3600e3;
@@ -829,18 +844,23 @@ function render(){
   $('#fFresh').textContent='⚡ Свежие < '+S.win+' мин';$('#fFresh').classList.toggle('on',S.f_fresh);
   $('#fScam').classList.toggle('on',S.f_scam);$('#fMig').classList.toggle('on',S.f_mig);
   $('#fLiq').textContent='💧 Ликв. '+(S.f_liq?'от '+money(S.f_liq):'любая');$('#fLiq').classList.toggle('on',!!S.f_liq);
-  const shown=updated?visible.filter(c=>sourceAllowed(c,'migration')):visible.filter(c=>(!S.f_mig||isMig(c))&&(!S.f_fresh||inWin(c))&&
+  const shown=updated?visible.filter(c=>sourceAllowed(c,'migration')&&matchCoin(c,ALL_QUERY)):visible.filter(c=>(!S.f_mig||isMig(c))&&(!S.f_fresh||inWin(c))&&
     (!S.f_scam||!(c.status==='fail'||c.failNow))&&(c.liq||0)>=S.f_liq);
   const apiBad=(gtErr&&now-gtOkAt>60000)?`<span class="dn">GeckoTerminal: ${esc(gtErr)}</span>`:'';
   const nMig=visible.filter(isMig).length,nFake=visible.filter(c=>isPumpSwap(c.dex)&&c.canon===false).length;
-  const coverage=updated?`<span>вне окна: ${all.length-visible.length}</span>`:'';
+  const coverage=updated?`<span>окно: ${N} мин</span>`:'';
   $('#statAll').innerHTML=updated?
-    `<span>Новых: <b>${shown.length}</b></span>${coverage}${apiBad}${rpcErr?'<span class="warn">блокчейн: '+esc(rpcErr)+'</span>':''}`:
+    `<span>Монет: <b>${shown.length}</b></span>${coverage}${shown.length>ALL_VISIBLE?'<span>на экране: '+ALL_VISIBLE+'</span>':''}${apiBad}${rpcErr?'<span class="warn">блокчейн: '+esc(rpcErr)+'</span>':''}`:
     `<span>показано ${shown.length} из ${visible.length}</span><span class="up">🎓 миграций: ${nMig}</span><span>пулов вручную: ${nFake}</span><span>⏳ проверяю: ${w}</span>${apiBad}${rpcErr?'<span class="warn">блокчейн: '+esc(rpcErr)+'</span>':''}`;
+  $('#allMore').hidden=!updated||streamMode('all')==='birth'||shown.length<=ALL_VISIBLE;
+  if(!$('#allMore').hidden)$('#allMore').textContent='Показать ещё '+Math.min(ALL_PAGE,shown.length-ALL_VISIBLE)+' · осталось '+(shown.length-ALL_VISIBLE);
   if(tab==='all'&&updated&&streamMode('all')==='birth'){
     $('#lAll').innerHTML='<div class="empty">🌱 До миграции: интерфейс готов, сбор первых торгов пока не подключён.</div>';
     $('#lAll')._m=null;
-  }else if(tab==='all')reconcile($('#lAll'),shown.slice(0,250),updated?'newAll':'all');
+  }else if(tab==='all'&&updated&&ALL_QUERY&&!shown.length){
+    $('#lAll').innerHTML='<div class="empty">По запросу ничего не найдено. Попробуй другое название или адрес.</div>';
+    $('#lAll')._m=null;
+  }else if(tab==='all')reconcile($('#lAll'),shown.slice(0,updated?ALL_VISIBLE:250),updated?'newAll':'all');
   Object.values(C).forEach(c=>{c.flash=null;if(booted&&c.isNew&&Date.now()-(c.seenAt||0)>60000)c.isNew=false});
   if(sheetAddr&&C[sheetAddr])fillChecks(C[sheetAddr]);
 }
