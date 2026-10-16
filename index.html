@@ -198,7 +198,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .sum div small{display:block}
 /* лаборатория */
 .lrow{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 9px;cursor:pointer}
-.lrow:active{background:var(--panel2)}.lrow .rt{display:flex;flex-direction:column;align-items:flex-end;gap:3px;white-space:nowrap}
+.lrow:active{background:var(--panel2)}.lrow .mid{min-width:0;overflow:hidden}.lrow .l2{display:block}.lrow .rt{display:flex;flex-direction:column;align-items:flex-end;gap:3px;white-space:nowrap}
 .goal{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center;width:100%;margin-top:10px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);text-align:left}
 .goal span{font:700 10px var(--mono);color:var(--mut);text-transform:uppercase;letter-spacing:.06em}.goal b{font:700 13px var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.goal i{font-style:normal;color:var(--acc);font-size:12px;font-weight:700}
 .big3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:8px}
@@ -1337,43 +1337,85 @@ function renderFilters(){const box=$('#rules');if(!box)return;const f=curF();con
 
 /* ---------- вкладки «Прошли» (сейчас) и «История» (переигровка дня) ---------- */
 function passRows(off){const D=LAB.days[almatyDay(off)];if(!D)return[];const f=curF();const now=Date.now();return dayRows(D,f.goal||GOAL).filter(r=>r.T<=now&&r.st!=='late'&&r.st!=='legacy'&&passes(r.F,f.rules))}
-function updPassCount(){const n=passRows(0).length;const el=$('#nPass');if(el)el.textContent=n}
+// окно покупки и комиссия (комиссия + проскальзывание, % на вход и на выход)
+let BUY=Object.assign({win:5,fee:2},LS.get('lab_buy',{}));const saveBuy=()=>LS.set('lab_buy',BUY);
+function buyable(off=0){const now=Date.now();return passRows(off).filter(r=>now-r.T<=BUY.win*60e3)}
+function updPassCount(){const el=$('#nPass');if(el)el.textContent=buyable().length}
 function renderPass(){const box=$('#lPass');if(!box)return;const f=curF();const D=LAB.days[almatyDay(0)];
   if(!D){box.innerHTML='<div class="empty">Загружаю данные сервера…</div>';loadDay(0).then(renderPass);return}
-  const G=f.goal||GOAL,now=LAB.live?.updated||Date.now();
-  // сейчас на решении: монеты витрины, у которых момент решения уже наступил
-  const rows=passRows(0).sort((a,b)=>b.T-a.T);const waiting=D.coins.filter(c=>c.mst==='ok'&&c.t+G.dec*60e3>now).length;
-  $('#statPass').innerHTML=`<span>фильтр: <b>${esc(f.name)}</b></span><span>${f.rules.map(ruleTxt).map(esc).join(' · ')||'без условий'}</span><span>ждут ${G.dec}-й минуты: ${waiting}</span>`;
-  const one=r=>{const c=r.c,cur=lastBefore(c.ds,now);const chg=cur&&r.entry?(cur[1]/r.entry-1)*100:null;
+  const G=f.goal||GOAL,now=Date.now();const rows=buyable().sort((a,b)=>b.T-a.T);
+  const waiting=D.coins.filter(c=>c.mst==='ok'&&c.t+G.dec*60e3>now).length;
+  $('#statPass').innerHTML=`<span>фильтр: <b>${esc(f.name)}</b></span><span>сигнал на ${G.dec}-й мин · окно покупки <b>${BUY.win} мин</b> <button class="chip" id="bWin" style="padding:2px 8px">изменить</button></span><span>скоро решение: ${waiting}</span>`;
+  box.innerHTML=rows.length?rows.map(r=>{const c=r.c,cur=lastBefore(c.ds,now);const chg=cur&&r.entry?(cur[1]/r.entry-1)*100:null;const left=r.T+BUY.win*60e3;
     return `<div class="lrow" data-a="${esc(c.a)}">${avHtml({img:c.i,sym:c.s})}<span class="mid"><b class="nm">${esc(c.n||c.a.slice(0,6))}<span>${esc(c.s||'')}</span></b>
-      <span class="l2">сигнал <span data-ts="${r.T}">${ago(r.T)}</span> назад · ${esc(FAM[c.mk]||'')}</span></span>
-      <span class="rt"><span class="px ${chg>0?'up':chg<0?'dn':''}">${chg==null?'—':pct(chg)}</span><span class="l2">от входа · ${(ST[r.st]||['',r.st])[1]}</span></span></div>`};
-  const fresh=rows.filter(r=>now-r.T<60*60e3),old=rows.filter(r=>now-r.T>=60*60e3);
-  box.innerHTML=rows.length?`<div class="sec-h">Свежие сигналы (последний час) · ${fresh.length}</div>${fresh.map(one).join('')||'<div class="empty" style="padding:12px">Пока нет. Новые появятся здесь сами.</div>'}
-    ${old.length?`<details class="addc"><summary>Ранее сегодня · ${old.length}</summary><div class="list">${old.map(one).join('')}</div></details>`:''}`
-    :'<div class="empty">Сегодня ещё никто не прошёл этот фильтр. Фильтр меняется во вкладке «Фильтры».</div>';
-  box.querySelectorAll('.lrow').forEach(el=>el.onclick=()=>coinSheet(D,el.dataset.a));updPassCount()}
+      <span class="l2">${esc(FAM[c.mk]||'')}${c.clone?' · <span class="warn">клон</span>':''} · на витрине ${dur((now-c.t)/60000)}</span></span>
+      <span class="rt"><span class="badge b-pass">купить: <span data-left="${left}">${fmtLeft(left)}</span></span><span class="l2 ${chg>0?'up':chg<0?'dn':''}">${chg==null?'':pct(chg)+' с сигнала'}</span></span></div>`}).join('')
+    :`<div class="empty">Сейчас купить нечего: ни одна монета не прошла фильтр за последние ${BUY.win} мин.<br>Новые появятся здесь сами. Прошедшие раньше — во вкладке «История».</div>`;
+  box.querySelectorAll('.lrow').forEach(el=>el.onclick=()=>coinSheet(D,el.dataset.a));
+  $('#bWin').onclick=()=>{const v=prompt('Окно покупки, минут после сигнала',BUY.win);if(v&&+v>0){BUY.win=Math.min(60,+v);saveBuy();renderPass()}};updPassCount()}
+const fmtLeft=t=>{const s=Math.max(0,Math.round((t-Date.now())/1000));return s?Math.floor(s/60)+':'+String(s%60).padStart(2,'0'):'закрыто'};
+setInterval(()=>{let gone=false;document.querySelectorAll('[data-left]').forEach(e=>{e.textContent=fmtLeft(+e.dataset.left);if(+e.dataset.left<Date.now())gone=true});if(gone&&tab==='pass')renderPass()},1000);
+
+/* «История»: что было после покупки (первые 5 часов), прошедшие против не прошедших — как в прошлой версии, на данных сервера */
+const HW=300,H_OFF=[15,30,60,120,180,300],H_TGT=[1.5,2,3,5];
+function hPath(r){const p=pathAfter(r.c,r.T,{...GOAL,win:HW}).pts;if(!p.length||!r.entry)return null;const k=(1-BUY.fee/100)/(1+BUY.fee/100);
+  return p.filter(x=>x[0]<=r.T+HW*60e3).map(x=>[(x[0]-r.T)/60000,Math.max(1e-6,Math.max(x[1],x[4])/r.entry*k),Math.max(1e-6,Math.min(x[1],x[4])/r.entry*k),Math.max(1e-6,x[4]/r.entry*k)])}
+function hAt(s,m){if(!s)return null;let b=null;for(const p of s){if(p[0]<=m)b=p;else break}return b&&m-b[0]<12&&s[s.length-1][0]>=m-5?b[3]:null}
+function hStats(s){if(!s||!s.length)return null;let pk=0,pkM=0,lo=Infinity;const hit={};for(const p of s){if(p[1]>pk){pk=p[1];pkM=p[0]}lo=Math.min(lo,p[2]);for(const x of H_TGT)if(hit[x]==null&&p[1]>=x)hit[x]=p[0]}
+  return{pk,pkM,dd:lo<1?(1-lo)*100:0,hit}}
+function overlay(series){const W=360,Hh=220,M=HW;if(!series.length)return '<p class="mut" style="font-size:12px">Пока нет монет с графиком.</p>';
+  let mx=2;series.forEach(s=>s.forEach(p=>{if(p[3]>mx)mx=p[3]}));mx=Math.min(mx,100);const mn=0.1;
+  const X=m=>28+(m/M)*(W-34),Y=v=>{const l=Math.log10(Math.max(mn,Math.min(mx,v)));return 8+(1-(l-Math.log10(mn))/(Math.log10(mx)-Math.log10(mn)))*(Hh-28)};
+  let g='';[0.25,0.5,1,2,5,10,20,50].filter(v=>v<=mx).forEach(v=>{g+=`<line x1="28" x2="${W}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v===1?'#22d17b':'#222a35'}" ${v===1?'stroke-dasharray="3 3"':''}/><text x="24" y="${Y(v)+3}" fill="#7d8796" font-size="9" text-anchor="end" font-family="monospace">×${v}</text>`});
+  [60,120,180,240,300].forEach(m=>g+=`<text x="${X(m)}" y="${Hh-4}" fill="#7d8796" font-size="9" text-anchor="middle" font-family="monospace">${m/60}ч</text>`);
+  const lines=series.slice(0,150).map(s=>`<path d="${s.map((p,i)=>(i?'L':'M')+X(p[0]).toFixed(1)+' '+Y(p[3]).toFixed(1)).join('')}" fill="none" stroke="#5b8cff" stroke-width="1" opacity=".4"/>`).join('');
+  let md='';for(let m=0;m<=M;m+=5){const v=series.map(s=>hAt(s,m)).filter(x=>x!=null);if(v.length>=2)md+=(md?'L':'M')+X(m).toFixed(1)+' '+Y(medN(v)).toFixed(1)}
+  return `<svg viewBox="0 0 ${W} ${Hh}" style="width:100%;display:block;margin-top:6px">${g}${lines}${md?`<path d="${md}" fill="none" stroke="#22d17b" stroke-width="2.4"/>`:''}
+    <text x="${W-4}" y="18" fill="#22d17b" font-size="10" text-anchor="end" font-family="monospace">— медиана</text></svg>`}
+function coinChart5h(r){const c=r.c,W=360,Hh=90,t0=c.t,t1=c.t+HW*60e3+r.T-c.t;const P=[];
+  for(const x of c.k10?.c||[])P.push([x[0]*1000,x[4]]);for(const x of c.path?.c||[])P.push([x[0]*1000,x[4]]);const lk=P.length?Math.max(...P.map(x=>x[0])):0;
+  for(const d of c.ds||[])if(d[1]&&d[0]*1000>lk)P.push([d[0]*1000,d[2]!=null&&d[2]<200?null:d[1]]);
+  const Q=P.filter(x=>x[1]&&x[0]<=t1).sort((a,b)=>a[0]-b[0]);if(Q.length<2)return '<p class="mut" style="font-size:11px">мало данных для графика</p>';
+  const ys=Q.map(x=>Math.log(x[1])),lo=Math.min(...ys),hi=Math.max(...ys),rg=hi-lo||1;
+  const X=t=>((t-t0)/(t1-t0))*(W-4)+2,Y=v=>Hh-12-((Math.log(v)-lo)/rg)*(Hh-20);
+  const d=Q.map((p,i)=>(i?'L':'M')+X(p[0]).toFixed(1)+' '+Y(p[1]).toFixed(1)).join('');const e1=X(r.T),e2=X(r.T+BUY.win*60e3);
+  let ticks='';for(let i=1;i<=5;i++){const x=X(t0+i*3600e3);if(x<W)ticks+=`<line x1="${x}" x2="${x}" y1="0" y2="${Hh-10}" stroke="#222a35"/><text x="${x}" y="${Hh-1}" fill="#7d8796" font-size="9" text-anchor="middle" font-family="monospace">${i}ч</text>`}
+  return `<svg viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none" style="width:100%;height:90px;display:block;margin-top:4px">${ticks}
+    <rect x="${e1.toFixed(1)}" y="0" width="${Math.max(3,e2-e1).toFixed(1)}" height="${Hh-10}" fill="#22d17b" opacity=".28"/>
+    ${r.entry?`<line x1="0" x2="${W}" y1="${Y(r.entry).toFixed(1)}" y2="${Y(r.entry).toFixed(1)}" stroke="#22d17b" stroke-dasharray="3 3" opacity=".6"/>`:''}
+    <path d="${d}" fill="none" stroke="#e6e9ee" stroke-width="1.4"/></svg>`}
 let HDAY=0;
 function renderHistory(){const box=$('#hist');if(!box)return;const f=curF();const D=LAB.days[almatyDay(HDAY)];
   if(!D){box.innerHTML='<div class="empty">Загружаю данные…</div>';loadDay(HDAY).then(renderHistory);return}
-  const G=f.goal||GOAL;const rows=passRows(HDAY).sort((a,b)=>a.T-b.T);const S=summarize(rows),fin=S.live+S.dead;
-  // средний путь: % от входа через 15 мин, 30 мин, 1, 2, 4 ч
-  const marks=[15,30,60,120,240].filter(m=>m<=G.win);
-  const at=(r,m)=>{const p=pathAfter(r.c,r.T).pts;if(!p.length||!r.entry)return null;const tt=r.T+m*60e3;let v=null;for(const x of p){if(x[0]<=tt)v=x[4];else break}return v==null||p[p.length-1][0]<tt-10*60e3?null:(v/r.entry-1)*100};
-  box.innerHTML=`<div class="agg"><div class="chips" style="padding-top:0">${[0,1,2,3,4,5,6].map(o=>`<button class="chip${HDAY===o?' on':''}" data-hd="${o}">${o===0?'Сегодня':o===1?'Вчера':almatyDay(o).slice(5)}</button>`).join('')}</div>
-    <h3 style="margin:6px 0 2px">Если бы день начался заново с фильтром «${esc(f.name)}»</h3>
-    <p class="mut" style="font-size:12px;margin:0">Монеты, которые фильтр выдал бы в момент решения (${G.dec}-я минута), по данным, которые сервер реально имел к тому моменту. Дальше — путь цены от входа.</p>
-    <div class="big3"><div><b>${rows.length}</b><small>сигналов</small></div><div><b class="up">${S.live}</b><small>живые</small></div><div><b class="dn">${S.dead}</b><small>мёртвые</small></div></div>
-    ${marks.length&&rows.length?`<div class="tbl"><table><tr><th>Через</th>${marks.map(m=>`<th>${dur(m)}</th>`).join('')}</tr>
-      <tr><td>медиана</td>${marks.map(m=>{const v=medN(rows.map(r=>at(r,m)));return `<td class="${v>0?'up':v<0?'dn':''}">${v==null?'—':pct(v)}</td>`}).join('')}</tr>
-      <tr><td>лучшие 25%</td>${marks.map(m=>{const v=qt(rows.map(r=>at(r,m)),.75);return `<td>${v==null?'—':pct(v)}</td>`}).join('')}</tr>
-      <tr><td>худшие 25%</td>${marks.map(m=>{const v=qt(rows.map(r=>at(r,m)),.25);return `<td>${v==null?'—':pct(v)}</td>`}).join('')}</tr></table></div>`:''}
-    <p class="mut" style="font-size:11px;margin:4px 0 0">${fin?`живых ${Math.round(S.live/fin*100)}%`:''}${S.early?' · ещё идут: '+S.early:''}${S.amb?' · неясно: '+S.amb:''}${S.nodata?' · нет данных: '+S.nodata:''} · это подбор на известном дне, не доказательство.</p></div>
-  ${rows.map(r=>{const c=r.c,p=pathAfter(c,r.T).pts;return `<div class="hcard" data-a="${esc(c.a)}"><div class="hh">${avHtml({img:c.i,sym:c.s})}<b class="nm" style="flex:1">${esc(c.n||'')}</b>
-    <span class="l2">${new Date(r.T+5*3600e3).toISOString().slice(11,16)}</span><span class="badge b-${r.st==='live'?'pass':r.st==='dead'?'fail':'miss'}">${(ST[r.st]||['',r.st])[1]}</span></div>
-    ${spark(p,r.entry,r.T,G)}<div class="l2">макс <span class="up">${r.peak?pct((r.peak-1)*100):'—'}</span> · мин <span class="dn">${r.low&&isFinite(r.low)?pct((r.low-1)*100):'—'}</span>${r.hitAt?` · ${r.st==='dead'?'стоп':'цель'} через ${dur((r.hitAt-r.entryAt)/60000)}`:''}${r.exact?'':r.mixed?' · частично по снимкам':' · по снимкам'}</div></div>`}).join('')}`;
+  const G=f.goal||GOAL,now=Date.now();
+  const all=dayRows(D,G).filter(r=>r.T<=now&&r.st!=='late'&&r.st!=='legacy'&&r.entry);
+  const cs=all.filter(r=>passes(r.F,f.rules)).sort((a,b)=>b.T-a.T),fs=all.filter(r=>!passes(r.F,f.rules));
+  const ps=cs.map(r=>({r,s:hPath(r)})).filter(x=>x.s),pf=fs.map(r=>({r,s:hPath(r)})).filter(x=>x.s);
+  const col=v=>v==null?'':v>=1?'up':'dn',plus=a=>a.length?Math.round(a.filter(x=>x>=1).length/a.length*100)+'%':'—';
+  let rows='';for(const m of H_OFF){const v=ps.map(x=>hAt(x.s,m)).filter(x=>x!=null),w=pf.map(x=>hAt(x.s,m)).filter(x=>x!=null);
+    rows+=`<tr><td>через ${dur(m)}</td><td class="${col(medN(v))}">${xf(medN(v))}</td><td>${plus(v)}</td><td class="${col(medN(w))}">${xf(medN(w))}</td><td>${plus(w)}</td><td class="mut">${v.length}/${w.length}</td></tr>`}
+  const SA=ps.map(x=>hStats(x.s)),SB=pf.map(x=>hStats(x.s));
+  const hr=(arr,x)=>{const t=arr.map(p=>p.hit[x]).filter(v=>v!=null);return arr.length?Math.round(t.length/arr.length*100)+'%'+(t.length?' · ~'+dur(medN(t)):''):'—'};
+  let hrows='';H_TGT.forEach(x=>{hrows+=`<tr><td>дошли до ×${x}</td><td>${hr(SA,x)}</td><td>${hr(SB,x)}</td></tr>`});
+  hrows+=`<tr><td>пик (медиана)</td><td class="up">${xf(medN(SA.map(p=>p.pk)))}</td><td>${xf(medN(SB.map(p=>p.pk)))}</td></tr>`;
+  hrows+=`<tr><td>просадка (медиана)</td><td class="dn">${SA.length?'−'+Math.round(medN(SA.map(p=>p.dd)))+'%':'—'}</td><td class="dn">${SB.length?'−'+Math.round(medN(SB.map(p=>p.dd)))+'%':'—'}</td></tr>`;
+  const exact=ps.filter(x=>pathAfter(x.r.c,x.r.T).exact).length;
+  box.innerHTML=`<div class="chips" style="padding-top:6px">${[0,1,2,3,4,5,6].map(o=>`<button class="chip${HDAY===o?' on':''}" data-hd="${o}">${o===0?'Сегодня':o===1?'Вчера':almatyDay(o).slice(5)}</button>`).join('')}</div>
+    <p class="mut" style="font-size:11px;margin:4px 0 0;font-family:var(--mono)">фильтр «${esc(f.name)}» · покупка на ${G.dec}-й мин · комиссия + проскальзывание ${BUY.fee}% на вход и выход <button class="chip" id="hFee" style="padding:2px 8px">изменить</button></p>
+    <div class="agg big"><h3>Прошли (${cs.length}) против не прошли (${fs.length})</h3>
+    <p class="mut" style="margin:0;font-size:12px">Первые 5 часов после покупки. ×1 — в ноль после комиссий. Только данные, которые сервер имел к моменту решения.</p>
+    ${overlay(ps.map(x=>x.s))}
+    <div class="tbl"><table><tr><th>После покупки</th><th>прошли</th><th>в плюсе</th><th>не прошли</th><th>в плюсе</th><th>n</th></tr>${rows}</table></div>
+    <div class="tbl"><table><tr><th>За 5 ч</th><th>прошли</th><th>не прошли</th></tr>${hrows}</table></div>
+    <p class="mut" style="font-size:11px;margin:6px 0 0">Если «прошли» не лучше «не прошли» — фильтр не работает. Точный минутный график у ${exact} из ${ps.length}, остальные — по снимкам цены. Подбор на известном дне — не доказательство.</p></div>
+    <div class="sec-h">Прошедшие · 5 ч с витрины · зелёная полоса — окно покупки</div>
+    ${ps.map(({r,s})=>{const c=r.c,st=hStats(s),nowX=s[s.length-1][3];
+      return `<div class="hcard" data-a="${esc(c.a)}"><div class="hh">${avHtml({img:c.i,sym:c.s})}<div class="mid" style="flex:1;min-width:0"><div class="nm">${esc(c.n||'')}<span>${esc(c.s||'')}</span></div>
+      <div class="l2">пик <span class="up">${xf(st.pk)}</span> через ${dur(st.pkM)} · просадка <span class="dn">−${Math.round(st.dd)}%</span> · ${s[s.length-1][0]>=HW-5?'через 5 ч':'сейчас'} <span class="${nowX>=1?'up':'dn'}">${xf(nowX)}</span></div></div></div>
+      ${coinChart5h(r)}</div>`}).join('')||'<div class="empty">В этот день фильтр никого не выбрал.</div>'}`;
   box.querySelectorAll('[data-hd]').forEach(b=>b.onclick=async()=>{HDAY=+b.dataset.hd;await loadDay(HDAY);renderHistory()});
-  box.querySelectorAll('.hcard').forEach(el=>el.onclick=()=>coinSheet(D,el.dataset.a))}
+  box.querySelectorAll('.hcard').forEach(el=>el.onclick=()=>coinSheet(D,el.dataset.a));
+  $('#hFee').onclick=()=>{const v=prompt('Комиссия + проскальзывание, % на вход и на выход',BUY.fee);if(v!=null&&+v>=0){BUY.fee=Math.min(20,+v);saveBuy();renderHistory()}}}
 
 /* ---------- общее ---------- */
 function openSheetHtml(html){openSheet(html)}
