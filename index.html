@@ -78,11 +78,7 @@ body[data-ui-mode="updated"] .only-classic-label{display:none!important}
 .source-timebox{margin:7px 0 10px;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:9px}
 .source-timebox[hidden]{display:none!important}
 .source-timebox label{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;font-weight:700}
-.time-choices{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-top:10px}
-.time-choices button{border:1px solid var(--line);border-radius:9px;min-height:43px;background:var(--panel2);color:var(--mut);font:700 13px var(--mono)}
-.time-choices button.on{background:rgba(91,140,255,.22);color:#fff;border-color:var(--acc)}
-.time-apply{width:100%;min-height:46px;margin-top:10px;background:var(--acc);color:#fff;border:none;border-radius:10px;font-weight:800}
-.time-apply:disabled{background:var(--panel2);color:var(--mut)}
+.source-timebox select{width:110px;min-height:40px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--fg);padding:7px;font:700 13px var(--mono)}
 .source-section-label{font-size:11px;color:var(--mut);font-weight:700;margin:10px 0 7px}
 .source-inside{padding:10px 12px 12px;border-top:1px solid var(--line)}
 .source-modes{display:flex;gap:6px;margin-bottom:10px}
@@ -94,18 +90,6 @@ body[data-ui-mode="updated"] .only-classic-label{display:none!important}
 .source-foot{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;color:var(--up)}
 .source-foot button{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 12px;color:var(--mut)}
 .source-note{font-size:11px;line-height:1.4;color:var(--mut);margin:9px 0 0}
-.module-panel{padding:0 0 12px}.module-group{border:1px solid var(--line);background:var(--panel);border-radius:12px;margin:12px 0;padding:12px}
-.module-title{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:15px}
-.module-title button{background:var(--acc);color:white;border:0;border-radius:10px;width:44px;height:44px;font-size:26px}
-.module-list{display:grid;gap:8px;margin-top:10px}
-.module-item{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px}
-.module-item label{display:flex;align-items:center;gap:10px;flex:1;min-width:0;font-size:13px}
-.module-item label span{overflow-wrap:anywhere}.module-item input{width:20px;height:20px;accent-color:var(--acc)}
-.module-item button{background:transparent;border:1px solid var(--line);color:var(--mut);border-radius:8px;min-width:35px;min-height:35px}
-.module-picker{border:1px solid var(--acc);border-radius:12px;background:var(--panel);padding:12px}
-.module-picker button{min-height:40px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);padding:8px;margin:6px 6px 0 0}
-.module-picker #moduleChoices{display:grid;gap:6px;margin-top:8px}
-.module-picker #moduleChoices button{text-align:left}
 .all-tools{display:flex;align-items:center;gap:8px;margin:10px 0 4px}
 .all-tools input{width:100%;min-width:0;min-height:43px;background:var(--panel);border:1px solid var(--line);color:var(--fg);border-radius:11px;padding:10px 13px;font:13px var(--sans)}
 .all-tools input:focus{outline:2px solid var(--acc);outline-offset:1px}
@@ -317,16 +301,16 @@ body[data-ui-mode="updated"] #lAll .row{padding:7px 9px}
       <div class="source-inside">
         <div class="source-modes"><button type="button" data-source-mode="birth">🌱 До миграции</button><button type="button" data-source-mode="migration">🎓 После миграции</button></div>
         <div class="source-timebox" data-source-window-wrap="birth">
-          <div>⏱ Показывать на витрине</div><div class="time-choices" data-time-choices="birth"></div>
+          <label for="windowBirth">⏱ Показывать на витрине <select id="windowBirth" data-discovery-window="birth" aria-label="До миграции, 1–10 минут"></select></label>
         </div>
         <div class="source-timebox" data-source-window-wrap="migration">
-          <div>⏱ Показывать на витрине</div><div class="time-choices" data-time-choices="migration"></div>
+          <label for="windowMigration">⏱ Показывать на витрине <select id="windowMigration" data-discovery-window="migration" aria-label="После миграции, 1–10 минут"></select></label>
         </div>
-        <button type="button" id="applyDiscovery" class="time-apply">Применить</button><p class="source-note">Время настраивается отдельно. Другие условия — в «Мои фильтры».</p>
+        <p class="source-note">Только время появления монеты на витрине. Другие условия — во вкладке «Мои фильтры».</p>
       </div>
     </details>
     <div class="chips classic-ui-only"><button class="chip" id="fFresh"></button><button class="chip" id="fMig">🎓 Миграции</button><button class="chip" id="fScam">🚫 Без скама</button><button class="chip" id="fLiq"></button></div>
-    
+    <div class="all-tools updated-ui-only"><input type="search" id="allSearch" autocomplete="off" placeholder="⌕ Поиск монеты или адреса" aria-label="Поиск монеты по названию, тикеру или адресу"></div>
     <div class="stat" id="statAll"></div>
     <div class="list" id="lAll"><div class="empty">Загружаю новые пары…</div></div>
     <button type="button" id="allMore" class="all-more updated-ui-only" hidden>Показать ещё</button>
@@ -342,14 +326,23 @@ body[data-ui-mode="updated"] #lAll .row{padding:7px 9px}
   <section id="v-research" hidden><div id="research"></div></section>
   <section id="v-auto" hidden><div id="auto"></div></section>
   <section id="v-rules" hidden>
-    <div class="updated-ui-only module-panel">
-      <p class="source-note">Добавляй готовые модули из «Исследования». Несколько фильтров могут быть включены одновременно.</p>
-      <section class="module-group"><div class="module-title"><b>🌱 До миграции</b><button type="button" data-add-module="birth" aria-label="Добавить фильтр до миграции">＋</button></div><div id="modulesBirth" class="module-list"></div></section>
-      <section class="module-group"><div class="module-title"><b>🎓 После миграции</b><button type="button" data-add-module="migration" aria-label="Добавить фильтр после миграции">＋</button></div><div id="modulesMigration" class="module-list"></div></section>
-      <div id="modulePicker" hidden class="module-picker"><b>Выбери готовый фильтр</b><div id="moduleChoices"></div><button type="button" id="modulePickerClose">Закрыть</button></div>
+    <div class="source-box updated-ui-only" id="personalSourceFilters">
+      <div class="source-inside" style="border-top:0">
+        <h3 style="margin:0 0 4px;font-size:14px">Мои условия для источников</h3>
+        <p class="source-note" style="margin:0 0 10px">Отдельные настройки до и после миграции.</p>
+        <div class="source-modes"><button type="button" data-source-mode="birth">🌱 До миграции</button><button type="button" data-source-mode="migration">🎓 После миграции</button></div>
+        <p class="source-section-label">Дополнительные условия этого источника</p>
+        <div class="source-fields">
+          <label>Ликвидность от, $<select data-source-key="liq"><option value="0">Любая</option><option value="1000">1 000</option><option value="5000">5 000</option><option value="10000">10 000</option><option value="25000">25 000</option></select></label>
+          <label>Объём за 5 мин, $<select data-source-key="v5"><option value="0">Любой</option><option value="500">500</option><option value="2000">2 000</option><option value="5000">5 000</option><option value="10000">10 000</option></select></label>
+          <label>Покупок за 5 мин<select data-source-key="b5"><option value="0">Любое</option><option value="5">5</option><option value="10">10</option><option value="20">20</option><option value="50">50</option></select></label>
+        </div>
+        <div class="source-foot"><button type="button" id="sourceReset">Сбросить условия</button><span>✓ Автосохранение</span></div>
+        <p class="source-note" id="sourceHint">Пока до миграции данные не собираются. Эти условия только скрывают карточки и не удаляют монеты из архива.</p>
+
+      </div>
     </div>
-    <div class="classic-ui-only">    <div id="rules"></div>
-    </div>
+    <div id="rules"></div>
   </section>
   <section id="v-check" hidden>
     <div class="inrow"><input id="addr" placeholder="Адрес контракта" autocomplete="off" spellcheck="false"><button class="btn" id="go">Проверить</button></div>
@@ -484,24 +477,45 @@ function setDiscoveryMinutes(mode,value){
   DISCOVERY_WINDOWS[mode]=n;sset('sc_discovery_windows_v1',DISCOVERY_WINDOWS);
   renderDiscoveryControls();if(typeof sourceUi==='function')sourceUi();if(typeof render==='function')render();return true
 }
-const DRAFT_DISCOVERY={...DISCOVERY_WINDOWS};
 function renderDiscoveryControls(){
-  document.querySelectorAll('[data-time-choices]').forEach(box=>{
-    const mode=box.dataset.timeChoices;
-    box.innerHTML=Array.from({length:10},(_,i)=>`<button type="button" data-minute="${i+1}" class="${DRAFT_DISCOVERY[mode]===i+1?'on':''}">${i+1} м</button>`).join('');
-    box.querySelectorAll('[data-minute]').forEach(b=>b.onclick=()=>{
-      DRAFT_DISCOVERY[mode]=Number(b.dataset.minute);renderDiscoveryControls()
-    })
-  });
-  const changed=DRAFT_DISCOVERY.birth!==DISCOVERY_WINDOWS.birth||DRAFT_DISCOVERY.migration!==DISCOVERY_WINDOWS.migration;
-  $('#applyDiscovery').disabled=!changed;
-  $('#applyDiscovery').textContent=changed?'Применить изменения':'✓ Применено'
+  document.querySelectorAll('[data-discovery-window]').forEach(el=>{
+    if(!el.options.length)el.innerHTML=Array.from({length:10},(_,i)=>`<option value="${i+1}">${i+1} мин</option>`).join('');
+    el.value=String(DISCOVERY_WINDOWS[el.dataset.discoveryWindow])
+  })
 }
-$('#applyDiscovery').onclick=()=>{
-  for(const mode of ['birth','migration'])if(DRAFT_DISCOVERY[mode]!==DISCOVERY_WINDOWS[mode])setDiscoveryMinutes(mode,DRAFT_DISCOVERY[mode]);
-  renderDiscoveryControls();$('#sourceBox').open=false
-};
+document.querySelectorAll('[data-discovery-window]').forEach(el=>el.onchange=()=>setDiscoveryMinutes(el.dataset.discoveryWindow,el.value));
 renderDiscoveryControls();
+// Независимые настройки для отображения двух источников, рабочие фильтры не затрагиваются.
+const SOURCE_OPTIONS={liq:[0,1000,5000,10000,25000],v5:[0,500,2000,5000,10000],b5:[0,5,10,20,50]};
+const cleanSource=x=>Object.fromEntries(Object.entries(SOURCE_OPTIONS).map(([k,arr])=>[k,arr.includes(Number(x?.[k]))?Number(x[k]):0]));
+const savedSources=sget('sc_source_filters_v1',{});
+const SOURCE_RULES={birth:cleanSource(savedSources?.birth),migration:cleanSource(savedSources?.migration)};
+let SOURCE_EDIT=sget('sc_source_edit_v1','migration');
+if(!SOURCE_RULES[SOURCE_EDIT])SOURCE_EDIT='migration';
+function sourceAllowed(c,mode){
+  const r=SOURCE_RULES[mode];
+  return !!r&&(!r.liq||(Number.isFinite(c.liq)&&c.liq>=r.liq))&&
+    (!r.v5||(Number.isFinite(c.v5)&&c.v5>=r.v5))&&
+    (!r.b5||(Number.isFinite(c.b5)&&c.b5>=r.b5))
+}
+function sourceUi(){
+  document.querySelectorAll('[data-source-mode]').forEach(b=>b.classList.toggle('on',b.dataset.sourceMode===SOURCE_EDIT));
+  document.querySelectorAll('[data-source-key]').forEach(el=>el.value=String(SOURCE_RULES[SOURCE_EDIT][el.dataset.sourceKey]));
+  document.querySelectorAll('[data-source-window-wrap]').forEach(el=>{el.hidden=el.dataset.sourceWindowWrap!==SOURCE_EDIT});
+  const cnt=x=>Object.values(SOURCE_RULES[x]).filter(Boolean).length;
+  $('#sourceCount').textContent='До: '+DISCOVERY_WINDOWS.birth+' мин · После: '+DISCOVERY_WINDOWS.migration+' мин';
+  $('#sourceHint').textContent=SOURCE_EDIT==='birth'?
+    'До миграции: поток пока не подключён. Настройки сохраняются на будущее.':
+    'Условия скрывают карточки только в будущей персональной витрине; на ленту «Все» они не влияют.';
+}
+document.querySelectorAll('[data-source-mode]').forEach(b=>b.onclick=()=>{SOURCE_EDIT=b.dataset.sourceMode;sset('sc_source_edit_v1',SOURCE_EDIT);sourceUi()});
+document.querySelectorAll('[data-source-key]').forEach(el=>el.onchange=()=>{
+  const key=el.dataset.sourceKey,v=Number(el.value);
+  if(!SOURCE_OPTIONS[key]?.includes(v))return;
+  SOURCE_RULES[SOURCE_EDIT][key]=v;sset('sc_source_filters_v1',SOURCE_RULES);sourceUi();render()
+});
+$('#sourceReset').onclick=()=>{SOURCE_RULES[SOURCE_EDIT]=cleanSource({});sset('sc_source_filters_v1',SOURCE_RULES);sourceUi();render()};
+sourceUi();
 // Переключение меняет только вид интерфейса, не переписывает фильтры и историю.
 let UI_MODE=sget('sc_ui_mode_v1','classic');
 if(!['classic','updated'].includes(UI_MODE))UI_MODE='classic';
@@ -526,7 +540,7 @@ const ALL_PAGE=20;
 let ALL_VISIBLE=ALL_PAGE,ALL_QUERY='';
 function resetAllPaging(){ALL_VISIBLE=ALL_PAGE}
 function matchCoin(c,q){return !q||[c.name,c.sym,c.addr].some(v=>String(v||'').toLowerCase().includes(q))}
-
+$('#allSearch').oninput=e=>{ALL_QUERY=e.target.value.trim().toLowerCase();resetAllPaging();render()};
 $('#allMore').onclick=()=>{ALL_VISIBLE+=ALL_PAGE;render()};
 function streamMode(panel){return ['all','birth','migration'].includes(STREAMS[panel])?STREAMS[panel]:'all'}
 function streamUi(panel){document.querySelectorAll('[data-panel="'+panel+'"][data-stream]').forEach(b=>b.classList.toggle('on',b.dataset.stream===streamMode(panel)))}
@@ -851,7 +865,7 @@ function render(){
   $('#fFresh').textContent='⚡ Свежие < '+S.win+' мин';$('#fFresh').classList.toggle('on',S.f_fresh);
   $('#fScam').classList.toggle('on',S.f_scam);$('#fMig').classList.toggle('on',S.f_mig);
   $('#fLiq').textContent='💧 Ликв. '+(S.f_liq?'от '+money(S.f_liq):'любая');$('#fLiq').classList.toggle('on',!!S.f_liq);
-  const shown=updated?visible:visible.filter(c=>(!S.f_mig||isMig(c))&&(!S.f_fresh||inWin(c))&&
+  const shown=updated?visible.filter(c=>matchCoin(c,ALL_QUERY)):visible.filter(c=>(!S.f_mig||isMig(c))&&(!S.f_fresh||inWin(c))&&
     (!S.f_scam||!(c.status==='fail'||c.failNow))&&(c.liq||0)>=S.f_liq);
   const apiBad=(gtErr&&now-gtOkAt>60000)?`<span class="dn">GeckoTerminal: ${esc(gtErr)}</span>`:'';
   const nMig=visible.filter(isMig).length,nFake=visible.filter(c=>isPumpSwap(c.dex)&&c.canon===false).length;
@@ -863,6 +877,9 @@ function render(){
   if(!$('#allMore').hidden)$('#allMore').textContent='Показать ещё '+Math.min(ALL_PAGE,shown.length-ALL_VISIBLE)+' · осталось '+(shown.length-ALL_VISIBLE);
   if(tab==='all'&&updated&&streamMode('all')==='birth'){
     $('#lAll').innerHTML='<div class="empty">🌱 До миграции: интерфейс готов, сбор первых торгов пока не подключён.</div>';
+    $('#lAll')._m=null;
+  }else if(tab==='all'&&updated&&ALL_QUERY&&!shown.length){
+    $('#lAll').innerHTML='<div class="empty">По запросу ничего не найдено. Попробуй другое название или адрес.</div>';
     $('#lAll')._m=null;
   }else if(tab==='all')reconcile($('#lAll'),shown.slice(0,updated?ALL_VISIBLE:250),updated?'newAll':'all');
   Object.values(C).forEach(c=>{c.flash=null;if(booted&&c.isNew&&Date.now()-(c.seenAt||0)>60000)c.isNew=false});
@@ -1701,41 +1718,7 @@ async function renderAuto(){const box=$('#auto');if(!box)return;
 
 /* ---------- общее ---------- */
 function openSheetHtml(html){openSheet(html)}
-/* Мои фильтры: независимые включаемые модули, без изменения старой логики. */
-const MODULE_STORAGE='sc_filter_modules_v1';
-const moduleSelection=LS.get(MODULE_STORAGE,{birth:[],migration:[]});
-for(const k of ['birth','migration'])if(!Array.isArray(moduleSelection[k]))moduleSelection[k]=[];
-let modulePickFor='migration';
-function saveModules(){LS.set(MODULE_STORAGE,moduleSelection)}
-function renderModules(){
-  for(const [mode,id] of [['birth','modulesBirth'],['migration','modulesMigration']]){
-    const root=document.getElementById(id);if(!root)return;
-    root.innerHTML=moduleSelection[mode].length?moduleSelection[mode].map(item=>{
-      const f=FILTERS.find(x=>x.id===item.id);
-      return '<div class="module-item"><label><input type="checkbox" data-mod-toggle="'+mode+'" data-id="'+esc(item.id)+'" '+(item.on?'checked':'')+'><span>'+esc(f?.name||'Модуль недоступен')+'</span></label><button type="button" data-mod-remove="'+mode+'" data-id="'+esc(item.id)+'" aria-label="Убрать модуль">×</button></div>'
-    }).join(''):'<p class="source-note">Нет добавленных фильтров. Нажми ＋</p>';
-  }
-  document.querySelectorAll('[data-mod-toggle]').forEach(el=>el.onchange=()=>{
-    const item=moduleSelection[el.dataset.modToggle].find(x=>x.id===el.dataset.id);
-    if(item){item.on=el.checked;saveModules()}
-  });
-  document.querySelectorAll('[data-mod-remove]').forEach(el=>el.onclick=()=>{
-    const mode=el.dataset.modRemove;moduleSelection[mode]=moduleSelection[mode].filter(x=>x.id!==el.dataset.id);saveModules();renderModules()
-  })
-}
-document.querySelectorAll('[data-add-module]').forEach(b=>b.onclick=()=>{
-  modulePickFor=b.dataset.addModule;
-  const box=document.getElementById('modulePicker'),choices=document.getElementById('moduleChoices');
-  choices.innerHTML=FILTERS.filter(f=>!moduleSelection[modulePickFor].some(x=>x.id===f.id)).map(f=>
-    '<button type="button" data-pick-filter="'+esc(f.id)+'">'+esc(f.name)+'</button>'
-  ).join('')||'<p class="source-note">Других готовых фильтров пока нет.</p>';
-  box.hidden=false;
-  choices.querySelectorAll('[data-pick-filter]').forEach(el=>el.onclick=()=>{
-    moduleSelection[modulePickFor].push({id:el.dataset.pickFilter,on:true});saveModules();box.hidden=true;renderModules()
-  })
-});
-document.getElementById('modulePickerClose').onclick=()=>document.getElementById('modulePicker').hidden=true;
-function labRender(){if(tab==='auto')renderAuto();if(tab==='research')renderLab();if(tab==='rules'){renderFilters();renderModules()};if(tab==='pass')renderPass();if(tab==='hist')renderHistory()}
+function labRender(){if(tab==='auto')renderAuto();if(tab==='research')renderLab();if(tab==='rules')renderFilters();if(tab==='pass')renderPass();if(tab==='hist')renderHistory()}
 function switchTab(t){const b=document.querySelector(`.tab[data-t="${t}"]`);if(b)b.click()}
 // обновление: сегодня — раз в 2 минуты, живая лента — раз в 30 секунд
 setInterval(async()=>{await loadLive();try{journalAdd(buyable(),curF())}catch{}if(document.hidden)return;if(tab==='pass')renderPass();else updPassCount()},30000);
