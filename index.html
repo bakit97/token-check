@@ -51,6 +51,14 @@ body[data-ui-mode="updated"] .classic-ui-only{display:none!important}
 #allStreams,#passStreams{flex-wrap:nowrap}
 #allStreams .chip,#passStreams .chip{flex:1 1 0;min-width:0;text-align:center;white-space:normal;padding:8px 4px;line-height:1.3}
 @media(max-width:375px){#allStreams .chip,#passStreams .chip{font-size:11px}}
+/* Настраиваемые окна появления событий: только интерфейс «В разработке». */
+.discovery-windows{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;margin:8px 0}
+.discovery-windows h3{font-size:12px;margin:0 0 8px;font-weight:800}
+.discovery-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.discovery-grid label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--mut);font-weight:700}
+.discovery-grid select{width:100%;min-height:40px;padding:6px 9px;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;font:700 14px var(--mono)}
+.discovery-grid select:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.discovery-windows p{margin:8px 0 0;color:var(--mut);font-size:11px;line-height:1.4}
 .stat{font:11px var(--mono);color:var(--mut);padding:8px 0 2px;display:flex;gap:10px;flex-wrap:wrap}
 
 /* rows */
@@ -251,7 +259,18 @@ body[data-ui-mode="updated"] .classic-ui-only{display:none!important}
 <main class="wrap">
   <section id="v-all">
     <div class="chips updated-ui-only" id="allStreams"><button class="chip" data-stream="all" data-panel="all">Общие</button><button class="chip" data-stream="birth" data-panel="all">До миграции</button><button class="chip" data-stream="migration" data-panel="all">После миграции</button></div>
-    <p class="ui-status updated-ui-only">Витрина: 2 минуты с появления события. До миграции сбор пока не подключён.</p>
+    <div class="discovery-windows updated-ui-only" id="discoveryWindows">
+      <h3>Время появления на витрине</h3>
+      <div class="discovery-grid">
+        <label for="windowBirth">🌱 До миграции
+          <select id="windowBirth" data-discovery-window="birth" aria-label="До миграции, от 1 до 10 минут"></select>
+        </label>
+        <label for="windowMigration">🎓 После миграции
+          <select id="windowMigration" data-discovery-window="migration" aria-label="После миграции, от 1 до 10 минут"></select>
+        </label>
+      </div>
+      <p>Настройки независимы и запоминаются. До миграции сбор ещё не подключён; здесь пока работает только окно новых пулов.</p>
+    </div>
     <div class="chips classic-ui-only"><button class="chip" id="fFresh"></button><button class="chip" id="fMig">🎓 Миграции</button><button class="chip" id="fScam">🚫 Без скама</button><button class="chip" id="fLiq"></button></div>
     <div class="stat" id="statAll"></div>
     <div class="list" id="lAll"><div class="empty">Загружаю новые пары…</div></div>
@@ -386,8 +405,28 @@ function liveListingEligible(c,N,now=Date.now()){
   return Number.isFinite(c.listedAt)&&Number.isFinite(c.seenAt)&&
     now>=c.listedAt&&now-c.listedAt<=N*60e3&&c.seenAt<=c.listedAt+N*60e3
 }
-// 2 минуты — только для появления события в ленте, не для N минут анализа.
-const liveListingMinutes=()=>2;
+// Окна показа события (1–10 минут) не меняют время исследования N и настройки старой версии.
+function discoveryMinutes(v){const n=Number(v);return Number.isInteger(n)&&n>=1&&n<=10?n:2}
+const SAVED_DISCOVERY=sget('sc_discovery_windows_v1',{});
+const DISCOVERY_WINDOWS={
+  birth:discoveryMinutes(SAVED_DISCOVERY?.birth),
+  migration:discoveryMinutes(SAVED_DISCOVERY?.migration)
+};
+function setDiscoveryMinutes(mode,value){
+  if(mode!=='birth'&&mode!=='migration')return false;
+  const n=Number(value);
+  if(!Number.isInteger(n)||n<1||n>10)return false;
+  DISCOVERY_WINDOWS[mode]=n;sset('sc_discovery_windows_v1',DISCOVERY_WINDOWS);
+  renderDiscoveryControls();if(typeof render==='function')render();return true
+}
+function renderDiscoveryControls(){
+  document.querySelectorAll('[data-discovery-window]').forEach(el=>{
+    if(!el.options.length)el.innerHTML=Array.from({length:10},(_,i)=>`<option value="${i+1}">${i+1} мин</option>`).join('');
+    el.value=String(DISCOVERY_WINDOWS[el.dataset.discoveryWindow])
+  })
+}
+document.querySelectorAll('[data-discovery-window]').forEach(el=>el.onchange=()=>setDiscoveryMinutes(el.dataset.discoveryWindow,el.value));
+renderDiscoveryControls();
 // Переключение меняет только вид интерфейса, не переписывает фильтры и историю.
 let UI_MODE=sget('sc_ui_mode_v1','classic');
 if(!['classic','updated'].includes(UI_MODE))UI_MODE='classic';
@@ -717,10 +756,11 @@ function reconcile(box,items,mode){
   for(const[a,el]of m){if(!keep.has(a)){el.remove();m.delete(a)}}}
 let tab='all';
 function render(){
-  const now=Date.now(),updated=UI_MODE==='updated',N=liveListingMinutes();
+  const now=Date.now(),updated=UI_MODE==='updated',N=DISCOVERY_WINDOWS.migration;
   const all=Object.values(C).filter(c=>now-c.listedAt<=S.keepH*3600e3).sort((a,b)=>b.listedAt-a.listedAt);
   // В текущем режиме оставляем прежнюю рабочую ленту (S.win, все старые фильтры).
-  // В обновлённом — только вовремя найденные события за 2 минуты; другие настройки не скрывают монеты.
+  // В обновлённом — только события в пределах выбранного окна после миграции;
+  // ранние события до миграции пока не собираются. Остальные фильтры ленту не ограничивают.
   const visible=updated?(streamMode('all')==='birth'?[]:all.filter(c=>
     liveListingEligible(c,N,now)&&(streamMode('all')!=='migration'||isMig(c)))):all;
   streamUi('all');paintUiMode();
