@@ -55,7 +55,9 @@ const T22='TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
 async function getJSON(url){const r=await fetch(url,{headers:{accept:'application/json'},signal:AbortSignal.timeout(30000)});if(r.status===429){const e=new Error('429');e.rl=1;throw e}
   if(!r.ok)throw new Error('HTTP '+r.status+' '+url.split('?')[0].slice(-60));return r.json()}
 // приоритеты: 0 новые пулы, 1 сделки первых минут, 2 свечи первых 10 минут, 3 график цены
-const gtQ=[];let gtPause=0,gtOK=0,gtFail=0,gtSp=6500,gtRun=0;const gtLog=[]; // gtLog: [время, 1=ок/0=429/2=ошибка, задержка в очереди мс]
+const gtQ=[];let gtPause=0,gtOK=0,gtFail=0,gtSp=6500,gtRun=0;
+const GT_BACKGROUND_LIMIT=24; // keep slow multi-hour charts from burying early trading evidence
+const gtBackgroundBusy=()=>gtQ.filter(x=>x.prio===3).length>=GT_BACKGROUND_LIMIT;const gtLog=[]; // gtLog: [время, 1=ок/0=429/2=ошибка, задержка в очереди мс]
 function gtPending(key){return gtQ.some(x=>x.key===key)}
 function gt(path,prio,key){key=key||path;const ex=gtQ.find(x=>x.key===key);if(ex)return ex.p;
   let res,rej;const p=new Promise((a,b)=>{res=a;rej=b});gtQ.push({path,prio,res,rej,t:Date.now(),key,p});gtQ.sort((a,b)=>a.prio-b.prio||a.t-b.t);return p}
@@ -66,7 +68,7 @@ function gt(path,prio,key){key=key||path;const ex=gtQ.find(x=>x.key===key);if(ex
     while(gtLog.length&&gtLog[0][0]<Date.now()-3600e3)gtLog.shift()}
   await sleep(gtSp)}})();
 function gtStats(){const ok=gtLog.filter(x=>x[1]===1),rl=gtLog.filter(x=>x[1]===0).length,lat=ok.map(x=>x[2]).sort((a,b)=>a-b);
-  return{queue:gtQ.length,oldestSec:gtQ.length?Math.round((Date.now()-Math.min(...gtQ.map(x=>x.t)))/1000):0,okHour:ok.length,r429Hour:rl,errHour:gtLog.filter(x=>x[1]===2).length,
+  return{queue:gtQ.length,backgroundLimit:GT_BACKGROUND_LIMIT,oldestSec:gtQ.length?Math.round((Date.now()-Math.min(...gtQ.map(x=>x.t)))/1000):0,okHour:ok.length,r429Hour:rl,errHour:gtLog.filter(x=>x[1]===2).length,
     spacingMs:gtSp,waitMedSec:lat.length?Math.round(lat[lat.length>>1]/1000):null,waitMaxSec:lat.length?Math.round(lat[lat.length-1]/1000):null,
     byPrio:[0,1,2,3].map(p=>gtQ.filter(x=>x.prio===p).length)}}
 
@@ -276,13 +278,13 @@ function mergeK(a,b){const m=new Map();for(const x of [...(a||[]),...b])m.set(x[
 function candleTasks(){const now=Date.now();
   for(const c of C.values()){if(!isOk(c))continue;const a=ageMin(c,now),pool=c.p,ts=Math.floor;
     // первые 10 минут: запрос на 11-й минуте, чтобы минута с 10-й отметкой была закрыта
-    if(!c.k10&&!c.kTry&&c.trDone&&a>=11&&a<6*60){c.kTry=1;gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=15&before_timestamp=${ts((c.t+11*60e3)/1000)}&currency=usd`,3,'k10:'+pool)
+    if(!c.k10&&!c.kTry&&c.trDone&&a>=11&&a<6*60){c.kTry=1;gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=15&before_timestamp=${ts((c.t+11*60e3)/1000)}&currency=usd`,2,'k10:'+pool)
       .then(r=>{if(c.p===pool)c.k10={at:Date.now(),c:kList(r)}}).catch(e=>err('k10 '+e.message)).finally(()=>{c.kTry=0})}
     // график: 5 ч (одним запросом) и 24 ч (двумя)
     const upto=c.path?.upto||0;
-    if(!c.pTry&&upto<5&&a>=5*60+10&&a<24*60){c.pTry=1;gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=330&before_timestamp=${ts((c.t+5*3600e3+10*60e3)/1000)}&currency=usd`,3,'p5:'+pool)
+    if(!c.pTry&&!gtBackgroundBusy()&&upto<5&&a>=5*60+10&&a<24*60){c.pTry=1;gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=330&before_timestamp=${ts((c.t+5*3600e3+10*60e3)/1000)}&currency=usd`,3,'p5:'+pool)
       .then(r=>{if(c.p===pool)c.path={at:Date.now(),upto:5,c:mergeK(c.path?.c,kList(r))}}).catch(e=>err('path '+e.message)).finally(()=>{c.pTry=0})}
-    if(!c.pTry&&upto<24&&a>=24*60+10&&a<30*60){c.pTry=1;const end=ts((c.t+24*3600e3+10*60e3)/1000);
+    if(!c.pTry&&!gtBackgroundBusy()&&upto<24&&a>=24*60+10&&a<30*60){c.pTry=1;const end=ts((c.t+24*3600e3+10*60e3)/1000);
       gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=1000&before_timestamp=${end}&currency=usd`,3,'p24a:'+pool).then(async r=>{const k1=kList(r);
           let k2=[];if(k1.length&&k1[0][0]*1000>c.t)k2=kList(await gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=1000&before_timestamp=${k1[0][0]}&currency=usd`,3,'p24b:'+pool));
           if(c.p===pool)c.path={at:Date.now(),upto:24,c:mergeK(mergeK(c.path?.c,k2),k1)}})
