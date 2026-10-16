@@ -1337,10 +1337,22 @@ function renderPass(){const box=$('#lPass');if(!box)return;const f=curF();const 
 const fmtLeft=t=>{const s=Math.max(0,Math.round((t-Date.now())/1000));return s?Math.floor(s/60)+':'+String(s%60).padStart(2,'0'):'закрыто'};
 setInterval(()=>{let gone=false;document.querySelectorAll('[data-left]').forEach(e=>{e.textContent=fmtLeft(+e.dataset.left);if(+e.dataset.left<Date.now())gone=true});if(gone&&tab==='pass')renderPass()},1000);
 
-/* «История»: что было после покупки (первые 5 часов), прошедшие против не прошедших — как в прошлой версии, на данных сервера */
+/* «История»: цена ×1 — на КОНЕЦ окна принятия решения, затем 5 часов.
+   Для фиксации базы используются только закрытые свечи и снимки не позже этого момента.
+   Если нет свежего наблюдения (<= 2 мин), результат остаётся неизвестным. */
 const HW=300,H_OFF=[15,30,60,120,180,300],H_TGT=[1.5,2,3,5];
-function hPath(r){const p=pathAfter(r.c,r.T,{...GOAL,win:HW}).pts;if(!p.length||!r.entry)return null;const k=(1-BUY.fee/100)/(1+BUY.fee/100);
-  return p.filter(x=>x[0]<=r.T+HW*60e3).map(x=>[(x[0]-r.T)/60000,Math.max(1e-6,Math.max(x[1],x[4])/r.entry*k),Math.max(1e-6,Math.min(x[1],x[4])/r.entry*k),Math.max(1e-6,x[4]/r.entry*k)])}
+function historyAnchor(r){const cut=r.T+BUY.win*60e3,c=r.c,pts=[];
+  for(const d of c.ds||[])if(d[1]>0&&d[0]*1000<=cut)pts.push([d[0]*1000,d[1]]);
+  for(const x of [...(c.k10?.c||[]),...(c.path?.c||[])])
+    if(x[4]>0&&x[0]*1000+60e3<=cut)pts.push([x[0]*1000+60e3,x[4]]);
+  pts.sort((a,b)=>b[0]-a[0]);
+  if(!pts.length||cut-pts[0][0]>120e3)return null;
+  return{cut,price:pts[0][1],at:pts[0][0]}}
+function hPath(r){const base=historyAnchor(r);if(!base)return null;
+  const pts=pathAfter(r.c,base.cut,{...GOAL,win:HW}).pts.filter(x=>x[0]>=base.cut&&x[0]<=base.cut+HW*60e3);
+  if(!pts.length)return null;
+  const k=(1-BUY.fee/100)/(1+BUY.fee/100);
+  return [[0,k,k,k],...pts.map(x=>[(x[0]-base.cut)/60000,Math.max(1e-6,Math.max(x[1],x[4])/base.price*k),Math.max(1e-6,Math.min(x[1],x[4])/base.price*k),Math.max(1e-6,x[4]/base.price*k)])]}
 function hAt(s,m){if(!s)return null;let b=null;for(const p of s){if(p[0]<=m)b=p;else break}return b&&m-b[0]<12&&s[s.length-1][0]>=m-5?b[3]:null}
 function hStats(s){if(!s||!s.length)return null;let pk=0,pkM=0,lo=Infinity;const hit={};for(const p of s){if(p[1]>pk){pk=p[1];pkM=p[0]}lo=Math.min(lo,p[2]);for(const x of H_TGT)if(hit[x]==null&&p[1]>=x)hit[x]=p[0]}
   return{pk,pkM,dd:lo<1?(1-lo)*100:0,hit}}
@@ -1353,17 +1365,18 @@ function overlay(series){const W=360,Hh=220,M=HW;if(!series.length)return '<p cl
   let md='';for(let m=0;m<=M;m+=5){const v=series.map(s=>hAt(s,m)).filter(x=>x!=null);if(v.length>=2)md+=(md?'L':'M')+X(m).toFixed(1)+' '+Y(medN(v)).toFixed(1)}
   return `<svg viewBox="0 0 ${W} ${Hh}" style="width:100%;display:block;margin-top:6px">${g}${lines}${md?`<path d="${md}" fill="none" stroke="#22d17b" stroke-width="2.4"/>`:''}
     <text x="${W-4}" y="18" fill="#22d17b" font-size="10" text-anchor="end" font-family="monospace">— медиана</text></svg>`}
-function coinChart5h(r){const c=r.c,W=360,Hh=90,t0=c.t,t1=c.t+HW*60e3+r.T-c.t;const P=[];
+function coinChart5h(r){const base=historyAnchor(r);if(!base)return '<p class="mut" style="font-size:11px">Цена в конце окна решения неизвестна</p>';
+  const c=r.c,W=360,Hh=90,t0=c.t,t1=base.cut+HW*60e3,P=[];
   for(const x of c.k10?.c||[])P.push([x[0]*1000,x[4]]);for(const x of c.path?.c||[])P.push([x[0]*1000,x[4]]);const lk=P.length?Math.max(...P.map(x=>x[0])):0;
   for(const d of c.ds||[])if(d[1]&&d[0]*1000>lk)P.push([d[0]*1000,d[2]!=null&&d[2]<200?null:d[1]]);
   const Q=P.filter(x=>x[1]&&x[0]<=t1).sort((a,b)=>a[0]-b[0]);if(Q.length<2)return '<p class="mut" style="font-size:11px">мало данных для графика</p>';
-  const ys=Q.map(x=>Math.log(x[1])),lo=Math.min(...ys),hi=Math.max(...ys),rg=hi-lo||1;
+  const ys=[Math.log(base.price),...Q.map(x=>Math.log(x[1]))],lo=Math.min(...ys),hi=Math.max(...ys),rg=hi-lo||1;
   const X=t=>((t-t0)/(t1-t0))*(W-4)+2,Y=v=>Hh-12-((Math.log(v)-lo)/rg)*(Hh-20);
-  const d=Q.map((p,i)=>(i?'L':'M')+X(p[0]).toFixed(1)+' '+Y(p[1]).toFixed(1)).join('');const e1=X(r.T),e2=X(r.T+BUY.win*60e3);
-  let ticks='';for(let i=1;i<=5;i++){const x=X(t0+i*3600e3);if(x<W)ticks+=`<line x1="${x}" x2="${x}" y1="0" y2="${Hh-10}" stroke="#222a35"/><text x="${x}" y="${Hh-1}" fill="#7d8796" font-size="9" text-anchor="middle" font-family="monospace">${i}ч</text>`}
+  const d=Q.map((p,i)=>(i?'L':'M')+X(p[0]).toFixed(1)+' '+Y(p[1]).toFixed(1)).join('');const e1=X(r.T),e2=X(base.cut);
+  let ticks='';for(let i=1;i<=5;i++){const x=X(base.cut+i*3600e3);if(x<W)ticks+=`<line x1="${x}" x2="${x}" y1="0" y2="${Hh-10}" stroke="#222a35"/><text x="${x}" y="${Hh-1}" fill="#7d8796" font-size="9" text-anchor="middle" font-family="monospace">${i}ч</text>`}
   return `<svg viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none" style="width:100%;height:90px;display:block;margin-top:4px">${ticks}
     <rect x="${e1.toFixed(1)}" y="0" width="${Math.max(3,e2-e1).toFixed(1)}" height="${Hh-10}" fill="#22d17b" opacity=".28"/>
-    ${r.entry?`<line x1="0" x2="${W}" y1="${Y(r.entry).toFixed(1)}" y2="${Y(r.entry).toFixed(1)}" stroke="#22d17b" stroke-dasharray="3 3" opacity=".6"/>`:''}
+    <line x1="0" x2="${W}" y1="${Y(base.price).toFixed(1)}" y2="${Y(base.price).toFixed(1)}" stroke="#22d17b" stroke-dasharray="3 3" opacity=".6"/>
     <path d="${d}" fill="none" stroke="#e6e9ee" stroke-width="1.4"/></svg>`}
 let HDAY=0,HMODE=LS.get('lab_hmode','replay');
 function renderHistory(){const box=$('#hist');if(!box)return;const f=curF();const D=LAB.days[almatyDay(HDAY)];
@@ -1396,12 +1409,12 @@ function renderHistory(){const box=$('#hist');if(!box)return;const f=curF();cons
     <details class="addc" style="margin-top:6px"><summary>Сравнить все фильтры на этом дне</summary><div class="tbl"><table><tr><th>Фильтр</th><th>сигн.</th><th>30м</th><th>1ч</th><th>в плюсе 1ч</th><th>n</th><th>×1.5 за 5ч</th><th>n</th></tr>${cmpRows}</table></div><p class="mut" style="font-size:11px;margin:4px 0 0">30м и 1ч — по одним и тем же монетам (n). ×1.5 — только монеты, у которых 5 часов уже прошли (n).</p></details>
     <p class="mut" style="font-size:11px;margin:4px 0 0;font-family:var(--mono)">${HMODE==='replay'?'фильтр «'+esc(f.name)+'»':'журнал'} · покупка на ${G.dec}-й мин · комиссия + проскальзывание ${BUY.fee}% на вход и выход <button class="chip" id="hFee" style="padding:2px 8px">изменить</button></p>
     <div class="agg big"><h3>Прошли (${cs.length}) против не прошли (${fs.length})</h3>
-    <p class="mut" style="margin:0;font-size:12px">Первые 5 часов после покупки. ×1 — в ноль после комиссий. Только данные, которые сервер имел к моменту решения.</p>
+    <p class="mut" style="margin:0;font-size:12px">5 часов после окна решения. Линия ×1 — цена в конце окна; множители учитывают комиссии. Для фильтра используются только данные на момент вердикта.</p>
     ${overlay(ps.map(x=>x.s))}
     <div class="tbl"><table><tr><th>После покупки</th><th>прошли</th><th>в плюсе</th><th>не прошли</th><th>в плюсе</th><th>n</th></tr>${rows}</table></div>
     <div class="tbl"><table><tr><th>За 5 ч</th><th>прошли</th><th>не прошли</th></tr>${hrows}</table></div>
     <p class="mut" style="font-size:11px;margin:6px 0 0">Если «прошли» не лучше «не прошли» — фильтр не работает. Точный минутный график у ${exact} из ${ps.length}, остальные — по снимкам цены. Подбор на известном дне — не доказательство.</p></div>
-    <div class="sec-h">Прошедшие · 5 ч с витрины · зелёная полоса — окно покупки</div>
+    <div class="sec-h">Прошедшие · 5 ч после окна решения · зелёная полоса — окно решения · линия ×1 — цена в конце окна</div>
     ${ps.map(({r,s})=>{const c=r.c,st=hStats(s),nowX=s[s.length-1][3];
       return `<div class="hcard" data-a="${esc(c.a)}" style="border-left:3px solid ${r.J?r.J.fcol:fColor(f)}"><div class="hh">${avHtml({img:c.i,sym:c.s})}<div class="mid" style="flex:1;min-width:0"><div class="nm">${esc(c.n||'')}<span>${esc(c.s||'')}</span></div>
       ${r.J?`<div class="l2"><i class="fdot" style="--fc:${r.J.fcol}"></i>${esc(r.J.fname)}${FILTERS.find(x=>x.id===r.J.fid&&fprintSync(x)===r.J.fp)?'':' <span class="warn">(фильтр потом изменён: '+esc(r.J.rules)+')</span>'}</div>`:''}
