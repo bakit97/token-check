@@ -1355,6 +1355,8 @@ function hPath(r){const base=historyAnchor(r);if(!base)return null;
   if(!pts.length)return null;
   const k=(1-BUY.fee/100)/(1+BUY.fee/100);
   return [[0,k,k,k],...pts.map(x=>[(x[0]-base.cut)/60000,Math.max(1e-6,Math.max(x[1],x[4])/base.price*k),Math.max(1e-6,Math.min(x[1],x[4])/base.price*k),Math.max(1e-6,x[4]/base.price*k)])]}
+function historyComplete(o,now){const base=historyAnchor(o.r);
+  return !!base&&base.cut+HW*60e3<=now&&o.s?.[o.s.length-1]?.[0]>=HW-15}
 function hAt(s,m){if(!s)return null;let b=null;for(const p of s){if(p[0]<=m)b=p;else break}return b&&m-b[0]<12&&s[s.length-1][0]>=m-5?b[3]:null}
 function hStats(s){if(!s||!s.length)return null;let pk=0,pkM=0,lo=Infinity;const hit={};for(const p of s){if(p[1]>pk){pk=p[1];pkM=p[0]}lo=Math.min(lo,p[2]);for(const x of H_TGT)if(hit[x]==null&&p[1]>=x)hit[x]=p[0]}
   return{pk,pkM,dd:lo<1?(1-lo)*100:0,hit}}
@@ -1424,7 +1426,7 @@ function renderHistory(){const box=$('#hist');if(!box)return;const f=curF();cons
   // сравнение всех фильтров на этом дне
   // 30 мин и 1 ч — по одним и тем же монетам (есть данные на обе отметки); ×1,5 — только монеты, у которых 5 ч уже прошли
   const cmpRows=FILTERS.map(x=>{const rr=dayRows(D,x.goal||GOAL).filter(r=>r.T<=now&&r.st!=='late'&&r.st!=='legacy'&&r.entry&&passes(r.F,x.rules)).map(r=>({r,s:hPath(r)})).filter(o=>o.s);
-    const both=rr.map(o=>[hAt(o.s,30),hAt(o.s,60)]).filter(v=>v[0]!=null&&v[1]!=null);const fin=rr.filter(o=>o.r.T+HW*60e3<=now&&o.s[o.s.length-1][0]>=HW-15);
+    const both=rr.map(o=>[hAt(o.s,30),hAt(o.s,60)]).filter(v=>v[0]!=null&&v[1]!=null);const fin=rr.filter(o=>historyComplete(o,now));
     const v30=both.map(v=>v[0]),v60=both.map(v=>v[1]),hit=fin.filter(o=>o.s.some(p=>p[1]>=1.5)).length;
     return `<tr${x.id===SEL?' style="background:rgba(91,140,255,.08)"':''}><td><i class="fdot" style="--fc:${fColor(x)}"></i>${esc(x.name)}</td><td>${rr.length}</td><td class="${(medN(v30)||0)>=1?'up':'dn'}">${xf(medN(v30))}</td><td class="${(medN(v60)||0)>=1?'up':'dn'}">${xf(medN(v60))}</td><td>${v60.length?Math.round(v60.filter(v=>v>=1).length/v60.length*100)+'%':'—'}</td><td class="mut">${both.length}</td><td>${fin.length?Math.round(hit/fin.length*100)+'%':'—'}</td><td class="mut">${fin.length}</td></tr>`}).join('');
   const ps=cs.map(r=>({r,s:hPath(r)})).filter(x=>x.s),pf=fs.map(r=>({r,s:hPath(r)})).filter(x=>x.s);
@@ -1443,12 +1445,12 @@ function renderHistory(){const box=$('#hist');if(!box)return;const f=curF();cons
   const col=v=>v==null?'':v>=1?'up':'dn',plus=a=>a.length?Math.round(a.filter(x=>x>=1).length/a.length*100)+'%':'—';
   let rows='';for(const m of H_OFF){const v=ps.map(x=>hAt(x.s,m)).filter(x=>x!=null),w=pf.map(x=>hAt(x.s,m)).filter(x=>x!=null);
     rows+=`<tr><td>через ${dur(m)}</td><td class="${col(medN(v))}">${xf(medN(v))}</td><td>${plus(v)}</td><td class="${col(medN(w))}">${xf(medN(w))}</td><td>${plus(w)}</td><td class="mut">${v.length}/${w.length}</td></tr>`}
-  const SA=ps.map(x=>hStats(x.s)),SB=pf.map(x=>hStats(x.s));
+  const SA=ps.filter(x=>historyComplete(x,now)).map(x=>hStats(x.s)),SB=pf.filter(x=>historyComplete(x,now)).map(x=>hStats(x.s));
   const hr=(arr,x)=>{const t=arr.map(p=>p.hit[x]).filter(v=>v!=null);return arr.length?Math.round(t.length/arr.length*100)+'%'+(t.length?' · ~'+dur(medN(t)):''):'—'};
   let hrows='';H_TGT.forEach(x=>{hrows+=`<tr><td>дошли до ×${x}</td><td>${hr(SA,x)}</td><td>${hr(SB,x)}</td></tr>`});
   hrows+=`<tr><td>пик (медиана)</td><td class="up">${xf(medN(SA.map(p=>p.pk)))}</td><td>${xf(medN(SB.map(p=>p.pk)))}</td></tr>`;
   hrows+=`<tr><td>просадка (медиана)</td><td class="dn">${SA.length?'−'+Math.round(medN(SA.map(p=>p.dd)))+'%':'—'}</td><td class="dn">${SB.length?'−'+Math.round(medN(SB.map(p=>p.dd)))+'%':'—'}</td></tr>`;
-  const exact=ps.filter(x=>pathAfter(x.r.c,x.r.T).exact).length;
+  const exact=ps.filter(x=>pathAfter(x.r.c,historyAnchor(x.r).cut,{...G,win:HW}).exact).length;
   box.innerHTML=`<div class="chips" style="padding-top:6px">${[0,1,2,3,4,5,6].map(o=>`<button class="chip${HDAY===o?' on':''}" data-hd="${o}">${o===0?'Сегодня':o===1?'Вчера':almatyDay(o).slice(5)}</button>`).join('')}</div>
     <div class="seg"><button class="${HMODE==='replay'?'on':''}" data-hm="replay">Переигровка по фильтру</button><button class="${HMODE==='jour'?'on':''}" data-hm="jour">Что реально было в «Прошли»</button></div>
     ${HMODE==='replay'?fChips():'<p class="mut" style="font-size:12px;margin:6px 0 0">Сигналы, которые этот телефон показал в «Прошли», с тем фильтром, который тогда стоял. Пока сайт закрыт, журнал не пишется.</p>'}
@@ -1458,7 +1460,7 @@ function renderHistory(){const box=$('#hist');if(!box)return;const f=curF();cons
     <p class="mut" style="margin:0;font-size:12px">5 часов после окна решения. Линия ×1 — цена в конце окна; множители учитывают комиссии. Для фильтра используются только данные на момент вердикта.</p>
     ${overlay(ps.map(x=>x.s))}
     <div class="tbl"><table><tr><th>После покупки</th><th>прошли</th><th>в плюсе</th><th>не прошли</th><th>в плюсе</th><th>n</th></tr>${rows}</table></div>
-    <div class="tbl"><table><tr><th>За 5 ч</th><th>прошли</th><th>не прошли</th></tr>${hrows}</table></div>
+    <div class="tbl"><table><tr><th>За 5 ч (завершено: ${SA.length}/${SB.length})</th><th>прошли</th><th>не прошли</th></tr>${hrows}</table></div>
     <p class="mut" style="font-size:11px;margin:6px 0 0">Если «прошли» не лучше «не прошли» — фильтр не работает. Точный минутный график у ${exact} из ${ps.length}, остальные — по снимкам цены. Подбор на известном дне — не доказательство.</p></div>
     ${stage2html}
     <div class="sec-h">Прошедшие · 5 ч после окна решения · зелёная полоса — окно решения · линия ×1 — цена в конце окна</div>
