@@ -424,7 +424,15 @@ function bind(){
   });
   $('pickerClose').addEventListener('click',function(){$('filterPicker').hidden=true;picker=null});
   $('decisionMins').addEventListener('input',function(){$('decisionValue').textContent=this.value+' мин'});
-  $('decisionMins').addEventListener('change',function(){s.decision=+this.value;save();refresh()});
+  $('applyDecision').addEventListener('click',function(){
+    s.decision=clamp(+$('decisionMins').value,1,30,10);
+    $('decisionCurrent').textContent=s.decision+' мин';
+    save();refresh();$('decisionSettings').open=false;
+    note('Таймер решения: '+s.decision+' мин · применено');
+  });
+  $('decisionSettings').addEventListener('toggle',function(){
+    if(!this.open){$('decisionMins').value=s.decision;$('decisionValue').textContent=s.decision+' мин';}
+  });
   for(var id of ['r1Hours','r1Activity','r1Idle','r2Strong']){
     $(id).addEventListener('input',function(){
       $(this.id+'Value').textContent=this.value+(this.id==='r1Hours'?' часов':this.id==='r1Idle'?' минут':'%');
@@ -506,7 +514,7 @@ function init(){
   $('ageAfter').innerHTML=$('ageBefore').innerHTML;
   $('ageBefore').value=s.ageBefore;$('ageAfter').value=s.ageAfter;$('cardLimit').value=s.limit;
   for(var pair of [['decisionMins',s.decision],['r1Hours',s.r1Hours],['r1Activity',s.r1Activity],['r1Idle',s.r1Idle],['r2Strong',s.r2Strong]])$(pair[0]).value=pair[1];
-  $('decisionValue').textContent=s.decision+' мин';$('r1HoursValue').textContent=s.r1Hours+' часов';
+  $('decisionValue').textContent=s.decision+' мин';$('decisionCurrent').textContent=s.decision+' мин';$('r1HoursValue').textContent=s.r1Hours+' часов';
   $('r1ActivityValue').textContent=s.r1Activity+'%';$('r1IdleValue').textContent=s.r1Idle+' минут';
   $('r2StrongValue').textContent=s.r2Strong+'%';$('r2Step').value=s.r2Step;
   document.querySelectorAll('#tabs [data-page]').forEach(function(x){x.classList.toggle('active',x.dataset.page===s.tab)});
