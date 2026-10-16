@@ -1305,7 +1305,10 @@ function renderFilters(){const box=$('#rules');if(!box)return;const f=curF();con
   box.querySelectorAll('[data-rv]').forEach(inp=>{inp.oninput=()=>{const k=inp.dataset.rv;const r=f.rules.find(x=>x[0]===k);r[2]=+(+inp.value).toPrecision(3);box.querySelector(`[data-lv="${k}"]`).textContent=fmtF(k,r[2])};inp.onchange=re})}
 
 /* ---------- вкладки «Прошли» (сейчас) и «История» (переигровка дня) ---------- */
-function passRows(off){const D=LAB.days[almatyDay(off)];if(!D)return[];const f=curF();const now=Date.now();return dayRows(D,f.goal||GOAL).filter(r=>r.T<=now&&r.st!=='late'&&r.st!=='legacy'&&passes(r.F,f.rules))}
+// В «Прошли» попадают только сигналы с ценой, реально известной к моменту вердикта.
+ // Снимок старше двух минут или отсутствие цены означает недостаточно данных, а не сигнал.
+function signalHasPrice(r){return r.F?.pxT>0&&r.F?.dsAge!=null&&r.F.dsAge>=0&&r.F.dsAge<=120}
+function passRows(off){const D=LAB.days[almatyDay(off)];if(!D)return[];const f=curF();const now=Date.now();return dayRows(D,f.goal||GOAL).filter(r=>r.T<=now&&r.st!=='late'&&r.st!=='legacy'&&signalHasPrice(r)&&passes(r.F,f.rules))}
 const FCOL=['#5b8cff','#22d17b','#f5c04a','#ff7ab6','#4dd6e8','#b48cff','#ff9a4d'];
 const fColor=f=>{if(!f.color){const used=FILTERS.map(x=>x.color).filter(Boolean);f.color=FCOL.find(c=>!used.includes(c))||FCOL[FILTERS.indexOf(f)%FCOL.length];saveF()}return f.color};
 function fChips(onPick){return `<div class="chips fsel">${FILTERS.map(x=>`<button class="chip${x.id===SEL?' on':''}" data-fs="${x.id}" style="--fc:${fColor(x)}"><i class="fdot"></i>${x.frozen?'🔒 ':''}${esc(x.name)}</button>`).join('')}</div>`}
@@ -1327,7 +1330,7 @@ function renderPass(){const box=$('#lPass');if(!box)return;const f=curF();const 
   const hb=LAB.status?.updated||0,serverStale=!hb||now-hb>5*60e3;
   const statusWarn=serverStale?`<span class="warn">⚠ Нет свежих данных сервера: ${hb?'последняя связь '+dur(Math.round((now-hb)/60000))+' назад':'статус недоступен'}. Новые сигналы могут отсутствовать.</span>`:'';
   journalAdd(rows,f);
-  $('#statPass').innerHTML=fChips()+`<span>вердикт через ${G.dec} мин · окно решения <b>${BUY.win} мин</b> <button class="chip" id="bWin" style="padding:2px 8px">изменить</button></span><span>скоро решение: ${waiting}</span>`+statusWarn;
+  $('#statPass').innerHTML=fChips()+`<span>вердикт через ${G.dec} мин · окно решения <b>${BUY.win} мин</b> <button class="chip" id="bWin" style="padding:2px 8px">изменить</button></span><span>скоро решение: ${waiting}</span><span class="mut">«Прошли» — совпадение с фильтром, не гарантия роста. Требуется свежая цена к моменту вердикта.</span>`+statusWarn;
   box.innerHTML=rows.length?rows.map(r=>{const c=r.c,cur=lastBefore(c.ds,now);const chg=cur&&r.entry?(cur[1]/r.entry-1)*100:null;const left=r.T+BUY.win*60e3;
     return `<div class="lrow" data-a="${esc(c.a)}" style="border-left:3px solid ${fColor(f)}">${avHtml({img:c.i,sym:c.s})}<span class="mid"><b class="nm">${esc(c.n||c.a.slice(0,6))}<span>${esc(c.s||'')}</span></b>
       <span class="l2">${esc(FAM[c.mk]||'')}${c.clone?' · <span class="warn">клон</span>':''} · на витрине ${dur((now-c.t)/60000)}</span></span>
