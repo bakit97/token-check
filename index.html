@@ -1324,8 +1324,10 @@ function renderPass(){const box=$('#lPass');if(!box)return;const f=curF();const 
   if(!D){box.innerHTML='<div class="empty">Загружаю данные сервера…</div>';loadDay(0).then(renderPass);return}
   const G=f.goal||GOAL,now=Date.now();const rows=buyable().sort((a,b)=>b.T-a.T);
   const waiting=D.coins.filter(c=>c.mst==='ok'&&c.t+G.dec*60e3>now).length;
+  const hb=LAB.status?.updated||0,serverStale=!hb||now-hb>5*60e3;
+  const statusWarn=serverStale?`<span class="warn">⚠ Нет свежих данных сервера: ${hb?'последняя связь '+dur(Math.round((now-hb)/60000))+' назад':'статус недоступен'}. Новые сигналы могут отсутствовать.</span>`:'';
   journalAdd(rows,f);
-  $('#statPass').innerHTML=fChips()+`<span>вердикт через ${G.dec} мин · окно решения <b>${BUY.win} мин</b> <button class="chip" id="bWin" style="padding:2px 8px">изменить</button></span><span>скоро решение: ${waiting}</span>`;
+  $('#statPass').innerHTML=fChips()+`<span>вердикт через ${G.dec} мин · окно решения <b>${BUY.win} мин</b> <button class="chip" id="bWin" style="padding:2px 8px">изменить</button></span><span>скоро решение: ${waiting}</span>`+statusWarn;
   box.innerHTML=rows.length?rows.map(r=>{const c=r.c,cur=lastBefore(c.ds,now);const chg=cur&&r.entry?(cur[1]/r.entry-1)*100:null;const left=r.T+BUY.win*60e3;
     return `<div class="lrow" data-a="${esc(c.a)}" style="border-left:3px solid ${fColor(f)}">${avHtml({img:c.i,sym:c.s})}<span class="mid"><b class="nm">${esc(c.n||c.a.slice(0,6))}<span>${esc(c.s||'')}</span></b>
       <span class="l2">${esc(FAM[c.mk]||'')}${c.clone?' · <span class="warn">клон</span>':''} · на витрине ${dur((now-c.t)/60000)}</span></span>
