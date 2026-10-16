@@ -517,7 +517,7 @@ document.querySelectorAll('[data-source-key]').forEach(el=>el.onchange=()=>{
 $('#sourceReset').onclick=()=>{SOURCE_RULES[SOURCE_EDIT]=cleanSource({});sset('sc_source_filters_v1',SOURCE_RULES);sourceUi();render()};
 sourceUi();
 // Переключение меняет только вид интерфейса, не переписывает фильтры и историю.
-let UI_MODE='classic';
+let UI_MODE=sget('sc_ui_mode_v1','classic');
 if(!['classic','updated'].includes(UI_MODE))UI_MODE='classic';
 function paintUiMode(){
   document.body.dataset.uiMode=UI_MODE;
@@ -527,9 +527,8 @@ function paintUiMode(){
   })
 }
 function selectUiMode(mode){
-  if(mode==='updated'){window.location.assign('./dev.html');return}
-  if(mode!=='classic')return;
-  UI_MODE=mode;paintUiMode();
+  if(!['classic','updated'].includes(mode))return;
+  UI_MODE=mode;sset('sc_ui_mode_v1',mode);paintUiMode();
   if(typeof render==='function')render();
   if(typeof labRender==='function')labRender();
 }
