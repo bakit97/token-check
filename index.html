@@ -236,11 +236,14 @@ button{font:inherit;color:inherit;cursor:pointer}
 
 <main class="wrap">
   <section id="v-all">
+    <div class="chips" id="allStreams"><button class="chip" data-stream="all" data-panel="all">Общие</button><button class="chip" data-stream="birth" data-panel="all">До миграции</button><button class="chip" data-stream="migration" data-panel="all">После миграции</button></div>
+    <p class="mut" style="font-size:11px;margin:5px 0">Показ новых событий — 2 минуты. До миграции: сбор сервером ещё не подключён.</p>
     <div class="chips"><span class="chip on" id="fFresh"></span><button class="chip" id="fMig">🎓 Миграции</button><button class="chip" id="fScam">🚫 Без скама</button><button class="chip" id="fLiq"></button></div>
     <div class="stat" id="statAll"></div>
     <div class="list" id="lAll"><div class="empty">Загружаю новые пары…</div></div>
   </section>
   <section id="v-pass" hidden>
+    <div class="chips" id="passStreams"><button class="chip" data-stream="all" data-panel="pass">Общие</button><button class="chip" data-stream="birth" data-panel="pass">До миграции</button><button class="chip" data-stream="migration" data-panel="pass">После миграции</button></div>
     <div class="stat" id="statPass"></div>
     <div class="list" id="lPass"></div>
   </section>
@@ -369,7 +372,16 @@ function liveListingEligible(c,N,now=Date.now()){
   return Number.isFinite(c.listedAt)&&Number.isFinite(c.seenAt)&&
     now>=c.listedAt&&now-c.listedAt<=N*60e3&&c.seenAt<=c.listedAt+N*60e3
 }
-const liveListingMinutes=()=>Math.max(1,Math.min(30,Number(curF()?.goal?.dec??GOAL.dec)||12));
+// 2 минуты — только для появления события в ленте, не для N минут анализа.
+const liveListingMinutes=()=>2;
+const STREAMS=sget('sc_streams_v1',{all:'all',pass:'all'});
+function streamMode(panel){return ['all','birth','migration'].includes(STREAMS[panel])?STREAMS[panel]:'all'}
+function streamUi(panel){document.querySelectorAll('[data-panel="'+panel+'"][data-stream]').forEach(b=>b.classList.toggle('on',b.dataset.stream===streamMode(panel)))}
+function attachStreamUi(){document.querySelectorAll('[data-panel][data-stream]').forEach(b=>b.onclick=()=>{
+ STREAMS[b.dataset.panel]=b.dataset.stream;sset('sc_streams_v1',STREAMS);
+ if(b.dataset.panel==='all')render();else{renderPass();updPassCount()}
+})}
+attachStreamUi();
 function pruneOld(){const lim=Date.now()-S.keepH*3600e3,limP=Date.now()-72*3600e3;
   Object.keys(C).forEach(a=>{const c=C[a];if((c.listedAt||0)<(c.status==='pass'?limP:lim))delete C[a]})}
 function saveCoins(){const o={};Object.entries(C).forEach(([a,c])=>{const{isNew,flash,_hq,...rest}=c;rest.spark=(c.spark||[]).slice(-60);o[a]=rest});sset('sc_coins2',o)}
@@ -675,7 +687,7 @@ let tab='all';
 function render(){
   const now=Date.now(),N=liveListingMinutes();
   const all=Object.values(C).filter(c=>now-c.listedAt<=S.keepH*3600e3).sort((a,b)=>b.listedAt-a.listedAt);
-  const live=all.filter(c=>liveListingEligible(c,N,now));
+  const live=streamMode('all')==='birth'?[]:all.filter(c=>liveListingEligible(c,N,now) && (streamMode('all')!=='migration'||isMig(c)));streamUi('all');
   $('#nAll').textContent=live.length;
   const w=live.filter(c=>c.status==='wait').length;
   $('#fFresh').textContent='⚡ Витрина ≤ '+N+' мин';
@@ -685,7 +697,8 @@ function render(){
   const apiBad=(gtErr&&now-gtOkAt>60000)?`<span class="dn">GeckoTerminal: ${esc(gtErr)}</span>`:'';
   const nMig=live.filter(isMig).length,nFake=live.filter(c=>isPumpSwap(c.dex)&&c.canon===false).length;
   $('#statAll').innerHTML=`<span>показано ${shown.length} из ${live.length} свежих</span><span>старые/обнаружены поздно: ${all.length-live.length}</span><span class="up">🎓 миграций: ${nMig}</span><span>пулов вручную: ${nFake}</span><span>⏳ проверяю: ${w}</span>${apiBad}${rpcErr?'<span class="warn">блокчейн: '+esc(rpcErr)+'</span>':''}`;
-  if(tab==='all')reconcile($('#lAll'),shown.slice(0,250),'all');
+  if(tab==='all'&&streamMode('all')==='birth'){$('#lAll').innerHTML='<div class="empty">🌱 До миграции: витрина подготовлена. Сбор подтверждённых первых торгов на кривой пока не подключён.</div>';$('#lAll')._m=null}
+  else if(tab==='all')reconcile($('#lAll'),shown.slice(0,250),'all');
   Object.values(C).forEach(c=>{c.flash=null;if(booted&&c.isNew&&Date.now()-(c.seenAt||0)>60000)c.isNew=false});
   if(sheetAddr&&C[sheetAddr])fillChecks(C[sheetAddr]);
 }
@@ -1328,9 +1341,11 @@ function journalAdd(rows,f){let ch=false;const fp=fprintSync(f);for(const r of r
   if(ch){if(JOUR.length>3000)JOUR=JOUR.slice(-3000);LS.set('lab_journal',JOUR)}}
 // окно покупки и комиссия (комиссия + проскальзывание, % на вход и на выход)
 let BUY=Object.assign({win:5,fee:2},LS.get('lab_buy',{}));const saveBuy=()=>LS.set('lab_buy',BUY);
-function buyable(off=0){const now=Date.now();return passRows(off).filter(r=>now-r.T<=BUY.win*60e3)}
+function buyable(off=0){if(streamMode('pass')==='birth')return[];const now=Date.now();return passRows(off).filter(r=>now-r.T<=BUY.win*60e3)}
 function updPassCount(){const el=$('#nPass');if(el)el.textContent=buyable().length}
-function renderPass(){const box=$('#lPass');if(!box)return;const f=curF();const D=LAB.days[almatyDay(0)];
+function renderPass(){const box=$('#lPass');if(!box)return;streamUi('pass');const f=curF();
+  if(streamMode('pass')==='birth'){$('#statPass').innerHTML='<span class="mut">До миграции · серверный сбор ранних торгов ещё не подключён</span>';box.innerHTML='<div class="empty">🌱 Здесь будут монеты, прошедшие выбранный фильтр ДО миграции. Пока данных нет — сигналы не показываются.</div>';updPassCount();return}
+  const D=LAB.days[almatyDay(0)];
   if(!D){box.innerHTML='<div class="empty">Загружаю данные сервера…</div>';loadDay(0).then(renderPass);return}
   const G=f.goal||GOAL,now=Date.now();const rows=buyable().sort((a,b)=>b.T-a.T);
   const waiting=D.coins.filter(c=>c.mst==='ok'&&c.t+G.dec*60e3>now).length;
