@@ -228,6 +228,7 @@ button{font:inherit;color:inherit;cursor:pointer}
     <button class="tab" data-t="pass">Прошли<b id="nPass">0</b></button>
     <button class="tab" data-t="hist">История</button>
     <button class="tab" data-t="research">Исследование</button>
+    <button class="tab" data-t="auto">Авто</button>
     <button class="tab" data-t="rules">Фильтры</button>
     <button class="tab" data-t="check">Проверка</button>
   </nav>
@@ -247,6 +248,7 @@ button{font:inherit;color:inherit;cursor:pointer}
     <div id="hist"></div>
   </section>
   <section id="v-research" hidden><div id="research"></div></section>
+  <section id="v-auto" hidden><div id="auto"></div></section>
   <section id="v-rules" hidden><div id="rules"></div></section>
   <section id="v-check" hidden>
     <div class="inrow"><input id="addr" placeholder="Адрес контракта" autocomplete="off" spellcheck="false"><button class="btn" id="go">Проверить</button></div>
@@ -256,6 +258,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 
 <div class="sheet" id="sheet" hidden><div class="sheet-bg" data-close></div><div class="sheet-in"><div class="grab"></div><button class="x" data-close aria-label="Закрыть">✕</button><div id="sheetBody"></div></div></div>
 
+<script src="lab-core.js"></script>
 <script>
 'use strict';
 /* =================== утилиты =================== */
@@ -684,7 +687,7 @@ setInterval(()=>{evalAll();render()},5000); // окно закрывается �
 /* =================== вкладки =================== */
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.t;
   document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));
-  ['all','pass','hist','research','rules','check'].forEach(k=>$('#v-'+k).hidden=k!==tab);labRender();render();window.scrollTo(0,0)});
+  ['all','pass','hist','research','auto','rules','check'].forEach(k=>$('#v-'+k).hidden=k!==tab);labRender();render();window.scrollTo(0,0)});
 $('#fFresh').onclick=()=>{S.f_fresh=!S.f_fresh;sset('sc_set',S);render()};
 $('#fScam').onclick=()=>{S.f_scam=!S.f_scam;sset('sc_set',S);render()};
 $('#fMig').onclick=()=>{S.f_mig=!S.f_mig;sset('sc_set',S);render()};
@@ -1037,7 +1040,7 @@ async function loadDay2(d){LAB.loading=true;
   try{const [day,obs,st]=await Promise.all([getJ('day/'+d+'.json'),getJ('obs/'+d+'.json'),getJ('status.json')]);LAB.status=st||LAB.status;
     const ob={};(obs?.coins||[]).forEach(o=>ob[o.a]=o);
     const coins=(day?.coins||[]).map(c=>{const o=ob[c.a];if(o){c.ds=o.ds&&o.ds.length>=(c.ds||[]).length?o.ds:c.ds;c.lq=o.lq&&o.lq.length>=(c.lq||[]).length?o.lq:c.lq;c.path=o.path||null}return c});
-    const nm=x=>(x.n||'').trim().toLowerCase();const first={};coins.slice().sort((a,b)=>a.t-b.t).forEach(c=>{const k=nm(c);if(!k){c.clone=0;return}c.clone=first[k]||0;first[k]=(first[k]||0)+1});
+    LC.markClones(coins);
     LAB.days[d]={d,at:Date.now(),updated:day?.updated||null,coins,none:!day};LAB.err=''}
   catch(e){LAB.err='Не удалось загрузить данные сервера: '+e.message}
   LAB.loading=false;return LAB.days[d]}
@@ -1046,26 +1049,7 @@ async function loadLive(){try{const L=await getJ('live.json');if(!L)return;LAB.l
 
 /* ---------- признаки на момент решения ---------- */
 // T — момент решения (мс). Каждое наблюдение берётся, только если сервер получил его не позже T.
-function lastBefore(arr,T,tsIdx=0,mul=1000){let r=null;for(const x of arr||[]){if(x[tsIdx]*mul<=T)r=x;else break}return r}
-function k10feats(c,T){const k=c.k10;if(!k||k.at>T||!k.c?.length)return null;const t0=c.t,end=t0+10*60e3;
-  // только свечи, которые целиком лежат в первых 10 минутах (свеча открывается в ts и длится минуту)
-  const f=k.c.filter(x=>x[0]*1000>=Math.floor(t0/60e3)*60e3&&x[0]*1000+60e3<=end);if(!f.length)return null;
-  const p0=f[0][1],p10=f[f.length-1][4];let hi=0,dd=0;f.forEach(x=>{hi=Math.max(hi,x[2]);dd=Math.max(dd,1-x[3]/hi)});
-  const m=x=>Math.floor((x[0]*1000-t0)/60e3);const v=(a,b)=>f.filter(x=>m(x)>=a&&m(x)<b).reduce((s,x)=>s+x[5],0);
-  return{x10:p0?p10/p0:null,dd10:dd*100,v1:v(-1,1),v05:v(-1,5),v510:v(5,10),trend:v(-1,5)?v(5,10)/v(-1,5):null,green:f.filter(x=>x[4]>x[1]).length,act:f.length,p10}}
-const provedAt=c=>{let t=c.mSeen||Infinity;for(const h of c.mH||[])if(h[2]==='ok'&&h[1]===c.mk)t=Math.min(t,h[0]);return t};
-function featsAt(c,T){const F={};const ok=x=>x!=null&&isFinite(x);
-  F.known=c.seen<=T&&provedAt(c)<=T;
-  F.fam=c.mk;F.hour=new Date(c.t+5*3600e3).getUTCHours();F.clone=(c.clone||0)>0;
-  if(c.tk&&c.tkAt&&c.tkAt<=T)F.premig=(c.t-c.tk)/60000;
-  const ct=c.ct;if(ct&&(c.ctAt||0)<=T){F.danger=!!(ct.mint||ct.freeze||ct.fee>0||ct.hook||ct.deleg||ct.pause||ct.nontr||ct.defFrozen);F.metaMut=ct.metaMut;F.t22=ct.prog==='token2022'}
-  const k=k10feats(c,T);if(k)Object.assign(F,{x10:k.x10,dd10:k.dd10,v1:k.v1,v05:k.v05,v510:k.v510,trend:k.trend,green:k.green,act:k.act});
-  const d=lastBefore(c.ds,T);if(d){F.liq=d[2];F.mc=d[3];F.b5=d[4];F.s5=d[5];F.v5=d[6];if(ok(d[4])&&ok(d[5]))F.bs=d[5]?d[4]/d[5]:d[4];if(ok(d[2])&&ok(d[3])&&d[3])F.liqmc=d[2]/d[3]*100;F.pxT=d[1];F.dsAge=(T/1000-d[0])}
-  let h=null;for(const m of ['10','5','3']){const x=c.hold?.[m];if(x&&!x.miss&&x.at<=T){h=x;break}}if(h){F.top1=h.top1*100;F.top10=h.top10*100;F.pda=h.pda*100}
-  const g=lastBefore(c.gx,T);if(g){F.buyers15=g[7];F.sellers15=g[8];F.tx15=(g[5]??0)+(g[6]??0);if(g[7]!=null&&g[8]!=null)F.bsU=g[8]?g[7]/g[8]:g[7];F.vol15=g[10]}
-  const b=c.bx;if(b&&!b.miss&&b.cov&&b.at<=T){F.payers=b.payers;F.trades=b.n;F.repeat=b.payers?b.repeat/b.payers*100:null;F.btop1=b.top1!=null?b.top1*100:null;F.bsUsd=b.sellUsd?b.buyUsd/b.sellUsd:null;F.trCov=b.cov}
-  const l=lastBefore(c.lq,T);if(l&&c.vmint&&c.vdec){const qi=c.vmint[0]===c.a?1:0;const q=l[2+qi]/10**(c.vdec[qi]||0);if(c.vmint[qi]==='So11111111111111111111111111111111111111112')F.liqSol=q}
-  return F}
+const lastBefore=LC.lastBefore,k10feats=LC.k10feats,provedAt=LC.provedAt,featsAt=LC.featsAt; // общее ядро: lab-core.js (то же считает сервер)
 
 /* ---------- признаки: подписи, формат, направление ---------- */
 const FEATS=[
@@ -1112,25 +1096,9 @@ const FAM={pump:'pump.fun',dbc:'Meteora',launch:'LaunchLab','launch-v4':'LaunchL
 
 /* ---------- результат по настройке «живой» ---------- */
 // путь цены после входа: свечи 1 мин (точно) или снимки DEX Screener (приблизительно)
-function pathAfter(c,T,G=GOAL){const out=[];let nK=0,nD=0;
-  if(c.path?.c?.length){for(const x of c.path.c){if(x[0]*1000>=T){out.push([x[0]*1000,x[1],x[2],x[3],x[4]]);nK++}}}
-  const lastP=out.length?out[out.length-1][0]:T;
-  // снимок с пустым пулом (меньше $200) — деньги ушли: цена бессмысленна, считаем как слив
-  for(const d of c.ds||[]){const ts=d[0]*1000;if(ts>=T&&ts>lastP&&d[1]){const rug=d[2]!=null&&d[2]<200;const v=rug?1e-12:d[1];out.push([ts,v,v,v,v,rug?1:0]);if(ts<=T+G.win*60e3)nD++}}
-  // точно: только минутные свечи на всём окне; смешано: часть окна по снимкам; по снимкам: только снимки
-  const exact=nK>0&&nD===0;return{pts:out,exact,mixed:nK>0&&nD>0,coverEnd:out.length?out[out.length-1][0]:null}}
-function labEntry(c,T){const p=pathAfter(c,T);if(!p.pts.length)return null;const e=p.pts[0];if(e[5])return null;if(e[0]-T>6*60e3)return null;return{price:e[1],at:e[0],p}}
-function outcome(c,G=GOAL){const T=c.t+G.dec*60e3;const F=featsAt(c,T);
-  if(c.legacy)return{st:'legacy',T,F};if(!F.known)return{st:'late',T,F};
-  const e=labEntry(c,T);const now=LAB.live?.updated||Date.now();
-  if(!e){return{st:now<T+15*60e3?'early':'nodata',T,F}}
-  const up=e.price*(1+G.up/100),dn=e.price*(1-G.dn/100),end=T+G.win*60e3;let res=null,amb=false,peak=0,low=Infinity;
-  // касания — по телу свечи (открытие/закрытие): одиночные принты-фитили часто неисполнимы
-  for(const x of e.p.pts){if(x[0]>end)break;const bt=Math.max(x[1],x[4]),bb=Math.min(x[1],x[4]);peak=Math.max(peak,bt);low=Math.min(low,bb);if(res)continue;const hu=bt>=up,hd=bb<=dn;
-    if(hu&&hd){amb=true;res={win:x[0]}}else if(hu)res={win:x[0]};else if(hd)res={stop:x[0]}}
-  const covered=e.p.coverEnd!=null&&e.p.coverEnd>=Math.min(end,now)-10*60e3;
-  let st,why2=null;if(res&&res.win)st=amb?'amb':'live';else if(res&&res.stop)st='dead';else if(now<end)st='early';else if(!covered)st='nodata';else if(e.p.exact)st='dead';else{st='amb';why2='снимки'}
-  return{st,T,F,entry:e.price,entryAt:e.at,exact:e.p.exact,mixed:e.p.mixed,peak:peak/e.price,low:low/e.price,hitAt:res?(res.win||res.stop):null,why:res?.stop?'stop':(st==='dead'?'flat':null),why2}}
+function pathAfter(c,T,G=GOAL){return LC.pathAfter(c,T,G)}
+function labEntry(c,T,G=GOAL){return LC.labEntry(c,T,G)}
+function outcome(c,G=GOAL){return LC.outcome(c,G,Date.now())}
 
 /* ---------- статистика ---------- */
 const medN=a=>{const v=a.filter(x=>x!=null&&isFinite(x)).sort((x,y)=>x-y);if(!v.length)return null;const m=v.length>>1;return v.length%2?v[m]:(v[m-1]+v[m])/2};
@@ -1154,7 +1122,7 @@ if(!FILTERS){FILTERS=[{id:'f1',name:'Базовый: чистый контрак
 let SEL=LS.get('lab_sel','f1');if(!FILTERS.find(f=>f.id===SEL))SEL=FILTERS[0].id;
 const saveF=()=>{LS.set('lab_filters',FILTERS);LS.set('lab_sel',SEL)};
 const curF=()=>FILTERS.find(f=>f.id===SEL)||FILTERS[0];
-function passes(F,rules){for(const [k,op,v] of rules){const x=F[k];if(x==null)return false;if(op==='='&&x!==v)return false;if(op==='>='&&!(x>=v))return false;if(op==='<='&&!(x<=v))return false}return true}
+const passes=LC.passes;
 async function fprint(f){const txt=JSON.stringify({r:f.rules,g:f.goal||null,z:f.frozen});const h=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(txt));
   return [...new Uint8Array(h)].slice(0,6).map(b=>b.toString(16).padStart(2,'0')).join('')}
 const ruleTxt=([k,op,v])=>FK[k]?(FK[k][3]==='b'?FK[k][1]+': '+(v?'да':'нет'):FK[k][1]+(op==='>='?' от ':' до ')+fmtF(k,v)):k;
@@ -1444,9 +1412,39 @@ function renderHistory(){const box=$('#hist');if(!box)return;const f=curF();cons
   box.querySelectorAll('.hcard').forEach(el=>el.onclick=()=>coinSheet(D,el.dataset.a));
   $('#hFee').onclick=()=>{const v=prompt('Комиссия + проскальзывание, % на вход и на выход',BUY.fee);if(v!=null&&+v>=0){BUY.fee=Math.min(20,+v);saveBuy();renderHistory()}}}
 
+/* ---------- «Авто»: что сервер сам нашёл (считает каждый час без телефона) ---------- */
+let AREP=null,AREPat=0;
+async function renderAuto(){const box=$('#auto');if(!box)return;
+  if(!AREP||Date.now()-AREPat>10*60e3){box.innerHTML='<div class="empty">Загружаю отчёт сервера…</div>';try{AREP=await getJ('research/report.json');AREPat=Date.now()}catch{}}
+  const R=AREP;if(!R){box.innerHTML='<div class="empty">Сервер ещё не сделал первый отчёт. Он считает раз в час.</div>';return}
+  const G=R.cfg,lab=k=>FK[k]?FK[k][1]:k,pc=v=>v==null?'—':Math.round(v*100)+'%',lf=v=>v==null?'—':'×'+v.toFixed(2);
+  const st=R.feats.filter(f=>f.stable),tested=R.feats.filter(f=>!f.stable&&f.days>0);
+  const autoBox=R.auto.map(a=>`<div class="rule"><div class="rh"><h3>Автофильтр: ${a.k} ${a.k===1?'признак':'признака'}</h3></div>
+      ${a.rulesNow?`<p>${a.rulesNow.map(r=>esc(ruleTxt(r))).join('<br>')}</p>`:'<p class="mut">Пока нет подходящих признаков.</p>'}
+      <p class="why">Проверка вперёд (правило с прошлых дней → следующий день): ${a.n?`${a.n} монет, живых ${pc(a.rate)}, это ${lf(a.lift)} к случайному выбору`:'ещё не на чем проверить'} · дней: ${a.days.length}</p>
+      ${a.days.length?`<div class="tbl"><table><tr><th>День</th><th>сигн.</th><th>живых</th><th>база</th><th>1ч (медиана)</th></tr>${a.days.slice(-7).map(x=>`<tr><td>${x.d.slice(5)}</td><td>${x.sig}</td><td>${x.n?Math.round(x.live/x.n*100)+'%':'—'}</td><td>${pc(x.base)}</td><td>${xf(x.x60)}</td></tr>`).join('')}</table></div>`:''}
+      ${a.rulesNow?`<button class="chip" data-add="${a.k}" style="margin-top:6px">+ В мои фильтры</button>`:''}</div>`).join('');
+  box.innerHTML=`<div class="agg"><h3 style="margin:0">Сервер исследует сам</h3>
+    <p class="mut" style="font-size:12px;margin:4px 0 0">Каждый час, без телефона. Живая: +${G.up}% за ${dur(G.win)}, стоп −${G.dn}%, вход на ${G.dec}-й мин. Поменять определение — скажи Claude.</p>
+    <p class="mut" style="font-size:11px;margin:4px 0 0;font-family:var(--mono)">отчёт ${ago(R.updated)} назад · дней с данными: ${R.days.length} · дней с итогами: ${R.labeledDays}</p>
+    <div class="tbl"><table><tr><th>День</th><th>монет</th><th class="up">живые</th><th class="dn">мёртвые</th><th>неясно</th><th>% живых</th></tr>${R.days.map(x=>`<tr><td>${x.d.slice(5)}</td><td>${x.all}</td><td class="up">${x.live}</td><td class="dn">${x.dead}</td><td>${x.amb}</td><td>${pc(x.base)}</td></tr>`).join('')}</table></div>
+    ${R.labeledDays<4?`<p class="warn" style="font-size:12px;margin:6px 0 0">Для честной проверки нужно хотя бы 4 дня с итогами (сейчас ${R.labeledDays}). До этого всё ниже — предварительно.</p>`:''}</div>
+  <div class="sec-h">Устойчивые признаки (работают день за днём)</div>
+  ${st.length?st.map(f=>`<div class="rule"><div class="rh"><h3>${esc(lab(f.k))}</h3></div><p>${f.cur?esc(ruleTxt(f.cur.rule)):''}</p>
+    <p class="why">на следующих днях: живых ${pc(f.rate)} (${lf(f.lift)} к случайному) · лучше случайного в ${f.daysUp} из ${f.days} дней · монет ${f.n}</p></div>`).join(''):'<div class="empty" style="padding:12px">Пока не найдено. Нужно больше дней.</div>'}
+  <div class="sec-h">Автофильтры</div>${autoBox}
+  <details class="addc"><summary>Проверенные, но неустойчивые признаки (${tested.length})</summary>
+    <div class="tbl"><table><tr><th>Признак</th><th>дней</th><th>лучше</th><th>к случ.</th><th>n</th></tr>${tested.map(f=>`<tr><td>${esc(lab(f.k))}</td><td>${f.days}</td><td>${f.daysUp}</td><td>${lf(f.lift)}</td><td>${f.n}</td></tr>`).join('')}</table></div></details>
+  <details class="addc"><summary>Подбор на последних днях — ещё не проверено (${R.inSample.length})</summary>
+    <p class="mut" style="font-size:12px">Это то, что лучше всего выглядит на последних 3 днях. Может оказаться совпадением — смотри «Устойчивые».</p>
+    <div class="tbl"><table><tr><th>Правило</th><th>к случ.</th><th>живых</th><th>n</th></tr>${R.inSample.map(x=>`<tr><td>${esc(ruleTxt(x.rule))}</td><td>${lf(x.lift)}</td><td>${pc(x.rate)}</td><td>${x.n}</td></tr>`).join('')}</table></div></details>`;
+  box.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{const a=R.auto.find(x=>x.k===+b.dataset.add);if(!a?.rulesNow)return;
+    const f={id:'f'+Date.now(),name:'Авто '+a.k+' · '+new Date(R.updated+5*3600e3).toISOString().slice(5,10),created:Date.now(),frozen:null,rules:a.rulesNow.map(r=>[...r]),goal:{...G}};
+    FILTERS.unshift(f);SEL=f.id;saveF();alert('Добавлен фильтр «'+f.name+'». Он выбран в «Прошли» и «Истории».')})}
+
 /* ---------- общее ---------- */
 function openSheetHtml(html){openSheet(html)}
-function labRender(){if(tab==='research')renderLab();if(tab==='rules')renderFilters();if(tab==='pass')renderPass();if(tab==='hist')renderHistory()}
+function labRender(){if(tab==='auto')renderAuto();if(tab==='research')renderLab();if(tab==='rules')renderFilters();if(tab==='pass')renderPass();if(tab==='hist')renderHistory()}
 function switchTab(t){const b=document.querySelector(`.tab[data-t="${t}"]`);if(b)b.click()}
 // обновление: сегодня — раз в 2 минуты, живая лента — раз в 30 секунд
 setInterval(async()=>{await loadLive();try{journalAdd(buyable(),curF())}catch{}if(document.hidden)return;if(tab==='pass')renderPass();else updPassCount()},30000);

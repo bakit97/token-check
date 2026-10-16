@@ -448,11 +448,68 @@ async function exportDays(){const now=Date.now(),today=dayKey(now),yest=dayKey(n
     if(d===yest)lastYest=now}
   await flushUploads();
   await upload('status.json',{updated:now,version:VERSION,coins:C.size,today:[...C.values()].filter(c=>dayKey(c.t)===today).length,okToday:[...C.values()].filter(c=>dayKey(c.t)===today&&isOk(c)).length,
-    gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),creditsBy:crLog.reduce((o,x)=>(o[x[2]]=(o[x[2]]||0)+x[1],o),{}),rpcCtx:RPCCTX,helius:!!HKEY,recon:RC.log.slice(-12),ws:{on:WS.on,since:WS.since,kb:Math.round(WS.bytes/1024),credits:+(WS.bytes/1e6*20).toFixed(1),msgs:WS.msgs,cand:WS.cand,err:WS.err},mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})}
+    gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),creditsBy:crLog.reduce((o,x)=>(o[x[2]]=(o[x[2]]||0)+x[1],o),{}),rpcCtx:RPCCTX,helius:!!HKEY,recon:RC.log.slice(-12),research:RSTAT,ws:{on:WS.on,since:WS.since,kb:Math.round(WS.bytes/1024),credits:+(WS.bytes/1e6*20).toFixed(1),msgs:WS.msgs,cand:WS.cand,err:WS.err},mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})}
 // живая лента для «Прошли»: монеты витрины младше 40 минут, раз в 30 секунд
 async function exportLive(){const now=Date.now();const list=[...C.values()].filter(c=>isOk(c)&&now-c.t<40*60e3);
   await upload('live.json',{updated:now,coins:list.map(c=>rec(c,true))})}
 function prune(){const lim=Date.now()-50*3600e3;for(const [a,c] of C)if(c.t<lim)C.delete(a)}
+
+/* ---------- 7. автоисследование: сервер сам считает живых/мёртвых, ищет признаки и проверяет их на следующих днях ----------
+   Расчёт — тем же кодом, что и сайт (lab-core.js). Правило ищется на прошлых днях (до 3) и проверяется на следующем дне —
+   так видно, что работает устойчиво, а что совпало случайно. Определение «живой» — research/config.json (по умолчанию +50% за 5 ч, стоп −30%, вход на 12-й мин). */
+let LCm=null,LCgen=null;
+async function loadCore(){const tk=await token();const m=await fetch(`https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/code%2Flab-core.js?fields=generation`,{headers:{Authorization:'Bearer '+tk}});
+  if(!m.ok)throw new Error('нет lab-core.js');const g=(await m.json()).generation;if(LCm&&g===LCgen)return LCm;
+  const src=await (await fetch(`https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/code%2Flab-core.js?alt=media`,{headers:{Authorization:'Bearer '+tk}})).text();
+  const box={};require('vm').runInNewContext(src,box);LCm=box.LC;LCgen=g;return LCm}
+async function getObj(name){const tk=await token();const r=await fetch(`https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/${encodeURIComponent(name)}?alt=media`,{headers:{Authorization:'Bearer '+tk}});
+  if(r.status===404)return null;if(!r.ok)throw new Error('get '+name+' '+r.status);return r.json()}
+const RDEF={win:300,up:50,dn:30,dec:12};
+function rowsFromCoins(LC,coins,G,now){LC.markClones(coins);
+  return coins.filter(c=>c.mst==='ok').map(c=>{const o=LC.outcome(c,G,now);const F={};
+    for(const [k] of LC.FKEYS){const v=o.F[k];if(v!=null&&(typeof v!=='number'||isFinite(v)))F[k]=typeof v==='number'?+v.toPrecision(4):v}
+    let x30=null,x60=null;if(o.entry){const pts=LC.pathAfter(c,o.T,G).pts;x30=LC.xAfter({entry:o.entry,T:o.T,pts},30);x60=LC.xAfter({entry:o.entry,T:o.T,pts},60)}
+    return{a:c.a,n:c.n,s:c.s,t:c.t,st:o.st,ex:o.exact?1:0,F,x30:x30!=null?+x30.toFixed(3):null,x60:x60!=null?+x60.toFixed(3):null,pk:o.peak!=null&&isFinite(o.peak)?+o.peak.toFixed(3):null}})}
+const dayEnd=d=>Date.parse(d+'T00:00:00Z')-TZ+864e5;
+async function researchRun(){const now=Date.now();const LC=await loadCore();const cfg=Object.assign({},RDEF,(await getObj('research/config.json').catch(()=>null))||{});
+  const ck=JSON.stringify([cfg.win,cfg.up,cfg.dn,cfg.dec,LCgen]);const days=[];
+  for(let o=13;o>=0;o--){const d=dayKey(now-o*864e5);let rows=null;
+    const mem=[...C.values()].filter(c=>dayKey(c.t)===d);
+    const cached=await getObj(`research/rows/${d}.json`).catch(()=>null);
+    if(cached&&cached.ck===ck)rows=cached.rows;
+    else if(mem.length){rows=rowsFromCoins(LC,mem.map(c=>rec(c,true)),cfg,now);
+      if(now>dayEnd(d)+cfg.dec*60e3+cfg.win*60e3+40*60e3)await upload(`research/rows/${d}.json`,{d,ck,at:now,rows})}
+    if(rows&&rows.length)days.push({d,rows})}
+  const lab=r=>r.st==='live'||r.st==='dead',rate=a=>a.length?a.filter(r=>r.st==='live').length/a.length:null;
+  const qs=[.1,.2,.3,.4,.5,.6,.7,.8,.9];
+  function bestRule(train,k,type){const base=rate(train);if(!base)return null;const vals=train.map(r=>r.F[k]).filter(v=>v!=null).sort((a,b)=>a-b);if(vals.length<20)return null;
+    const cands=type==='b'?[[k,'=',true],[k,'=',false]]:[...new Set(qs.map(q=>vals[Math.floor(q*(vals.length-1))]))].flatMap(v=>[[k,'>=',v],[k,'<=',v]]);
+    let best=null;for(const rule of cands){const p=train.filter(r=>LC.passes(r.F,[rule]));if(p.length<15||p.length<train.length*0.1)continue;
+      const rt=(p.filter(r=>r.st==='live').length+1)/(p.length+2),lift=rt/base;if(!best||lift>best.lift)best={rule,lift,n:p.length,rate:rt}}return best}
+  const L=days.map(x=>({d:x.d,rows:x.rows.filter(lab)}));
+  const dayStat=days.map(x=>{const l=x.rows.filter(lab);const c={};x.rows.forEach(r=>c[r.st]=(c[r.st]||0)+1);return{d:x.d,all:x.rows.length,live:c.live||0,dead:c.dead||0,amb:c.amb||0,early:c.early||0,nodata:c.nodata||0,late:c.late||0,base:rate(l)}});
+  const feats=[],auto=[1,2,3].map(k=>({k,days:[]}));
+  for(let i=1;i<L.length;i++){const train=L.slice(Math.max(0,i-3),i).flatMap(x=>x.rows),test=L[i].rows;if(train.length<40||test.length<10)continue;const tb=rate(test);
+    const per=[];for(const [k,type] of LC.FKEYS){const b=bestRule(train,k,type);if(!b)continue;const p=test.filter(r=>LC.passes(r.F,[b.rule]));
+      per.push({k,type,b});let f=feats.find(x=>x.k===k);if(!f){f={k,type,tests:[]};feats.push(f)}f.tests.push({d:L[i].d,rule:b.rule,trainLift:+b.lift.toFixed(2),n:p.length,live:p.filter(r=>r.st==='live').length,base:tb})}
+    per.sort((a,b)=>b.b.lift-a.b.lift);
+    for(const A of auto){const top=per.filter(x=>x.b.lift>=1.1).slice(0,A.k);if(top.length<A.k)continue;const rules=top.map(x=>x.b.rule);
+      const p=test.filter(r=>LC.passes(r.F,rules));const allP=days[i].rows.filter(r=>LC.passes(r.F,rules));const x60=allP.map(r=>r.x60).filter(v=>v!=null).sort((a,b)=>a-b);
+      A.days.push({d:L[i].d,rules,n:p.length,live:p.filter(r=>r.st==='live').length,base:tb,sig:allP.length,x60:x60.length?x60[x60.length>>1]:null})}}
+  for(const f of feats){const n=f.tests.reduce((s,x)=>s+x.n,0),lv=f.tests.reduce((s,x)=>s+x.live,0);const bn=f.tests.reduce((s,x)=>s+x.base*x.n,0);
+    f.n=n;f.rate=n?lv/n:null;f.lift=n&&bn?lv/bn:null;f.daysUp=f.tests.filter(x=>x.n>=5&&x.base&&x.live/x.n>x.base).length;f.days=f.tests.length;
+    f.stable=f.days>=3&&f.n>=30&&f.lift>=1.15&&f.daysUp/f.days>=0.7;}
+  feats.sort((a,b)=>(b.stable-a.stable)||((b.lift||0)-(a.lift||0)));
+  // текущие правила (на последних 3 днях) — для живого использования
+  const lastTrain=L.slice(-3).flatMap(x=>x.rows);const cur={};for(const [k,type] of LC.FKEYS){const b=bestRule(lastTrain,k,type);if(b)cur[k]={rule:b.rule,lift:+b.lift.toFixed(2),n:b.n,rate:+b.rate.toFixed(3)}}
+  for(const f of feats)f.cur=cur[f.k]||null;
+  const inSample=Object.entries(cur).map(([k,v])=>({k,...v})).sort((a,b)=>b.lift-a.lift).slice(0,12);
+  for(const A of auto){const n=A.days.reduce((s,x)=>s+x.n,0),lv=A.days.reduce((s,x)=>s+x.live,0),bn=A.days.reduce((s,x)=>s+x.base*x.n,0);A.n=n;A.rate=n?lv/n:null;A.lift=n&&bn?lv/bn:null;
+    const ranked=Object.entries(cur).filter(([,v])=>v.lift>=1.1).sort((a,b)=>b[1].lift-a[1].lift).slice(0,A.k);A.rulesNow=ranked.length===A.k?ranked.map(([,v])=>v.rule):null}
+  await upload('research/report.json',{updated:now,cfg,days:dayStat,labeledDays:L.filter(x=>x.rows.length).length,feats:feats.map(f=>({k:f.k,type:f.type,days:f.days,daysUp:f.daysUp,n:f.n,rate:f.rate,lift:f.lift,stable:f.stable,cur:f.cur,tests:f.tests.slice(-14)})),
+    auto,inSample});
+  RSTAT={at:now,days:days.length,labeled:L.reduce((s,x)=>s+x.rows.length,0)}}
+let RSTAT=null;
 
 /* ---------- самообновление: новая версия кода в бакете → перезапуск ---------- */
 async function codeGen(){const tk=await token();const r=await fetch(`https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/code%2Fcollector.js?fields=generation`,{headers:{Authorization:'Bearer '+tk}});return (await r.json()).generation}
@@ -474,6 +531,7 @@ const STARTED=Date.now();
   setInterval(()=>{try{candleTasks()}catch(e){err('candles '+e.message)}},15000);
   chainLoop();chainObsLoop();chainWatch();setInterval(diagCheck,60000);diagCheck();
   setTimeout(()=>{reconcile();setInterval(reconcile,60*60e3)},60000);
+  setTimeout(()=>{const go=()=>researchRun().catch(e=>err('research '+e.message));go();setInterval(go,60*60e3)},180000);
   setInterval(()=>{prune();save()},120000);
   (async()=>{for(;;){await sleep(120000);try{await exportDays()}catch(e){err('export '+e.message)}}})();
   (async()=>{await sleep(45000);for(;;){try{await exportLive()}catch(e){err('live '+e.message)}await sleep(30000)}})();
