@@ -213,7 +213,7 @@ const OBS_KEYS=['ds','k10','path','hold','bx','lq','gx','vaults','vmint','vdec',
 function takeObs(c){const o={};for(const k of OBS_KEYS){if(c[k]!=null)o[k]=c[k];delete c[k]}for(const k of OBS_TMP)delete c[k];return o}
 function load(){try{const a=JSON.parse(fs.readFileSync(DIR+'/state.json','utf8'));a.forEach(c=>{
     if(c.fv!==FV){c.legacy={snap:c.snap,act:c.act,k:c.k};for(const k of ['snap','act','k','o','cur','cn','orig'])delete c[k];c.fv=FV}
-    C.set(c.a,c)});log('загружено монет',C.size)}catch{}
+    if(c.disc==='ws'&&c.d==='pumpswap')return;C.set(c.a,c)});log('загружено монет',C.size)}catch{}
   try{RC=JSON.parse(fs.readFileSync(DIR+'/recon.json','utf8'))}catch{}}
 function save(){try{fs.writeFileSync(DIR+'/state.tmp',JSON.stringify([...C.values()]));fs.renameSync(DIR+'/state.tmp',DIR+'/state.json');
   fs.writeFileSync(DIR+'/recon.json',JSON.stringify(RC))}catch(e){err('save '+e.message)}}
@@ -406,15 +406,16 @@ function chainWatch(){let ws,ping;const subs={};
   const start=async()=>{const key=await heliusKey();if(!key){setTimeout(start,60e3);return}
     ws=new WebSocket('wss://mainnet.helius-rpc.com/?api-key='+key);
     ws.onopen=()=>{WS.on=true;WS.since=Date.now();
-      [['dbc',DBC,[{dataSize:424},{memcmp:{offset:305,bytes:'2'}}]],['ll',LAUNCH,[{memcmp:{offset:17,bytes:'3'}}]],['pump',PUMP_AMM,[{dataSize:301},{memcmp:{offset:9,bytes:'11'}}]]]
+      [['dbc',DBC,[{dataSize:424},{memcmp:{offset:305,bytes:'2'}}]],['ll',LAUNCH,[{memcmp:{offset:17,bytes:'3'}}]]]
         .forEach(([n,prog,f],i)=>{subs[100+i]=n;ws.send(JSON.stringify({jsonrpc:'2.0',id:100+i,method:'programSubscribe',params:[prog,{encoding:'base64',commitment:'confirmed',filters:f}]}))});
       ping=setInterval(()=>{try{ws.send(JSON.stringify({jsonrpc:'2.0',id:1,method:'getHealth'}))}catch{}},30e3)};
     ws.onmessage=e=>{const txt=typeof e.data==='string'?e.data:'';WS.bytes+=txt.length;let m;try{m=JSON.parse(txt)}catch{return}
       if(m.id&&subs[m.id]){subs['s'+m.result]=subs[m.id];return}
       const n=subs['s'+m.params?.subscription];const v=m.params?.result?.value;if(!n||!v)return;WS.msgs[n]=(WS.msgs[n]||0)+1;
+      if(WS.msgs[n]>5000&&Date.now()-WS.since<3600e3){err('подписка '+n+' слишком шумная — закрыта');try{ws.close()}catch{}WS.stop=1;return}
       try{wsCandidate(n,v.pubkey,b64(v.account?.data?.[0]))}catch(x){err('ws '+x.message)}};
     ws.onerror=()=>{WS.err++};
-    ws.onclose=()=>{WS.on=false;clearInterval(ping);err('ws закрыт — переподключение');setTimeout(()=>{start();reconcile().catch(()=>{})},5000)}};
+    ws.onclose=()=>{WS.on=false;clearInterval(ping);if(WS.stop)return;err('ws закрыт — переподключение');setTimeout(()=>{start();reconcile().catch(()=>{})},5000)}};
   start()}
 
 /* ---------- 6. выгрузка ---------- */
