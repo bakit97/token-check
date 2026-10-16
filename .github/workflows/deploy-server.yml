@@ -26,3 +26,23 @@ jobs:
         run: |
           gcloud storage cp lab-core.js gs://sol-scan-511718-data/code/lab-core.js
           gcloud storage cp server/collector.js gs://sol-scan-511718-data/code/collector.js
+      - name: verify running collector
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Collector itself restarts after noticing a changed GCS object generation.
+          expect=$(gcloud storage objects describe gs://sol-scan-511718-data/code/collector.js --format="value(generation)")
+          echo "Expect running version: $expect"
+          for n in {1..10}; do
+            sleep 30
+            url="https://storage.googleapis.com/sol-scan-511718-data/status.json?verify=$(date +%s%N)"
+            data=$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' "$url" || true)
+            if [[ -n "$data" ]] && jq -e --arg v "$expect" --argjson now "$(date +%s%3N)" \
+              '.version == $v and (.updated | type == "number" and . > $now - 180000) and (.startedAt | type == "number" and . > $now - 900000)' <<< "$data" >/dev/null; then
+              echo "Collector is running expected version with a fresh heartbeat."
+              exit 0
+            fi
+            echo "Still waiting for fresh collector heartbeat: attempt $n/10"
+          done
+          echo "::error::Collector did not confirm a fresh heartbeat for the deployed version."
+          exit 1
