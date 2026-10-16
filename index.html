@@ -94,6 +94,18 @@ body[data-ui-mode="updated"] .only-classic-label{display:none!important}
 .source-foot{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;color:var(--up)}
 .source-foot button{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 12px;color:var(--mut)}
 .source-note{font-size:11px;line-height:1.4;color:var(--mut);margin:9px 0 0}
+.module-panel{padding:0 0 12px}.module-group{border:1px solid var(--line);background:var(--panel);border-radius:12px;margin:12px 0;padding:12px}
+.module-title{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:15px}
+.module-title button{background:var(--acc);color:white;border:0;border-radius:10px;width:44px;height:44px;font-size:26px}
+.module-list{display:grid;gap:8px;margin-top:10px}
+.module-item{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px}
+.module-item label{display:flex;align-items:center;gap:10px;flex:1;min-width:0;font-size:13px}
+.module-item label span{overflow-wrap:anywhere}.module-item input{width:20px;height:20px;accent-color:var(--acc)}
+.module-item button{background:transparent;border:1px solid var(--line);color:var(--mut);border-radius:8px;min-width:35px;min-height:35px}
+.module-picker{border:1px solid var(--acc);border-radius:12px;background:var(--panel);padding:12px}
+.module-picker button{min-height:40px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);padding:8px;margin:6px 6px 0 0}
+.module-picker #moduleChoices{display:grid;gap:6px;margin-top:8px}
+.module-picker #moduleChoices button{text-align:left}
 .all-tools{display:flex;align-items:center;gap:8px;margin:10px 0 4px}
 .all-tools input{width:100%;min-width:0;min-height:43px;background:var(--panel);border:1px solid var(--line);color:var(--fg);border-radius:11px;padding:10px 13px;font:13px var(--sans)}
 .all-tools input:focus{outline:2px solid var(--acc);outline-offset:1px}
@@ -330,23 +342,14 @@ body[data-ui-mode="updated"] #lAll .row{padding:7px 9px}
   <section id="v-research" hidden><div id="research"></div></section>
   <section id="v-auto" hidden><div id="auto"></div></section>
   <section id="v-rules" hidden>
-    <div class="source-box updated-ui-only" id="personalSourceFilters">
-      <div class="source-inside" style="border-top:0">
-        <h3 style="margin:0 0 4px;font-size:14px">Мои условия для источников</h3>
-        <p class="source-note" style="margin:0 0 10px">Отдельные настройки до и после миграции.</p>
-        <div class="source-modes"><button type="button" data-source-mode="birth">🌱 До миграции</button><button type="button" data-source-mode="migration">🎓 После миграции</button></div>
-        <p class="source-section-label">Дополнительные условия этого источника</p>
-        <div class="source-fields">
-          <label>Ликвидность от, $<select data-source-key="liq"><option value="0">Любая</option><option value="1000">1 000</option><option value="5000">5 000</option><option value="10000">10 000</option><option value="25000">25 000</option></select></label>
-          <label>Объём за 5 мин, $<select data-source-key="v5"><option value="0">Любой</option><option value="500">500</option><option value="2000">2 000</option><option value="5000">5 000</option><option value="10000">10 000</option></select></label>
-          <label>Покупок за 5 мин<select data-source-key="b5"><option value="0">Любое</option><option value="5">5</option><option value="10">10</option><option value="20">20</option><option value="50">50</option></select></label>
-        </div>
-        <div class="source-foot"><button type="button" id="sourceReset">Сбросить условия</button><span>✓ Автосохранение</span></div>
-        <p class="source-note" id="sourceHint">Пока до миграции данные не собираются. Эти условия только скрывают карточки и не удаляют монеты из архива.</p>
-
-      </div>
+    <div class="updated-ui-only module-panel">
+      <p class="source-note">Добавляй готовые модули из «Исследования». Несколько фильтров могут быть включены одновременно.</p>
+      <section class="module-group"><div class="module-title"><b>🌱 До миграции</b><button type="button" data-add-module="birth" aria-label="Добавить фильтр до миграции">＋</button></div><div id="modulesBirth" class="module-list"></div></section>
+      <section class="module-group"><div class="module-title"><b>🎓 После миграции</b><button type="button" data-add-module="migration" aria-label="Добавить фильтр после миграции">＋</button></div><div id="modulesMigration" class="module-list"></div></section>
+      <div id="modulePicker" hidden class="module-picker"><b>Выбери готовый фильтр</b><div id="moduleChoices"></div><button type="button" id="modulePickerClose">Закрыть</button></div>
     </div>
-    <div id="rules"></div>
+    <div class="classic-ui-only">    <div id="rules"></div>
+    </div>
   </section>
   <section id="v-check" hidden>
     <div class="inrow"><input id="addr" placeholder="Адрес контракта" autocomplete="off" spellcheck="false"><button class="btn" id="go">Проверить</button></div>
@@ -1729,7 +1732,41 @@ async function renderAuto(){const box=$('#auto');if(!box)return;
 
 /* ---------- общее ---------- */
 function openSheetHtml(html){openSheet(html)}
-function labRender(){if(tab==='auto')renderAuto();if(tab==='research')renderLab();if(tab==='rules')renderFilters();if(tab==='pass')renderPass();if(tab==='hist')renderHistory()}
+/* Мои фильтры: независимые включаемые модули, без изменения старой логики. */
+const MODULE_STORAGE='sc_filter_modules_v1';
+const moduleSelection=LS.get(MODULE_STORAGE,{birth:[],migration:[]});
+for(const k of ['birth','migration'])if(!Array.isArray(moduleSelection[k]))moduleSelection[k]=[];
+let modulePickFor='migration';
+function saveModules(){LS.set(MODULE_STORAGE,moduleSelection)}
+function renderModules(){
+  for(const [mode,id] of [['birth','modulesBirth'],['migration','modulesMigration']]){
+    const root=document.getElementById(id);if(!root)return;
+    root.innerHTML=moduleSelection[mode].length?moduleSelection[mode].map(item=>{
+      const f=FILTERS.find(x=>x.id===item.id);
+      return '<div class="module-item"><label><input type="checkbox" data-mod-toggle="'+mode+'" data-id="'+esc(item.id)+'" '+(item.on?'checked':'')+'><span>'+esc(f?.name||'Модуль недоступен')+'</span></label><button type="button" data-mod-remove="'+mode+'" data-id="'+esc(item.id)+'" aria-label="Убрать модуль">×</button></div>'
+    }).join(''):'<p class="source-note">Нет добавленных фильтров. Нажми ＋</p>';
+  }
+  document.querySelectorAll('[data-mod-toggle]').forEach(el=>el.onchange=()=>{
+    const item=moduleSelection[el.dataset.modToggle].find(x=>x.id===el.dataset.id);
+    if(item){item.on=el.checked;saveModules()}
+  });
+  document.querySelectorAll('[data-mod-remove]').forEach(el=>el.onclick=()=>{
+    const mode=el.dataset.modRemove;moduleSelection[mode]=moduleSelection[mode].filter(x=>x.id!==el.dataset.id);saveModules();renderModules()
+  })
+}
+document.querySelectorAll('[data-add-module]').forEach(b=>b.onclick=()=>{
+  modulePickFor=b.dataset.addModule;
+  const box=document.getElementById('modulePicker'),choices=document.getElementById('moduleChoices');
+  choices.innerHTML=FILTERS.filter(f=>!moduleSelection[modulePickFor].some(x=>x.id===f.id)).map(f=>
+    '<button type="button" data-pick-filter="'+esc(f.id)+'">'+esc(f.name)+'</button>'
+  ).join('')||'<p class="source-note">Других готовых фильтров пока нет.</p>';
+  box.hidden=false;
+  choices.querySelectorAll('[data-pick-filter]').forEach(el=>el.onclick=()=>{
+    moduleSelection[modulePickFor].push({id:el.dataset.pickFilter,on:true});saveModules();box.hidden=true;renderModules()
+  })
+});
+document.getElementById('modulePickerClose').onclick=()=>document.getElementById('modulePicker').hidden=true;
+function labRender(){if(tab==='auto')renderAuto();if(tab==='research')renderLab();if(tab==='rules'){renderFilters();renderModules()};if(tab==='pass')renderPass();if(tab==='hist')renderHistory()}
 function switchTab(t){const b=document.querySelector(`.tab[data-t="${t}"]`);if(b)b.click()}
 // обновление: сегодня — раз в 2 минуты, живая лента — раз в 30 секунд
 setInterval(async()=>{await loadLive();try{journalAdd(buyable(),curF())}catch{}if(document.hidden)return;if(tab==='pass')renderPass();else updPassCount()},30000);
