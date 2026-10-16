@@ -502,37 +502,6 @@ $('#applyDiscovery').onclick=()=>{
   renderDiscoveryControls();$('#sourceBox').open=false
 };
 renderDiscoveryControls();
-// Независимые настройки для отображения двух источников, рабочие фильтры не затрагиваются.
-const SOURCE_OPTIONS={liq:[0,1000,5000,10000,25000],v5:[0,500,2000,5000,10000],b5:[0,5,10,20,50]};
-const cleanSource=x=>Object.fromEntries(Object.entries(SOURCE_OPTIONS).map(([k,arr])=>[k,arr.includes(Number(x?.[k]))?Number(x[k]):0]));
-const savedSources=sget('sc_source_filters_v1',{});
-const SOURCE_RULES={birth:cleanSource(savedSources?.birth),migration:cleanSource(savedSources?.migration)};
-let SOURCE_EDIT=sget('sc_source_edit_v1','migration');
-if(!SOURCE_RULES[SOURCE_EDIT])SOURCE_EDIT='migration';
-function sourceAllowed(c,mode){
-  const r=SOURCE_RULES[mode];
-  return !!r&&(!r.liq||(Number.isFinite(c.liq)&&c.liq>=r.liq))&&
-    (!r.v5||(Number.isFinite(c.v5)&&c.v5>=r.v5))&&
-    (!r.b5||(Number.isFinite(c.b5)&&c.b5>=r.b5))
-}
-function sourceUi(){
-  document.querySelectorAll('[data-source-mode]').forEach(b=>b.classList.toggle('on',b.dataset.sourceMode===SOURCE_EDIT));
-  document.querySelectorAll('[data-source-key]').forEach(el=>el.value=String(SOURCE_RULES[SOURCE_EDIT][el.dataset.sourceKey]));
-  document.querySelectorAll('[data-source-window-wrap]').forEach(el=>{el.hidden=el.dataset.sourceWindowWrap!==SOURCE_EDIT});
-  const cnt=x=>Object.values(SOURCE_RULES[x]).filter(Boolean).length;
-  $('#sourceCount').textContent='До: '+DISCOVERY_WINDOWS.birth+' мин · После: '+DISCOVERY_WINDOWS.migration+' мин';
-  $('#sourceHint').textContent=SOURCE_EDIT==='birth'?
-    'До миграции: поток пока не подключён. Настройки сохраняются на будущее.':
-    'Условия скрывают карточки только в будущей персональной витрине; на ленту «Все» они не влияют.';
-}
-document.querySelectorAll('[data-source-mode]').forEach(b=>b.onclick=()=>{SOURCE_EDIT=b.dataset.sourceMode;sset('sc_source_edit_v1',SOURCE_EDIT);sourceUi()});
-document.querySelectorAll('[data-source-key]').forEach(el=>el.onchange=()=>{
-  const key=el.dataset.sourceKey,v=Number(el.value);
-  if(!SOURCE_OPTIONS[key]?.includes(v))return;
-  SOURCE_RULES[SOURCE_EDIT][key]=v;sset('sc_source_filters_v1',SOURCE_RULES);sourceUi();render()
-});
-$('#sourceReset').onclick=()=>{SOURCE_RULES[SOURCE_EDIT]=cleanSource({});sset('sc_source_filters_v1',SOURCE_RULES);sourceUi();render()};
-sourceUi();
 // Переключение меняет только вид интерфейса, не переписывает фильтры и историю.
 let UI_MODE=sget('sc_ui_mode_v1','classic');
 if(!['classic','updated'].includes(UI_MODE))UI_MODE='classic';
