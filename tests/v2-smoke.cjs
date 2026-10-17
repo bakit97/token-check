@@ -159,3 +159,48 @@ test('полигон сервера: неопределённые показат
   assert.match(el('testResults').innerHTML,/Нет показателя: живые 0, мёртвые 250/);
   assert.doesNotMatch(el('testResults').innerHTML,/🔴 100\.0% \(500\/500\)/);
 });
+
+
+test('после пропадания сервера старые карточки не остаются как проверенные',async()=>{
+  const nodes=new Map(),intervals=[];
+  function el(id){
+    if(nodes.has(id))return nodes.get(id);
+    const node={id,innerHTML:'',textContent:'',value:'',hidden:false,disabled:false,dataset:{},style:{},
+      classList:{toggle(){},add(){},remove(){}},
+      addEventListener(){},querySelectorAll(){return[]},insertAdjacentHTML(){},scrollIntoView(){},remove(){}};
+    nodes.set(id,node);return node;
+  }
+  const document={readyState:'complete',getElementById:el,querySelectorAll(){return[]},addEventListener(){}};
+  const now=Date.now(),mint='So11111111111111111111111111111111111111112';
+  const coin={a:mint,n:'Принятая монета',s:'REAL',mst:'ok',
+    mT:now-20000,mSeen:now-15000,ds:[[Math.floor(now/1000),1,2000,5000,2,1,100]]};
+  const accepted={a:mint,phase:'after',eventAt:now-20000,acceptedAt:now-15000};
+  let online=true;
+  const fetch=async url=>{
+    if(url.includes('source/status.json')&&!online)return {ok:false,status:503};
+    return {ok:true,status:200,json:async()=>{
+      if(url.includes('source/status.json'))return {mode:'verified-pre-post',updated:now,
+        today:1,todayBefore:0,todayAfter:1,settings:{beforeMinutes:2,afterMinutes:2}};
+      if(url.includes('source/live.json')||url.includes('source/day/'))return {coins:[accepted]};
+      if(url.includes('research-v2/status.json'))return null;
+      if(url.includes('status.json'))return {updated:now};
+      if(url.includes('obs/'))return {coins:[]};
+      return {coins:[coin]};
+    }};
+  };
+  const env={window:{addEventListener(){}},document,localStorage:{getItem(){return null},setItem(){}},
+    fetch,AbortController,URL,console,Date,Intl,Math,Number,Map,Set,Array,String,Object,JSON,Error,
+    setInterval:fn=>(intervals.push(fn),intervals.length),
+    setTimeout:()=>0,clearTimeout:()=>{}};
+  vm.runInNewContext(js,env,{timeout:2000});
+  await new Promise(r=>setTimeout(r,70));
+  assert.match(el('coinList').innerHTML,/Принятая монета/);
+  assert.equal(el('net').textContent,'● LIVE');
+  online=false;
+  intervals[0]();
+  await new Promise(r=>setTimeout(r,70));
+  assert.doesNotMatch(el('coinList').innerHTML,/Принятая монета/);
+  assert.match(el('sourceNote').textContent,/Главный источник сервера недоступен/);
+  assert.equal(el('net').textContent,'● Источник недоступен');
+  assert.equal(el('visibleCount').textContent,'—');
+});
