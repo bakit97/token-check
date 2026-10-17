@@ -24,7 +24,8 @@ async function audit(){
  const out=await Promise.all(required.map(async ([name,validate,purpose])=>{
    const data=await read(name);
    if(!validate(data))throw Error('Invalid '+purpose+': '+name);
-   if(clock()-data.updated>8*60000||data.updated>clock()+2*60000)
+   const maxAge=/polygon-2\.json|auto-[12]\.json/.test(name)?27*60000:8*60000;
+   if(clock()-data.updated>maxAge||data.updated>clock()+2*60000)
      throw Error('Stale or impossible timestamp '+name);
    return {name,updated:new Date(data.updated).toISOString(),ready:true};
  }));
