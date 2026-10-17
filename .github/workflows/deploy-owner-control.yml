@@ -41,7 +41,7 @@ jobs:
           url=$(gcloud run services describe solscan-control \
             --project sol-scan-511718 --region us-central1 --format='value(status.url)')
           test -n "$url"
-          echo "$url" | grep -Eq '^https://[a-zA-Z0-9-]+[.]run[.]app$'
+          echo "$url" | grep -Eq '^https://[a-zA-Z0-9.-]+[.]run[.]app$'
           printf '{"enabled":true,"url":"%s"}\n' "$url" > /tmp/solscan-control-endpoint.json
           gcloud storage cp /tmp/solscan-control-endpoint.json \
             gs://sol-scan-511718-data/control/endpoint.json
