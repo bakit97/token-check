@@ -1,0 +1,33 @@
+name: publish-owner-filters
+# Explicit owner action only; routine server builds must not reset filters.
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type PUBLISH to replace active server filter settings'
+        required: true
+        type: string
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require explicit confirmation and valid rules
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = PUBLISH
+          node -e "const fs=require('fs'); const {configOf}=require('./server/pass-runtime'); configOf(JSON.parse(fs.readFileSync('server/pass-filters.json','utf8'))); console.log('Configuration schema accepted')"
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/421351476653/locations/global/workloadIdentityPools/github/providers/github
+          service_account: helper-ai@sol-scan-511718.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Publish this specific approved version
+        run: |
+          set -euo pipefail
+          gcloud storage cp server/pass-filters.json gs://sol-scan-511718-data/config/pass-filters.json
