@@ -89,3 +89,29 @@ test('requires 5000-per-class maximum and validates configuration',t=>{
  assert.throws(()=>new ResearchRuntime({dir:workingDir(t),config:{hours:25}}),RangeError);
  assert.equal(classOf({activePct:95,maxIdleObserved:0},{minActive:70,maxIdle:60}),'live');
 });
+
+
+test('continuous research limits CPU work and retries missing data every fifteen minutes',t=>{
+ const dir=workingDir(t),runtime=new ResearchRuntime({dir});
+ const entries=[];
+ for(let i=0;i<600;i++)entries.push(['mint-'+i,
+   {mint:'mint-'+i,phase:'before',acceptedAt:T}]);
+ const source={records:new Map(entries)};
+ const coins=new Map(entries.map(([mint])=>[mint,{ds:[]}]));
+ const first=runtime.update({source,coins,now:T+6*H});
+ assert.equal(first.attempted,250);
+ assert.equal(first.pending['deferred-by-batch'],350);
+ assert.equal(first.pending['insufficient-activity-coverage'],250);
+ const second=runtime.update({source,coins,now:T+6*H+M});
+ assert.equal(second.attempted,250);
+ assert.equal(second.pending['deferred-by-batch'],100);
+ assert.equal(second.pending['insufficient-activity-coverage'],500);
+ const third=runtime.update({source,coins,now:T+6*H+2*M});
+ assert.equal(third.attempted,100);
+ assert.equal(third.pending['insufficient-activity-coverage'],600);
+ assert.equal(third.pending['deferred-by-batch']||0,0);
+ const soon=runtime.update({source,coins,now:T+6*H+3*M});
+ assert.equal(soon.attempted,0);
+ const later=runtime.update({source,coins,now:T+6*H+16*M});
+ assert.equal(later.attempted,250);
+});

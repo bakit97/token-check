@@ -11,6 +11,8 @@ const MIN=60_000;
 const HOURS=3_600_000;
 const MAX_BANK_PER_CLASS=5000;
 const FRESH_WINDOW=48*HOURS;
+const RETRY_INCOMPLETE_MS=15*MIN;
+const MAX_CLASSIFICATION_CHECKS=250; // per two-minute collector export
 
 function settings(cfg={}) {
   const result={
@@ -57,6 +59,7 @@ class ResearchRuntime {
     this.rows=[];
     this.lookup=new Set();
     this.processed=new Map();
+    this.lastAttemptAt=new Map();
     this.lastAt=null;
     this.pending={};
     if(fs.existsSync(this.file)){
@@ -80,7 +83,7 @@ class ResearchRuntime {
   }
   update({source,coins,now=Date.now()}={}) {
     if(!source?.records || !coins?.get)throw new TypeError('Need source ledger and coin map');
-    let added=0,considered=0;
+    let added=0,considered=0,attempted=0;
     const pending={},byPhase={before:{live:0,dead:0},after:{live:0,dead:0}};
     // Newest first, avoid scanning the entire multi-month ledger.
     for(const row of source.records.values()){
@@ -91,17 +94,30 @@ class ResearchRuntime {
         pending['not-yet-finished']=(pending['not-yet-finished']||0)+1;
         continue;
       }
+      const previous=this.lastAttemptAt.get(row.mint);
+      if(previous&&now-previous.at<RETRY_INCOMPLETE_MS){
+        pending[previous.why]=(pending[previous.why]||0)+1;
+        continue;
+      }
+      if(attempted>=MAX_CLASSIFICATION_CHECKS){
+        pending['deferred-by-batch']=(pending['deferred-by-batch']||0)+1;
+        continue;
+      }
+      attempted++;
       const coin=coins.get(row.mint);
       if(!coin){
+        this.lastAttemptAt.set(row.mint,{at:now,acceptedAt:row.acceptedAt,why:'candidate-missing'});
         pending['candidate-missing']=(pending['candidate-missing']||0)+1;
         continue;
       }
       const decisionAt=row.acceptedAt+this.config.decisionMinutes*MIN;
       const result=activityOutcome(coin,row.acceptedAt,this.config,now);
       if(result.label==='pending'){
+        this.lastAttemptAt.set(row.mint,{at:now,acceptedAt:row.acceptedAt,why:result.why});
         pending[result.why]=(pending[result.why]||0)+1;
         continue;
       }
+      this.lastAttemptAt.delete(row.mint);
       const features=featuresAt(coin,decisionAt);
       this.rows.push({
         mint:row.mint,phase:row.phase,
@@ -120,6 +136,8 @@ class ResearchRuntime {
     for(const [mint,acceptedAt] of this.processed){
       if(now-acceptedAt>FRESH_WINDOW)this.processed.delete(mint);
     }
+    for(const [mint,retry] of this.lastAttemptAt)
+      if(now-retry.acceptedAt>FRESH_WINDOW)this.lastAttemptAt.delete(mint);
     if(added){
       this.rows=capBank(this.rows,r=>classOf(r,this.config),'live','dead',MAX_BANK_PER_CLASS);
       this.lookup=new Set(this.rows.map(r=>r.mint));
@@ -132,7 +150,8 @@ class ResearchRuntime {
     }
     this.pending=pending;
     this.lastAt=now;
-    return {added,considered,...this.summary()};
+    return {added,considered,attempted,
+      maxChecksPerRun:MAX_CLASSIFICATION_CHECKS,...this.summary()};
   }
   summary(){
     const counts={live:0,dead:0,preLive:0,preDead:0,postLive:0,postDead:0};
