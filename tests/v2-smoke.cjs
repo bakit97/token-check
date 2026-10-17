@@ -157,5 +157,5 @@ test('полигон сервера: неопределённые показат
   event();
   assert.match(el('testResults').innerHTML,/250\/500/);
   assert.match(el('testResults').innerHTML,/Нет показателя: живые 0, мёртвые 250/);
-  assert.doesNotMatch(el('testResults').innerHTML,/100\.0% \(500\/500\)/);
+  assert.doesNotMatch(el('testResults').innerHTML,/🔴 100\.0% \(500\/500\)/);
 });
