@@ -516,10 +516,26 @@ function renderLibrary(){
   $('testResults').innerHTML=testHtml;
   var f=s.filters.filter(function(x){return x.level===s.level});
   $('libraryList').innerHTML=f.length?f.map(function(x){
-    var orig=x.original?x.original.livePercent.toFixed(1)+'% / '+x.original.deadPercent.toFixed(1)+'%':'не проверен';
+    var orig=x.original?x.original.livePercent.toFixed(1)+'% / '+x.original.deadPercent.toFixed(1)+'%':'локально не проверен';
+    var records=filterAuditMeta&&Array.isArray(filterAuditMeta.rules)?
+      filterAuditMeta.rules.filter(function(p){return p.id===x.id&&p.version===x.version&&
+        p.level===x.level&&p.rule.key===x.key&&p.rule.op===x.op&&p.rule.value===x.value}):[];
+    var audits=records.map(function(p){
+      var start=p.original&&p.original.positivePercent!=null&&p.original.negativePercent!=null?
+        '🟢 '+p.original.positivePercent.toFixed(1)+'% · 🔴 '+p.original.negativePercent.toFixed(1)+'%':
+        'недостаточно завершённых наблюдений';
+      var later=p.background&&p.background.positivePercent!=null&&p.background.negativePercent!=null?
+        '🟢 '+p.background.positivePercent.toFixed(1)+'% · 🔴 '+p.background.negativePercent.toFixed(1)+'%':
+        'ещё нет обеих групп';
+      return '<p class="muted">'+esc(p.phase==='before'?'🌱 До':'🎓 После')+
+        ' · начальные: '+start+' · новые: '+later+
+        ' · пропуски '+fmt(p.background?.missing||0)+'</p>';
+    }).join('');
     return '<div class="filter-row"><div class="row"><b>№'+esc(x.id)+' · '+esc(x.name)+'</b><button type="button" class="pbtn" data-edit="'+esc(x.id)+'">Открыть</button></div>'+
       '<p class="muted">'+esc(({buyers:'Покупатели',trades:'Сделки',volume:'Объём $',liq:'Ликвидность $'})[x.key])+' '+esc(x.op)+' '+fmt(x.value)+' · версия '+fmt(x.version)+'</p>'+
-      '<div class="numbers"><span class="badge">Первоначальный: '+orig+'</span><span class="badge">Фоновый: ожидает новые данные</span></div></div>';
+      (audits?'<p class="hint">Серверная история сравнения по версиям:</p>'+audits:
+      '<div class="numbers"><span class="badge">На телефоне: '+orig+'</span>'+
+      '<span class="badge">Серверная фоновая проверка: ожидает настройки</span></div>')+'</div>';
   }).join(''):'<div class="empty-state">Фильтров этого уровня пока нет. Нажми «+ Создать» — можно сделать собственное правило.</div>';
 }
 function testAll(){
