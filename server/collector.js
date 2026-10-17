@@ -316,7 +316,7 @@ async function initResearchV2() {
   RESEARCH_V2=new ResearchRuntime({
     dir:DIR,config:epoch.config,cohortStart:epoch.activeAt,
     bankName:epoch.activeAt===0?'research-v2-bank.json':
-      'research-v2-bank-one-'+epoch.hash+'.json'
+      'research-v2-bank-one-'+epoch.hash+'-'+epoch.activeAt+'.json'
   });
   RESEARCH_V2_ERR='';
   log('исследование v2 готово, накоплено',RESEARCH_V2.rows.length);
@@ -346,7 +346,7 @@ async function initPathsV2(){
   const two=RESEARCH_TWO_EPOCH.current;
   RESEARCH_TWO=new ResearchTwoRuntime({
     dir:DIR,config:two.config,cohortStart:two.activeAt,
-    bankName:'research-v2-bank-two-'+two.hash+'.json'
+    bankName:'research-v2-bank-two-'+two.hash+'-'+two.activeAt+'.json'
   });
   AUTO_V2=require(DIR+'/auto-research-v2.js');
   PASS_ERR='';TWO_ERR='';PASS_CFG_ERR='';
@@ -362,7 +362,7 @@ async function reloadResearchConfig(){
         const x=RESEARCH_ONE_EPOCH.current;
         const {ResearchRuntime}=require(DIR+'/research-runtime.js');
         RESEARCH_V2=new ResearchRuntime({dir:DIR,config:x.config,
-          cohortStart:x.activeAt,bankName:'research-v2-bank-one-'+x.hash+'.json'});
+          cohortStart:x.activeAt,bankName:'research-v2-bank-one-'+x.hash+'-'+x.activeAt+'.json'});
         RESEARCH_BANK_UPLOADED=0;AUTO_UPLOADED=0;
         log('первый исследовательский полигон переключён на новую эпоху',x.hash);
       }
@@ -374,7 +374,7 @@ async function reloadResearchConfig(){
         const x=RESEARCH_TWO_EPOCH.current;
         const {ResearchTwoRuntime}=require(DIR+'/research-two-runtime.js');
         RESEARCH_TWO=new ResearchTwoRuntime({dir:DIR,config:x.config,
-          cohortStart:x.activeAt,bankName:'research-v2-bank-two-'+x.hash+'.json'});
+          cohortStart:x.activeAt,bankName:'research-v2-bank-two-'+x.hash+'-'+x.activeAt+'.json'});
         TWO_BANK_UPLOADED=0;AUTO_UPLOADED=0;
         log('второй исследовательский полигон переключён на новую эпоху',x.hash);
       }
