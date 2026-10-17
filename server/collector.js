@@ -230,6 +230,8 @@ const C=new Map();const FV=2; // версия формата наблюдени�
 // Авторитетный «Все»: отдельный read-only журнал допуска, не зависит от телефона.
 let SOURCE=null, SOURCE_ERR='', PRE=null;
 let RESEARCH_V2=null, RESEARCH_V2_ERR='', RESEARCH_BANK_UPLOADED=0;
+let PASS_V2=null, RESEARCH_TWO=null, AUTO_V2=null;
+let PASS_ERR='', TWO_ERR='', PASS_CFG_ERR='', TWO_BANK_UPLOADED=0, AUTO_UPLOADED=0;
 async function admitVerifiedPublicLaunch(launch,record) {
   const existing=C.get(record.mint);
   if(existing){existing.preCurve=existing.preCurve||1;existing.preTradingAt=record.eventAt;
@@ -286,6 +288,41 @@ async function initResearchV2() {
   RESEARCH_V2=new (require(DIR+'/research-runtime.js').ResearchRuntime)({dir:DIR});
   RESEARCH_V2_ERR='';
   log('исследование v2 готово, накоплено',RESEARCH_V2.rows.length);
+}
+async function initPathsV2(){
+  const names=['pass-runtime.js','research-two-runtime.js','auto-research-v2.js'];
+  const auth=await token();
+  for(const name of names){
+    const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+
+      encodeURIComponent('code/'+name)+'?alt=media',{
+      headers:{Authorization:'Bearer '+auth},signal:AbortSignal.timeout(30000)
+    });
+    if(!r.ok)throw Error('path module '+name+' HTTP '+r.status);
+    const target=DIR+'/'+name,tmp=target+'.tmp';
+    fs.writeFileSync(tmp,await r.text());fs.renameSync(tmp,target);
+  }
+  // A malformed control object fails closed. Never trust a phone-side
+  // localStorage setting as permission to create an authoritative alert.
+  const config=await getObj('config/pass-filters.json');
+  if(!config)throw Error('Missing server filter configuration');
+  PASS_V2=new (require(DIR+'/pass-runtime.js').PassRuntime)({dir:DIR,config});
+  RESEARCH_TWO=new (require(DIR+'/research-two-runtime.js').ResearchTwoRuntime)({dir:DIR});
+  AUTO_V2=require(DIR+'/auto-research-v2.js');
+  PASS_ERR='';TWO_ERR='';PASS_CFG_ERR='';
+  log('серверные пути готовы: Прошли',PASS_V2.records.size,
+    'Уровень 2',RESEARCH_TWO.rows.length,'включено',PASS_V2.config.enabled);
+}
+async function reloadPassConfig(){
+  if(!PASS_V2)return;
+  try{
+    const config=await getObj('config/pass-filters.json');
+    if(!config)throw Error('No pass configuration');
+    if(PASS_V2.applyConfig(config))
+      log('применена новая серверная версия фильтров',PASS_V2.configHash);
+    PASS_CFG_ERR='';
+  }catch(e){
+    PASS_CFG_ERR=e.message;err('pass control '+e.message);
+  }
 }
 function admitVerifiedMigration(c){
   if(!SOURCE)return;
@@ -569,6 +606,48 @@ async function exportResearchV2(now) {
     RESEARCH_BANK_UPLOADED=now;
   }
 }
+async function exportPathsV2(now){
+  if(!PASS_V2||!RESEARCH_TWO||!SOURCE)return;
+  await reloadPassConfig();
+  const p=PASS_V2.update({source:SOURCE,coins:C,now});
+  PASS_ERR='';
+  await upload('passed-v2/status.json',{...p,
+    controlError:PASS_CFG_ERR||null,
+    serverConfig:PASS_V2.config,
+    serverOnly:true});
+  await upload('passed-v2/live.json',{
+    updated:now,origin:'server-journal',
+    coins:PASS_V2.latest(1000).filter(x=>x.zeroAt>now)
+  });
+  for(const d of [dayKey(now),dayKey(now-864e5)]){
+    const rows=PASS_V2.day(d);
+    await upload('passed-v2/day/'+d+'.json',{
+      day:d,updated:now,origin:'server-journal',count:rows.length,coins:rows
+    });
+  }
+  const result=RESEARCH_TWO.update({passes:PASS_V2,coins:C,now});
+  TWO_ERR='';
+  await upload('research-v2/status-two.json',result);
+  if(result.added>0||now-TWO_BANK_UPLOADED>20*60e3){
+    await upload('research-v2/polygon-2.json',{
+      updated:now,settings:result.settings,counts:result.counts,
+      coins:RESEARCH_TWO.select({limit:10000}),
+      note:'Only fully observed server Passed stream; no orders'
+    });
+    TWO_BANK_UPLOADED=now;
+  }
+  if(AUTO_V2&&RESEARCH_V2&&(p.added||result.added||now-AUTO_UPLOADED>20*60e3)){
+    const levelOne=RESEARCH_V2.select({limit:10000}).map(x=>({
+      ...x,time:x.acceptedAt
+    }));
+    const levelTwo=RESEARCH_TWO.select({limit:10000});
+    const one=AUTO_V2.discover(levelOne,{level:'1'});
+    const two=AUTO_V2.discover(levelTwo,{level:'2'});
+    await upload('research-v2/auto-1.json',{updated:now,...one});
+    await upload('research-v2/auto-2.json',{updated:now,...two});
+    AUTO_UPLOADED=now;
+  }
+}
 async function exportDays(){const now=Date.now(),today=dayKey(now),yest=dayKey(now-864e5);
   for(const d of [today,yest]){if(d===yest&&now-lastYest<30*60e3)continue;const list=[...C.values()].filter(c=>dayKey(c.t)===d);if(!list.length)continue;
     await upload(`day/${d}.json`,{day:d,tz:'Asia/Almaty',fv:FV,updated:now,count:list.length,coins:list.map(c=>rec(c,false))});
@@ -578,8 +657,12 @@ async function exportDays(){const now=Date.now(),today=dayKey(now),yest=dayKey(n
   await flushUploads();
   try{await exportSource(now)}catch(e){SOURCE_ERR='выгрузка источника: '+e.message;err('source export '+e.message)}
   try{await exportResearchV2(now)}catch(e){RESEARCH_V2_ERR=e.message;err('research-v2 export '+e.message)}
+  try{await exportPathsV2(now)}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('pass/r2 export '+e.message)}
   await upload('status.json',{updated:now,version:VERSION,source:{active:!!SOURCE,error:SOURCE_ERR,summary:SOURCE?.summary(now)||null},
-    researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,summary:RESEARCH_V2?.summary()||null},coins:C.size,today:[...C.values()].filter(c=>dayKey(c.t)===today).length,okToday:[...C.values()].filter(c=>dayKey(c.t)===today&&isOk(c)).length,
+    researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,summary:RESEARCH_V2?.summary()||null},
+    passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,summary:PASS_V2?.summary(now)||null},
+    researchTwo:{active:!!RESEARCH_TWO,error:TWO_ERR,summary:RESEARCH_TWO?.summary()||null},
+    coins:C.size,today:[...C.values()].filter(c=>dayKey(c.t)===today).length,okToday:[...C.values()].filter(c=>dayKey(c.t)===today&&isOk(c)).length,
     gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),creditsBy:crLog.reduce((o,x)=>(o[x[2]]=(o[x[2]]||0)+x[1],o),{}),rpcCtx:RPCCTX,helius:!!HKEY,recon:RC.log.slice(-12),research:RSTAT,ws:{on:WS.on,since:WS.since,kb:Math.round(WS.bytes/1024),credits:+(WS.bytes/1e6*20).toFixed(1),msgs:WS.msgs,cand:WS.cand,err:WS.err},mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})}
 // живая лента для «Прошли»: монеты витрины младше 40 минут, раз в 30 секунд
 async function exportLive(){const now=Date.now();const list=[...C.values()].filter(c=>observedEligible(c)&&now-c.t<40*60e3);
@@ -659,6 +742,7 @@ const STARTED=Date.now();
 (async()=>{fs.mkdirSync(DIR,{recursive:true});load();log('старт, версия',VERSION);
   try{await initSource()}catch(e){SOURCE_ERR=e.message;err('главный источник не запустился: '+e.message)}
   try{await initResearchV2()}catch(e){RESEARCH_V2_ERR=e.message;err('исследование v2 не запустилось: '+e.message)}
+  try{await initPathsV2()}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('серверные пути не запустились: '+e.message)}
   for(const pg of [1,2,3])try{await addFromGT(await gt(`/new_pools?page=${pg}&include=base_token,quote_token,dex`,0,'boot'+pg))}catch(e){err('boot '+e.message)}
   setInterval(pollNew,90000);
   (async()=>{for(;;){try{await pollDS()}catch(e){err('dsloop '+e.message)}await sleep(15000)}})();
