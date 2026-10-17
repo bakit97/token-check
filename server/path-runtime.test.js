@@ -42,7 +42,7 @@ function setupPass(t){
   const dir=folder(t);
   const cfg=filterConfig();
   const runtime=new PassRuntime({dir,config:cfg});
-  const accepted=Date.now()+3000;
+  const accepted=Math.ceil((Date.now()+3000)/1000)*1000;
   const src={records:new Map([[mint,{mint,phase:'before',acceptedAt:accepted}]])};
   const coin=candidate(accepted),coins=new Map([[mint,coin]]);
   return {dir,cfg,runtime,accepted,coin,coins,src};
