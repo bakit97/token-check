@@ -112,6 +112,10 @@
 <div id="testResults"></div></div>
 <div class="row" style="margin:20px 0 8px"><h2>Сохранённые фильтры</h2><button id="createFilter" class="primary">+ Создать</button></div>
 <div id="libraryList"></div>
+<details class="card" id="serverRuleHistory"><summary>Архив версий фильтров на сервере · <span id="serverRuleHistoryCount">0</span></summary>
+<p class="hint">Первый результат каждой версии не изменяется после редактирования фильтра. Фоновая статистика хранится отдельно; недостающие данные не считаются успешной проверкой.</p>
+<div id="serverRuleHistoryRows" class="list"><p class="muted">Пока нет сохранённых серверных версий.</p></div>
+</details>
 <form id="editor" class="card" hidden>
 <div class="row"><h2 id="editorTitle">Новый фильтр</h2><button type="button" id="closeEditor">Закрыть</button></div>
 <label class="control" style="margin-top:10px"><span>Название</span><input type="text" class="input" id="filterName" maxlength="64" required></label>
@@ -123,5 +127,5 @@
 <p id="toast" role="status" aria-live="polite"></p>
 <footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — разделены серверные записи и локальные черновики; неполные наблюдения не выдаются за результат. <a href="./classic.html">Открыть прежний сайт</a></footer>
 </main>
-<script src="./v2.js?v=20261017-19" defer></script>
+<script src="./v2.js?v=20261017-20" defer></script>
 </body></html>
