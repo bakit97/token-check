@@ -67,7 +67,11 @@
 <div class="row"><label for="r1Hours">Период от обнаружения</label><b id="r1HoursValue">5 часов</b></div><input id="r1Hours" type="range" min="1" max="24" step="1">
 <div class="row" style="margin-top:8px"><label for="r1Activity">Минимум времени с реальными сделками</label><b id="r1ActivityValue">70%</b></div><input id="r1Activity" type="range" min="0" max="100" step="5">
 <div class="row" style="margin-top:8px"><label for="r1Idle">Допустимый непрерывный простой</label><b id="r1IdleValue">60 минут</b></div><input id="r1Idle" type="range" min="5" max="120" step="5">
-<button class="primary" id="applyR1">Применить</button>
+<button class="primary" id="applyR1">Применить локально</button>
+<div class="controls" style="margin-top:12px"><label class="control"><span>Ключ владельца — исследование 1</span><input id="ownerResearchOneKey" type="password" class="input" autocomplete="off" spellcheck="false" placeholder="Не сохраняется"></label></div>
+<label class="hint" style="display:block;margin:10px 0"><input id="confirmResearchOne" type="checkbox"> Подтверждаю запуск новой серверной исследовательской версии</label>
+<button id="publishResearchOne" class="primary" type="button" disabled>Применить на сервере · уровень 1</button>
+<p id="researchOneControlState" class="hint">Изменённые правила создают новую группу наблюдений. Старые результаты не переписываются.</p>
 <p class="hint">Зелёная зона — подробные данные до конца решения; дальше достаточно цены, времени и реальных сделок. При плохом покрытии — «недостаточно данных».</p></div>
 <div class="statgrid"><div class="stat"><span>🟢 Живые, подтверждены данными</span><strong id="r1Live">—</strong></div><div class="stat"><span>🔴 Мёртвые, подтверждены данными</span><strong id="r1Dead">—</strong></div></div>
 <div class="card"><h2>Автоматическое исследование</h2><div class="muted" id="r1Auto">Нужно минимум 100 живых и 40 мёртвых в обучении; ещё 100 наблюдений позже для отдельной проверки.</div><div class="meter" style="margin-top:10px"><div id="r1Meter" style="width:0"></div></div><div id="r1Suggestions"></div></div>
@@ -82,7 +86,12 @@
 <div class="tablewrap"><table><thead><tr><th>Мин от 0</th><th>Средняя цена</th><th>Монет с данными</th></tr></thead><tbody id="r2Table"></tbody></table></div>
 <div class="row"><span class="muted" id="r2Paging"></span><div class="action-bar"><button id="r2Prev">←</button><button id="r2Next">→</button></div></div></div>
 <div class="card"><h2>Ручная классификация</h2><div class="row"><label for="r2Strong">Доля 300 минут выше цены в точке 0</label><b id="r2StrongValue">70%</b></div><input type="range" id="r2Strong" min="1" max="100" value="70">
-<button id="applyR2" class="primary">Применить</button><div id="r2Stats" class="muted" style="margin-top:10px"></div></div>
+<button id="applyR2" class="primary">Применить локально</button>
+<div class="controls" style="margin-top:12px"><label class="control"><span>Ключ владельца — исследование 2</span><input id="ownerResearchTwoKey" type="password" class="input" autocomplete="off" spellcheck="false" placeholder="Не сохраняется"></label></div>
+<label class="hint" style="display:block;margin:10px 0"><input id="confirmResearchTwo" type="checkbox"> Подтверждаю запуск новой серверной исследовательской версии</label>
+<button id="publishResearchTwo" class="primary" type="button" disabled>Применить на сервере · уровень 2</button>
+<p id="researchTwoControlState" class="hint">Изменение порога не размечает заново старую историю.</p>
+<div id="r2Stats" class="muted" style="margin-top:10px"></div></div>
 <div class="card"><h2>Непрерывное автоисследование</h2><p class="muted" id="r2AutoText">Требуется 40 сильных + 40 слабых для обучения, затем отдельные 100 размеченных монет для более поздней проверки. Неполное наблюдение не считается слабой монетой.</p><div id="r2Suggestions"></div></div>
 </section>
 <section class="page" id="p-library" hidden>
@@ -109,5 +118,5 @@
 <p id="toast" role="status" aria-live="polite"></p>
 <footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — разделены серверные записи и локальные черновики; неполные наблюдения не выдаются за результат. <a href="./classic.html">Открыть прежний сайт</a></footer>
 </main>
-<script src="./v2.js?v=20261017-16" defer></script>
+<script src="./v2.js?v=20261017-17" defer></script>
 </body></html>
