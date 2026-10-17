@@ -29,7 +29,7 @@
 <label class="control"><span>🎓 Возраст после миграции</span><select class="input" id="ageAfter"></select></label>
 <label class="control"><span>Последних карточек</span><select class="input" id="cardLimit"><option>10</option><option>20</option><option>30</option><option>50</option><option>100</option></select></label>
 </div><button class="primary" id="applySource" style="margin-top:12px">Применить</button>
-<p class="hint">Возраст отсчитывается от начала открытой торговли либо от подтверждённой миграции. Запоздалое обнаружение не обнуляет возраст.</p>
+<p class="hint">Возраст — фильтр при входе монеты в систему, а не срок показа карточки. Сервер работает даже при закрытом телефоне. Пока безопасное управление серверным порогом с телефона не подключено, возрастные настройки отображаются только для просмотра.</p>
 </details>
 <div class="statgrid"><div class="stat"><span>Допущено за сегодня · доступная выгрузка</span><strong id="admitCount">—</strong></div><div class="stat"><span>На витрине сейчас</span><strong id="visibleCount">—</strong></div></div>
 <div id="sourceNote" class="notice">Источник до миграции ещё подключается. Не показываем непроверенные данные.</div>
@@ -93,5 +93,5 @@
 <p id="toast" role="status" aria-live="polite"></p>
 <footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — постепенный переход. Новые источники и серверное обучение подключаются отдельно; неполные данные не выдаются за результат. <a href="./classic.html">Открыть прежний сайт</a></footer>
 </main>
-<script src="./v2.js?v=20261017-2" defer></script>
+<script src="./v2.js?v=20261017-5" defer></script>
 </body></html>
