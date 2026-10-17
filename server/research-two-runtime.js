@@ -24,10 +24,11 @@ function durableJSON(file,value){
   try{fs.fsyncSync(d)}finally{fs.closeSync(d)}
 }
 class ResearchTwoRuntime {
-  constructor({dir,config}={}){
+  constructor({dir,config,bankName='research-v2-bank-two.json',cohortStart=0}={}){
     if(!dir)throw TypeError('Research-two directory required');
     fs.mkdirSync(dir,{recursive:true});
-    this.file=path.join(dir,'research-v2-bank-two.json');
+    this.file=path.join(dir,bankName);
+    this.cohortStart=cohortStart;
     this.config=configOf(config);
     this.rows=[];
     this.processed=new Map();
@@ -55,7 +56,7 @@ class ResearchTwoRuntime {
     let added=0,attempted=0,considered=0;
     const pending={};
     for(const pass of passes.records.values()){
-      if(!pass||this.processed.has(pass.mint)||now-pass.zeroAt>FRESH||
+      if(!pass||pass.firstSeenAt<this.cohortStart||this.processed.has(pass.mint)||now-pass.zeroAt>FRESH||
          now<pass.zeroAt)continue;
       considered++;
       if(now<pass.zeroAt+5*HOUR+MIN){
@@ -124,7 +125,7 @@ class ResearchTwoRuntime {
       const key=(r.phase==='before'?'pre':'post')+(r.label==='strong'?'Strong':'Weak');
       counts[key]++;
     }
-    return {schema:1,updated:this.lastAt,status:'observational',
+    return {schema:1,updated:this.lastAt,cohortStart:this.cohortStart,status:'observational',
       origin:'server-verified-passed-only',
       settings:{...this.config,hours:5},
       counts,pending:{...this.pending},bankCapacityPerClass:MAX_PER_CLASS};
