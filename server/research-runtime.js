@@ -87,7 +87,9 @@ class ResearchRuntime {
     let added=0,considered=0,attempted=0;
     const pending={},byPhase={before:{live:0,dead:0},after:{live:0,dead:0}};
     // Newest first, avoid scanning the entire multi-month ledger.
-    for(const row of source.records.values()){
+    const recent=typeof source.recentAdmissions==='function'?
+      source.recentAdmissions(now-FRESH_WINDOW,now):source.records.values();
+    for(const row of recent){
       const age=now-row.acceptedAt;
       if(row.acceptedAt<this.cohortStart||row.acceptedAt>=this.cohortEnd||age<0||age>FRESH_WINDOW||this.processed.has(row.mint))continue;
       considered++;
