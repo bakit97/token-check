@@ -536,7 +536,29 @@ function classified(level){
   }
   return [a.slice(-5000),b.slice(-5000)];
 }
+function renderServerRuleHistory(){
+  if(!$('serverRuleHistoryRows'))return;
+  const rows=filterAuditMeta?.rules?.filter(function(x){
+    return x.level===s.level&&(x.archived||!s.filters.some(function(f){
+      return f.id===x.id&&f.level===x.level&&f.version===x.version&&
+        f.key===x.rule.key&&f.op===x.rule.op&&f.value===x.rule.value;
+    }));
+  })||[];
+  $('serverRuleHistoryCount').textContent=fmt(rows.length);
+  $('serverRuleHistoryRows').innerHTML=rows.length?rows.slice(0,100).map(function(x){
+    const stats=function(v){return v&&v.positivePercent!=null&&v.negativePercent!=null?
+      '🟢 '+v.positivePercent.toFixed(1)+'% · 🔴 '+v.negativePercent.toFixed(1)+
+      '% · неизвестно '+fmt(v.missing):'Недостаточно обеих размеченных групп';};
+    return '<div class="filter-row"><b>'+esc(x.name)+' · v'+fmt(x.version)+'</b>'+
+      '<span class="badge">'+esc(x.phase==='before'?'🌱 До':'🎓 После')+'</span>'+
+      '<p class="muted">'+esc(x.rule.key)+' '+esc(x.rule.op)+' '+fmt(x.rule.value)+
+      ' · '+(x.archived?'Архив':'Серверная версия')+'</p>'+
+      '<p class="muted">Исходная проверка: '+stats(x.original)+'</p>'+
+      '<p class="muted">Новые данные: '+stats(x.background)+'</p></div>';
+  }).join(''):'<p class="muted">Нет архивных версий для выбранного уровня.</p>';
+}
 function renderLibrary(){
+  renderServerRuleHistory();
   var names=s.level==='1'?['Живые','Мёртвые']:['Сильные','Слабые'],target=s.poly[s.level],groups=classified(s.level),lenA=groups[0].length,lenB=groups[1].length;
   $('polyTitle').textContent=names.join(' / ');
   $('polyNameA').textContent=names[0];$('polyNameB').textContent=names[1];
