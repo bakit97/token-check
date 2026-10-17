@@ -1,0 +1,160 @@
+'use strict';
+// SOL·СКАН: deterministic analytics — no bought/sold assets, no signal execution.
+// Features use ONLY information observed before the decision deadline.
+// Outcomes are measured LATER; incomplete/missing coverage remains "pending".
+const MIN=60_000, FIVE=5*MIN;
+const KEYS=['buyers','trades','volume','liq','mc','buys','sells','buySellRatio'];
+const inRange=(x,a,b)=>Number.isFinite(x)&&x>=a&&x<=b;
+function samples(coin) {
+  const src=[coin?.preObs,...(coin?.origs||[]),coin].filter(Boolean);
+  const obs=new Map();
+  for(const c of src)for(const d of c.ds||[]){
+    if(!Array.isArray(d))continue;
+    const at=Number(d[0])*1000;
+    if(!inRange(at,1,8e15))continue;
+    if(!obs.has(at)||c===coin)obs.set(at,{
+      at,price:+d[1]||null,liq:d[2]!=null?+d[2]:null,
+      mc:d[3]!=null?+d[3]:null,buys:d[4]!=null?+d[4]:null,
+      sells:d[5]!=null?+d[5]:null,volume:d[6]!=null?+d[6]:null
+    });
+  }
+  return [...obs.values()].sort((a,b)=>a.at-b.at);
+}
+function candles(coin){
+  const src=[coin?.preObs,...(coin?.origs||[]),coin].filter(Boolean);
+  const map=new Map();
+  for(const c of src)for(const group of [c.k10,c.path])for(const d of group?.c||[]){
+    const at=+d[0]*1000,close=+d[4];
+    if(inRange(at,1,8e15)&&close>0)map.set(at,close);
+  }
+  for(const d of samples(coin))if(d.price>0&&!map.has(d.at))map.set(d.at,d.price);
+  return [...map.entries()].sort((a,b)=>a[0]-b[0]);
+}
+function latestBefore(list,t,maxAge,read) {
+  let out=null;
+  for(const x of list){const at=read(x);if(at>t)break;if(t-at<=maxAge)out=x}
+  return out;
+}
+function featuresAt(coin,decisionAt){
+  const d=latestBefore(samples(coin),decisionAt,7*MIN,x=>x.at);
+  const gx=[...(coin?.preObs?.gx||[]),...(coin?.gx||[])]
+    .sort((a,b)=>a[0]-b[0]);
+  const g=latestBefore(gx,decisionAt,7*MIN,x=>x[0]*1000);
+  const bx=[coin?.preObs?.bx,coin?.bx]
+    .filter(x=>x&&Number.isFinite(x.at)&&x.at<=decisionAt&&x.cov).sort((a,b)=>a.at-b.at).at(-1);
+  const buys=d?.buys??null,sells=d?.sells??null;
+  const ratio=buys!=null&&sells!=null?sells>0?buys/sells:buys:null;
+  function finite(v){return typeof v==='number'&&Number.isFinite(v)?v:null}
+  const F={buyers:finite(g?.[3]??bx?.payers??null),
+    trades:finite(buys!=null&&sells!=null?buys+sells:null),
+    volume:finite(d?.volume??null),liq:finite(d?.liq??null),
+    mc:finite(d?.mc??null),buys:finite(buys),sells:finite(sells),
+    buySellRatio:finite(ratio)};
+  return F;
+}
+function activityOutcome(coin,entryAt,{hours=5,minActive=70,maxIdle=60,minCoverage=.8}={},now=Date.now()){
+  if(!inRange(hours,1,24)||!inRange(minActive,0,100)||!inRange(maxIdle,5,1440))
+    throw RangeError('Invalid level-one settings');
+  const end=entryAt+hours*60*MIN;
+  if(now<end+MIN)return {label:'pending',why:'observation-not-finished'};
+  const history=samples(coin),blocks=hours*12;
+  let seen=0,active=0,longest=0,current=0,missing=0,maxMissing=0;
+  // DEX Screener returns rolling 5-minute trades; sample near END of each bin.
+  // If a window is missing, never assume zero trades.
+  for(let i=1;i<=blocks;i++){
+    const T=entryAt+i*FIVE;
+    const d=latestBefore(history,T,6*MIN,x=>x.at);
+    if(!d||d.buys==null||d.sells==null||d.volume==null){
+      maxMissing=Math.max(maxMissing,++missing);current=0;continue;
+    }
+    missing=0;seen++;
+    if(d.buys+d.sells>0&&d.volume>0){active++;current=0}
+    else {current+=5;longest=Math.max(longest,current)}
+  }
+  const coverage=seen/blocks,activePct=active/blocks*100;
+  if(coverage<minCoverage||maxMissing>2)
+    return {label:'pending',why:'insufficient-activity-coverage',
+      coverage,seen,blocks,maxMissing,activePct,maxIdleObserved:longest};
+  const label=activePct>=minActive&&longest<=maxIdle?'live':'dead';
+  return {label,coverage,activePct,maxIdleObserved:longest,seen,blocks};
+}
+function strengthOutcome(coin,zeroAt,{minAbove=70,minCoverage=.9}={},now=Date.now()){
+  if(!inRange(minAbove,0,100))throw RangeError('Invalid level-two settings');
+  const end=zeroAt+300*MIN;
+  if(now<end+MIN)return {label:'pending',why:'five-hours-not-finished'};
+  const path=candles(coin);
+  const p0=latestBefore(path,zeroAt,7*MIN,x=>x[0])?.[1];
+  if(!(p0>0))return {label:'pending',why:'no-price-at-zero'};
+  let covered=0,above=0,maxGap=0,gap=0;
+  const curve=[];
+  for(let m=1;m<=300;m++){
+    const x=latestBefore(path,zeroAt+m*MIN,7*MIN,y=>y[0]);
+    if(!x){gap++;maxGap=Math.max(maxGap,gap);continue}
+    gap=0;covered++;
+    if(x[1]>p0)above++;
+    if(m%5===0)curve.push([m,100*(x[1]/p0-1)]);
+  }
+  // 70% is 210 minutes OF ALL 300, not of the observed subset.
+  if(covered<300*minCoverage||maxGap>10)
+    return {label:'pending',why:'insufficient-price-coverage',covered,maxGap};
+  return {label:above/300*100>=minAbove?'strong':'weak',
+    above,covered,pctAbove:above/300*100,p0,curve};
+}
+function passes(F,rule){
+  if(!F||!rule||!KEYS.includes(rule.key))return false;
+  const v=F[rule.key];
+  return typeof v==='number'&&Number.isFinite(v)&&
+    (rule.op==='>='?v>=rule.value:rule.op==='<='?v<=rule.value:false);
+}
+function ruleKey(r){return [r.key,r.op,Number(r.value).toPrecision(8)].join('|')}
+function ruleStats(rows,rule,positive,negative){
+  const yes=rows.filter(r=>r.label===positive);
+  const no=rows.filter(r=>r.label===negative);
+  const pass=yes.filter(r=>passes(r.features,rule)).length;
+  const reject=no.filter(r=>!passes(r.features,rule)).length;
+  return {passedPositive:pass,totalPositive:yes.length,rejectedNegative:reject,
+    totalNegative:no.length,positiveRecall:yes.length?pass/yes.length:null,
+    negativeRejection:no.length?reject/no.length:null,
+    falsePositive:no.length-reject};
+}
+/** Train on the existing labeled observations only. Independently validate on
+ *  later, unseen events; never feed future outcomes into early-time features. */
+function proposeRules(rows,{positive='live',negative='dead',minPos=100,minNeg=1,maxRules=12}={}){
+  const pos=rows.filter(r=>r.label===positive);
+  const neg=rows.filter(r=>r.label===negative);
+  if(pos.length<minPos||neg.length<minNeg)return [];
+  const sorted=[...rows].sort((a,b)=>a.time-b.time);
+  const out=[];
+  const seenRules=new Set();
+  for(const key of KEYS){
+    const vals=sorted.map(r=>r.features?.[key]).filter(v=>typeof v==='number'&&Number.isFinite(v)).sort((a,b)=>a-b);
+    if(vals.length<Math.max(12,Math.floor(rows.length*.4)))continue;
+    for(const p of [.05,.1,.2,.3,.4,.5,.6,.7,.8,.9,.95]){
+      const threshold=vals[Math.floor((vals.length-1)*p)];
+      for(const op of ['>=','<=']){
+        const rule={key,op,value:+threshold.toPrecision(8)};
+        if(seenRules.has(ruleKey(rule)))continue;
+        seenRules.add(ruleKey(rule));
+        const stat=ruleStats(rows,rule,positive,negative);
+        if(stat.positiveRecall===null||stat.negativeRejection===null)continue;
+        if(stat.positiveRecall<.55||stat.negativeRejection<.5)continue;
+        const score=2*stat.positiveRecall*stat.negativeRejection/
+          (stat.positiveRecall+stat.negativeRejection);
+        out.push({rule,train:stat,score});
+      }
+    }
+  }
+  out.sort((a,b)=>b.score-a.score||b.train.positiveRecall-a.train.positiveRecall);
+  return out.slice(0,maxRules);
+}
+function capBank(rows,labelFn=it=>it.label,positive='live',negative='dead',max=5000){
+  const seen=new Set();
+  const dedup=[...rows].sort((a,b)=>b.time-a.time).filter(x=>{
+    if(seen.has(x.mint))return false;seen.add(x.mint);return true;
+  });
+  const p=dedup.filter(x=>labelFn(x)===positive).slice(0,max);
+  const n=dedup.filter(x=>labelFn(x)===negative).slice(0,max);
+  return [...p,...n].sort((a,b)=>a.time-b.time);
+}
+module.exports={KEYS,samples,candles,featuresAt,activityOutcome,
+  strengthOutcome,passes,ruleKey,ruleStats,proposeRules,capBank};
