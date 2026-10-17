@@ -8,23 +8,25 @@ const {PUMP,parsePumpLaunch,isTradeableCurve,isPumpCreateLog}=require('./pump-pr
  * DO NOT enter the main source retroactively.
  */
 class PumpPreWatcher {
-  constructor({rpc,decode58,deriveCurve,source,onAdmitted,log=()=>{},queueLimit=600,retryDelays=[700,2200,5000]}){
+  constructor({rpc,decode58,deriveCurve,source,onAdmitted,log=()=>{},queueLimit=600,retryDelays=[700,2200,5000],canObserve=()=>true}){
     if(typeof rpc!=='function'||typeof decode58!=='function'||typeof deriveCurve!=='function'||!source)throw TypeError('Incomplete adapter dependencies');
-    this.rpc=rpc;this.decode58=decode58;this.deriveCurve=deriveCurve;
+    this.canObserve=canObserve;this.rpc=rpc;this.decode58=decode58;this.deriveCurve=deriveCurve;
     this.source=source;this.onAdmitted=onAdmitted||(()=>{});this.log=log;
     this.queueLimit=queueLimit;this.retryDelays=retryDelays;
     this.queue=[];this.busy=false;this.started=false;this.pending=new Set();
     this.stats={logs:0,createLogs:0,processed:0,accepted:0,late:0,invalid:0,
-      untradeable:0,errors:0,dropped:0,queuePeak:0,lastAt:0};
+      untradeable:0,errors:0,budgetDeferred:0,dropped:0,queuePeak:0,lastAt:0};
     this.seenSignatures=new Map();
   }
   onLog(value,observedAt=Date.now()){
     this.stats.logs++;
     if(!isPumpCreateLog(value))return false;
     this.stats.createLogs++;
+    if(!this.canObserve()){this.stats.dropped++;return false}
     const signature=value.signature;
     if(this.seenSignatures.has(signature)||this.pending.has(signature))return false;
     if(this.queue.length>=this.queueLimit){this.stats.dropped++;return false}
+    while(this.seenSignatures.size>=10000)this.seenSignatures.delete(this.seenSignatures.keys().next().value);
     this.seenSignatures.set(signature,observedAt);
     // Keep 30 minute dedup horizon; prevents reconnect replays.
     if(this.seenSignatures.size>10000)for(const [sig,time] of this.seenSignatures){
@@ -42,13 +44,14 @@ class PumpPreWatcher {
         const tx=await this.rpc('getTransaction',[signature,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}]);
         if(tx)return tx;
       }catch(e){
-        if(n===this.retryDelays.length)throw e;
+        if(e.code==='BUDGET_DEFERRED'||n===this.retryDelays.length)throw e;
       }
       if(n<this.retryDelays.length)await new Promise(r=>setTimeout(r,this.retryDelays[n]));
     }
     return null;
   }
   async examine({signature,observedAt}){
+    if(!this.canObserve()){this.stats.dropped++;return {admitted:false,reason:'resource-capacity'}}
     this.stats.processed++;
     let tx,launch;
     try{
@@ -81,6 +84,7 @@ class PumpPreWatcher {
       }
       return accepted;
     }catch(e){
+      if(e.code==='BUDGET_DEFERRED'){this.stats.budgetDeferred++;return {admitted:false,reason:'budget-deferred'}}
       this.stats.errors++;
       this.log('pump-pre '+String(e.message||e));
       return {admitted:false,reason:'error'};

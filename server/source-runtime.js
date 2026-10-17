@@ -29,9 +29,10 @@ function joinUniqueTimes(c, minTime) {
   return ts.length ? Math.min(...ts) : null;
 }
 class SourceRuntime {
-  constructor({dir, beforeMinutes = 2, afterMinutes = 2, fsync = true} = {}) {
+  constructor({dir, beforeMinutes = 2, afterMinutes = 2, fsync = true, maxRecords = 100000, maxJournalBytes = 64*1024*1024} = {}) {
     if (!dir) throw new TypeError('Нужна директория данных');
     this.dir = dir;
+    this.maxRecords=maxRecords;this.maxJournalBytes=maxJournalBytes;this.capacityRejected=0;
     fs.mkdirSync(dir, {recursive:true});
     this.logPath = path.join(dir, 'source-accepted-v1.jsonl');
     const settingsFile = path.join(dir, 'source-settings-v1.json');
@@ -50,12 +51,14 @@ class SourceRuntime {
   }
 
   _replay() {
+    if(fs.statSync(this.logPath).size>this.maxJournalBytes)throw Error('Source journal exceeds memory-safe replay limit; disk index required');
     const contents=fs.readFileSync(this.logPath, 'utf8');
     const completed=contents.lastIndexOf('\n');
     if(completed===-1 && contents.length) throw new Error('Повреждённый журнал: нет завершённых записей');
     const data=contents.slice(0,completed+1);
     for(const line of data.split('\n')) {
       if(!line)continue;
+      if(this.records.size>=this.maxRecords)throw Error('Source journal exceeds memory-safe index capacity');
       const record=JSON.parse(line);
       if(record.v!==1)throw new Error('Неизвестная версия журнала источника');
       // Реплей защищён той же схемой валидации, но не запускает возрастной фильтр.
@@ -89,6 +92,7 @@ class SourceRuntime {
   get(mint){return this.records.get(mint)||null;}
 
   _admit(event, detectedAt, proof) {
+    if(!this.has(event.mint)&&this.records.size>=this.maxRecords){this.capacityRejected++;return {admitted:false,reason:'resource-capacity'}}
     const decision=this.gate.offer(event, detectedAt);
     if(!decision.admitted){
       if(decision.reason==='already-admitted')this.stats.duplicate++;
@@ -103,6 +107,7 @@ class SourceRuntime {
       const fd=fs.openSync(this.logPath,'a');
       try{
         const line=Buffer.from(JSON.stringify(item)+'\n');
+        if(fs.fstatSync(fd).size+line.length>this.maxJournalBytes)throw Error('Source journal at memory-safe replay limit; admission paused');
         let written=0;
         while(written<line.length){
           written+=fs.writeSync(fd,line,written,line.length-written);
@@ -179,7 +184,7 @@ class SourceRuntime {
     const d=kzDay(at),today=this.day(d),before=today.filter(x=>x.phase==='before').length;
     return {updated:at,day:d,total:this.records.size,
       today:today.length,todayBefore:before,todayAfter:today.length-before,
-      settings:this.settings(),stats:{...this.stats}};
+      capacity:{maxRecords:this.maxRecords,rejected:this.capacityRejected,full:this.records.size>=this.maxRecords},settings:this.settings(),stats:{...this.stats}};
   }
 }
 module.exports={SourceRuntime};
