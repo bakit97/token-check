@@ -42,7 +42,7 @@
  const b64=s=>Uint8Array.from(Buffer.from(s||'','base64'));
  const pk=(u,o)=>b58enc(u.slice(o,o+32));
  // метаданные Metaplex: можно ли менять название/картинку
-@@ -228,21 +229,34 @@
+@@ -228,21 +229,37 @@
    setMg(c,base,baseK,why,x)}
  const MIGNAME={pump:'pump.fun → PumpSwap',dbc:'Meteora DBC → Meteora',launch:'LaunchLab → Raydium','launch-v4':'LaunchLab → Raydium',
    'curve-dbc':'Meteora DBC (кривая)','curve-launch':'LaunchLab (кривая)','manual-pump':'Пул вручную (PumpSwap)','manual-meteora':'Пул вручную (Meteora)','manual-raydium':'Пул вручную (Raydium)',
@@ -56,21 +56,25 @@
 +  for(let i=0;i<list.length;i+=100){const part=list.slice(i,i+100);try{const v=(await rpc('getMultipleAccounts',[part.map(c=>c.mg.watch),{encoding:'base64',dataSlice:{offset:0,length:320}}],{priority:'migration',context:'кривые'}))?.value||[];
      part.forEach((c,j)=>{if(!v[j]||curveDone(v[j]))c.mg.force=1;else c.mg.lastAt=now})}catch(e){err('sweep '+e.message)}}}
 -function needMig(c,now){if(now-c.t>24*3600e3&&c.mg)return false;if(!c.mg||c.mg.v!==MGV||c.mg.force)return true;
+-  const BACK=[2,5,10,20,40];const n=c.mg.n||1;return c.mg.st==='unk'&&!c.mg.final&&n<=BACK.length&&now-c.mg.lastAt>=BACK[n-1]*60e3&&now-c.t<6*3600e3}
+-async function chainLoop(){let lastSweep=0;for(;;){const now=Date.now();
++function queueMigrationSignal(c,now){if(c.mg?.st==='ok')return;
++  if(!c.discoverySource||c.proofExpiredAt){c.proofEnqueuedAt=now;delete c.proofExpiredAt;delete c.proofRetryAt;delete c.proofBudgetDeferredAt;delete c.proofProgressAt;if(c.mg){c.mg.force=1;c.mg.n=0}}}
 +function proofQueuedAt(c){return c.proofEnqueuedAt||c.firstPostSeenAt||c.wsSeen||c.rcSeen||c.seen||c.t}
 +function expireProofs(now=Date.now()){for(const c of C.values())if(!(c.mg?.st==='ok'&&c.mg.v===MGV)&&!c.preCurve&&!c.proofExpiredAt&&now-proofQueuedAt(c)>2*3600e3){
 +  c.proofExpiredAt=now;delete c.proofProgressAt;delete c.proofBudgetDeferredAt;delete c.proofRetryAt;
 +  setMg(c,'unk','unk-expired','не подтверждена (просрочено)',{final:1});}}
-+function compareProofTasks(a,b,now){return Number(now-proofQueuedAt(a)>=15*60e3)-Number(now-proofQueuedAt(b)>=15*60e3)||Number(!!b.proofProgressAt&&now-b.proofProgressAt<4*60e3)-Number(!!a.proofProgressAt&&now-a.proofProgressAt<4*60e3)||Number(!!b.discoverySource)-Number(!!a.discoverySource)||(a.proofAttemptAt||0)-(b.proofAttemptAt||0)||b.t-a.t}
++function proofAgeBand(c,now){const age=now-proofQueuedAt(c),buyMinutes=SOURCE?.settings().afterMinutes||2;return age<buyMinutes*60e3?0:age<15*60e3?1:2}
++function compareProofTasks(a,b,now){return proofAgeBand(a,now)-proofAgeBand(b,now)||Number(now-proofQueuedAt(a)>=15*60e3)-Number(now-proofQueuedAt(b)>=15*60e3)||Number(!!b.proofProgressAt&&now-b.proofProgressAt<4*60e3)-Number(!!a.proofProgressAt&&now-a.proofProgressAt<4*60e3)||Number(!!b.discoverySource)-Number(!!a.discoverySource)||(a.proofAttemptAt||0)-(b.proofAttemptAt||0)||b.t-a.t}
 +function migrationQueueSummary(now=Date.now()){
-+  const out={length:0,ready:0,freshUnder15m:0,waitingBudget:0,expired:0,oldestTaskAt:null,oldestAgeSec:0,reconcilePending:{dbc:RC.pend?.dbc?.length||0,ll:RC.pend?.ll?.length||0}};
-+  for(const c of C.values()){if(c.proofExpiredAt){out.expired++;continue}if(!needMig(c,now))continue;
-+    const at=proofQueuedAt(c);out.length++;if(now-at<15*60e3)out.freshUnder15m++;if(c.proofBudgetDeferredAt)out.waitingBudget++;
++  const out={length:0,ready:0,freshUnder15m:0,waitingBudget:0,expired:0,buyWindowOpen:0,buyWindowMissedPending:0,lateProofRejected:0,oldestTaskAt:null,oldestAgeSec:0,reconcilePending:{dbc:RC.pend?.dbc?.length||0,ll:RC.pend?.ll?.length||0}};
++  for(const c of C.values()){if(c.buyWindowMissedAt)out.lateProofRejected++;if(c.proofExpiredAt){out.expired++;continue}if(!needMig(c,now))continue;
++    const at=proofQueuedAt(c);out.length++;if(proofAgeBand(c,now)===0)out.buyWindowOpen++;else out.buyWindowMissedPending++;if(now-at<15*60e3)out.freshUnder15m++;if(c.proofBudgetDeferredAt)out.waitingBudget++;
 +    if(!c.chTry&&(!c.proofRetryAt||now>=c.proofRetryAt))out.ready++;out.oldestTaskAt=out.oldestTaskAt==null?at:Math.min(at,out.oldestTaskAt);}
 +  out.oldestAgeSec=out.oldestTaskAt==null?0:Math.max(0,Math.floor((now-out.oldestTaskAt)/1000));return out;
 +}
-+function needMig(c,now){if(c.proofExpiredAt)return false;if(now-c.t>24*3600e3&&c.mg)return false;if(!c.mg||c.mg.v!==MGV||c.mg.force)return true;
-   const BACK=[2,5,10,20,40];const n=c.mg.n||1;return c.mg.st==='unk'&&!c.mg.final&&n<=BACK.length&&now-c.mg.lastAt>=BACK[n-1]*60e3&&now-c.t<6*3600e3}
--async function chainLoop(){let lastSweep=0;for(;;){const now=Date.now();
++function needMig(c,now){if(c.proofExpiredAt)return false;if(now-proofQueuedAt(c)>2*3600e3&&c.mg)return false;if(!c.mg||c.mg.v!==MGV||c.mg.force)return true;
++  const BACK=[2,5,10,20,40];const n=c.mg.n||1;return c.mg.st==='unk'&&!c.mg.final&&n<=BACK.length&&now-c.mg.lastAt>=BACK[n-1]*60e3&&now-proofQueuedAt(c)<2*3600e3}
 +async function chainLoop(){let lastSweep=0;for(;;){const now=Date.now();expireProofs(now);
    if(now-lastSweep>120e3){lastSweep=now;CTX='кривые';await curveSweep()}
 -  const c=[...C.values()].filter(c=>!c.chTry&&((!c.ct&&isOk(c)&&now-c.t<6*3600e3)||needMig(c,now))).sort((a,b)=>b.t-a.t)[0];
@@ -85,16 +89,16 @@
      else if((c.mgErr=(c.mgErr||0)+1)>=3){c.mgErr=0;setMg(c,'unk','unk-err','ошибка проверки: '+e.message.slice(0,80))}}
    finally{setTimeout(()=>{c.chTry=0},30000)}}}
  
-@@ -272,7 +286,7 @@
+@@ -272,7 +289,7 @@
  // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
  // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
  const MODULES=['admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
 -  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js'];
-+  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js'];
++  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js'];
  let MODULES_OK=null;
  function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
    for(const name of MODULES){const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
-@@ -296,7 +310,7 @@
+@@ -296,7 +313,7 @@
    // чем повторно занести монеты после рестарта.
    SOURCE=new (require(DIR+'/source-runtime.js').SourceRuntime)({dir:DIR});
    const PumpPreWatcher=require(DIR+'/pre-watcher.js').PumpPreWatcher;
@@ -103,20 +107,32 @@
      onAdmitted:admitVerifiedPublicLaunch,log:msg=>err(msg)});
    // Journal is durable even if the VM was restarted before candidate-state save.
    for(const item of SOURCE.records.values())if(item.phase==='before'&&!C.has(item.mint)&&item.proof?.curve) {
-@@ -478,10 +492,11 @@
+@@ -470,6 +487,8 @@
+ function admitVerifiedMigration(c){
+   if(!SOURCE)return;
+   try{
++    const now=Date.now(),deadline=c.mg?.mT+(SOURCE.settings().afterMinutes||2)*60e3;c.buyDeadlineAt=deadline;
++    if(!SOURCE.has(c.a)&&Number.isFinite(deadline)&&now>deadline){c.buyWindowMissedAt=now;return}
+     const d=SOURCE.afterVerifiedMigration(c);
+     if(d.admitted)log('ВСЕ + после',c.a,'возраст секунд',Math.round((d.record.acceptedAt-d.record.eventAt)/1000));
+   }catch(e){SOURCE_ERR='ошибка записи источника: '+e.message;err('source '+e.message)}
+@@ -477,11 +496,12 @@
+ 
  const OBS_KEYS=['ds','k10','path','hold','bx','lq','gx','vaults','vmint','vdec','legacy'],OBS_TMP=['tr','raw','dsAt','dsTryAt','tokAt','gxAt','lastTrade','kTry','pTry','trTry','trDone','lqAt','rawUp','vTry'];
  function takeObs(c){const o={};for(const k of OBS_KEYS){if(c[k]!=null)o[k]=c[k];delete c[k]}for(const k of OBS_TMP)delete c[k];return o}
- function load(){try{const a=JSON.parse(fs.readFileSync(DIR+'/state.json','utf8'));a.forEach(c=>{
+-function load(){try{const a=JSON.parse(fs.readFileSync(DIR+'/state.json','utf8'));a.forEach(c=>{
++function load(){try{require(DIR+'/stream-json.js').loadRows(DIR+'/state.json',c=>{
 +    delete c.chTry; // in-flight lock belongs to the old process, never to restored work
      if(c.fv!==FV){c.legacy={snap:c.snap,act:c.act,k:c.k};for(const k of ['snap','act','k','o','cur','cn','orig'])delete c[k];c.fv=FV}
-     if(c.disc==='ws'&&c.d==='pumpswap')return;C.set(c.a,c)});log('загружено монет',C.size)}catch{}
+-    if(c.disc==='ws'&&c.d==='pumpswap')return;C.set(c.a,c)});log('загружено монет',C.size)}catch{}
++    if(c.disc==='ws'&&c.d==='pumpswap')return;C.set(c.a,c)},HEALTH);log('загружено монет',C.size)}catch(e){if(e.code!=='ENOENT')throw e}
    try{RC=JSON.parse(fs.readFileSync(DIR+'/recon.json','utf8'))}catch{}}
 -function save(){try{fs.writeFileSync(DIR+'/state.tmp',JSON.stringify([...C.values()]));fs.renameSync(DIR+'/state.tmp',DIR+'/state.json');
-+function save(){try{HEALTH?.capture('save:before');const stateText=JSON.stringify([...C.values()]);HEALTH?.capture('save:json',{chars:stateText.length});fs.writeFileSync(DIR+'/state.tmp',stateText);fs.renameSync(DIR+'/state.tmp',DIR+'/state.json');
++function save(){try{require(DIR+'/stream-json.js').saveRows(DIR+'/state.json',C.values(),HEALTH);
    fs.writeFileSync(DIR+'/recon.json',JSON.stringify(RC))}catch(e){err('save '+e.message)}}
  const isCurve=d=>/pump-?fun/i.test(d||'')&&!/swap/i.test(d||'');
  const SKIP=new Set([WSOL,USDC,USDT]);
-@@ -643,7 +658,7 @@
+@@ -643,7 +663,7 @@
  const qDec=new Map([[WSOL,9],[USDC,6],[USDT,6]]);
  const HOLD_M=[10],RAW_M=[1,3,5,10,15,30,60,120,240,480,720,1440];
  const u64=(u,o)=>{let x=0n;for(let i=7;i>=0;i--)x=(x<<8n)+BigInt(u[o+i]);return Number(x)};
@@ -125,7 +141,7 @@
    const v=parseVaults(c,pv.owner,b64(pv.data?.[0]));if(!v)return;const ch=(await rpc('getMultipleAccounts',[v,{encoding:'base64'}]))?.value||[];
    const mints=ch.map(x=>x?pk(b64(x.data?.[0]),0):null);if(mints.includes(c.a)&&ch.every(Boolean)){c.vaults=v;c.vmint=mints}}
  async function holdersSnap(c,m){const rpc=rpcFor(c,'держатели');const sup=c.ct?.supply;await ensureVaults(c);const r=await rpc('getTokenLargestAccounts',[c.a,{commitment:'confirmed'}]);const at=Date.now();
-@@ -654,37 +669,81 @@
+@@ -654,37 +674,81 @@
    const sh=n=>+(arr.slice(0,n).reduce((s,x)=>s+x[1],0)/sup).toFixed(4);
    c.hold[m]={at,slot:r.context?.slot,slot2:own?.context?.slot,top1:sh(1),top5:sh(5),top10:sh(10),pda:+(pda/sup).toFixed(4),poolEx:ex,vaultsKnown:!!c.vaults}}
  function parseVaults(c,owner,u){const off=VAULT_OFF[owner];if(!off||u.length<off[1]+32)return null;return off.map(o=>pk(u,o))}
@@ -226,7 +242,7 @@
    if(key==='ll'){const r=await rpc('getProgramAccounts',[LAUNCH,{encoding:'base64',dataSlice:{offset:0,length:0},filters:[{memcmp:{offset:17,bytes:'3'}}],withContext:true}]);return (r?.value||[]).map(x=>x.pubkey)}
    // DBC: все пулы слишком велики для одного запроса — берём только кривые с точкой активации (слот или unix-время, u64 @296) в двух последних окнах по 65536
    const slot=await rpc('getSlot',[]),nowS=Math.floor(Date.now()/1000),out=new Set();
-@@ -693,23 +752,23 @@
+@@ -693,23 +757,23 @@
    return [...out]}
  let RECON_BUSY=false,RECON_RETRY=null;
  async function reconcile(){if(RECON_BUSY)return;RECON_BUSY=true;try{await reconcileBody()}finally{RECON_BUSY=false}}
@@ -243,8 +259,8 @@
 -          if(c){if(c.mg)c.mg.force=1;c.rcSeen=now;c.firstPostSeenAt=c.firstPostSeenAt||now;forced++;return}
 -          C.set(mint,{a:mint,n:'',s:'',i:'',p:nw[i+j],d:key==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'recon',seen:now,disc:'chain',rcSeen:now,firstPostSeenAt:now,pools:[nw[i+j]],fv:FV});added++})}
 +          if(c&&isOk(c)){c.discoverySource=key;known++;c.rcSeen=c.rcSeen||now;return}
-+          if(c){c.discoverySource=key;if(c.mg)c.mg.force=1;c.rcSeen=now;c.firstPostSeenAt=c.firstPostSeenAt||now;forced++;return}
-+          C.set(mint,{a:mint,n:'',s:'',i:'',p:nw[i+j],d:key==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'recon',seen:now,disc:'chain',discoverySource:key,rcSeen:now,firstPostSeenAt:now,pools:[nw[i+j]],fv:FV});added++});const done=new Set(nw.slice(i,i+100));RC.pend[key]=RC.pend[key].filter(x=>!done.has(x))}
++          if(c){queueMigrationSignal(c,now);c.discoverySource=key;if(c.mg)c.mg.force=1;c.rcSeen=now;c.firstPostSeenAt=c.firstPostSeenAt||now;forced++;return}
++          C.set(mint,{a:mint,n:'',s:'',i:'',p:nw[i+j],d:key==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'recon',seen:now,disc:'chain',discoverySource:key,proofEnqueuedAt:now,rcSeen:now,firstPostSeenAt:now,pools:[nw[i+j]],fv:FV});added++});const done=new Set(nw.slice(i,i+100));RC.pend[key]=RC.pend[key].filter(x=>!done.has(x))}
        RC.log.push([now,key,'новых',nw.length,known,forced,added])}catch(e){if(e.code==='BUDGET_DEFERRED'){if(!RECON_RETRY)RECON_RETRY=setTimeout(()=>{RECON_RETRY=null;reconcile().catch(e=>err('recon retry '+e.message))},65000)}else err('recon '+key+' '+e.message)}}
    while(RC.log.length>200)RC.log.shift()}
  
@@ -256,7 +272,7 @@
  function wsCandidate(kind,acc,u){const now=Date.now();if(wsSeen.has(acc)&&now-wsSeen.get(acc)<6*3600e3)return;wsSeen.set(acc,now);
    if(wsSeen.size>20000)for(const [k,t] of wsSeen)if(now-t>6*3600e3)wsSeen.delete(k);
    let mint=null,quote=null,pool=acc;
-@@ -717,36 +776,39 @@
+@@ -717,36 +781,39 @@
    else if(kind==='ll'){mint=pk(u,205);quote=pk(u,237)}
    else if(kind==='pump'){const b=pk(u,43),q=pk(u,75);if(SKIP.has(b)){mint=q;quote=b}else{mint=b;quote=q}if(SKIP.has(mint))return}
    if(!mint)return;WS.cand[kind]=(WS.cand[kind]||0)+1;const c=C.get(mint);
@@ -290,8 +306,8 @@
 -    ws.onerror=()=>{WS.err++};
 -    ws.onclose=()=>{WS.on=false;WS.preSub=false;clearInterval(ping);if(WS.stop)return;err('ws закрыт — переподключение');setTimeout(()=>{start();reconcile().catch(()=>{})},5000)}};
 -  start()}
-+  if(c){c.discoverySource=kind;if(!isOk(c)&&c.mg)c.mg.force=1;c.wsSeen=c.wsSeen||now;c.firstPostSeenAt=c.firstPostSeenAt||now;return}
-+  C.set(mint,{a:mint,n:'',s:'',i:'',p:pool,d:kind==='pump'?'pumpswap':kind==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'ws',seen:now,disc:'ws',discoverySource:kind,wsSeen:now,firstPostSeenAt:now,pools:[pool],fv:FV})}
++  if(c){queueMigrationSignal(c,now);c.discoverySource=kind;if(!isOk(c)&&c.mg)c.mg.force=1;c.wsSeen=c.wsSeen||now;c.firstPostSeenAt=c.firstPostSeenAt||now;return}
++  C.set(mint,{a:mint,n:'',s:'',i:'',p:pool,d:kind==='pump'?'pumpswap':kind==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'ws',seen:now,disc:'ws',discoverySource:kind,proofEnqueuedAt:now,wsSeen:now,firstPostSeenAt:now,pools:[pool],fv:FV})}
 +function chainWatch(){
 +  const connect=async(channel)=>{const key=await heliusKey();if(!key||(channel==='pre'&&(!PRE||!RESOURCE?.streamAllowed('pre')))){setTimeout(()=>connect(channel),10000);return}
 +    const pre=channel==='pre',subs={},ws=new WebSocket('wss://mainnet.helius-rpc.com/?api-key='+key);let timer;
@@ -326,16 +342,31 @@
  
  /* ---------- 6. выгрузка ---------- */
  const dayKey=t=>new Date(t+TZ).toISOString().slice(0,10);
-@@ -773,7 +835,7 @@
+@@ -773,11 +840,18 @@
    else r.ds=c.ds||[];
    return r}
  async function token(){const r=await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',{headers:{'Metadata-Flavor':'Google'}});return (await r.json()).access_token}
 -async function upload(name,obj){const body=zlib.gzipSync(Buffer.from(JSON.stringify(obj)));const tk=await token();
-+async function upload(name,obj){HEALTH?.capture('upload:before',{name});const json=JSON.stringify(obj);HEALTH?.capture('upload:json',{name,jsonChars:json.length});const bytes=Buffer.from(json);HEALTH?.capture('upload:buffer',{name,bytes:bytes.length});const body=zlib.gzipSync(bytes);HEALTH?.capture('upload:gzip',{name,bytes:body.length});const tk=await token();
-   const r=await fetch(`https://storage.googleapis.com/upload/storage/v1/b/${BUCKET}/o?uploadType=media&name=${encodeURIComponent(name)}&contentEncoding=gzip`,
-     {method:'POST',headers:{Authorization:'Bearer '+tk,'Content-Type':'application/json'},body});
-   if(!r.ok)throw new Error('upload '+r.status+' '+(await r.text()).slice(0,120));
-@@ -792,7 +854,7 @@
+-  const r=await fetch(`https://storage.googleapis.com/upload/storage/v1/b/${BUCKET}/o?uploadType=media&name=${encodeURIComponent(name)}&contentEncoding=gzip`,
+-    {method:'POST',headers:{Authorization:'Bearer '+tk,'Content-Type':'application/json'},body});
+-  if(!r.ok)throw new Error('upload '+r.status+' '+(await r.text()).slice(0,120));
+-  await fetch(`https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/${encodeURIComponent(name)}`,{method:'PATCH',headers:{Authorization:'Bearer '+tk,'Content-Type':'application/json'},body:JSON.stringify({cacheControl:'no-cache, max-age=0'})})}
++async function upload(name,obj){
++  if(HEALTH)HEALTH.activeUploads++;
++  let payload,multipart;try{
++    const stream=require(DIR+'/stream-json.js');payload=await stream.gzipJson({dir:DIR,value:obj,health:HEALTH,name});
++    const tk=await token();multipart=stream.multipartGzip(payload,name);
++    const r=await fetch(`https://storage.googleapis.com/upload/storage/v1/b/${BUCKET}/o?uploadType=multipart`,
++      {method:'POST',duplex:'half',signal:AbortSignal.timeout(60000),headers:{Authorization:'Bearer '+tk,'Content-Type':multipart.contentType,'Content-Length':String(multipart.length)},body:multipart.body});
++    if(!r.ok)throw new Error('upload '+r.status+' '+(await r.text()).slice(0,120));await r.arrayBuffer();
++    HEALTH?.uploadsHour.push(Date.now());
++  }finally{await multipart?.close();await payload?.dispose();if(HEALTH)HEALTH.activeUploads--;HEALTH?.capture('upload:complete',{name})}
++}
++
+ let lastYest=0,lastObs=0;
+ async function exportSource(now) {
+   if(!SOURCE)return;
+@@ -792,7 +866,7 @@
    const today=SOURCE.day(d).map(enrich);
    // Нет задним числом добавленных кандидатов из обычной ленты.
    // Предмиграционный адаптер пока не активен: не выдавать пустоту за готовность.
@@ -344,7 +375,18 @@
    await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});
    await upload('source/live.json',{updated:now,count:today.length,coins:SOURCE.latest(200).map(enrich)});
  }
-@@ -932,14 +994,20 @@
+@@ -920,7 +994,9 @@
+     await sleep(15000);
+   }
+ }
+-async function exportDays(){const now=Date.now(),today=dayKey(now),yest=dayKey(now-864e5);
++let DAY_EXPORT_BUSY=false;
++async function exportDays(){if(DAY_EXPORT_BUSY)return;DAY_EXPORT_BUSY=true;try{await exportDaysBody()}finally{DAY_EXPORT_BUSY=false}}
++async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayKey(now-864e5);
+   await reloadSourceAgeConfig();
+   await reloadResearchConfig();
+   for(const d of [today,yest]){if(d===yest&&now-lastYest<30*60e3)continue;const list=[...C.values()].filter(c=>dayKey(c.t)===d);if(!list.length)continue;
+@@ -932,14 +1008,20 @@
    try{await exportSource(now)}catch(e){SOURCE_ERR='выгрузка источника: '+e.message;err('source export '+e.message)}
    try{await exportResearchV2(now)}catch(e){RESEARCH_V2_ERR=e.message;err('research-v2 export '+e.message)}
    try{await exportPathsV2(now)}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('pass/r2 export '+e.message)}
@@ -367,7 +409,7 @@
  // живая лента для «Прошли»: монеты витрины младше 40 минут, раз в 30 секунд
  async function exportLive(){const now=Date.now();const list=[...C.values()].filter(c=>observedEligible(c)&&now-c.t<40*60e3);
    await upload('live.json',{updated:now,coins:list.map(c=>rec(c,true))})}
-@@ -1017,17 +1085,19 @@
+@@ -1017,17 +1099,19 @@
  const STARTED=Date.now();
  (async()=>{fs.mkdirSync(DIR,{recursive:true});await ensureModules();
    RESOURCE=new (require(DIR+'/resource-budget.js').ResourceBudget)({dir:DIR,env:{...process.env,HELIUS_USED_CREDITS:process.env.HELIUS_USED_CREDITS||'185000'}});

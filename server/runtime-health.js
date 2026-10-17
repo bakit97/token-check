@@ -3,7 +3,7 @@ const v8=require('node:v8');
 class RuntimeHealth{
  constructor({now=Date.now,memory=()=>process.memoryUsage()}={}){this.now=now;this.memory=memory;this.peak=0;this.windowPeak=0;this.phases={};this.lagMs=0;this.maxLagMs=0;this.activeUploads=0;this.uploadsHour=[];this.capture('init')}
  capture(stage,details={}){const m=this.memory(),rssMB=m.rss/1e6;this.peak=Math.max(this.peak,rssMB);this.windowPeak=Math.max(this.windowPeak,rssMB);
-  if(stage){const previous=this.phases[stage];this.phases[stage]={at:this.now(),rssMB:+rssMB.toFixed(1),heapUsedMB:+(m.heapUsed/1e6).toFixed(1),externalMB:+(m.external/1e6).toFixed(1),...details,peakMB:Math.max(previous?.peakMB||0,rssMB)};}
+  if(stage){const previous=this.phases[stage];this.phases[stage]={at:this.now(),rssMB:+rssMB.toFixed(1),heapUsedMB:+(m.heapUsed/1e6).toFixed(1),externalMB:+(m.external/1e6).toFixed(1),...details,peakMB:Math.max(previous?.peakMB||0,rssMB),peakName:rssMB>=(previous?.peakMB||0)?details.name:previous?.peakName,largestJsonChars:Math.max(previous?.largestJsonChars||0,details.jsonChars||0)};}
   return m;
  }
  summary(structures){const m=this.capture(),at=this.now();this.uploadsHour=this.uploadsHour.filter(x=>x>at-3600000);
