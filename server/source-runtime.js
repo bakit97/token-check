@@ -41,6 +41,10 @@ class SourceRuntime {
     this.fsync=fsync;
     this.gate = new AdmissionGate(settings);
     this.records = new Map();
+    // A small rolling index avoids scanning the full lifetime ledger every
+    // eight seconds while the foreground signal evaluator is active.
+    this.recent = new Map();
+    this.lastRecentTrim=0;
     this.stats={acceptedBefore:0,acceptedAfter:0,tooOldBefore:0,tooOldAfter:0,rejectedUnverified:0,rejectedBadTime:0,duplicate:0};
     if(fs.existsSync(this.logPath)) this._replay();
   }
@@ -60,6 +64,7 @@ class SourceRuntime {
         snapshot:{schema:1,coins:[{mint:record.mint,phase:record.phase,eventAt:record.eventAt,acceptedAt:record.acceptedAt}]}});
       if(this.records.has(record.mint))throw new Error('Дубликат mint в журнале источника');
       this.records.set(record.mint,Object.freeze({...record}));
+      if(record.acceptedAt>=Date.now()-50*3600_000)this.recent.set(record.mint,this.records.get(record.mint));
       this.gate.accepted.set(record.mint,gate.get(record.mint));
       if(record.phase==='before')this.stats.acceptedBefore++;
       else this.stats.acceptedAfter++;
@@ -109,6 +114,8 @@ class SourceRuntime {
       throw e;
     }
     this.records.set(item.mint,item);
+    this.recent.set(item.mint,item);
+    if(item.acceptedAt-this.lastRecentTrim>30*60_000)this._trimRecent(item.acceptedAt);
     if(item.phase==='before')this.stats.acceptedBefore++;
     else this.stats.acceptedAfter++;
     return {admitted:true,reason:'accepted',record:item};
@@ -145,6 +152,21 @@ class SourceRuntime {
 
   day(date) {
     return [...this.records.values()].filter(c=>kzDay(c.acceptedAt)===date).sort((a,b)=>a.acceptedAt-b.acceptedAt);
+  }
+  _trimRecent(at=Date.now()){
+    this.lastRecentTrim=at;
+    const cutoff=at-50*3600_000;
+    for(const [mint,row] of this.recent)
+      if(row.acceptedAt<cutoff)this.recent.delete(mint);
+  }
+  recentAdmissions(since=Date.now()-30*60_000,at=Date.now()){
+    if(!Number.isSafeInteger(since)||!Number.isSafeInteger(at)||since>at)
+      throw new RangeError('Invalid recent-admission range');
+    if(at-this.lastRecentTrim>30*60_000)this._trimRecent(at);
+    // Rolling source index is limited to 50h: reject wider requests instead
+    // of presenting an incomplete scan as a complete research result.
+    if(since<at-49*3600_000)throw new RangeError('Recent-admission request exceeds retention');
+    return [...this.recent.values()].filter(row=>row.acceptedAt>=since&&row.acceptedAt<=at);
   }
   latest(n=100) {
     return [...this.records.values()].slice(-n).reverse();
