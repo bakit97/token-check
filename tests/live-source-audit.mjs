@@ -10,6 +10,29 @@ async function get(path){
   return resp.json();
 }
 const [st,live,today,heartbeat]=await Promise.all(pathList.map(get));
+let raw=null, obs=null;
+try{raw=await get('day/'+day+'.json')}catch(e){console.error('Candidate day feed unavailable:',e.message)}
+try{obs=await get('obs/'+day+'.json')}catch(e){console.error('Observation archive unavailable:',e.message)}
+const sourceByMint=new Map(today.coins.map(c=>[c.a,c]));
+const candidates=new Map((raw?.coins||[]).map(c=>[c.a,c]));
+const observations=new Map((obs?.coins||[]).map(c=>[c.a,c]));
+const coverage={
+  before:{count:0,candidate:0,priceHistory:0,tradeHistory:0,preHistoric:0,noCandidate:0},
+  after:{count:0,candidate:0,priceHistory:0,tradeHistory:0,preHistoric:0,noCandidate:0}
+};
+const examplesNoHistory=[];
+for(const [id,entry] of sourceByMint){
+  const group=coverage[entry.phase];
+  if(!group)continue;
+  group.count++;
+  const c=candidates.get(id),ob=observations.get(id);
+  if(!c){group.noCandidate++;if(examplesNoHistory.length<8)examplesNoHistory.push(id);continue}
+  group.candidate++;
+  const ds=[...(c.ds||[]),...(ob?.ds||[])];
+  if(ds.some(d=>Number(d[1])>0))group.priceHistory++;
+  if(ds.some(d=>d[4]!=null&&d[5]!=null&&d[6]!=null))group.tradeHistory++;
+  if(c.preObs&&Array.isArray(c.preObs.ds)&&c.preObs.ds.length)group.preHistoric++;
+}
 const errors=[];
 function check(cond,msg){if(!cond)errors.push(msg)}
 const settings=st.settings||{},pre=st.pre||{};
@@ -36,6 +59,10 @@ for(const coin of today.coins||[]){
 }
 check(st.day===today.day,'daily source day mismatch');
 check(st.today===today.count,'daily main source count != archive count');
+const candidateTotal=coverage.before.candidate+coverage.after.candidate;
+if(st.today>0&&candidateTotal===0)
+  errors.push('no admitted source records have corresponding candidate data');
+
 check(today.coins?.length===today.count,'archive count mismatch');
 check(counts.before===st.todayBefore,'daily before count mismatch');
 check(counts.after===st.todayAfter,'daily after count mismatch');
@@ -53,5 +80,5 @@ console.log(JSON.stringify({runAt:new Date().toISOString(),day,
   pre:{logs:pre.logs,createLogs:pre.createLogs,processed:pre.processed,
     accepted:pre.accepted,late:pre.late,errors:pre.errors,untradeable:pre.untradeable,
     dropped:pre.dropped,queue:pre.queue,queuePeak:pre.queuePeak},
-  sample,checksFailed:errors},null,2));
+  sample,candidateCoverage:coverage,exampleMissingCandidates:examplesNoHistory,checksFailed:errors},null,2));
 if(errors.length){console.error('FIELD AUDIT FAILED: '+errors.join(' | '));process.exitCode=1}
