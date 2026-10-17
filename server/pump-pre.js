@@ -54,7 +54,9 @@ async function parsePumpLaunch(tx, {decode58,deriveCurve,signature,observedAt}){
     const blockAt=tx.blockTime*1000;
     if(!Number.isSafeInteger(observedAt)||observedAt<blockAt)return null;
     const metadata=tokenMetadata(data);
-    return {mint,curve,blockAt,observedAt,signature,slot:tx.slot||null,...metadata};
+    // create_v2 supports custom quote mints in optional remaining accounts.
+    const quote=pubkey(ix,16,keys)||'So11111111111111111111111111111111111111112';
+    return {mint,curve,quote,blockAt,observedAt,signature,slot:tx.slot||null,...metadata};
   }
   return null;
 }
