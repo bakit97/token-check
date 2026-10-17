@@ -96,19 +96,26 @@ function strengthOutcome(coin,zeroAt,{minAbove=70,minCoverage=.9}={},now=Date.no
   const p0=latestBefore(path,zeroAt,7*MIN,x=>x[0])?.[1];
   if(!(p0>0))return {label:'pending',why:'no-price-at-zero'};
   let covered=0,above=0,maxGap=0,gap=0;
-  const curve=[];
+  const curve=[],minuteCurve=[];
   for(let m=1;m<=300;m++){
     const x=latestBefore(path,zeroAt+m*MIN,7*MIN,y=>y[0]);
-    if(!x){gap++;maxGap=Math.max(maxGap,gap);continue}
+    if(!x){
+      gap++;maxGap=Math.max(maxGap,gap);
+      minuteCurve.push(null);continue;
+    }
     gap=0;covered++;
     if(x[1]>p0)above++;
-    if(m%5===0)curve.push([m,100*(x[1]/p0-1)]);
+    // Minute rows use the latest observed price at or before that minute;
+    // stale observations older than seven minutes are always missing.
+    const pct=Math.round(100000*(x[1]/p0-1))/1000;
+    minuteCurve.push(pct);
+    if(m%5===0)curve.push([m,pct]);
   }
   // 70% is 210 minutes OF ALL 300, not of the observed subset.
   if(covered<300*minCoverage||maxGap>10)
     return {label:'pending',why:'insufficient-price-coverage',covered,maxGap};
   return {label:above/300*100>=minAbove?'strong':'weak',
-    above,covered,pctAbove:above/300*100,p0,curve};
+    above,covered,pctAbove:above/300*100,p0,curve,minuteCurve};
 }
 function evaluation(F,rule){
   if(!F||!rule||!KEYS.includes(rule.key)||
