@@ -181,11 +181,11 @@ async function migCheck(c){
   const x={owner,creator,watch};
   // 1) этот пул — официальный?
   if(cands.includes(c.p)){const r=await proveMig(c.p,fam,curve);
-    if(r.ok){setMg(c,'ok',MIG_OK[fam],'',{...x,pool:c.p,sig:r.sig,mT:r.t,ix:r.ix});if(c.t!==r.t){c.t0=c.t0||c.t;c.t=r.t}return}
+    if(r.ok){setMg(c,'ok',MIG_OK[fam],'',{...x,pool:c.p,sig:r.sig,mT:r.t,ix:r.ix});if(c.t!==r.t){c.t0=c.t0||c.t;c.t=r.t}admitVerifiedMigration(c);return}
     setMg(c,'unk',MIG_UNK[fam],r.why,{...x,final:r.tooLong?1:0});return}
   // 2) у монеты есть официальный пул в другом месте — витрина переезжает туда
   let fail=null;for(const P of await exists(cands.filter(p=>p!==c.p))){const r=await proveMig(P,fam,curve);
-    if(r.ok){moveTo(c,P,fam,r);setMg(c,'ok',MIG_OK[fam],'',{owner:'',pool:P,sig:r.sig,mT:r.t,ix:r.ix});return}fail=fail||r}
+    if(r.ok){moveTo(c,P,fam,r);setMg(c,'ok',MIG_OK[fam],'',{owner:'',pool:P,sig:r.sig,mT:r.t,ix:r.ix});admitVerifiedMigration(c);return}fail=fail||r}
   if(fail){setMg(c,'unk',MIG_UNK[fam],'официальный пул есть, но миграция не доказана: '+fail.why,{...x,final:fail.tooLong?1:0});return}
   setMg(c,base,baseK,why,x)}
 const MIGNAME={pump:'pump.fun → PumpSwap',dbc:'Meteora DBC → Meteora',launch:'LaunchLab → Raydium','launch-v4':'LaunchLab → Raydium',
@@ -212,6 +212,33 @@ async function chainLoop(){let lastSweep=0;for(;;){const now=Date.now();
    Правило: каждое наблюдение хранит абсолютное время, когда сервер его ПОЛУЧИЛ (at, мс) — данные никогда не привязываются
    к минуте «задним числом». Всё, что относится к пулу, при переезде витрины уходит в origs и начинается заново. */
 const C=new Map();const FV=2; // версия формата наблюдений
+// Авторитетный «Все»: отдельный read-only журнал допуска, не зависит от телефона.
+let SOURCE=null, SOURCE_ERR='';
+async function initSource() {
+  const names=['admission.js','source-runtime.js'];
+  const auth=await token();
+  for(const name of names){
+    const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
+      {headers:{Authorization:'Bearer '+auth},signal:AbortSignal.timeout(30000)});
+    if(!r.ok)throw new Error('source module '+name+' HTTP '+r.status);
+    const out=DIR+'/'+name,tmp=out+'.tmp';
+    fs.writeFileSync(tmp,await r.text());
+    fs.renameSync(tmp,out);
+  }
+  // Отсутствующий/повреждённый журнал НЕ очищать; источник лучше отключить,
+  // чем повторно занести монеты после рестарта.
+  SOURCE=new (require(DIR+'/source-runtime.js').SourceRuntime)({dir:DIR});
+  SOURCE_ERR='';
+  log('главный источник готов, принято',SOURCE.records.size,'настройки',SOURCE.settings());
+}
+function admitVerifiedMigration(c){
+  if(!SOURCE)return;
+  try{
+    const d=SOURCE.afterVerifiedMigration(c);
+    if(d.admitted)log('ВСЕ + после',c.a,'возраст секунд',Math.round((d.record.acceptedAt-d.record.eventAt)/1000));
+  }catch(e){SOURCE_ERR='ошибка записи источника: '+e.message;err('source '+e.message)}
+}
+
 const OBS_KEYS=['ds','k10','path','hold','bx','lq','gx','vaults','vmint','vdec','legacy'],OBS_TMP=['tr','raw','dsAt','tokAt','gxAt','lastTrade','kTry','pTry','trTry','trDone','lqAt','rawUp','vTry'];
 function takeObs(c){const o={};for(const k of OBS_KEYS){if(c[k]!=null)o[k]=c[k];delete c[k]}for(const k of OBS_TMP)delete c[k];return o}
 function load(){try{const a=JSON.parse(fs.readFileSync(DIR+'/state.json','utf8'));a.forEach(c=>{
@@ -233,7 +260,7 @@ async function addFromGT(r){const inc={};(r.included||[]).forEach(x=>inc[x.id]=x
     if(SKIP.has(addr)){q=addr;bid=d.relationships?.quote_token?.data?.id||'';addr=bid.replace(/^solana_/,'')}
     if(!addr||SKIP.has(addr))continue;const t=Date.parse(a.pool_created_at);if(!t||Date.now()-t>3*3600e3)continue;
     const ex=C.get(addr);
-    if(ex){ex.pools=ex.pools||[ex.p];if(!ex.pools.includes(a.address)){if(ex.pools.length<12)ex.pools.push(a.address);
+    if(ex){ex.pools=ex.pools||[ex.p];if(!ex.pools.includes(a.address)){if(!ex.firstPostSeenAt)ex.firstPostSeenAt=Date.now();if(ex.pools.length<12)ex.pools.push(a.address);
         if(ex.mg&&ex.mg.st!=='ok'&&ex.mg.st!=='other')ex.mg.force=1} // у монеты новый пул — возможно, это миграция
       continue}
     const tk=inc[bid]?.attributes||{};
@@ -387,8 +414,8 @@ async function reconcile(){const now=Date.now();CTX='сверка';
       for(let i=0;i<nw.length;i+=100){const v=(await rpc('getMultipleAccounts',[nw.slice(i,i+100),{encoding:'base64'}]))?.value||[];
         v.forEach((acc,j)=>{if(!acc)return;const u=b64(acc.data?.[0]);const mint=pk(u,mOff),quote=qOff?pk(u,qOff):null;const c=C.get(mint);
           if(c&&isOk(c)){known++;c.rcSeen=c.rcSeen||now;return}
-          if(c){if(c.mg)c.mg.force=1;c.rcSeen=now;forced++;return}
-          C.set(mint,{a:mint,n:'',s:'',i:'',p:nw[i+j],d:key==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'recon',seen:now,disc:'chain',rcSeen:now,pools:[nw[i+j]],fv:FV});added++})}
+          if(c){if(c.mg)c.mg.force=1;c.rcSeen=now;c.firstPostSeenAt=c.firstPostSeenAt||now;forced++;return}
+          C.set(mint,{a:mint,n:'',s:'',i:'',p:nw[i+j],d:key==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'recon',seen:now,disc:'chain',rcSeen:now,firstPostSeenAt:now,pools:[nw[i+j]],fv:FV});added++})}
       RC.log.push([now,key,'новых',nw.length,known,forced,added])}catch(e){err('recon '+key+' '+e.message)}}
   while(RC.log.length>200)RC.log.shift()}
 
@@ -403,8 +430,8 @@ function wsCandidate(kind,acc,u){const now=Date.now();if(wsSeen.has(acc)&&now-ws
   else if(kind==='ll'){mint=pk(u,205);quote=pk(u,237)}
   else if(kind==='pump'){const b=pk(u,43),q=pk(u,75);if(SKIP.has(b)){mint=q;quote=b}else{mint=b;quote=q}if(SKIP.has(mint))return}
   if(!mint)return;WS.cand[kind]=(WS.cand[kind]||0)+1;const c=C.get(mint);
-  if(c){if(!isOk(c)&&c.mg)c.mg.force=1;c.wsSeen=c.wsSeen||now;return}
-  C.set(mint,{a:mint,n:'',s:'',i:'',p:pool,d:kind==='pump'?'pumpswap':kind==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'ws',seen:now,disc:'ws',wsSeen:now,pools:[pool],fv:FV})}
+  if(c){if(!isOk(c)&&c.mg)c.mg.force=1;c.wsSeen=c.wsSeen||now;c.firstPostSeenAt=c.firstPostSeenAt||now;return}
+  C.set(mint,{a:mint,n:'',s:'',i:'',p:pool,d:kind==='pump'?'pumpswap':kind==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'ws',seen:now,disc:'ws',wsSeen:now,firstPostSeenAt:now,pools:[pool],fv:FV})}
 function chainWatch(){let ws,ping;const subs={};
   const start=async()=>{const key=await heliusKey();if(!key){setTimeout(start,60e3);return}
     ws=new WebSocket('wss://mainnet.helius-rpc.com/?api-key='+key);
@@ -426,7 +453,7 @@ const dayKey=t=>new Date(t+TZ).toISOString().slice(0,10);
 const UPQ=[];function uploadLater(name,obj){UPQ.push([name,obj])}
 async function flushUploads(){while(UPQ.length){const [n,o]=UPQ.shift();try{await upload(n,o)}catch(e){err('up '+e.message);UPQ.push([n,o]);break}}}
 function rec(c,full){const mg=c.mg||{};
-  const r={a:c.a,n:c.n,s:c.s,i:c.i,p:c.p,d:c.d,q:c.q,t:c.t,tSrc:c.tSrc||'gt',t0:c.t0||null,seen:c.seen,disc:c.disc||null,rcSeen:c.rcSeen||null,wsSeen:c.wsSeen||null,ty:launchType(c),
+  const r={a:c.a,n:c.n,s:c.s,i:c.i,p:c.p,d:c.d,q:c.q,t:c.t,tSrc:c.tSrc||'gt',t0:c.t0||null,seen:c.seen,disc:c.disc||null,rcSeen:c.rcSeen||null,wsSeen:c.wsSeen||null,firstPostSeenAt:c.firstPostSeenAt||null,ty:launchType(c),
     mk:mg.k||null,mst:mg.st||null,mw:mg.why||'',mT:mg.mT||null,mSig:mg.sig||null,mSeen:mg.seenAt||null,mCr:mg.creator??null,mH:c.mgH||[],mk0:c.mg0?.k||null,
     origs:(c.origs||[]).map(o=>({p:o.p,t:o.t,d:o.d,movedAt:o.movedAt})),ct:c.ct||null,soc:c.soc||0,tk:c.tk&&isFinite(c.tk)?c.tk:null,tkAt:c.tkAt||null,
     live:c.lastTrade?Date.now()-c.lastTrade<30*60e3:false,lastTrade:c.lastTrade||null,legacy:c.legacy?1:0};
@@ -443,13 +470,31 @@ async function upload(name,obj){const body=zlib.gzipSync(Buffer.from(JSON.string
   if(!r.ok)throw new Error('upload '+r.status+' '+(await r.text()).slice(0,120));
   await fetch(`https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/${encodeURIComponent(name)}`,{method:'PATCH',headers:{Authorization:'Bearer '+tk,'Content-Type':'application/json'},body:JSON.stringify({cacheControl:'no-cache, max-age=0'})})}
 let lastYest=0,lastObs=0;
+async function exportSource(now) {
+  if(!SOURCE)return;
+  const d=dayKey(now);
+  const enrich=x=>{
+    const c=C.get(x.mint);
+    return {a:x.mint,phase:x.phase,eventAt:x.eventAt,acceptedAt:x.acceptedAt,
+      n:c?.n||'',s:c?.s||'',i:c?.i||'',family:x.proof?.family||null,
+      proofSig:x.proof?.signature||null,migrationPool:x.proof?.pool||null};
+  };
+  const summary=SOURCE.summary(now);
+  const today=SOURCE.day(d).map(enrich);
+  // Нет задним числом добавленных кандидатов из обычной ленты.
+  // Предмиграционный адаптер пока не активен: не выдавать пустоту за готовность.
+  await upload('source/status.json',{...summary,mode:'verified-post-only',preConnected:false});
+  await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});
+  await upload('source/live.json',{updated:now,count:today.length,coins:SOURCE.latest(200).map(enrich)});
+}
 async function exportDays(){const now=Date.now(),today=dayKey(now),yest=dayKey(now-864e5);
   for(const d of [today,yest]){if(d===yest&&now-lastYest<30*60e3)continue;const list=[...C.values()].filter(c=>dayKey(c.t)===d);if(!list.length)continue;
     await upload(`day/${d}.json`,{day:d,tz:'Asia/Almaty',fv:FV,updated:now,count:list.length,coins:list.map(c=>rec(c,false))});
     if(d===yest||now-lastObs>=10*60e3){await upload(`obs/${d}.json`,{day:d,updated:now,coins:list.filter(isOk).map(c=>({a:c.a,t:c.t,ds:c.ds||[],lq:c.lq||[],path:c.path||null}))});if(d===today)lastObs=now}
     if(d===yest)lastYest=now}
   await flushUploads();
-  await upload('status.json',{updated:now,version:VERSION,coins:C.size,today:[...C.values()].filter(c=>dayKey(c.t)===today).length,okToday:[...C.values()].filter(c=>dayKey(c.t)===today&&isOk(c)).length,
+  try{await exportSource(now)}catch(e){SOURCE_ERR='выгрузка источника: '+e.message;err('source export '+e.message)}
+  await upload('status.json',{updated:now,version:VERSION,source:{active:!!SOURCE,error:SOURCE_ERR,summary:SOURCE?.summary(now)||null},coins:C.size,today:[...C.values()].filter(c=>dayKey(c.t)===today).length,okToday:[...C.values()].filter(c=>dayKey(c.t)===today&&isOk(c)).length,
     gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),creditsBy:crLog.reduce((o,x)=>(o[x[2]]=(o[x[2]]||0)+x[1],o),{}),rpcCtx:RPCCTX,helius:!!HKEY,recon:RC.log.slice(-12),research:RSTAT,ws:{on:WS.on,since:WS.since,kb:Math.round(WS.bytes/1024),credits:+(WS.bytes/1e6*20).toFixed(1),msgs:WS.msgs,cand:WS.cand,err:WS.err},mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})}
 // живая лента для «Прошли»: монеты витрины младше 40 минут, раз в 30 секунд
 async function exportLive(){const now=Date.now();const list=[...C.values()].filter(c=>isOk(c)&&now-c.t<40*60e3);
@@ -527,6 +572,7 @@ let diagGen=null;async function diagCheck(){try{const tk=await token();const r=a
 /* ---------- старт ---------- */
 const STARTED=Date.now();
 (async()=>{fs.mkdirSync(DIR,{recursive:true});load();log('старт, версия',VERSION);
+  try{await initSource()}catch(e){SOURCE_ERR=e.message;err('главный источник не запустился: '+e.message)}
   for(const pg of [1,2,3])try{await addFromGT(await gt(`/new_pools?page=${pg}&include=base_token,quote_token,dex`,0,'boot'+pg))}catch(e){err('boot '+e.message)}
   setInterval(pollNew,90000);
   (async()=>{for(;;){try{await pollDS()}catch(e){err('dsloop '+e.message)}await sleep(15000)}})();
