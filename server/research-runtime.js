@@ -164,7 +164,7 @@ class ResearchRuntime {
       settings:{...this.config},counts,pending:{...this.pending},
       bankCapacityPerClass:MAX_BANK_PER_CLASS,
       status:'observational',
-      secondLevel:'waiting-for-server-verified-passed-stream'};
+      secondLevel:'separate-server-verified-pass-stream'};
   }
   select({phase,label,limit=100}={}) {
     if(phase&&!['before','after'].includes(phase))throw TypeError('bad phase');
