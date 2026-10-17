@@ -232,6 +232,7 @@ let SOURCE=null, SOURCE_ERR='', SOURCE_CFG_ERR='', PRE=null;
 let RESEARCH_V2=null, RESEARCH_V2_ERR='', RESEARCH_BANK_UPLOADED=0;
 let PASS_V2=null, RESEARCH_TWO=null, AUTO_V2=null, FILTER_AUDIT=null;
 let RESEARCH_ONE_EPOCH=null, RESEARCH_TWO_EPOCH=null, RESEARCH_CONFIG_ERR='';
+let OLD_RESEARCH_ONE=[], OLD_RESEARCH_TWO=[];
 let PASS_ERR='', TWO_ERR='', PASS_CFG_ERR='', TWO_BANK_UPLOADED=0, AUTO_UPLOADED=0;
 async function admitVerifiedPublicLaunch(launch,record) {
   const existing=C.get(record.mint);
@@ -292,6 +293,34 @@ async function reloadSourceAgeConfig(){
     err('source age config '+e.message);
   }
 }
+function oneResearchBankName(epoch){
+  return epoch.activeAt===0?'research-v2-bank.json':
+    'research-v2-bank-one-'+epoch.hash+'-'+epoch.activeAt+'.json';
+}
+function twoResearchBankName(epoch){
+  return 'research-v2-bank-two-'+epoch.hash+'-'+epoch.activeAt+'.json';
+}
+function recoverSupersededStudies(now=Date.now()){
+  const maxAge=50*3600e3;
+  if(RESEARCH_ONE_EPOCH&&RESEARCH_V2){
+    const {ResearchRuntime}=require(DIR+'/research-runtime.js');
+    OLD_RESEARCH_ONE=RESEARCH_ONE_EPOCH.history
+      .filter(e=>e.endedAt>now-maxAge)
+      .map(e=>({epoch:e,runtime:new ResearchRuntime({
+        dir:DIR,config:e.config,bankName:oneResearchBankName(e),
+        cohortStart:e.activeAt,cohortEnd:e.endedAt
+      })}));
+  }
+  if(RESEARCH_TWO_EPOCH&&RESEARCH_TWO){
+    const {ResearchTwoRuntime}=require(DIR+'/research-two-runtime.js');
+    OLD_RESEARCH_TWO=RESEARCH_TWO_EPOCH.history
+      .filter(e=>e.endedAt>now-maxAge)
+      .map(e=>({epoch:e,runtime:new ResearchTwoRuntime({
+        dir:DIR,config:e.config,bankName:twoResearchBankName(e),
+        cohortStart:e.activeAt,cohortEnd:e.endedAt
+      })}));
+  }
+}
 async function initResearchV2() {
   // Separate initialization: invalid research settings must never stop
   // the authoritative token source or the on-chain listeners.
@@ -315,9 +344,9 @@ async function initResearchV2() {
   const epoch=RESEARCH_ONE_EPOCH.current;
   RESEARCH_V2=new ResearchRuntime({
     dir:DIR,config:epoch.config,cohortStart:epoch.activeAt,
-    bankName:epoch.activeAt===0?'research-v2-bank.json':
-      'research-v2-bank-one-'+epoch.hash+'-'+epoch.activeAt+'.json'
+    bankName:oneResearchBankName(epoch)
   });
+  recoverSupersededStudies();
   RESEARCH_V2_ERR='';
   log('исследование v2 готово, накоплено',RESEARCH_V2.rows.length);
 }
@@ -346,8 +375,9 @@ async function initPathsV2(){
   const two=RESEARCH_TWO_EPOCH.current;
   RESEARCH_TWO=new ResearchTwoRuntime({
     dir:DIR,config:two.config,cohortStart:two.activeAt,
-    bankName:'research-v2-bank-two-'+two.hash+'-'+two.activeAt+'.json'
+    bankName:twoResearchBankName(two)
   });
+  recoverSupersededStudies();
   AUTO_V2=require(DIR+'/auto-research-v2.js');
   FILTER_AUDIT=new (require(DIR+'/filter-audit.js').FilterAudit)({dir:DIR});
   PASS_ERR='';TWO_ERR='';PASS_CFG_ERR='';
@@ -363,7 +393,8 @@ async function reloadResearchConfig(){
         const x=RESEARCH_ONE_EPOCH.current;
         const {ResearchRuntime}=require(DIR+'/research-runtime.js');
         RESEARCH_V2=new ResearchRuntime({dir:DIR,config:x.config,
-          cohortStart:x.activeAt,bankName:'research-v2-bank-one-'+x.hash+'-'+x.activeAt+'.json'});
+          cohortStart:x.activeAt,bankName:oneResearchBankName(x)});
+        recoverSupersededStudies();
         RESEARCH_BANK_UPLOADED=0;AUTO_UPLOADED=0;
         log('первый исследовательский полигон переключён на новую эпоху',x.hash);
       }
@@ -375,7 +406,8 @@ async function reloadResearchConfig(){
         const x=RESEARCH_TWO_EPOCH.current;
         const {ResearchTwoRuntime}=require(DIR+'/research-two-runtime.js');
         RESEARCH_TWO=new ResearchTwoRuntime({dir:DIR,config:x.config,
-          cohortStart:x.activeAt,bankName:'research-v2-bank-two-'+x.hash+'-'+x.activeAt+'.json'});
+          cohortStart:x.activeAt,bankName:twoResearchBankName(x)});
+        recoverSupersededStudies();
         TWO_BANK_UPLOADED=0;AUTO_UPLOADED=0;
         log('второй исследовательский полигон переключён на новую эпоху',x.hash);
       }
