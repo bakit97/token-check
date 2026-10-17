@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {featuresAt,activityOutcome,strengthOutcome,proposeRules,ruleStats,capBank}=require('./research-v2');
+const {featuresAt,activityOutcome,strengthOutcome,proposeRules,ruleStats,capBank,evaluation}=require('./research-v2');
 const M=60_000,START=Date.UTC(2026,9,17,9,0),T=START+10*M;
 function snapshots(hours,activityFn,priceFn=()=>1){
   const ds=[];
@@ -23,17 +23,17 @@ function path({highMinutes=210,from=T,endMinutes=300,p0=1}={}){
 }
 test('Live label is about trading activity, not even a large price fall',()=>{
  const c=snapshots(5,()=>true,i=>1-i/(5*60)*.4);
- const r=activityOutcome(c,START,{hours:5,minActive:70,maxIdle:60},START+5*60*M+2*M);
+ const r=activityOutcome(c,START,{hours:5,minActive:70,maxIdle:60},START+5*60*M+4*M);
  assert.equal(r.label,'live');assert.equal(r.activePct,100);
 });
 test('Dead means insufficient trading, even if price rises sharply',()=>{
  const c=snapshots(5,i=>i<20,i=>1+i/(5*60));
- const r=activityOutcome(c,START,{hours:5,minActive:70,maxIdle:60},START+5*60*M+2*M);
+ const r=activityOutcome(c,START,{hours:5,minActive:70,maxIdle:60},START+5*60*M+4*M);
  assert.equal(r.label,'dead');assert.ok(r.activePct<20);
 });
 test('Missing observations are not magically zero transactions',()=>{
  const c=snapshots(5,()=>true);c.ds=c.ds.slice(0,30);
- const r=activityOutcome(c,START,{hours:5},START+5*60*M+2*M);
+ const r=activityOutcome(c,START,{hours:5},START+5*60*M+4*M);
  assert.equal(r.label,'pending');assert.equal(r.why,'insufficient-activity-coverage');
 });
 test('Do not judge before full observation',()=>{
@@ -81,4 +81,43 @@ test('Polygon rolls newest 5000 positive and 5000 negative, no duplicates',()=>{
  assert.equal(out.length,10000);
  assert.equal(out.filter(x=>x.label==='live').length,5000);
  assert.equal(new Set(out.map(x=>x.mint)).size,10000);
+});
+
+test('Missing feature does not count as correctly rejecting a negative token',()=>{
+ const rule={key:'buyers',op:'>=',value:20};
+ const rows=[
+  {label:'live',features:{buyers:30}},
+  {label:'dead',features:{buyers:5}},
+  {label:'dead',features:{}},
+  {label:'dead',features:{buyers:null}}
+ ];
+ const st=ruleStats(rows,rule,'live','dead');
+ assert.equal(st.passedPositive,1);
+ assert.equal(st.rejectedNegative,1);
+ assert.equal(st.missingNegative,2);
+ assert.equal(st.negativeRejection,1/3);
+ assert.equal(st.falsePositive,0);
+ assert.equal(evaluation({},rule),'unknown');
+});
+test('A single 5-minute snapshot may not be recycled as 60 minutes of activity',()=>{
+ const c={ds:[[Math.floor((START+5*M)/1000),1,2000,3000,9,2,1000]]};
+ const outcome=activityOutcome(c,START,{hours:1},START+64*M);
+ assert.equal(outcome.label,'pending');
+ assert.ok(outcome.seen<=1);
+});
+test('Sparse five-minute samples are counted once with bounded bin alignment',()=>{
+ const c={ds:[]};
+ for(let m=5;m<=60;m+=5)c.ds.push([
+   Math.floor((START+(m+1)*M)/1000),1,2000,3000,2,1,500
+ ]);
+ const outcome=activityOutcome(c,START,{hours:1},START+64*M);
+ assert.equal(outcome.label,'live');
+ assert.equal(outcome.seen,12);
+});
+test('Predecision features do not silently use a newer buyer aggregation',()=>{
+ const c={ds:[[Math.floor((T-1*M)/1000),1,2000,3000,1,1,300]],
+  gx:[[Math.floor((T+2*M)/1000),0,0,400,0,0,0,0,0,0,0]]};
+ const f=featuresAt(c,T);
+ assert.equal(f.buyers,null);
+ assert.equal(f.trades,2);
 });
