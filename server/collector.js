@@ -629,10 +629,17 @@ async function exportPathsV2(now){
   TWO_ERR='';
   await upload('research-v2/status-two.json',result);
   if(result.added>0||now-TWO_BANK_UPLOADED>20*60e3){
+    // Don't transfer a 300-minute price array for every bank sample to a phone.
+    // Publish frozen feature rows and a tiny server-aggregated curve separately.
+    const levelTwoRows=RESEARCH_TWO.select({limit:10000});
     await upload('research-v2/polygon-2.json',{
       updated:now,settings:result.settings,counts:result.counts,
-      coins:RESEARCH_TWO.select({limit:10000}),
+      coins:levelTwoRows.map(({curve,...row})=>row),
       note:'Only fully observed server Passed stream; no orders'
+    });
+    await upload('research-v2/curve-two.json',{
+      updated:now,origin:'server-verified-passed-only',
+      curves:RESEARCH_TWO.aggregateCurves()
     });
     TWO_BANK_UPLOADED=now;
   }
