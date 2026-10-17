@@ -304,7 +304,7 @@ function renderPassed(){
   $('passedTab').textContent=list.length?' '+fmt(list.length):'';
   $('passedStats').textContent=serverPassActive?
     '✓ Серверный журнал: '+fmt(serverPassRows.length)+' записей в доступной выгрузке · активных: '+fmt(list.length)+
-    '. Работает при закрытом телефоне.':
+    (passMeta.enabled?'. Новые совпадения продолжают записываться сервером.':'. Серверные правила временно выключены, история сохранена.'): 
     '⚠ Предварительный режим на телефоне: '+fmt(lastPassed.length)+' сигналов. '+
     'Правила этого устройства пока НЕ отправляются на сервер; при закрытом сайте новые сигналы не фиксируются.';
   $('passedList').innerHTML=list.length?list.map(function(q){
@@ -913,7 +913,8 @@ async function load(){
   }
   // Server records are authoritative only while their own heartbeat is fresh.
   passMeta=vals[12]&&Number.isFinite(vals[12].updated)&&
-    now()-vals[12].updated<7*60000&&vals[12].status==='server-observational'&&
+    now()-vals[12].updated<7*60000&&
+    ['server-observational','disabled-no-server-rules'].includes(vals[12].status)&&
     vals[12].serverOnly===true?vals[12]:null;
   serverPassActive=!!passMeta;
   if(serverPassActive){
