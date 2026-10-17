@@ -145,11 +145,17 @@ class PassRuntime {
           if(result==='pass')matches.push({...f});
         }
         if(!matches.length)continue;
+        // Freeze all level-2 versions at first admission to Passed; an edit
+        // during the next five hours cannot silently rewrite that cohort.
+        const secondLevelRules=cfg.modules.filter(m=>
+          m.enabled&&m.level==='2'&&m.phase===row.phase)
+          .map(m=>available.get(m.filterId)).filter(Boolean)
+          .map(f=>({...f}));
         const item={
           schema:1,mint:row.mint,phase:row.phase,
           acceptedAt:row.acceptedAt,firstSeenAt:now,
           zeroAt:row.acceptedAt+cfg.decisionMinutes*MIN,
-          configHash:this.configHash,features:F,matches,
+          configHash:this.configHash,features:F,matches,secondLevelRules,
           name:String(coin.n||coin.s||'').slice(0,64),
           kind:'observed-filter-match'
         };
