@@ -231,6 +231,7 @@ const C=new Map();const FV=2; // версия формата наблюдени�
 let SOURCE=null, SOURCE_ERR='', SOURCE_CFG_ERR='', PRE=null;
 let RESEARCH_V2=null, RESEARCH_V2_ERR='', RESEARCH_BANK_UPLOADED=0;
 let PASS_V2=null, RESEARCH_TWO=null, AUTO_V2=null;
+let RESEARCH_ONE_EPOCH=null, RESEARCH_TWO_EPOCH=null, RESEARCH_CONFIG_ERR='';
 let PASS_ERR='', TWO_ERR='', PASS_CFG_ERR='', TWO_BANK_UPLOADED=0, AUTO_UPLOADED=0;
 async function admitVerifiedPublicLaunch(launch,record) {
   const existing=C.get(record.mint);
@@ -294,7 +295,7 @@ async function reloadSourceAgeConfig(){
 async function initResearchV2() {
   // Separate initialization: invalid research settings must never stop
   // the authoritative token source or the on-chain listeners.
-  const names=['research-v2.js','research-runtime.js'];
+  const names=['research-v2.js','research-runtime.js','research-config.js'];
   const auth=await token();
   for(const name of names) {
     const res=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
@@ -304,7 +305,19 @@ async function initResearchV2() {
     fs.writeFileSync(tmp,await res.text());
     fs.renameSync(tmp,target);
   }
-  RESEARCH_V2=new (require(DIR+'/research-runtime.js').ResearchRuntime)({dir:DIR});
+  const {ResearchRuntime,settings}=require(DIR+'/research-runtime.js');
+  const {ResearchEpoch}=require(DIR+'/research-config.js');
+  const requested=await getObj('config/research-one.json')||settings();
+  const config=settings(requested);
+  const baseline=settings();
+  RESEARCH_ONE_EPOCH=new ResearchEpoch({dir:DIR,key:'one',validate:settings,
+    config,adoptLegacy:JSON.stringify(config)===JSON.stringify(baseline)});
+  const epoch=RESEARCH_ONE_EPOCH.current;
+  RESEARCH_V2=new ResearchRuntime({
+    dir:DIR,config:epoch.config,cohortStart:epoch.activeAt,
+    bankName:epoch.activeAt===0?'research-v2-bank.json':
+      'research-v2-bank-one-'+epoch.hash+'.json'
+  });
   RESEARCH_V2_ERR='';
   log('исследование v2 готово, накоплено',RESEARCH_V2.rows.length);
 }
@@ -325,11 +338,52 @@ async function initPathsV2(){
   const config=await getObj('config/pass-filters.json');
   if(!config)throw Error('Missing server filter configuration');
   PASS_V2=new (require(DIR+'/pass-runtime.js').PassRuntime)({dir:DIR,config});
-  RESEARCH_TWO=new (require(DIR+'/research-two-runtime.js').ResearchTwoRuntime)({dir:DIR});
+  const {ResearchTwoRuntime,configOf}=require(DIR+'/research-two-runtime.js');
+  const {ResearchEpoch}=require(DIR+'/research-config.js');
+  const requested=await getObj('config/research-two.json')||configOf();
+  RESEARCH_TWO_EPOCH=new ResearchEpoch({dir:DIR,key:'two',validate:configOf,
+    config:requested});
+  const two=RESEARCH_TWO_EPOCH.current;
+  RESEARCH_TWO=new ResearchTwoRuntime({
+    dir:DIR,config:two.config,cohortStart:two.activeAt,
+    bankName:'research-v2-bank-two-'+two.hash+'.json'
+  });
   AUTO_V2=require(DIR+'/auto-research-v2.js');
   PASS_ERR='';TWO_ERR='';PASS_CFG_ERR='';
   log('серверные пути готовы: Прошли',PASS_V2.records.size,
     'Уровень 2',RESEARCH_TWO.rows.length,'включено',PASS_V2.config.enabled);
+}
+async function reloadResearchConfig(){
+  try{
+    if(RESEARCH_ONE_EPOCH&&RESEARCH_V2){
+      const cfg=await getObj('config/research-one.json');
+      if(!cfg)throw Error('First research config missing');
+      if(RESEARCH_ONE_EPOCH.apply(cfg)){
+        const x=RESEARCH_ONE_EPOCH.current;
+        const {ResearchRuntime}=require(DIR+'/research-runtime.js');
+        RESEARCH_V2=new ResearchRuntime({dir:DIR,config:x.config,
+          cohortStart:x.activeAt,bankName:'research-v2-bank-one-'+x.hash+'.json'});
+        RESEARCH_BANK_UPLOADED=0;AUTO_UPLOADED=0;
+        log('первый исследовательский полигон переключён на новую эпоху',x.hash);
+      }
+    }
+    if(RESEARCH_TWO_EPOCH&&RESEARCH_TWO){
+      const cfg=await getObj('config/research-two.json');
+      if(!cfg)throw Error('Second research config missing');
+      if(RESEARCH_TWO_EPOCH.apply(cfg)){
+        const x=RESEARCH_TWO_EPOCH.current;
+        const {ResearchTwoRuntime}=require(DIR+'/research-two-runtime.js');
+        RESEARCH_TWO=new ResearchTwoRuntime({dir:DIR,config:x.config,
+          cohortStart:x.activeAt,bankName:'research-v2-bank-two-'+x.hash+'.json'});
+        TWO_BANK_UPLOADED=0;AUTO_UPLOADED=0;
+        log('второй исследовательский полигон переключён на новую эпоху',x.hash);
+      }
+    }
+    RESEARCH_CONFIG_ERR='';
+  }catch(e){
+    RESEARCH_CONFIG_ERR=e.message;
+    err('research config '+e.message);
+  }
 }
 async function reloadPassConfig(){
   if(!PASS_V2)return;
@@ -676,6 +730,7 @@ async function exportPathsV2(now){
 }
 async function exportDays(){const now=Date.now(),today=dayKey(now),yest=dayKey(now-864e5);
   await reloadSourceAgeConfig();
+  await reloadResearchConfig();
   for(const d of [today,yest]){if(d===yest&&now-lastYest<30*60e3)continue;const list=[...C.values()].filter(c=>dayKey(c.t)===d);if(!list.length)continue;
     await upload(`day/${d}.json`,{day:d,tz:'Asia/Almaty',fv:FV,updated:now,count:list.length,coins:list.map(c=>rec(c,false))});
     if(d===yest||now-lastObs>=10*60e3){await upload(`obs/${d}.json`,{day:d,updated:now,coins:list.filter(observedEligible).map(c=>({a:c.a,t:c.t,ds:c.ds||[],lq:c.lq||[],path:c.path||null,
@@ -686,7 +741,7 @@ async function exportDays(){const now=Date.now(),today=dayKey(now),yest=dayKey(n
   try{await exportResearchV2(now)}catch(e){RESEARCH_V2_ERR=e.message;err('research-v2 export '+e.message)}
   try{await exportPathsV2(now)}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('pass/r2 export '+e.message)}
   await upload('status.json',{updated:now,version:VERSION,source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
-    researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,summary:RESEARCH_V2?.summary()||null},
+    researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,summary:PASS_V2?.summary(now)||null},
     researchTwo:{active:!!RESEARCH_TWO,error:TWO_ERR,summary:RESEARCH_TWO?.summary()||null},
     coins:C.size,today:[...C.values()].filter(c=>dayKey(c.t)===today).length,okToday:[...C.values()].filter(c=>dayKey(c.t)===today&&isOk(c)).length,
