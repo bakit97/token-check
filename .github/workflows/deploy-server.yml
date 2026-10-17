@@ -33,7 +33,8 @@ jobs:
           gcloud storage cp server/pass-runtime.js gs://sol-scan-511718-data/code/pass-runtime.js
           gcloud storage cp server/research-two-runtime.js gs://sol-scan-511718-data/code/research-two-runtime.js
           gcloud storage cp server/auto-research-v2.js gs://sol-scan-511718-data/code/auto-research-v2.js
-          gcloud storage cp server/pass-filters.json gs://sol-scan-511718-data/config/pass-filters.json
+          # Never overwrite an owner-published configuration during code deployment.
+          gcloud storage cp -n server/pass-filters.json gs://sol-scan-511718-data/config/pass-filters.json
           gcloud storage cp lab-core.js gs://sol-scan-511718-data/code/lab-core.js
           gcloud storage cp server/collector.js gs://sol-scan-511718-data/code/collector.js
       - name: verify running collector
