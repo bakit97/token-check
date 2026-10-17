@@ -23,5 +23,5 @@ test('collector exports separate source status, live and day data',()=>{
  assert.match(body,/source\/status\.json/);
  assert.match(body,/source\/live\.json/);
  assert.match(body,/source\/day\//);
- assert.match(body,/preConnected:!!PRE&&WS.on&&WS.preSub/);
+ assert.match(body,/preConnected:!!PRE&&WS.preOn&&WS.preSub/);
 });
