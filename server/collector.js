@@ -228,7 +228,7 @@ async function chainLoop(){let lastSweep=0;for(;;){const now=Date.now();
    к минуте «задним числом». Всё, что относится к пулу, при переезде витрины уходит в origs и начинается заново. */
 const C=new Map();const FV=2; // версия формата наблюдений
 // Авторитетный «Все»: отдельный read-only журнал допуска, не зависит от телефона.
-let SOURCE=null, SOURCE_ERR='', PRE=null;
+let SOURCE=null, SOURCE_ERR='', SOURCE_CFG_ERR='', PRE=null;
 let RESEARCH_V2=null, RESEARCH_V2_ERR='', RESEARCH_BANK_UPLOADED=0;
 let PASS_V2=null, RESEARCH_TWO=null, AUTO_V2=null;
 let PASS_ERR='', TWO_ERR='', PASS_CFG_ERR='', TWO_BANK_UPLOADED=0, AUTO_UPLOADED=0;
@@ -271,6 +271,25 @@ async function initSource() {
   }
   SOURCE_ERR='';
   log('главный источник готов, принято',SOURCE.records.size,'настройки',SOURCE.settings());
+}
+async function reloadSourceAgeConfig(){
+  if(!SOURCE)return;
+  try{
+    const cfg=await getObj('config/source-age.json');
+    if(!cfg||cfg.schema!==1||!Number.isInteger(cfg.beforeMinutes)||
+       !Number.isInteger(cfg.afterMinutes)||cfg.beforeMinutes<1||cfg.beforeMinutes>10||
+       cfg.afterMinutes<1||cfg.afterMinutes>10)
+      throw Error('Invalid source-age config');
+    const current=SOURCE.settings();
+    if(current.beforeMinutes!==cfg.beforeMinutes||current.afterMinutes!==cfg.afterMinutes){
+      SOURCE.configure({beforeMinutes:cfg.beforeMinutes,afterMinutes:cfg.afterMinutes});
+      log('возраст главного источника обновлён: до',cfg.beforeMinutes,'после',cfg.afterMinutes);
+    }
+    SOURCE_CFG_ERR='';
+  }catch(e){
+    SOURCE_CFG_ERR=e.message;
+    err('source age config '+e.message);
+  }
 }
 async function initResearchV2() {
   // Separate initialization: invalid research settings must never stop
@@ -656,6 +675,7 @@ async function exportPathsV2(now){
   }
 }
 async function exportDays(){const now=Date.now(),today=dayKey(now),yest=dayKey(now-864e5);
+  await reloadSourceAgeConfig();
   for(const d of [today,yest]){if(d===yest&&now-lastYest<30*60e3)continue;const list=[...C.values()].filter(c=>dayKey(c.t)===d);if(!list.length)continue;
     await upload(`day/${d}.json`,{day:d,tz:'Asia/Almaty',fv:FV,updated:now,count:list.length,coins:list.map(c=>rec(c,false))});
     if(d===yest||now-lastObs>=10*60e3){await upload(`obs/${d}.json`,{day:d,updated:now,coins:list.filter(observedEligible).map(c=>({a:c.a,t:c.t,ds:c.ds||[],lq:c.lq||[],path:c.path||null,
@@ -665,7 +685,7 @@ async function exportDays(){const now=Date.now(),today=dayKey(now),yest=dayKey(n
   try{await exportSource(now)}catch(e){SOURCE_ERR='выгрузка источника: '+e.message;err('source export '+e.message)}
   try{await exportResearchV2(now)}catch(e){RESEARCH_V2_ERR=e.message;err('research-v2 export '+e.message)}
   try{await exportPathsV2(now)}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('pass/r2 export '+e.message)}
-  await upload('status.json',{updated:now,version:VERSION,source:{active:!!SOURCE,error:SOURCE_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,version:VERSION,source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,summary:PASS_V2?.summary(now)||null},
     researchTwo:{active:!!RESEARCH_TWO,error:TWO_ERR,summary:RESEARCH_TWO?.summary()||null},
@@ -747,7 +767,7 @@ let diagGen=null;async function diagCheck(){try{const tk=await token();const r=a
 /* ---------- старт ---------- */
 const STARTED=Date.now();
 (async()=>{fs.mkdirSync(DIR,{recursive:true});load();log('старт, версия',VERSION);
-  try{await initSource()}catch(e){SOURCE_ERR=e.message;err('главный источник не запустился: '+e.message)}
+  try{await initSource();await reloadSourceAgeConfig()}catch(e){SOURCE_ERR=e.message;err('главный источник не запустился: '+e.message)}
   try{await initResearchV2()}catch(e){RESEARCH_V2_ERR=e.message;err('исследование v2 не запустилось: '+e.message)}
   try{await initPathsV2()}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('серверные пути не запустились: '+e.message)}
   for(const pg of [1,2,3])try{await addFromGT(await gt(`/new_pools?page=${pg}&include=base_token,quote_token,dex`,0,'boot'+pg))}catch(e){err('boot '+e.message)}
