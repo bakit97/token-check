@@ -24,7 +24,7 @@ signalLog=signalLog.filter(function(x){return x&&typeof x.mint==='string'&&Numbe
 var bank=Object.assign({'1':[],'2':[]},loadLocal(BANK,{'1':[],'2':[]}));
 for(var lv of ['1','2'])if(!Array.isArray(bank[lv]))bank[lv]=[];
 var dataset=[],status=null,dataErr='',loadedAt=0,picker=null,editorId=null,lastPassed=[],lastR1=[],lastR2=[],lastAccepted=[],lastVisible=[],testHtml='',lastBankWrite=0,lastResearchBankRead=0,researchMeta=null,researchServerBank=false,fetching=false,sourceActive=false,sourceMeta=null,sourceRecords=[];
-var serverPassActive=false,serverPassRows=[],passMeta=null,serverR2Active=false,serverR2Rows=[],twoMeta=null,autoOne=null,autoTwo=null;
+var serverPassActive=false,serverPassRows=[],passMeta=null,serverR2Active=false,serverR2Rows=[],twoMeta=null,autoOne=null,autoTwo=null,lastSecondBankRead=0;
 var phaseNames={before:'🌱 До миграции',after:'🎓 После миграции'};
 function save(){try{localStorage.setItem(STORE,JSON.stringify(s))}catch(e){note('Не удалось сохранить настройки на устройстве')}}
 function saveSignals(){try{localStorage.setItem(PASS_LOG,JSON.stringify(signalLog))}catch(e){note('История сигналов не сохранилась на телефоне')}}
@@ -604,9 +604,14 @@ async function load(){
   var today=day(now()),yesterday=day(now()-864e5);
   var names=['status.json','day/'+today+'.json','day/'+yesterday+'.json','obs/'+today+'.json','obs/'+yesterday+'.json','live.json',
     'source/status.json','source/day/'+today+'.json','source/day/'+yesterday+'.json','source/live.json',
-    'research-v2/status.json','research-v2/polygon-1.json'];
+    'research-v2/status.json','research-v2/polygon-1.json',
+    'passed-v2/status.json','passed-v2/live.json',
+    'passed-v2/day/'+today+'.json','passed-v2/day/'+yesterday+'.json',
+    'research-v2/status-two.json','research-v2/polygon-2.json',
+    'research-v2/auto-1.json','research-v2/auto-2.json'];
   var fetched=await Promise.allSettled(names.map(function(name,i){
     if(i===11&&lastResearchBankRead&&now()-lastResearchBankRead<300000)return Promise.resolve(null);
+    if(i===17&&lastSecondBankRead&&now()-lastSecondBankRead<300000)return Promise.resolve(null);
     return getJSON(name);
   }));
   var vals=fetched.map(function(q){return q.status==='fulfilled'?q.value:null});
@@ -616,6 +621,8 @@ async function load(){
     // authoritative source is unavailable on a later refresh.
     sourceActive=false;sourceMeta=null;sourceRecords=[];
     researchMeta=null;researchServerBank=false;bank['1']=[];
+    serverPassActive=false;serverPassRows=[];passMeta=null;
+    serverR2Active=false;serverR2Rows=[];twoMeta=null;autoOne=null;autoTwo=null;bank['2']=[];
     lastAccepted=[];lastVisible=[];lastPassed=[];
     renderAll();renderPassed();renderR1();renderLibrary();
     dataErr=errors.length?String(errors[0].reason):'Сервер пока не опубликовал данные';
@@ -652,6 +659,51 @@ async function load(){
     researchServerBank=true;
     lastResearchBankRead=now();
   }
+  // Server records are authoritative only while their own heartbeat is fresh.
+  passMeta=vals[12]&&Number.isFinite(vals[12].updated)&&
+    now()-vals[12].updated<7*60000&&vals[12].status==='server-observational'&&
+    vals[12].serverOnly===true?vals[12]:null;
+  serverPassActive=!!passMeta;
+  if(serverPassActive){
+    const verified=new Map();
+    for(const source of [vals[15],vals[14],vals[13]]){
+      for(const p of source&&source.coins||[]){
+        if(p&&typeof p.mint==='string'&&Number.isSafeInteger(p.acceptedAt)&&
+           Number.isSafeInteger(p.firstSeenAt)&&Number.isSafeInteger(p.zeroAt)&&
+           ['before','after'].includes(p.phase)&&Array.isArray(p.matches))
+          verified.set(p.mint,p);
+      }
+    }
+    serverPassRows=[...verified.values()].sort(function(a,b){return b.firstSeenAt-a.firstSeenAt});
+  }else serverPassRows=[];
+  twoMeta=vals[16]&&vals[16].status==='observational'&&
+    vals[16].origin==='server-verified-passed-only'&&
+    Number.isFinite(vals[16].updated)&&now()-vals[16].updated<7*60000?vals[16]:null;
+  serverR2Active=!!twoMeta;
+  if(serverR2Active){
+    s.r2Strong=twoMeta.settings.minAbove;
+    $('r2Strong').value=s.r2Strong;$('r2StrongValue').textContent=s.r2Strong+'%';
+    $('r2Strong').disabled=true;$('applyR2').disabled=true;
+    if(vals[17]&&Array.isArray(vals[17].coins)){
+      serverR2Rows=vals[17].coins.filter(function(row){
+        return row&&typeof row.mint==='string'&&['strong','weak'].includes(row.label)&&
+          Number.isFinite(row.pctAbove)&&Array.isArray(row.curve)&&row.features;
+      });
+      bank['2']=serverR2Rows.map(function(row){
+        return {mint:row.mint,t:row.zeroAt,above:row.pctAbove,
+          phase:row.phase,label:row.label,features:row.features}
+      });
+      lastSecondBankRead=now();
+    }else if(!lastSecondBankRead||now()-lastSecondBankRead>=300000){
+      serverR2Rows=[];bank['2']=[];
+    }
+  }else{
+    serverR2Rows=[];bank['2']=[];lastSecondBankRead=0;
+  }
+  autoOne=vals[18]&&Number.isFinite(vals[18].updated)&&
+    now()-vals[18].updated<40*60000?vals[18]:null;
+  autoTwo=vals[19]&&Number.isFinite(vals[19].updated)&&
+    now()-vals[19].updated<40*60000?vals[19]:null;
   sourceActive=false;sourceMeta=null;sourceRecords=[];
   $('ageBefore').disabled=true;$('ageAfter').disabled=true;
   if(vals[6]&&['verified-post-only','verified-pre-post'].includes(vals[6].mode)&&
