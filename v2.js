@@ -250,8 +250,8 @@ function analyze(){
     var r=labTwo(q.coin,q);
     if(r.label!=='pending')lastR2.push({passed:q,result:r});
   }
-  if(!researchMeta)storeBank('1',lastR1.map(function(x){return {mint:mint(x.coin),t:x.coin._entry.acceptedAt,activity:x.result.score,idle:x.result.maxIdle,features:dataMetrics(x.coin,x.coin._entry.acceptedAt+s.decision*60000)}}));
-  if(!serverR2Active)storeBank('2',lastR2.map(function(x){return {mint:mint(x.passed.coin),t:x.passed.deadline,above:x.result.score,features:x.passed.features}}));
+  // Polygons contain ONLY server-labeled cohorts. Local estimates are never
+  // promoted to confirmed research-bank members.
 }
 function spark(c){
   var points=(c.ds||[]).slice(-12).map(function(x){return Number(x[1])}).filter(function(x){return x>0});
@@ -461,12 +461,14 @@ function renderR1(){
     }).join(''):'<div class="muted">Пока нет монет с завершённым и достаточно полным наблюдением. Сервер продолжает сбор.</div>';
     return;
   }
-  var a=lastR1.filter(function(x){return x.result.label==='live'}).length;
-  var b=lastR1.filter(function(x){return x.result.label==='dead'}).length;
-  $('r1Live').textContent=fmt(a);$('r1Dead').textContent=fmt(b);
-  $('r1Meter').style.width=Math.min(100,a)+'%';
-  $('r1Auto').textContent='Размечено живых: '+a+'/100. '+(a<100?'Ожидание накопления. ':'Порог достигнут. ')+'Серверный поиск условий по зелёной зоне ещё не подключён.';
-  $('r1Rows').innerHTML=lastR1.length?'<h2>Завершённые наблюдения</h2>'+lastR1.slice(0,10).map(function(x){return '<div class="vrow"><div class="row"><b>'+esc(x.coin.n||x.coin.s||'Монета')+'</b><span class="badge '+(x.result.label==='live'?'good':'bad')+'">'+(x.result.label==='live'?'🟢 Живая':'🔴 Мёртвая')+'</span></div><p class="muted">Доля с активными сделками: '+x.result.score.toFixed(1)+'% · максимальный простой '+x.result.maxIdle+' мин · снимков '+x.result.observed+'/'+x.result.total+'</p></div>'}).join(''):'<div class="muted">Подтверждённой разметки пока нет. Нужны завершённые наблюдения 1–24 часа с достаточным покрытием торговых сделок.</div>';
+  const provisionalLive=lastR1.filter(function(x){return x.result.label==='live'}).length;
+  const provisionalDead=lastR1.filter(function(x){return x.result.label==='dead'}).length;
+  $('r1Live').textContent='—';$('r1Dead').textContent='—';
+  $('r1Meter').style.width='0%';
+  $('r1Auto').textContent='⛔ Авторитетная серверная разметка сейчас недоступна. '+
+    'Локальные предварительные оценки (живых '+fmt(provisionalLive)+
+    ', мёртвых '+fmt(provisionalDead)+') не считаются подтверждёнными и не входят в полигон.';
+  $('r1Rows').innerHTML='<div class="muted">Подтверждённые наблюдения сервера отсутствуют или не загружены. Не подменяем их расчётами телефона.</div>';
 }
 function lineGraph(rows){
   if(!rows.length)return '<div class="empty-state">Нет монет с полной историей от точки 0. Будущие цены не подставляем.</div>';
@@ -1235,6 +1237,8 @@ function init(){
   $('decisionValue').textContent=s.decision+' мин';$('decisionCurrent').textContent=s.decision+' мин';$('r1HoursValue').textContent=s.r1Hours+' часов';
   $('r1ActivityValue').textContent=s.r1Activity+'%';$('r1IdleValue').textContent=s.r1Idle+' минут';
   $('r2StrongValue').textContent=s.r2Strong+'%';$('r2Step').value=s.r2Step;
+  // Previously saved phone-side studies are not verified server polygons.
+  bank['1']=[];bank['2']=[];
   $('passedDay').innerHTML=Array.from({length:14},function(_,i){
     const d=day(now()-i*864e5);
     return '<option value="'+d+'">'+d+'</option>';
