@@ -206,7 +206,7 @@ test('после пропадания сервера старые карточк
 });
 
 test('UI buyers must match server frozen 5-minute features, with stale data unknown',()=>{
-  const begin=js.indexOf('function dataMetrics('),end=js.indexOf('\\nfunction ruleStatus(',begin);
+  const begin=js.indexOf('function dataMetrics('),end=js.indexOf('\nfunction ruleStatus(',begin);
   assert.ok(begin>=0&&end>begin);
   const calc=vm.runInNewContext('('+js.slice(begin,end)+')');
   const cutoff=Date.UTC(2026,9,17,1,0,0),recent=Math.floor((cutoff-60000)/1000);
