@@ -129,6 +129,24 @@ class ResearchTwoRuntime {
       settings:{...this.config,hours:5},
       counts,pending:{...this.pending},bankCapacityPerClass:MAX_PER_CLASS};
   }
+  aggregateCurves(){
+    const result={before:[],after:[]},buckets={before:new Map(),after:new Map()};
+    for(const row of this.rows){
+      if(!buckets[row.phase])continue;
+      for(const point of row.curve||[]){
+        if(!Array.isArray(point)||!Number.isInteger(point[0])||
+           point[0]<5||point[0]>300||!Number.isFinite(point[1]))continue;
+        let x=buckets[row.phase].get(point[0]);
+        if(!x){x={sum:0,n:0};buckets[row.phase].set(point[0],x)}
+        x.sum+=point[1];x.n++;
+      }
+    }
+    for(const phase of ['before','after']){
+      result[phase]=[...buckets[phase]].sort((a,b)=>a[0]-b[0])
+        .map(([m,x])=>({min:m,pct:x.sum/x.n,n:x.n}));
+    }
+    return result;
+  }
   select({phase,label,limit=10000}={}){
     if(phase&&!['before','after'].includes(phase))throw TypeError('bad phase');
     if(label&&!['strong','weak'].includes(label))throw TypeError('bad label');
