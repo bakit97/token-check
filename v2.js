@@ -518,9 +518,16 @@ async function load(){
   var vals=fetched.map(function(q){return q.status==='fulfilled'?q.value:null});
   var errors=fetched.filter(function(q){return q.status==='rejected'});
   if(vals.slice(1,3).every(function(x){return !x})&&!vals[5]&&!vals[6]){
+    // Previously rendered candidates must not remain active when the
+    // authoritative source is unavailable on a later refresh.
+    sourceActive=false;sourceMeta=null;sourceRecords=[];
+    researchMeta=null;researchServerBank=false;bank['1']=[];
+    lastAccepted=[];lastVisible=[];lastPassed=[];
+    renderAll();renderPassed();renderR1();renderLibrary();
     dataErr=errors.length?String(errors[0].reason):'Сервер пока не опубликовал данные';
-    $('dataState').textContent='Не удалось получить выгрузку: '+dataErr+'. Повтор через 45 секунд.';
-    $('net').textContent='● Ожидание';$('net').className='live bad';fetching=false;return;
+    $('dataState').textContent='Не удалось получить главный источник: '+dataErr+'. Повтор через 45 секунд.';
+    $('net').textContent='● Источник недоступен';$('net').className='live bad';
+    fetching=false;return;
   }
   status=vals[0]||status;
   if(vals[10]&&vals[10].status==='observational'&&vals[10].settings &&
@@ -537,7 +544,7 @@ async function load(){
     $('r1Idle').value=s.r1Idle;$('r1IdleValue').textContent=s.r1Idle+' минут';
     for(const id of ['r1Hours','r1Activity','r1Idle','applyR1'])$(id).disabled=true;
   }
-  if(!vals[10]||!Number.isFinite(vals[10].updated)||now()-vals[10].updated>7*60000){
+  if(!vals[10]||vals[10].status!=='observational'||!Number.isFinite(vals[10].updated)||now()-vals[10].updated>7*60000){
     researchMeta=null;researchServerBank=false;bank['1']=[];
   }
   if(researchMeta&&vals[11]&&Array.isArray(vals[11].coins)&&vals[11].counts){
