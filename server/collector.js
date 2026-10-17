@@ -734,6 +734,11 @@ async function exportResearchV2(now) {
   if(!RESEARCH_V2||!SOURCE)return;
   // All read-only observations originate from the accepted main source.
   const result=RESEARCH_V2.update({source:SOURCE,coins:C,now});
+  // A settings change does NOT abandon previously admitted cohorts.
+  for(const item of OLD_RESEARCH_ONE){
+    try{item.runtime.update({source:SOURCE,coins:C,now})}
+    catch(e){err('research old 1 '+item.epoch.hash+' '+e.message)}
+  }
   await upload('research-v2/status.json',result);
   if(result.added>0||now-RESEARCH_BANK_UPLOADED>20*60e3){
     await upload('research-v2/polygon-1.json',{
@@ -764,6 +769,10 @@ async function exportPathsV2(now){
     });
   }
   const result=RESEARCH_TWO.update({passes:PASS_V2,coins:C,now});
+  for(const item of OLD_RESEARCH_TWO){
+    try{item.runtime.update({passes:PASS_V2,coins:C,now})}
+    catch(e){err('research old 2 '+item.epoch.hash+' '+e.message)}
+  }
   TWO_ERR='';
   await upload('research-v2/status-two.json',result);
   if(result.added>0||now-TWO_BANK_UPLOADED>20*60e3){
@@ -797,6 +806,16 @@ async function exportPathsV2(now){
       });
       await upload('research-v2/filter-audit.json',audit);
     }
+    await upload('research-v2/epochs.json',{
+      updated:now,
+      first:{current:RESEARCH_ONE_EPOCH?.summary()||null,
+        older:OLD_RESEARCH_ONE.map(x=>({hash:x.epoch.hash,from:x.epoch.activeAt,
+          to:x.epoch.endedAt,counts:x.runtime.summary().counts}))},
+      second:{current:RESEARCH_TWO_EPOCH?.summary()||null,
+        older:OLD_RESEARCH_TWO.map(x=>({hash:x.epoch.hash,from:x.epoch.activeAt,
+          to:x.epoch.endedAt,counts:x.runtime.summary().counts}))},
+      note:'Older cohorts continue their original observation settings and are never relabeled'
+    });
     AUTO_UPLOADED=now;
   }
 }
