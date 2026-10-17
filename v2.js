@@ -544,7 +544,7 @@ async function load(){
     $('r1Idle').value=s.r1Idle;$('r1IdleValue').textContent=s.r1Idle+' минут';
     for(const id of ['r1Hours','r1Activity','r1Idle','applyR1'])$(id).disabled=true;
   }
-  if(vals[11]&&Array.isArray(vals[11].coins)){
+  if(researchMeta&&vals[11]&&Array.isArray(vals[11].coins)&&vals[11].counts){
     const sourceRows=vals[11].coins.filter(function(x){
       return x.mint&&Number.isFinite(x.activePct)&&Number.isFinite(x.maxIdleObserved)&&x.features;
     });
