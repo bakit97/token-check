@@ -742,7 +742,7 @@ async function exportResearchV2(now) {
   await upload('research-v2/status.json',result);
   if(result.added>0||now-RESEARCH_BANK_UPLOADED>20*60e3){
     await upload('research-v2/polygon-1.json',{
-      updated:now,settings:result.settings,counts:result.counts,
+      updated:now,epochStart:result.cohortStart,settings:result.settings,counts:result.counts,
       coins:RESEARCH_V2.select({limit:10000}),
       note:'Observed classifications only; no buy/sell signals'
     });
@@ -780,12 +780,12 @@ async function exportPathsV2(now){
     // Publish frozen feature rows and a tiny server-aggregated curve separately.
     const levelTwoRows=RESEARCH_TWO.select({limit:10000});
     await upload('research-v2/polygon-2.json',{
-      updated:now,settings:result.settings,counts:result.counts,
+      updated:now,epochStart:result.cohortStart,settings:result.settings,counts:result.counts,
       coins:levelTwoRows.map(({curve,minuteCurve,minuteCurvePacked,...row})=>row),
       note:'Only fully observed server Passed stream; no orders'
     });
     await upload('research-v2/curve-two.json',{
-      updated:now,origin:'server-verified-passed-only',
+      updated:now,epochStart:result.cohortStart,origin:'server-verified-passed-only',
       curves:RESEARCH_TWO.aggregateCurves()
     });
     TWO_BANK_UPLOADED=now;
@@ -797,8 +797,8 @@ async function exportPathsV2(now){
     const levelTwo=RESEARCH_TWO.select({limit:10000});
     const one=AUTO_V2.discover(levelOne,{level:'1'});
     const two=AUTO_V2.discover(levelTwo,{level:'2'});
-    await upload('research-v2/auto-1.json',{updated:now,...one});
-    await upload('research-v2/auto-2.json',{updated:now,...two});
+    await upload('research-v2/auto-1.json',{updated:now,epochStart:RESEARCH_V2.cohortStart,...one});
+    await upload('research-v2/auto-2.json',{updated:now,epochStart:RESEARCH_TWO.cohortStart,...two});
     if(FILTER_AUDIT){
       const audit=FILTER_AUDIT.report({
         config:PASS_V2.config,one:levelOne,two:levelTwo,
