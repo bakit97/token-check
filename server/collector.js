@@ -484,7 +484,7 @@ function chainWatch(){let ws,ping;const subs={};
         method:'logsSubscribe',params:[{mentions:[PUMP]},{commitment:'confirmed'}]}))}
       ping=setInterval(()=>{try{ws.send(JSON.stringify({jsonrpc:'2.0',id:1,method:'getHealth'}))}catch{}},30e3)};
     ws.onmessage=e=>{const txt=typeof e.data==='string'?e.data:'';WS.bytes+=txt.length;let m;try{m=JSON.parse(txt)}catch{return}
-      if(m.id&&subs[m.id]){subs['s'+m.result]=subs[m.id];return}
+      if(m.id&&subs[m.id]){subs['s'+m.result]=subs[m.id];if(subs[m.id]==='pre')WS.preSub=true;return}
       const n=subs['s'+m.params?.subscription];const v=m.params?.result?.value;if(!n||!v)return;WS.msgs[n]=(WS.msgs[n]||0)+1;
       if(n==='pre'){
         // Only candidate create logs trigger RPC proof, not each buy/sell.
@@ -494,7 +494,7 @@ function chainWatch(){let ws,ping;const subs={};
       if(WS.msgs[n]>5000&&Date.now()-WS.since<3600e3){err('подписка '+n+' слишком шумная — закрыта');try{ws.close()}catch{}WS.stop=1;return}
       try{wsCandidate(n,v.pubkey,b64(v.account?.data?.[0]))}catch(x){err('ws '+x.message)}};
     ws.onerror=()=>{WS.err++};
-    ws.onclose=()=>{WS.on=false;clearInterval(ping);if(WS.stop)return;err('ws закрыт — переподключение');setTimeout(()=>{start();reconcile().catch(()=>{})},5000)}};
+    ws.onclose=()=>{WS.on=false;WS.preSub=false;clearInterval(ping);if(WS.stop)return;err('ws закрыт — переподключение');setTimeout(()=>{start();reconcile().catch(()=>{})},5000)}};
   start()}
 
 /* ---------- 6. выгрузка ---------- */
@@ -504,7 +504,8 @@ async function flushUploads(){while(UPQ.length){const [n,o]=UPQ.shift();try{awai
 function rec(c,full){const mg=c.mg||{};
   const r={a:c.a,n:c.n,s:c.s,i:c.i,p:c.p,d:c.d,q:c.q,t:c.t,tSrc:c.tSrc||'gt',t0:c.t0||null,seen:c.seen,disc:c.disc||null,rcSeen:c.rcSeen||null,wsSeen:c.wsSeen||null,firstPostSeenAt:c.firstPostSeenAt||null,preCurve:!!c.preCurve,preTradingAt:c.preTradingAt||null,ty:launchType(c),
     mk:mg.k||null,mst:mg.st||null,mw:mg.why||'',mT:mg.mT||null,mSig:mg.sig||null,mSeen:mg.seenAt||null,mCr:mg.creator??null,mH:c.mgH||[],mk0:c.mg0?.k||null,
-    origs:(c.origs||[]).map(o=>({p:o.p,t:o.t,d:o.d,movedAt:o.movedAt})),ct:c.ct||null,soc:c.soc||0,tk:c.tk&&isFinite(c.tk)?c.tk:null,tkAt:c.tkAt||null,
+    origs:(c.origs||[]).map(o=>({p:o.p,t:o.t,d:o.d,movedAt:o.movedAt})),
+    preObs:c.preCurve?((c.origs||[]).find(o=>o.d==='pump-fun')||null):null,ct:c.ct||null,soc:c.soc||0,tk:c.tk&&isFinite(c.tk)?c.tk:null,tkAt:c.tkAt||null,
     live:c.lastTrade?Date.now()-c.lastTrade<30*60e3:false,lastTrade:c.lastTrade||null,legacy:c.legacy?1:0};
   if(observedEligible(c)){r.k10=c.k10||null;r.hold=c.hold||{};r.bx=c.bx||null;r.gx=c.gx||[];r.vdec=c.vdec||null;r.vmint=c.vmint||null;
     r.raw=c.raw?Object.fromEntries(Object.entries(c.raw).map(([m,x])=>[m,{at:x.at,slot:x.slot,miss:x.miss}])):{};
@@ -532,14 +533,15 @@ async function exportSource(now) {
   const today=SOURCE.day(d).map(enrich);
   // Нет задним числом добавленных кандидатов из обычной ленты.
   // Предмиграционный адаптер пока не активен: не выдавать пустоту за готовность.
-  await upload('source/status.json',{...summary,mode:'verified-pre-post',preConnected:!!PRE&&WS.on,pre:PRE?.summary()||null});
+  await upload('source/status.json',{...summary,mode:'verified-pre-post',preConnected:!!PRE&&WS.on&&WS.preSub,pre:PRE?.summary()||null});
   await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});
   await upload('source/live.json',{updated:now,count:today.length,coins:SOURCE.latest(200).map(enrich)});
 }
 async function exportDays(){const now=Date.now(),today=dayKey(now),yest=dayKey(now-864e5);
   for(const d of [today,yest]){if(d===yest&&now-lastYest<30*60e3)continue;const list=[...C.values()].filter(c=>dayKey(c.t)===d);if(!list.length)continue;
     await upload(`day/${d}.json`,{day:d,tz:'Asia/Almaty',fv:FV,updated:now,count:list.length,coins:list.map(c=>rec(c,false))});
-    if(d===yest||now-lastObs>=10*60e3){await upload(`obs/${d}.json`,{day:d,updated:now,coins:list.filter(observedEligible).map(c=>({a:c.a,t:c.t,ds:c.ds||[],lq:c.lq||[],path:c.path||null}))});if(d===today)lastObs=now}
+    if(d===yest||now-lastObs>=10*60e3){await upload(`obs/${d}.json`,{day:d,updated:now,coins:list.filter(observedEligible).map(c=>({a:c.a,t:c.t,ds:c.ds||[],lq:c.lq||[],path:c.path||null,
+      preObs:c.preCurve?((c.origs||[]).find(o=>o.d==='pump-fun')||null):null}))});if(d===today)lastObs=now}
     if(d===yest)lastYest=now}
   await flushUploads();
   try{await exportSource(now)}catch(e){SOURCE_ERR='выгрузка источника: '+e.message;err('source export '+e.message)}
