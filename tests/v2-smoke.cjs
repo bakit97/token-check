@@ -225,3 +225,103 @@ test('UI buyers must match server frozen 5-minute features, with stale data unkn
     bx:{at:cutoff-30000,cov:true,payers:17}},cutoff);
   assert.equal(verified.buyers,17,'verified 10m first-window fallback is allowed');
 });
+
+test('Passed journal preserves original version, deadline and detection after disabling filters',async()=>{
+  const nodes=new Map(),listeners=new Map(),memory=new Map();
+  function el(id){
+    if(nodes.has(id))return nodes.get(id);
+    const o={id,innerHTML:'',textContent:'',value:'',hidden:false,disabled:false,dataset:{},style:{},
+      classList:{toggle(){},add(){},remove(){}},
+      addEventListener(type,fn){listeners.set(id+':'+type,fn)},
+      querySelectorAll(){return []},insertAdjacentHTML(){},scrollIntoView(){},remove(){}};
+    nodes.set(id,o);return o;
+  }
+  const now=Date.now(),acceptedAt=now-120000,mint='So11111111111111111111111111111111111111112';
+  const source={mode:'verified-pre-post',updated:now,today:1,todayBefore:0,todayAfter:1,
+    settings:{beforeMinutes:2,afterMinutes:2},preConnected:true};
+  const entry={a:mint,phase:'after',eventAt:acceptedAt-1000,acceptedAt};
+  const observed=Math.floor((now-30000)/1000);
+  const coin={a:mint,n:'Фиксированная монета',s:'FREEZE',
+    gx:[[observed,12,3,10,3,16,4,13,4]],
+    ds:[[observed,0.001,12000,26000,12,3,1200]]};
+  const defaults={decision:10,level:'1',filters:[
+    {id:'001',level:'1',name:'Покупатели 8+',key:'buyers',op:'>=',value:8,version:3}
+  ],modules:[{filterId:'001',phase:'after',level:'1',enabled:true}]};
+  memory.set('solscan_v2_state_20261017',JSON.stringify(defaults));
+  async function fetch(url){
+    let value={coins:[]};
+    if(url.includes('/source/status.json'))value=source;
+    else if(url.includes('/source/day/')||url.includes('/source/live.json'))value={coins:[entry]};
+    else if(url.includes('/research-v2/'))value=null;
+    else if(url.includes('/status.json'))value={updated:now};
+    else if(url.includes('/obs/'))value={coins:[]};
+    else if(url.includes('/day/')||url.includes('/live.json'))value={coins:[coin]};
+    return {status:200,ok:true,json:async()=>value};
+  }
+  const storage={getItem:k=>memory.get(k)||null,setItem:(k,v)=>memory.set(k,v)};
+  const document={readyState:'complete',getElementById:el,
+    querySelectorAll(){return []},addEventListener(){}};
+  function run(){
+    vm.runInNewContext(js,{window:{addEventListener(){}},document,fetch,localStorage:storage,
+      AbortController,URL,console,Date,Intl,Math,Number,Map,Set,Array,String,Object,JSON,Error,
+      setInterval:()=>0,setTimeout:()=>0,clearTimeout:()=>{}},{timeout:3000});
+  }
+  run();
+  await new Promise(resolve=>setTimeout(resolve,60));
+  let ledger=JSON.parse(memory.get('solscan_v2_verified_passes_20261017')||'[]');
+  assert.equal(ledger.length,1);
+  assert.equal(ledger[0].matches[0].version,3);
+  assert.equal(ledger[0].deadline,acceptedAt+10*60000);
+  assert.equal(ledger[0].features.buyers,10);
+  assert.match(el('passedList').innerHTML,/Фиксированная монета/);
+  const toggle=listeners.get('moduleGrid:change');
+  toggle({target:{matches:()=>true,dataset:{toggle:'001',phase:'after'},checked:false}});
+  el('decisionMins').value='25';
+  listeners.get('applyDecision:click')();
+  assert.match(el('passedList').innerHTML,/Фиксированная монета/);
+  assert.equal(JSON.parse(memory.get('solscan_v2_verified_passes_20261017'))[0].deadline,acceptedAt+10*60000);
+  assert.match(el('passedArchiveList').innerHTML,/v3/);
+  // Reload from the same phone, now with every module disabled.
+  nodes.clear();listeners.clear();
+  run();
+  await new Promise(resolve=>setTimeout(resolve,60));
+  assert.match(el('passedList').innerHTML,/Фиксированная монета/);
+  assert.equal(JSON.parse(memory.get('solscan_v2_verified_passes_20261017')).length,1);
+});
+
+test('Expired historical coins never create fresh Passed signals on a late visit',async()=>{
+  const nodes=new Map();
+  function el(id){
+    if(nodes.has(id))return nodes.get(id);
+    const o={id,innerHTML:'',textContent:'',value:'',hidden:false,disabled:false,style:{},
+      classList:{toggle(){},add(){},remove(){}},
+      addEventListener(){},querySelectorAll(){return[]},insertAdjacentHTML(){},scrollIntoView(){},remove(){}};
+    nodes.set(id,o);return o;
+  }
+  const t=Date.now(),mint='So11111111111111111111111111111111111111112';
+  const entry={a:mint,phase:'after',acceptedAt:t-40*60000,eventAt:t-40*60000-1000};
+  const observed=Math.floor((t-30000)/1000);
+  const coin={a:mint,n:'Старый токен',gx:[[observed,100,50,90,40,100,50,95,40]],
+    ds:[[observed,1,1000,2000,100,50,20000]]};
+  const settings={decision:10,filters:[{id:'001',level:'1',name:'Buyers 8',key:'buyers',op:'>=',value:8,version:1}],
+    modules:[{filterId:'001',phase:'after',level:'1',enabled:true}]};
+  const memory=new Map([['solscan_v2_state_20261017',JSON.stringify(settings)]]);
+  const fetch=async url=>({ok:true,status:200,json:async()=>{
+    if(url.includes('/source/status.json'))return {mode:'verified-pre-post',updated:t,today:1,
+      todayBefore:0,todayAfter:1,settings:{beforeMinutes:2,afterMinutes:2}};
+    if(url.includes('/source/day/')||url.includes('/source/live.json'))return {coins:[entry]};
+    if(url.includes('/research-v2/'))return null;
+    if(url.includes('/status.json'))return {updated:t};
+    if(url.includes('/obs/'))return {coins:[]};
+    return {coins:[coin]};
+  }});
+  vm.runInNewContext(js,{window:{addEventListener(){}},
+    document:{readyState:'complete',getElementById:el,querySelectorAll(){return[]},addEventListener(){}},
+    localStorage:{getItem:k=>memory.get(k)||null,setItem:(k,v)=>memory.set(k,v)},
+    fetch,AbortController,URL,console,Date,Intl,Math,Number,Map,Set,Array,String,Object,JSON,Error,
+    setInterval:()=>0,setTimeout:()=>0,clearTimeout:()=>{}},{timeout:3000});
+  await new Promise(resolve=>setTimeout(resolve,80));
+  assert.equal(memory.has('solscan_v2_verified_passes_20261017'),false);
+  assert.doesNotMatch(el('passedList').innerHTML,/Старый токен/);
+  assert.equal(el('passedArchiveCount').textContent,'0');
+});
