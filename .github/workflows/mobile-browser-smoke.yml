@@ -1,0 +1,41 @@
+name: mobile-browser-smoke
+on:
+  push:
+    branches: ['feature/real-browser-mobile-tests-*']
+    paths:
+      - 'tests/mobile.spec.cjs'
+      - '.github/workflows/mobile-browser-smoke.yml'
+  pull_request:
+    paths:
+      - 'v2.html'
+      - 'v2.js'
+      - 'v2.css'
+      - 'tests/mobile.spec.cjs'
+      - '.github/workflows/mobile-browser-smoke.yml'
+permissions:
+  contents: read
+jobs:
+  mobile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install headless Chromium browser
+        run: |
+          npm install --no-save @playwright/test
+          npx playwright install --with-deps chromium
+      - name: Test Android-sized interactive UI in two cycles
+        run: |
+          python3 -m http.server 8765 >/tmp/sol-scan-http.log 2>&1 &
+          sleep 2
+          npx playwright test tests/mobile.spec.cjs --repeat-each=2 --reporter=line
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sol-scan-mobile-check
+          path: |
+            test-results/
+          retention-days: 7
