@@ -172,7 +172,10 @@ class PassRuntime {
       const rules=cfg.modules.filter(m=>m.enabled&&m.level==='1').map(m=>({
         phase:m.phase,filter:available.get(m.filterId)
       })).filter(x=>x.filter);
-      for(const row of source.records.values()){
+      const recent=typeof source.recentAdmissions==='function'?
+        source.recentAdmissions(now-cfg.decisionMinutes*MIN,now):
+        source.records.values();
+      for(const row of recent){
         if(!PHASES.has(row.phase)||this.records.has(row.mint)||row.acceptedAt<cfg.activatedAt||
            row.acceptedAt>now||now-row.acceptedAt>cfg.decisionMinutes*MIN)continue;
         considered++;
