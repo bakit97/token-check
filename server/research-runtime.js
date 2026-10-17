@@ -95,7 +95,7 @@ class ResearchRuntime {
         continue;
       }
       if(this.lastAttemptAt.has(row.mint) &&
-         now-this.lastAttemptAt.get(row.mint)<RETRY_INCOMPLETE_MS){
+         now-this.lastAttemptAt.get(row.mint).at<RETRY_INCOMPLETE_MS){
         pending['retry-later']=(pending['retry-later']||0)+1;
         continue;
       }
@@ -106,14 +106,14 @@ class ResearchRuntime {
       attempted++;
       const coin=coins.get(row.mint);
       if(!coin){
-        this.lastAttemptAt.set(row.mint,now);
+        this.lastAttemptAt.set(row.mint,{at:now,acceptedAt:row.acceptedAt});
         pending['candidate-missing']=(pending['candidate-missing']||0)+1;
         continue;
       }
       const decisionAt=row.acceptedAt+this.config.decisionMinutes*MIN;
       const result=activityOutcome(coin,row.acceptedAt,this.config,now);
       if(result.label==='pending'){
-        this.lastAttemptAt.set(row.mint,now);
+        this.lastAttemptAt.set(row.mint,{at:now,acceptedAt:row.acceptedAt});
         pending[result.why]=(pending[result.why]||0)+1;
         continue;
       }
@@ -136,13 +136,8 @@ class ResearchRuntime {
     for(const [mint,acceptedAt] of this.processed){
       if(now-acceptedAt>FRESH_WINDOW)this.processed.delete(mint);
     }
-    // Restrict the retry index to admitted mints that still exist in
-    // the source's bounded research observation window.
-    const fresh=new Set();
-    for(const row of source.records.values())
-      if(now-row.acceptedAt<=FRESH_WINDOW)fresh.add(row.mint);
-    for(const mint of this.lastAttemptAt.keys())
-      if(!fresh.has(mint))this.lastAttemptAt.delete(mint);
+    for(const [mint,retry] of this.lastAttemptAt)
+      if(now-retry.acceptedAt>FRESH_WINDOW)this.lastAttemptAt.delete(mint);
     if(added){
       this.rows=capBank(this.rows,r=>classOf(r,this.config),'live','dead',MAX_BANK_PER_CLASS);
       this.lookup=new Set(this.rows.map(r=>r.mint));
