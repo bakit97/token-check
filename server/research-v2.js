@@ -56,17 +56,27 @@ function activityOutcome(coin,entryAt,{hours=5,minActive=70,maxIdle=60,minCovera
   if(!inRange(hours,1,24)||!inRange(minActive,0,100)||!inRange(maxIdle,5,1440))
     throw RangeError('Invalid level-one settings');
   const end=entryAt+hours*60*MIN;
-  if(now<end+MIN)return {label:'pending',why:'observation-not-finished'};
+  if(now<end+3*MIN)return {label:'pending',why:'observation-not-finished'};
   const history=samples(coin),blocks=hours*12;
   let seen=0,active=0,longest=0,current=0,missing=0,maxMissing=0;
-  // DEX Screener returns rolling 5-minute trades; sample near END of each bin.
-  // If a window is missing, never assume zero trades.
+  // DEX Screener: m5 is a ROLLING five-minute window, not a discrete trade tape.
+  // Choose the closest observation to each bin-end (<=2.5 minutes either way).
+  // Never reuse one snapshot for multiple bins or invent zero trades for gaps.
+  const used=new Set();
+  let nextIndex=0;
   for(let i=1;i<=blocks;i++){
     const T=entryAt+i*FIVE;
-    const d=latestBefore(history,T,6*MIN,x=>x.at);
-    if(!d||d.buys==null||d.sells==null||d.volume==null){
+    while(nextIndex<history.length&&history[nextIndex].at<T-150000)nextIndex++;
+    let d=null,bestDiff=Infinity;
+    for(let j=nextIndex;j<history.length&&history[j].at<=T+150000;j++){
+      const candidate=history[j],diff=Math.abs(candidate.at-T);
+      if(!used.has(candidate.at)&&diff<bestDiff){d=candidate;bestDiff=diff}
+    }
+    if(!d||d.buys==null||d.sells==null||d.volume==null||
+       d.buys<0||d.sells<0||d.volume<0){
       maxMissing=Math.max(maxMissing,++missing);current=0;continue;
     }
+    used.add(d.at);
     missing=0;seen++;
     if(d.buys+d.sells>0&&d.volume>0){active++;current=0}
     else {current+=5;longest=Math.max(longest,current)}
@@ -100,22 +110,32 @@ function strengthOutcome(coin,zeroAt,{minAbove=70,minCoverage=.9}={},now=Date.no
   return {label:above/300*100>=minAbove?'strong':'weak',
     above,covered,pctAbove:above/300*100,p0,curve};
 }
-function passes(F,rule){
-  if(!F||!rule||!KEYS.includes(rule.key))return false;
+function evaluation(F,rule){
+  if(!F||!rule||!KEYS.includes(rule.key)||
+      !['>=','<='].includes(rule.op)||!Number.isFinite(rule.value))return 'unknown';
   const v=F[rule.key];
-  return typeof v==='number'&&Number.isFinite(v)&&
-    (rule.op==='>='?v>=rule.value:rule.op==='<='?v<=rule.value:false);
+  if(typeof v!=='number'||!Number.isFinite(v))return 'unknown';
+  return rule.op==='>='?(v>=rule.value?'pass':'reject'):(v<=rule.value?'pass':'reject');
 }
+function passes(F,rule){return evaluation(F,rule)==='pass'}
 function ruleKey(r){return [r.key,r.op,Number(r.value).toPrecision(8)].join('|')}
 function ruleStats(rows,rule,positive,negative){
   const yes=rows.filter(r=>r.label===positive);
   const no=rows.filter(r=>r.label===negative);
-  const pass=yes.filter(r=>passes(r.features,rule)).length;
-  const reject=no.filter(r=>!passes(r.features,rule)).length;
+  const y=yes.map(r=>evaluation(r.features,rule));
+  const n=no.map(r=>evaluation(r.features,rule));
+  const pass=y.filter(x=>x==='pass').length;
+  const reject=n.filter(x=>x==='reject').length;
+  const missingPositive=y.filter(x=>x==='unknown').length;
+  const missingNegative=n.filter(x=>x==='unknown').length;
   return {passedPositive:pass,totalPositive:yes.length,rejectedNegative:reject,
     totalNegative:no.length,positiveRecall:yes.length?pass/yes.length:null,
     negativeRejection:no.length?reject/no.length:null,
-    falsePositive:no.length-reject};
+    // Unknown ≠ correctly rejected; denominators reflect ALL labeled coins.
+    missingPositive,missingNegative,unknown:missingPositive+missingNegative,
+    falsePositive:n.filter(x=>x==='pass').length,
+    evaluablePositive:yes.length-missingPositive,
+    evaluableNegative:no.length-missingNegative};
 }
 /** Train on the existing labeled observations only. Independently validate on
  *  later, unseen events; never feed future outcomes into early-time features. */
@@ -138,6 +158,7 @@ function proposeRules(rows,{positive='live',negative='dead',minPos=100,minNeg=1,
         const stat=ruleStats(rows,rule,positive,negative);
         if(stat.positiveRecall===null||stat.negativeRejection===null)continue;
         if(stat.positiveRecall<.55||stat.negativeRejection<.5)continue;
+        if(stat.evaluablePositive/pos.length<.85||stat.evaluableNegative/neg.length<.85)continue;
         const score=2*stat.positiveRecall*stat.negativeRejection/
           (stat.positiveRecall+stat.negativeRejection);
         out.push({rule,train:stat,score});
@@ -157,4 +178,4 @@ function capBank(rows,labelFn=it=>it.label,positive='live',negative='dead',max=5
   return [...p,...n].sort((a,b)=>a.time-b.time);
 }
 module.exports={KEYS,samples,candles,featuresAt,activityOutcome,
-  strengthOutcome,passes,ruleKey,ruleStats,proposeRules,capBank};
+  strengthOutcome,evaluation,passes,ruleKey,ruleStats,proposeRules,capBank};
