@@ -25,6 +25,7 @@ var bank=Object.assign({'1':[],'2':[]},loadLocal(BANK,{'1':[],'2':[]}));
 for(var lv of ['1','2'])if(!Array.isArray(bank[lv]))bank[lv]=[];
 var dataset=[],status=null,dataErr='',loadedAt=0,picker=null,editorId=null,lastPassed=[],lastR1=[],lastR2=[],lastAccepted=[],lastVisible=[],testHtml='',lastBankWrite=0,lastResearchBankRead=0,researchMeta=null,researchServerBank=false,fetching=false,sourceActive=false,sourceMeta=null,sourceRecords=[];
 var serverPassActive=false,serverPassRows=[],passMeta=null,serverR2Active=false,serverR2Rows=[],twoMeta=null,autoOne=null,autoTwo=null,lastSecondBankRead=0;
+var controlEndpoint=null;
 var moduleDraft=new Map();
 function draftModuleKey(m){return m.phase+':'+m.level+':'+m.filterId}
 var phaseNames={before:'🌱 До миграции',after:'🎓 После миграции'};
@@ -566,7 +567,7 @@ function refresh(){
   analyze();
   renderAll();renderModules();renderPassed();renderR1();renderR2();renderLibrary();
 }
-function exportServerConfig(){
+function preparedServerConfig(){
   const enabled=s.modules.filter(function(m){return m.enabled});
   const usedIds=new Set(enabled.map(function(m){return m.filterId}));
   const filters=s.filters.filter(function(f){return usedIds.has(f.id)}).map(function(f){
@@ -579,11 +580,14 @@ function exportServerConfig(){
       filterId:m.filterId,phase:m.phase,level:m.level,enabled:true
     }});
   if(!modules.some(function(m){return m.level==='1'})){
-    note('Для фонового потока «Прошли» нужен хотя бы один активный фильтр 1-го уровня');
-    return;
+    note('Нужен хотя бы один подтверждённый активный модуль 1-го уровня');
+    return null;
   }
-  const config={schema:1,enabled:true,activatedAt:0,
+  return {schema:1,enabled:true,activatedAt:0,
     decisionMinutes:s.decision,filters,modules};
+}
+function exportServerConfig(){
+  const config=preparedServerConfig();if(!config)return;
   const blob=new Blob([JSON.stringify(config,null,2)+'\n'],{type:'application/json'});
   const url=URL.createObjectURL(blob),a=document.createElement('a');
   a.href=url;a.download='pass-filters.json';
@@ -591,8 +595,53 @@ function exportServerConfig(){
   setTimeout(function(){URL.revokeObjectURL(url)},30000);
   note('Конфигурация подготовлена. Для фоновой работы её надо опубликовать на сервере.');
 }
+function validControlEndpoint(value){
+  if(!value||value.enabled!==true||typeof value.url!=='string')return null;
+  try{
+    const u=new URL(value.url);
+    return u.protocol==='https:'&&u.hostname.endsWith('.run.app')&&!u.username&&!u.password?
+      u.origin:null;
+  }catch(e){return null}
+}
+async function publishServerConfig(){
+  if(!controlEndpoint){note('Защищённый сервер управления ещё не подключён');return}
+  if(!$('confirmControlPublish').checked){
+    note('Отметь подтверждение публикации серверной версии');return;
+  }
+  const config=preparedServerConfig();if(!config)return;
+  const key=$('ownerControlKey').value.trim();
+  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
+    note('Нужен действительный ключ владельца, не пароль от GitHub');return;
+  }
+  const button=$('publishServerConfig');
+  button.disabled=true;$('controlState').textContent='Отправка настроек на сервер…';
+  const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
+  try{
+    const r=await fetch(controlEndpoint+'/api/filter-config',{
+      method:'POST',cache:'no-store',signal:abort.signal,
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify(config)
+    });
+    if(!r.ok){
+      $('controlState').textContent='Не удалось применить серверную конфигурацию. HTTP '+r.status;
+      note(r.status===401?'Ключ владельца не принят':'Ошибка публикации: HTTP '+r.status);
+      return;
+    }
+    $('ownerControlKey').value='';
+    $('confirmControlPublish').checked=false;
+    $('controlState').textContent='Принято сервером управления. Журнал переключится после обновления конфигурации сборщика.';
+    note('Новая серверная версия передана. Старые монеты не добавляются задним числом.');
+  }catch(e){
+    $('controlState').textContent='Ошибка связи с защищённым сервером: '+String(e.message||e);
+  }finally{
+    clearTimeout(timer);
+    button.disabled=!controlEndpoint;
+  }
+}
+
 function bind(){
   $('exportServerConfig').addEventListener('click',exportServerConfig);
+  $('publishServerConfig').addEventListener('click',publishServerConfig);
   $('tabs').addEventListener('click',function(e){
     var b=e.target.closest('button[data-page]');if(!b)return;
     s.tab=b.dataset.page;
@@ -706,7 +755,7 @@ async function load(){
     'passed-v2/status.json','passed-v2/live.json',
     'passed-v2/day/'+today+'.json','passed-v2/day/'+yesterday+'.json',
     'research-v2/status-two.json','research-v2/polygon-2.json',
-    'research-v2/auto-1.json','research-v2/auto-2.json'];
+    'research-v2/auto-1.json','research-v2/auto-2.json','control/endpoint.json'];
   var fetched=await Promise.allSettled(names.map(function(name,i){
     if(i===11&&lastResearchBankRead&&now()-lastResearchBankRead<300000)return Promise.resolve(null);
     if(i===17&&lastSecondBankRead&&now()-lastSecondBankRead<300000)return Promise.resolve(null);
@@ -729,6 +778,11 @@ async function load(){
     fetching=false;return;
   }
   status=vals[0]||status;
+  controlEndpoint=validControlEndpoint(vals[20]);
+  $('publishServerConfig').disabled=!controlEndpoint;
+  $('ownerControlKey').disabled=!controlEndpoint;
+  if(!controlEndpoint)$('controlState').textContent=
+    'Защищённая отправка не включена. Можно подготовить серверную конфигурацию файлом.';
   if(vals[10]&&vals[10].status==='observational'&&vals[10].settings &&
      Number.isFinite(vals[10].updated)&&now()-vals[10].updated<=7*60000){
     if(!researchMeta&&!researchServerBank)bank['1']=[];
