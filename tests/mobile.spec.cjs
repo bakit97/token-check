@@ -76,6 +76,9 @@ test('Six panels, age admission, safe settings and local filter management work 
   await page.locator('#tabs [data-page="mine"]').click();
   await page.locator('[data-pick-source="after"][data-pick-level="1"]').click();
   await page.locator('#pickerItems [data-use]').first().click();
+  await expect(page.locator('#activeModules')).toHaveText('0');
+  await expect(page.locator('[data-apply-modules]')).toBeEnabled();
+  await page.locator('[data-apply-modules]').click();
   await expect(page.locator('#activeModules')).toHaveText('1');
   await page.locator('#tabs [data-page="all"]').click();
   await page.screenshot({path:testInfo.outputPath('solscan-phone.png'),fullPage:true});
