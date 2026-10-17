@@ -29,6 +29,8 @@ async function findPDA(seeds,prog){const pb=b58dec(prog),te=new TextEncoder();
     const buf=new Uint8Array(parts.reduce((s,p)=>s+p.length,0));let o=0;parts.forEach(p=>{buf.set(p,o);o+=p.length});
     const h=new Uint8Array(await crypto.subtle.digest('SHA-256',buf));if(!onCurve(h))return b58enc(h)}throw new Error('no PDA')}
 const PUMP='6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',PUMP_AMM='pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA';
+// mint authority pump.fun (PDA 'mint-authority'): есть только в create/create_v2, а не в каждой сделке
+const PUMP_MINT_AUTH=process.env.PUMP_MINT_AUTH||'TSLvdd1pWpHVjahSpsvCXUbgwsL3JAcvokwaKt1eokM';
 const WSOL='So11111111111111111111111111111111111111112',USDC='EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',USDT='Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 async function canonicalPoolOf(mint,quote){const te=new TextEncoder();const auth=await findPDA([te.encode('pool-authority'),b58dec(mint)],PUMP);
   return findPDA([te.encode('pool'),new Uint8Array([0,0]),b58dec(auth),b58dec(mint),b58dec(quote)],PUMP_AMM)}
@@ -246,7 +248,19 @@ async function admitVerifiedPublicLaunch(launch,record) {
     preCurve:1,pools:[launch.curve],fv:FV,
     mg:{v:MGV,st:'curve',k:'curve-pump',final:1,lastAt:record.acceptedAt}});
 }
+// Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
+// (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
+const MODULES=['admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
+  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js'];
+let MODULES_OK=null;
+function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
+  for(const name of MODULES){const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
+      {headers:{Authorization:'Bearer '+auth},signal:AbortSignal.timeout(30000)});
+    if(!r.ok)throw new Error('module '+name+' HTTP '+r.status);
+    const out=DIR+'/'+name,tmp=out+'.tmp';fs.writeFileSync(tmp,await r.text());fs.renameSync(tmp,out)}})().catch(e=>{MODULES_OK=null;throw e});
+  return MODULES_OK}
 async function initSource() {
+  await ensureModules();
   const names=['admission.js','source-runtime.js','pump-pre.js','pre-watcher.js'];
   const auth=await token();
   for(const name of names){
@@ -322,6 +336,7 @@ function recoverSupersededStudies(now=Date.now()){
   }
 }
 async function initResearchV2() {
+  await ensureModules();
   // Separate initialization: invalid research settings must never stop
   // the authoritative token source or the on-chain listeners.
   const names=['research-v2.js','research-runtime.js','research-config.js'];
@@ -351,6 +366,7 @@ async function initResearchV2() {
   log('исследование v2 готово, накоплено',RESEARCH_V2.rows.length);
 }
 async function initPathsV2(){
+  await ensureModules();
   const names=['pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js'];
   const auth=await token();
   for(const name of names){
@@ -689,9 +705,12 @@ function chainWatch(){let ws,ping;const subs={};
       // Public trading begins when the on-chain Pump create instruction
       // initializes its curve, not when a random SPL token mint appears.
       if(PRE) {subs[150]='pre';ws.send(JSON.stringify({jsonrpc:'2.0',id:150,
-        method:'logsSubscribe',params:[{mentions:[PUMP]},{commitment:'confirmed'}]}))}
+        method:'logsSubscribe',params:[{mentions:[PUMP_MINT_AUTH]},{commitment:'confirmed'}]}))}
       ping=setInterval(()=>{try{ws.send(JSON.stringify({jsonrpc:'2.0',id:1,method:'getHealth'}))}catch{}},30e3)};
-    ws.onmessage=e=>{const txt=typeof e.data==='string'?e.data:'';WS.bytes+=txt.length;let m;try{m=JSON.parse(txt)}catch{return}
+    ws.onmessage=e=>{const txt=typeof e.data==='string'?e.data:'';WS.bytes+=txt.length;
+      // дешёвый отсев: лог pump без create не разбираем (на e2-micro разбор каждой сделки забивал CPU)
+      if(txt.length>200&&txt.includes('"logsNotification"')&&!txt.includes('Instruction: Create')){WS.preDrop=(WS.preDrop||0)+1;return}
+      let m;try{m=JSON.parse(txt)}catch{return}
       if(m.id&&subs[m.id]){subs['s'+m.result]=subs[m.id];if(subs[m.id]==='pre')WS.preSub=true;return}
       const n=subs['s'+m.params?.subscription];const v=m.params?.result?.value;if(!n||!v)return;WS.msgs[n]=(WS.msgs[n]||0)+1;
       if(n==='pre'){
