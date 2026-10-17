@@ -1,0 +1,31 @@
+name: source-collector-smoke
+on:
+  pull_request:
+    paths:
+      - 'server/collector.js'
+      - 'server/source-runtime.js'
+      - 'server/admission.js'
+      - 'tests/source-collector-smoke.cjs'
+      - '.github/workflows/deploy-server.yml'
+      - '.github/workflows/source-collector-smoke.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'server/collector.js'
+      - 'server/source-runtime.js'
+      - 'server/admission.js'
+      - 'tests/source-collector-smoke.cjs'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax checks
+        run: node --check server/collector.js && node --check server/source-runtime.js && node --check tests/source-collector-smoke.cjs
+      - name: Source engine + collector integration smoke tests
+        run: node --test server/admission.test.js server/source-runtime.test.js tests/source-collector-smoke.cjs

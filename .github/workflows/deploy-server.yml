@@ -2,7 +2,7 @@ name: deploy-server
 on:
   push:
     branches: [main]
-    paths: ['server/collector.js', 'lab-core.js']
+    paths: ['server/collector.js', 'lab-core.js', 'server/source-runtime.js', 'server/admission.js']
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,7 +16,7 @@ jobs:
         with:
           node-version: 20
       - name: check syntax
-        run: node --check server/collector.js && node --check lab-core.js
+        run: node --check server/collector.js && node --check lab-core.js && node --check server/source-runtime.js && node --check server/admission.js && node --test server/admission.test.js server/source-runtime.test.js
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: projects/421351476653/locations/global/workloadIdentityPools/github/providers/github
@@ -24,6 +24,8 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
       - name: upload
         run: |
+          gcloud storage cp server/admission.js gs://sol-scan-511718-data/code/admission.js
+          gcloud storage cp server/source-runtime.js gs://sol-scan-511718-data/code/source-runtime.js
           gcloud storage cp lab-core.js gs://sol-scan-511718-data/code/lab-core.js
           gcloud storage cp server/collector.js gs://sol-scan-511718-data/code/collector.js
       - name: verify running collector
@@ -40,7 +42,13 @@ jobs:
             if [[ -n "$data" ]] && jq -e --arg v "$expect" --argjson now "$(date +%s%3N)" \
               '.version == $v and (.updated | type == "number" and . > $now - 180000) and (.startedAt | type == "number" and . > $now - 900000)' <<< "$data" >/dev/null; then
               echo "Collector is running expected version with a fresh heartbeat."
-              exit 0
+              src=$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' "https://storage.googleapis.com/sol-scan-511718-data/source/status.json?verify=$(date +%s%N)" || true)
+              if [[ -n "$src" ]] && jq -e --argjson now "$(date +%s%3N)" \
+                '(.mode == "verified-post-only") and (.updated | type == "number" and . > $now - 180000) and (.settings.beforeMinutes >= 1) and (.settings.afterMinutes >= 1)' <<< "$src" >/dev/null; then
+                echo "Authoritative source feed is fresh and running."
+                exit 0
+              fi
+              echo "Collector heartbeat valid, source feed not ready yet."
             fi
             echo "Still waiting for fresh collector heartbeat: attempt $n/10"
           done
