@@ -25,7 +25,7 @@ var bank=Object.assign({'1':[],'2':[]},loadLocal(BANK,{'1':[],'2':[]}));
 for(var lv of ['1','2'])if(!Array.isArray(bank[lv]))bank[lv]=[];
 var dataset=[],status=null,dataErr='',loadedAt=0,picker=null,editorId=null,lastPassed=[],lastR1=[],lastR2=[],lastAccepted=[],lastVisible=[],testHtml='',lastBankWrite=0,lastResearchBankRead=0,researchMeta=null,researchServerBank=false,fetching=false,sourceActive=false,sourceMeta=null,sourceRecords=[];
 var serverPassActive=false,serverPassRows=[],passMeta=null,serverR2Active=false,serverR2Rows=[],twoMeta=null,autoOne=null,autoTwo=null,lastSecondBankRead=0;
-var controlEndpoint=null;
+var controlEndpoint=null,serverR2Curve=null;
 var moduleDraft=new Map();
 function draftModuleKey(m){return m.phase+':'+m.level+':'+m.filterId}
 var phaseNames={before:'🌱 До миграции',after:'🎓 После миграции'};
@@ -401,15 +401,8 @@ function researchTwoDataset(){
     const valid=lines.length;
     const strong=lines.filter(function(x){return x.label==='strong'}).length;
     const weak=lines.filter(function(x){return x.label==='weak'}).length;
-    const curve=[];
-    for(var m=0;m<=300;m+=5){
-      if(m===0){curve.push({min:0,pct:0,n:valid});continue}
-      const values=lines.map(function(x){
-        const point=(x.curve||[]).find(function(p){return p[0]===m});
-        return point?point[1]:null;
-      }).filter(function(x){return Number.isFinite(x)});
-      if(values.length)curve.push({min:m,pct:values.reduce(function(a,b){return a+b},0)/values.length,n:values.length});
-    }
+    const aggregate=serverR2Curve&&serverR2Curve[s.r2Stream]||[];
+    const curve=valid?[{min:0,pct:0,n:valid}].concat(aggregate):[];
     const waiting=twoMeta&&twoMeta.pending||{};
     const pending=Object.values(waiting).reduce(function(a,b){return a+(Number(b)||0)},0);
     return {curve,valid,pending,strong,weak,lines,fromServer:true};
@@ -755,7 +748,8 @@ async function load(){
     'passed-v2/status.json','passed-v2/live.json',
     'passed-v2/day/'+today+'.json','passed-v2/day/'+yesterday+'.json',
     'research-v2/status-two.json','research-v2/polygon-2.json',
-    'research-v2/auto-1.json','research-v2/auto-2.json','control/endpoint.json'];
+    'research-v2/auto-1.json','research-v2/auto-2.json','control/endpoint.json',
+    'research-v2/curve-two.json'];
   var fetched=await Promise.allSettled(names.map(function(name,i){
     if(i===11&&lastResearchBankRead&&now()-lastResearchBankRead<300000)return Promise.resolve(null);
     if(i===17&&lastSecondBankRead&&now()-lastSecondBankRead<300000)return Promise.resolve(null);
@@ -769,7 +763,7 @@ async function load(){
     sourceActive=false;sourceMeta=null;sourceRecords=[];
     researchMeta=null;researchServerBank=false;bank['1']=[];
     serverPassActive=false;serverPassRows=[];passMeta=null;
-    serverR2Active=false;serverR2Rows=[];twoMeta=null;autoOne=null;autoTwo=null;bank['2']=[];
+    serverR2Active=false;serverR2Rows=[];serverR2Curve=null;twoMeta=null;autoOne=null;autoTwo=null;bank['2']=[];
     lastAccepted=[];lastVisible=[];lastPassed=[];
     renderAll();renderPassed();renderR1();renderLibrary();
     dataErr=errors.length?String(errors[0].reason):'Сервер пока не опубликовал данные';
@@ -839,7 +833,7 @@ async function load(){
     if(vals[17]&&Array.isArray(vals[17].coins)){
       serverR2Rows=vals[17].coins.filter(function(row){
         return row&&typeof row.mint==='string'&&['strong','weak'].includes(row.label)&&
-          Number.isFinite(row.pctAbove)&&Array.isArray(row.curve)&&row.features;
+          Number.isFinite(row.pctAbove)&&row.features;
       });
       bank['2']=serverR2Rows.map(function(row){
         return {mint:row.mint,t:row.zeroAt,above:row.pctAbove,
@@ -850,9 +844,13 @@ async function load(){
       serverR2Rows=[];bank['2']=[];
     }
   }else{
-    serverR2Rows=[];bank['2']=[];lastSecondBankRead=0;
+    serverR2Rows=[];serverR2Curve=null;bank['2']=[];lastSecondBankRead=0;
     $('r2Strong').disabled=false;$('applyR2').disabled=false;
   }
+  serverR2Curve=serverR2Active&&vals[21]&&
+    vals[21].origin==='server-verified-passed-only'&&vals[21].curves&&
+    Number.isFinite(vals[21].updated)&&now()-vals[21].updated<45*60000?
+    vals[21].curves:null;
   autoOne=vals[18]&&Number.isFinite(vals[18].updated)&&
     now()-vals[18].updated<40*60000?vals[18]:null;
   autoTwo=vals[19]&&Number.isFinite(vals[19].updated)&&
