@@ -264,6 +264,31 @@ function renderAll(){
   var list=lastVisible.slice(0,s.limit);
   $('coinList').innerHTML=list.length?list.map(function(c){return coinHtml(c)}).join(''):'<div class="empty-state">Пока нет подтверждённых записей в этом потоке. Монеты, не успевшие пройти фильтр возраста на входе, не добавляются позже задним числом.</div>';
 }
+function renderServerModules(){
+  const meta=serverPassActive&&passMeta||null;
+  const cfg=meta&&meta.serverConfig;
+  if(!cfg){
+    $('serverModuleCount').textContent='Не подключено';
+    $('serverModules').textContent='Проверенная серверная конфигурация пока не опубликована. Черновики справа не заменяют её.';
+    return;
+  }
+  const filters=new Map((cfg.filters||[]).map(function(f){return [f.id,f]}));
+  const active=(cfg.modules||[]).filter(function(m){
+    return m.enabled&&filters.has(m.filterId);
+  });
+  $('serverModuleCount').textContent=cfg.enabled?fmt(active.length)+' включено':'Выключено';
+  if(!cfg.enabled){
+    $('serverModules').textContent='Новые серверные сигналы отключены; старая история «Прошли» сохраняется.';
+    return;
+  }
+  $('serverModules').innerHTML=active.length?active.map(function(m){
+    const f=filters.get(m.filterId);
+    return '<div class="filter-row"><b>'+esc(m.phase==='before'?'🌱 До':'🎓 После')+
+      ' · '+esc(m.level)+'-й уровень · '+esc(f.name)+'</b>'+
+      '<p class="muted">v'+esc(f.version)+' · '+esc(f.key)+' '+
+      esc(f.op)+' '+fmt(f.value)+'</p></div>';
+  }).join(''):'<p class="muted">Серверная версия включена, но активных модулей нет.</p>';
+}
 function renderModules(){
   var html='';
   for(var phase of ['before','after']){
@@ -558,7 +583,7 @@ function removeEditor(){
 }
 function refresh(){
   analyze();
-  renderAll();renderModules();renderPassed();renderR1();renderR2();renderLibrary();
+  renderAll();renderServerModules();renderModules();renderPassed();renderR1();renderR2();renderLibrary();
 }
 function preparedServerConfig(){
   const enabled=s.modules.filter(function(m){return m.enabled});
