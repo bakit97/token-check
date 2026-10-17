@@ -416,7 +416,7 @@ function renderAutoSuggestions(report){
     liq:'Ликвидность $',mc:'Капитализация $',buys:'Покупки',
     sells:'Продажи',buySellRatio:'Покупки/продажи'};
   return '<p class="hint">Кандидаты из ранних наблюдений. Поздняя выборка используется только для отдельной оценки.</p>'+
-    report.rules.slice(0,8).map(function(x){
+    report.rules.slice(0,8).map(function(x,i){
       const v=x.holdout;
       const stats=v&&v.positiveRecall!=null&&v.negativeRejection!=null?
         'Поздняя выборка: 🟢 '+(v.positiveRecall*100).toFixed(1)+'% ('+v.passedPositive+'/'+v.totalPositive+
@@ -429,7 +429,8 @@ function renderAutoSuggestions(report){
         (x.train.negativeRejection*100).toFixed(1)+'%. '+esc(stats)+
         (x.passesHoldout===true?' · ✅ порог пройден':
          x.passesHoldout===false?' · ⚠ порог не пройден':'')+
-        '</p></div>';
+        '</p><button type="button" class="pbtn" data-stage-auto="'+esc(report.level)+
+        ':'+i+'">Открыть в редакторе</button></div>';
     }).join('');
 }
 function renderR1(){
