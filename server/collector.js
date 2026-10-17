@@ -440,7 +440,24 @@ async function pollNew(){if(gtPending('new'))return;try{const n=await addFromGT(
 
 /* ---------- 2. DEX Screener: ряд снимков [время получения (с), цена, ликв.$, mc, покупки 5м, продажи 5м, объём 5м, покупки 1ч, продажи 1ч, объём 1ч]
    Витрина: каждую минуту первые 15 минут, потом каждые 5 минут до 24 ч. Остальные пулы: раз в 15 минут первые 6 ч (только «торгуется ли»). ---------- */
-const {chooseDue}=require('./ds-scheduler');
+// Avoid importing a module before the collector's GCS bootloader has fetched it.
+// Fair due-time rotation: protect the first minutes while allowing every
+// five-hour cohort to keep collecting observations in the presence of backlog.
+function chooseDue(coins,{now=Date.now(),limit=1200,earlyShare=.3}={}){
+  const early=[],long=[];
+  for(const c of coins){
+    if(!c||!Number.isFinite(c.t))continue;
+    ((now-c.t)/60000<12?early:long).push(c);
+  }
+  const order=(a,b)=>
+    (a.dsTryAt||a.dsAt||0)-(b.dsTryAt||b.dsAt||0)||
+    (a.dsAt||0)-(b.dsAt||0)||
+    (a.t||0)-(b.t||0);
+  early.sort(order);long.sort(order);
+  const n=Math.ceil(limit*earlyShare);
+  const a=early.splice(0,n),b=long.splice(0,limit-a.length);
+  return a.concat(b,early,long).slice(0,limit);
+}
 function dsDue(c,now){
   const a=ageMin(c,now),last=Math.max(c.dsAt||0,c.dsTryAt||0);
   if(observedEligible(c)){
