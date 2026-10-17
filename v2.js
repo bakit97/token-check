@@ -1090,6 +1090,12 @@ async function load(){
   $('ownerResearchTwoKey').disabled=!controlEndpoint;
   if(!controlEndpoint)$('controlState').textContent=
     'Защищённая отправка не включена. Можно подготовить серверную конфигурацию файлом.';
+  if(researchMeta&&vals[10]&&
+     researchMeta.cohortStart!==vals[10].cohortStart){
+    // A new research definition owns a NEW bank. Never reuse the old rows
+    // even during the 5-minute cache refresh interval.
+    bank['1']=[];researchServerBank=false;lastResearchBankRead=0;
+  }
   if(vals[10]&&vals[10].status==='observational'&&vals[10].settings &&
      Number.isFinite(vals[10].updated)&&now()-vals[10].updated<=7*60000){
     if(!researchMeta&&!researchServerBank)bank['1']=[];
@@ -1109,7 +1115,8 @@ async function load(){
   if(!vals[10]||vals[10].status!=='observational'||!Number.isFinite(vals[10].updated)||now()-vals[10].updated>7*60000){
     researchMeta=null;researchServerBank=false;bank['1']=[];
   }
-  if(researchMeta&&vals[11]&&Array.isArray(vals[11].coins)&&vals[11].counts){
+  if(researchMeta&&vals[11]&&vals[11].epochStart===researchMeta.cohortStart&&
+     Array.isArray(vals[11].coins)&&vals[11].counts){
     const sourceRows=vals[11].coins.filter(function(x){
       return x.mint&&Number.isFinite(x.activePct)&&Number.isFinite(x.maxIdleObserved)&&x.features;
     });
@@ -1138,6 +1145,9 @@ async function load(){
     }
     serverPassRows=[...verified.values()].sort(function(a,b){return b.firstSeenAt-a.firstSeenAt});
   }else serverPassRows=[];
+  if(twoMeta&&vals[16]&&twoMeta.cohortStart!==vals[16].cohortStart){
+    serverR2Rows=[];serverR2Curve=null;bank['2']=[];lastSecondBankRead=0;
+  }
   twoMeta=vals[16]&&vals[16].status==='observational'&&
     vals[16].origin==='server-verified-passed-only'&&
     Number.isFinite(vals[16].updated)&&now()-vals[16].updated<7*60000?vals[16]:null;
@@ -1147,7 +1157,7 @@ async function load(){
     $('r2Strong').value=s.r2Strong;$('r2StrongValue').textContent=s.r2Strong+'%';
     $('r2Strong').disabled=!controlEndpoint;$('applyR2').disabled=true;
     $('publishResearchTwo').disabled=!controlEndpoint;
-    if(vals[17]&&Array.isArray(vals[17].coins)){
+    if(vals[17]&&vals[17].epochStart===twoMeta.cohortStart&&Array.isArray(vals[17].coins)){
       serverR2Rows=vals[17].coins.filter(function(row){
         return row&&typeof row.mint==='string'&&['strong','weak'].includes(row.label)&&
           Number.isFinite(row.pctAbove)&&row.features;
@@ -1165,13 +1175,15 @@ async function load(){
     $('r2Strong').disabled=false;$('applyR2').disabled=false;
     $('publishResearchTwo').disabled=true;
   }
-  serverR2Curve=serverR2Active&&vals[21]&&
+  serverR2Curve=serverR2Active&&vals[21]&&vals[21].epochStart===twoMeta.cohortStart&&
     vals[21].origin==='server-verified-passed-only'&&vals[21].curves&&
     Number.isFinite(vals[21].updated)&&now()-vals[21].updated<45*60000?
     vals[21].curves:null;
-  autoOne=vals[18]&&Number.isFinite(vals[18].updated)&&
+  autoOne=researchMeta&&vals[18]&&vals[18].epochStart===researchMeta.cohortStart&&
+    Number.isFinite(vals[18].updated)&&
     now()-vals[18].updated<40*60000?vals[18]:null;
-  autoTwo=vals[19]&&Number.isFinite(vals[19].updated)&&
+  autoTwo=twoMeta&&vals[19]&&vals[19].epochStart===twoMeta.cohortStart&&
+    Number.isFinite(vals[19].updated)&&
     now()-vals[19].updated<40*60000?vals[19]:null;
   filterAuditMeta=vals[22]&&vals[22].origin==='server-observational-analytics'&&
     Number.isFinite(vals[22].updated)&&now()-vals[22].updated<40*60000?vals[22]:null;
