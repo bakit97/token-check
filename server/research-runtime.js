@@ -50,11 +50,11 @@ function classOf(row,cfg) {
 }
 
 class ResearchRuntime {
-  constructor({dir,config={},bankName='research-v2-bank.json',cohortStart=0}={}) {
+  constructor({dir,config={},bankName='research-v2-bank.json',cohortStart=0,cohortEnd=Infinity}={}) {
     if(!dir)throw new TypeError('Research directory is required');
     this.dir=dir;
     this.file=path.join(dir,bankName);
-    this.cohortStart=cohortStart;
+    this.cohortStart=cohortStart;this.cohortEnd=cohortEnd;
     fs.mkdirSync(dir,{recursive:true});
     this.config=settings(config);
     this.rows=[];
@@ -89,7 +89,7 @@ class ResearchRuntime {
     // Newest first, avoid scanning the entire multi-month ledger.
     for(const row of source.records.values()){
       const age=now-row.acceptedAt;
-      if(row.acceptedAt<this.cohortStart||age<0||age>FRESH_WINDOW||this.processed.has(row.mint))continue;
+      if(row.acceptedAt<this.cohortStart||row.acceptedAt>=this.cohortEnd||age<0||age>FRESH_WINDOW||this.processed.has(row.mint))continue;
       considered++;
       if(age<this.config.hours*HOURS+3*MIN){
         pending['not-yet-finished']=(pending['not-yet-finished']||0)+1;
