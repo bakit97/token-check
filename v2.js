@@ -326,6 +326,13 @@ function renderR1(){
       '/100. Ожидают окончания наблюдения: '+(p['not-yet-finished']||0)+
       ', недостаточно данных: '+(p['insufficient-activity-coverage']||0)+
       '. Автоподбор правил пока не запущен.';
+    if(autoOne){
+      const text=autoOne.status==='rolling-holdout-ready'?
+        'Есть отдельная проверочная выборка '+fmt(autoOne.validation.total)+' монет.':
+        autoOne.status==='training-only'?'Подбор правил готовится; проверочная выборка ещё не накоплена.':
+        'Накопление обучающих живых и мёртвых.';
+      $('r1Auto').textContent+=' '+text+' Предложено условий: '+fmt(autoOne.rules.length)+'.';
+    }
     const rows=bank['1'].slice(-10).reverse();
     $('r1Rows').innerHTML=rows.length?'<h2>Размечено на сервере</h2>'+rows.map(function(x){
       const positive=x.activity>=cfg.minActive&&x.idle<=cfg.maxIdle;
@@ -356,6 +363,24 @@ function lineGraph(rows){
   '<g fill="#acb5c8" font-size="12"><text x="18" y="37">До решения</text><text x="108" y="211">0</text><text x="185" y="211">60</text><text x="307" y="211">150</text><text x="465" y="211">270</text><text x="514" y="211">300</text></g></svg>';
 }
 function researchTwoDataset(){
+  if(serverR2Active){
+    const lines=serverR2Rows.filter(function(x){return x.phase===s.r2Stream});
+    const valid=lines.length;
+    const strong=lines.filter(function(x){return x.label==='strong'}).length;
+    const weak=lines.filter(function(x){return x.label==='weak'}).length;
+    const curve=[];
+    for(var m=0;m<=300;m+=5){
+      if(m===0){curve.push({min:0,pct:0,n:valid});continue}
+      const values=lines.map(function(x){
+        const point=(x.curve||[]).find(function(p){return p[0]===m});
+        return point?point[1]:null;
+      }).filter(function(x){return Number.isFinite(x)});
+      if(values.length)curve.push({min:m,pct:values.reduce(function(a,b){return a+b},0)/values.length,n:values.length});
+    }
+    const waiting=twoMeta&&twoMeta.pending||{};
+    const pending=Object.values(waiting).reduce(function(a,b){return a+(Number(b)||0)},0);
+    return {curve,valid,pending,strong,weak,lines,fromServer:true};
+  }
   var coins=lastPassed.filter(function(x){return x.coin._entry.phase===s.r2Stream});
   var lines=[],valid=0,pending=0,strong=0,weak=0;
   for(var q of coins){
@@ -369,12 +394,21 @@ function researchTwoDataset(){
     var vals=lines.map(function(r){var p=r.curve.find(function(v){return v.min===m});return p?p.pct:null}).filter(function(v){return v!=null});
     if(vals.length)curve.push({min:m,pct:vals.reduce(function(a,b){return a+b},0)/vals.length,n:vals.length});
   }
-  return {curve:curve,valid:valid,pending:pending,strong:strong,weak:weak,lines:lines};
+  return {curve:curve,valid:valid,pending:pending,strong:strong,weak:weak,lines:lines,fromServer:false};
 }
 function renderR2(){
   var r=researchTwoDataset();
   $('r2Graph').innerHTML=lineGraph(r.curve.length>1?r.curve:[]);
-  $('r2Stats').textContent='Размечено: 🟢 сильных '+r.strong+' · 🔴 слабых '+r.weak+' · недостаточно данных '+r.pending+'.';
+  $('r2Stats').textContent=(r.fromServer?'✓ Серверные наблюдения. ':'⚠ Предварительный режим телефона. ')+
+    'Размечено: 🟢 сильных '+r.strong+' · 🔴 слабых '+r.weak+' · ожидание/пробелы '+r.pending+'.';
+  if($('r2AutoText'))$('r2AutoText').textContent=autoTwo?
+    'Автоподбор на сервере: '+fmt(autoTwo.rules.length)+' кандидатов · статус: '+
+    ({'waiting-training':'нужны 40 сильных и 40 слабых',
+      'training-only':'нужна отдельная поздняя проверочная выборка',
+      'waiting-both-holdout-classes':'нужны оба класса в проверочной группе',
+      'rolling-holdout-ready':'проверено на отдельной поздней выборке'}[autoTwo.status]||'сбор данных')+
+    '. Выводы предварительные.':
+    'Серверный подбор ещё не опубликован. Локальные графики не считаются независимой проверкой.';
   var out=[];
   for(var m=0;m<=300;m+=s.r2Step){
     var found=r.curve.find(function(p){return p.min===m});
