@@ -2,7 +2,7 @@ name: deploy-server
 on:
   push:
     branches: [main]
-    paths: ['server/collector.js', 'lab-core.js', 'server/source-runtime.js', 'server/admission.js', 'server/pump-pre.js', 'server/pre-watcher.js', 'server/research-v2.js', 'server/research-runtime.js']
+    paths: ['server/collector.js', 'lab-core.js', 'server/source-runtime.js', 'server/admission.js', 'server/pump-pre.js', 'server/pre-watcher.js', 'server/research-v2.js', 'server/research-runtime.js', 'server/research-config.js', 'server/pass-runtime.js', 'server/research-two-runtime.js', 'server/auto-research-v2.js', 'server/filter-audit.js']
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,7 +16,7 @@ jobs:
         with:
           node-version: 20
       - name: check syntax
-        run: node --check server/collector.js && node --check lab-core.js && node --check server/source-runtime.js && node --check server/admission.js && node --check server/pump-pre.js && node --check server/pre-watcher.js && node --check server/research-v2.js && node --check server/research-runtime.js && node --test server/admission.test.js server/source-runtime.test.js server/pump-pre.test.js server/pre-watcher.test.js server/research-v2.test.js server/research-runtime.test.js tests/research-collector-smoke.cjs
+        run: node --check server/collector.js && node --check lab-core.js && node --check server/source-runtime.js && node --check server/admission.js && node --check server/pump-pre.js && node --check server/pre-watcher.js && node --check server/research-v2.js && node --check server/research-runtime.js && node --check server/research-config.js && node --check server/pass-runtime.js && node --check server/research-two-runtime.js && node --check server/auto-research-v2.js && node --check server/filter-audit.js && node --test server/admission.test.js server/source-runtime.test.js server/pump-pre.test.js server/pre-watcher.test.js server/research-v2.test.js server/research-runtime.test.js server/v2-paths.test.js tests/research-collector-smoke.cjs
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: projects/421351476653/locations/global/workloadIdentityPools/github/providers/github
@@ -30,6 +30,16 @@ jobs:
           gcloud storage cp server/pre-watcher.js gs://sol-scan-511718-data/code/pre-watcher.js
           gcloud storage cp server/research-v2.js gs://sol-scan-511718-data/code/research-v2.js
           gcloud storage cp server/research-runtime.js gs://sol-scan-511718-data/code/research-runtime.js
+          gcloud storage cp server/research-config.js gs://sol-scan-511718-data/code/research-config.js
+          gcloud storage cp server/pass-runtime.js gs://sol-scan-511718-data/code/pass-runtime.js
+          gcloud storage cp server/research-two-runtime.js gs://sol-scan-511718-data/code/research-two-runtime.js
+          gcloud storage cp server/auto-research-v2.js gs://sol-scan-511718-data/code/auto-research-v2.js
+          gcloud storage cp server/filter-audit.js gs://sol-scan-511718-data/code/filter-audit.js
+          # Never overwrite an owner-published configuration during code deployment.
+          gcloud storage cp -n server/pass-filters.json gs://sol-scan-511718-data/config/pass-filters.json
+          gcloud storage cp -n server/source-age.json gs://sol-scan-511718-data/config/source-age.json
+          gcloud storage cp -n server/research-one.json gs://sol-scan-511718-data/config/research-one.json
+          gcloud storage cp -n server/research-two.json gs://sol-scan-511718-data/config/research-two.json
           gcloud storage cp lab-core.js gs://sol-scan-511718-data/code/lab-core.js
           gcloud storage cp server/collector.js gs://sol-scan-511718-data/code/collector.js
       - name: verify running collector

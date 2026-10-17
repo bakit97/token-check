@@ -6,7 +6,7 @@ const path=require('node:path');
 
 const body=fs.readFileSync(path.join(__dirname,'..','server','collector.js'),'utf8');
 test('server launches authoritative source after restoring candidate collection',()=>{
- assert.match(body,/load\(\);log\('старт, версия',VERSION\);\s*try\{await initSource\(\)\}/);
+ assert.match(body,/load\(\);log\('старт, версия',VERSION\);\s*try\{await initSource\(\);await reloadSourceAgeConfig\(\)\}/);
  assert.match(body,/source-accepted-v1\.jsonl|SourceRuntime/);
 });
 test('source migration path runs only after confirmed migration',()=>{

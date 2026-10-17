@@ -1,0 +1,56 @@
+name: publish-owner-settings
+# Manually publish reviewed source/research thresholds; never automatically.
+on:
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: 'Select the only allowed server settings document'
+        required: true
+        type: choice
+        options:
+          - source-age
+          - research-one
+          - research-two
+      confirmation:
+        description: 'Type PUBLISH after reviewing the selected JSON'
+        required: true
+        type: string
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require explicit confirmation and validate settings
+        env:
+          KIND: ${{ inputs.kind }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = "PUBLISH"
+          case "$KIND" in
+            source-age)
+              node -e "const o=require('./server/source-age.json');if(o.schema!==1||![o.beforeMinutes,o.afterMinutes].every(x=>Number.isInteger(x)&&x>=1&&x<=10))process.exit(1)" ;;
+            research-one)
+              node -e "const fs=require('fs');require('./server/research-runtime').settings(JSON.parse(fs.readFileSync('server/research-one.json','utf8')))" ;;
+            research-two)
+              node -e "const fs=require('fs');require('./server/research-two-runtime').configOf(JSON.parse(fs.readFileSync('server/research-two.json','utf8')))" ;;
+            *) exit 1 ;;
+          esac
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/421351476653/locations/global/workloadIdentityPools/github/providers/github
+          service_account: helper-ai@sol-scan-511718.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Publish reviewed owner settings
+        env:
+          KIND: ${{ inputs.kind }}
+        run: |
+          set -euo pipefail
+          case "$KIND" in
+            source-age|research-one|research-two) ;;
+            *) exit 1 ;;
+          esac
+          gcloud storage cp "server/$KIND.json" "gs://sol-scan-511718-data/config/$KIND.json"

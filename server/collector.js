@@ -228,8 +228,12 @@ async function chainLoop(){let lastSweep=0;for(;;){const now=Date.now();
    к минуте «задним числом». Всё, что относится к пулу, при переезде витрины уходит в origs и начинается заново. */
 const C=new Map();const FV=2; // версия формата наблюдений
 // Авторитетный «Все»: отдельный read-only журнал допуска, не зависит от телефона.
-let SOURCE=null, SOURCE_ERR='', PRE=null;
+let SOURCE=null, SOURCE_ERR='', SOURCE_CFG_ERR='', PRE=null;
 let RESEARCH_V2=null, RESEARCH_V2_ERR='', RESEARCH_BANK_UPLOADED=0;
+let PASS_V2=null, RESEARCH_TWO=null, AUTO_V2=null, FILTER_AUDIT=null;
+let RESEARCH_ONE_EPOCH=null, RESEARCH_TWO_EPOCH=null, RESEARCH_CONFIG_ERR='';
+let OLD_RESEARCH_ONE=[], OLD_RESEARCH_TWO=[];
+let PASS_ERR='', TWO_ERR='', PASS_CFG_ERR='', TWO_BANK_UPLOADED=0, AUTO_UPLOADED=0;
 async function admitVerifiedPublicLaunch(launch,record) {
   const existing=C.get(record.mint);
   if(existing){existing.preCurve=existing.preCurve||1;existing.preTradingAt=record.eventAt;
@@ -270,10 +274,57 @@ async function initSource() {
   SOURCE_ERR='';
   log('главный источник готов, принято',SOURCE.records.size,'настройки',SOURCE.settings());
 }
+async function reloadSourceAgeConfig(){
+  if(!SOURCE)return;
+  try{
+    const cfg=await getObj('config/source-age.json');
+    if(!cfg||cfg.schema!==1||!Number.isInteger(cfg.beforeMinutes)||
+       !Number.isInteger(cfg.afterMinutes)||cfg.beforeMinutes<1||cfg.beforeMinutes>10||
+       cfg.afterMinutes<1||cfg.afterMinutes>10)
+      throw Error('Invalid source-age config');
+    const current=SOURCE.settings();
+    if(current.beforeMinutes!==cfg.beforeMinutes||current.afterMinutes!==cfg.afterMinutes){
+      SOURCE.configure({beforeMinutes:cfg.beforeMinutes,afterMinutes:cfg.afterMinutes});
+      log('возраст главного источника обновлён: до',cfg.beforeMinutes,'после',cfg.afterMinutes);
+    }
+    SOURCE_CFG_ERR='';
+  }catch(e){
+    SOURCE_CFG_ERR=e.message;
+    err('source age config '+e.message);
+  }
+}
+function oneResearchBankName(epoch){
+  return epoch.activeAt===0?'research-v2-bank.json':
+    'research-v2-bank-one-'+epoch.hash+'-'+epoch.activeAt+'.json';
+}
+function twoResearchBankName(epoch){
+  return 'research-v2-bank-two-'+epoch.hash+'-'+epoch.activeAt+'.json';
+}
+function recoverSupersededStudies(now=Date.now()){
+  const maxAge=50*3600e3;
+  if(RESEARCH_ONE_EPOCH&&RESEARCH_V2){
+    const {ResearchRuntime}=require(DIR+'/research-runtime.js');
+    OLD_RESEARCH_ONE=RESEARCH_ONE_EPOCH.history
+      .filter(e=>e.endedAt>now-maxAge)
+      .map(e=>({epoch:e,runtime:new ResearchRuntime({
+        dir:DIR,config:e.config,bankName:oneResearchBankName(e),
+        cohortStart:e.activeAt,cohortEnd:e.endedAt
+      })}));
+  }
+  if(RESEARCH_TWO_EPOCH&&RESEARCH_TWO){
+    const {ResearchTwoRuntime}=require(DIR+'/research-two-runtime.js');
+    OLD_RESEARCH_TWO=RESEARCH_TWO_EPOCH.history
+      .filter(e=>e.endedAt>now-maxAge)
+      .map(e=>({epoch:e,runtime:new ResearchTwoRuntime({
+        dir:DIR,config:e.config,bankName:twoResearchBankName(e),
+        cohortStart:e.activeAt,cohortEnd:e.endedAt
+      })}));
+  }
+}
 async function initResearchV2() {
   // Separate initialization: invalid research settings must never stop
   // the authoritative token source or the on-chain listeners.
-  const names=['research-v2.js','research-runtime.js'];
+  const names=['research-v2.js','research-runtime.js','research-config.js'];
   const auth=await token();
   for(const name of names) {
     const res=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
@@ -283,9 +334,101 @@ async function initResearchV2() {
     fs.writeFileSync(tmp,await res.text());
     fs.renameSync(tmp,target);
   }
-  RESEARCH_V2=new (require(DIR+'/research-runtime.js').ResearchRuntime)({dir:DIR});
+  const {ResearchRuntime,settings}=require(DIR+'/research-runtime.js');
+  const {ResearchEpoch}=require(DIR+'/research-config.js');
+  const requested=await getObj('config/research-one.json')||settings();
+  const config=settings(requested);
+  const baseline=settings();
+  RESEARCH_ONE_EPOCH=new ResearchEpoch({dir:DIR,key:'one',validate:settings,
+    config,adoptLegacy:JSON.stringify(config)===JSON.stringify(baseline)});
+  const epoch=RESEARCH_ONE_EPOCH.current;
+  RESEARCH_V2=new ResearchRuntime({
+    dir:DIR,config:epoch.config,cohortStart:epoch.activeAt,
+    bankName:oneResearchBankName(epoch)
+  });
+  recoverSupersededStudies();
   RESEARCH_V2_ERR='';
   log('исследование v2 готово, накоплено',RESEARCH_V2.rows.length);
+}
+async function initPathsV2(){
+  const names=['pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js'];
+  const auth=await token();
+  for(const name of names){
+    const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+
+      encodeURIComponent('code/'+name)+'?alt=media',{
+      headers:{Authorization:'Bearer '+auth},signal:AbortSignal.timeout(30000)
+    });
+    if(!r.ok)throw Error('path module '+name+' HTTP '+r.status);
+    const target=DIR+'/'+name,tmp=target+'.tmp';
+    fs.writeFileSync(tmp,await r.text());fs.renameSync(tmp,target);
+  }
+  // A malformed control object fails closed. Never trust a phone-side
+  // localStorage setting as permission to create an authoritative alert.
+  const config=await getObj('config/pass-filters.json');
+  if(!config)throw Error('Missing server filter configuration');
+  PASS_V2=new (require(DIR+'/pass-runtime.js').PassRuntime)({dir:DIR,config});
+  const {ResearchTwoRuntime,configOf}=require(DIR+'/research-two-runtime.js');
+  const {ResearchEpoch}=require(DIR+'/research-config.js');
+  const requested=await getObj('config/research-two.json')||configOf();
+  RESEARCH_TWO_EPOCH=new ResearchEpoch({dir:DIR,key:'two',validate:configOf,
+    config:requested});
+  const two=RESEARCH_TWO_EPOCH.current;
+  RESEARCH_TWO=new ResearchTwoRuntime({
+    dir:DIR,config:two.config,cohortStart:two.activeAt,
+    bankName:twoResearchBankName(two)
+  });
+  recoverSupersededStudies();
+  AUTO_V2=require(DIR+'/auto-research-v2.js');
+  FILTER_AUDIT=new (require(DIR+'/filter-audit.js').FilterAudit)({dir:DIR});
+  PASS_ERR='';TWO_ERR='';PASS_CFG_ERR='';
+  log('серверные пути готовы: Прошли',PASS_V2.records.size,
+    'Уровень 2',RESEARCH_TWO.rows.length,'включено',PASS_V2.config.enabled);
+}
+async function reloadResearchConfig(){
+  try{
+    if(RESEARCH_ONE_EPOCH&&RESEARCH_V2){
+      const cfg=await getObj('config/research-one.json');
+      if(!cfg)throw Error('First research config missing');
+      if(RESEARCH_ONE_EPOCH.apply(cfg)){
+        const x=RESEARCH_ONE_EPOCH.current;
+        const {ResearchRuntime}=require(DIR+'/research-runtime.js');
+        RESEARCH_V2=new ResearchRuntime({dir:DIR,config:x.config,
+          cohortStart:x.activeAt,bankName:oneResearchBankName(x)});
+        recoverSupersededStudies();
+        RESEARCH_BANK_UPLOADED=0;AUTO_UPLOADED=0;
+        log('первый исследовательский полигон переключён на новую эпоху',x.hash);
+      }
+    }
+    if(RESEARCH_TWO_EPOCH&&RESEARCH_TWO){
+      const cfg=await getObj('config/research-two.json');
+      if(!cfg)throw Error('Second research config missing');
+      if(RESEARCH_TWO_EPOCH.apply(cfg)){
+        const x=RESEARCH_TWO_EPOCH.current;
+        const {ResearchTwoRuntime}=require(DIR+'/research-two-runtime.js');
+        RESEARCH_TWO=new ResearchTwoRuntime({dir:DIR,config:x.config,
+          cohortStart:x.activeAt,bankName:twoResearchBankName(x)});
+        recoverSupersededStudies();
+        TWO_BANK_UPLOADED=0;AUTO_UPLOADED=0;
+        log('второй исследовательский полигон переключён на новую эпоху',x.hash);
+      }
+    }
+    RESEARCH_CONFIG_ERR='';
+  }catch(e){
+    RESEARCH_CONFIG_ERR=e.message;
+    err('research config '+e.message);
+  }
+}
+async function reloadPassConfig(){
+  if(!PASS_V2)return;
+  try{
+    const config=await getObj('config/pass-filters.json');
+    if(!config)throw Error('No pass configuration');
+    if(PASS_V2.applyConfig(config))
+      log('применена новая серверная версия фильтров',PASS_V2.configHash);
+    PASS_CFG_ERR='';
+  }catch(e){
+    PASS_CFG_ERR=e.message;err('pass control '+e.message);
+  }
 }
 function admitVerifiedMigration(c){
   if(!SOURCE)return;
@@ -295,7 +438,7 @@ function admitVerifiedMigration(c){
   }catch(e){SOURCE_ERR='ошибка записи источника: '+e.message;err('source '+e.message)}
 }
 
-const OBS_KEYS=['ds','k10','path','hold','bx','lq','gx','vaults','vmint','vdec','legacy'],OBS_TMP=['tr','raw','dsAt','tokAt','gxAt','lastTrade','kTry','pTry','trTry','trDone','lqAt','rawUp','vTry'];
+const OBS_KEYS=['ds','k10','path','hold','bx','lq','gx','vaults','vmint','vdec','legacy'],OBS_TMP=['tr','raw','dsAt','dsTryAt','tokAt','gxAt','lastTrade','kTry','pTry','trTry','trDone','lqAt','rawUp','vTry'];
 function takeObs(c){const o={};for(const k of OBS_KEYS){if(c[k]!=null)o[k]=c[k];delete c[k]}for(const k of OBS_TMP)delete c[k];return o}
 function load(){try{const a=JSON.parse(fs.readFileSync(DIR+'/state.json','utf8'));a.forEach(c=>{
     if(c.fv!==FV){c.legacy={snap:c.snap,act:c.act,k:c.k};for(const k of ['snap','act','k','o','cur','cn','orig'])delete c[k];c.fv=FV}
@@ -329,8 +472,33 @@ async function pollNew(){if(gtPending('new'))return;try{const n=await addFromGT(
 
 /* ---------- 2. DEX Screener: ряд снимков [время получения (с), цена, ликв.$, mc, покупки 5м, продажи 5м, объём 5м, покупки 1ч, продажи 1ч, объём 1ч]
    Витрина: каждую минуту первые 15 минут, потом каждые 5 минут до 24 ч. Остальные пулы: раз в 15 минут первые 6 ч (только «торгуется ли»). ---------- */
-function dsDue(c,now){const a=ageMin(c,now);if(observedEligible(c)){if(a<-1||a>24*60+10)return false;return now-(c.dsAt||0)>=(a<120?55e3:5*60e3-15e3)}
-  return a<6*60&&now-(c.dsAt||0)>=15*60e3}
+// Avoid importing a module before the collector's GCS bootloader has fetched it.
+// Fair due-time rotation: protect the first minutes while allowing every
+// five-hour cohort to keep collecting observations in the presence of backlog.
+function chooseDue(coins,{now=Date.now(),limit=1200,earlyShare=.3}={}){
+  const early=[],long=[];
+  for(const c of coins){
+    if(!c||!Number.isFinite(c.t))continue;
+    ((now-c.t)/60000<12?early:long).push(c);
+  }
+  const order=(a,b)=>
+    (a.dsTryAt||a.dsAt||0)-(b.dsTryAt||b.dsAt||0)||
+    (a.dsAt||0)-(b.dsAt||0)||
+    (a.t||0)-(b.t||0);
+  early.sort(order);long.sort(order);
+  const n=Math.ceil(limit*earlyShare);
+  const a=early.splice(0,n),b=long.splice(0,limit-a.length);
+  return a.concat(b,early,long).slice(0,limit);
+}
+function dsDue(c,now){
+  const a=ageMin(c,now),last=Math.max(c.dsAt||0,c.dsTryAt||0);
+  if(observedEligible(c)){
+    if(a<-1||a>24*60+10)return false;
+    // Failed polls must not monopolize the queue; never pretend a failure was data.
+    return now-last>=(a<120?55e3:5*60e3-15e3);
+  }
+  return a<6*60&&now-last>=15*60e3;
+}
 function dsEntry(p,at){return[Math.round(at/1000),+(+p.priceUsd||0).toPrecision(6),p.liquidity?.usd!=null?Math.round(p.liquidity.usd):null,p.marketCap||p.fdv||null,
   p.txns?.m5?.buys??null,p.txns?.m5?.sells??null,p.volume?.m5!=null?Math.round(p.volume.m5):null,p.txns?.h1?.buys??null,p.txns?.h1?.sells??null,p.volume?.h1!=null?Math.round(p.volume.h1):null]}
 function dsApply(c,p,at){const e=dsEntry(p,at);
@@ -342,14 +510,21 @@ function dsTokenInfo(c,arr,at){if(!arr.length)return;
   const cv=arr.filter(p=>isCurve(p.dexId)||/dbc|launch/i.test(p.dexId||'')).map(p=>p.pairCreatedAt).filter(Boolean);
   const all=arr.map(p=>p.pairCreatedAt).filter(Boolean);const born=Math.min(...(cv.length?cv:all));if(isFinite(born)&&born<c.t-60e3){const nt=Math.min(c.tk||Infinity,born);if(nt!==c.tk){c.tk=nt;c.tkAt=at}}
   c.soc=Math.max(c.soc||0,(arr[0].info?.socials||[]).length+(arr[0].info?.websites||[]).length);if(!c.i&&arr[0].info?.imageUrl)c.i=arr[0].info.imageUrl}
-async function pollDS(){const now=Date.now();const need=[...C.values()].filter(c=>dsDue(c,now)).sort((a,b)=>isOk(b)-isOk(a)||b.t-a.t);
-  // витрина: точный пул по адресу (запрос по монете у Meteora отдаёт пару кривой, а не пул миграции)
-  const ok=need.filter(observedEligible),rest=need.filter(c=>!observedEligible(c)),tokFirst=ok.filter(c=>!c.tokAt);
-  for(let i=0;i<ok.length&&i<1200;i+=30){const part=ok.slice(i,i+30);
+async function pollDS(){const now=Date.now();
+  const need=[...C.values()].filter(c=>dsDue(c,now));
+  // A newest-first truncation permanently starved older, admitted cohorts:
+  // reserve a fixed share of each pass for the first 12 minutes and rotate
+  // everyone else by last actual attempt, independent of migration phase.
+  const ok=chooseDue(need.filter(observedEligible),{now,limit:1200,earlyShare:.3});
+  const rest=chooseDue(need.filter(c=>!observedEligible(c)),{now,limit:600,earlyShare:.3});
+  const tokFirst=ok.filter(c=>!c.tokAt).slice(0,300);
+  for(let i=0;i<ok.length;i+=30){const part=ok.slice(i,i+30);
+    const attempted=Date.now();for(const c of part)c.dsTryAt=attempted;
     try{const j=await getJSON(`${DS}/latest/dex/pairs/solana/${part.map(c=>c.p).join(',')}`);const at=Date.now(),by={};(j.pairs||[]).forEach(p=>by[p.pairAddress]=p);
       for(const c of part){c.dsAt=at;const p=by[c.p];if(p)dsApply(c,p,at)}}catch(e){err('ds '+e.message);await sleep(5000)}
     await sleep(300)}
-  for(const [list,isTok] of [[tokFirst,1],[rest,0]])for(let i=0;i<list.length&&i<600;i+=30){const part=list.slice(i,i+30);
+  for(const [list,isTok] of [[tokFirst,1],[rest,0]])for(let i=0;i<list.length;i+=30){const part=list.slice(i,i+30);
+    if(!isTok){const attempted=Date.now();for(const c of part)c.dsTryAt=attempted}
     try{const ps=await getJSON(`${DS}/tokens/v1/solana/${part.map(c=>c.a).join(',')}`);const at=Date.now(),by={};
       ps.forEach(p=>{const a=p.baseToken?.address;if(a)(by[a]=by[a]||[]).push(p)});
       for(const c of part){const arr=by[c.a]||[];dsTokenInfo(c,arr,at);if(isTok){c.tokAt=at;continue}c.dsAt=at;const p=arr.find(x=>x.pairAddress===c.p);if(p)dsApply(c,p,at)}
@@ -559,17 +734,94 @@ async function exportResearchV2(now) {
   if(!RESEARCH_V2||!SOURCE)return;
   // All read-only observations originate from the accepted main source.
   const result=RESEARCH_V2.update({source:SOURCE,coins:C,now});
+  // A settings change does NOT abandon previously admitted cohorts.
+  for(const item of OLD_RESEARCH_ONE){
+    try{item.runtime.update({source:SOURCE,coins:C,now})}
+    catch(e){err('research old 1 '+item.epoch.hash+' '+e.message)}
+  }
   await upload('research-v2/status.json',result);
   if(result.added>0||now-RESEARCH_BANK_UPLOADED>20*60e3){
     await upload('research-v2/polygon-1.json',{
-      updated:now,settings:result.settings,counts:result.counts,
+      updated:now,epochStart:result.cohortStart,settings:result.settings,counts:result.counts,
       coins:RESEARCH_V2.select({limit:10000}),
       note:'Observed classifications only; no buy/sell signals'
     });
     RESEARCH_BANK_UPLOADED=now;
   }
 }
+async function exportPathsV2(now){
+  if(!PASS_V2||!RESEARCH_TWO||!SOURCE)return;
+  await reloadPassConfig();
+  const p=PASS_V2.update({source:SOURCE,coins:C,now});
+  PASS_ERR='';
+  await upload('passed-v2/status.json',{...p,
+    controlError:PASS_CFG_ERR||null,
+    serverConfig:PASS_V2.config,
+    serverOnly:true});
+  await upload('passed-v2/live.json',{
+    updated:now,origin:'server-journal',
+    coins:PASS_V2.latest(1000).filter(x=>x.zeroAt>now)
+  });
+  for(const d of [dayKey(now),dayKey(now-864e5)]){
+    const rows=PASS_V2.day(d);
+    await upload('passed-v2/day/'+d+'.json',{
+      day:d,updated:now,origin:'server-journal',count:rows.length,coins:rows
+    });
+  }
+  const result=RESEARCH_TWO.update({passes:PASS_V2,coins:C,now});
+  for(const item of OLD_RESEARCH_TWO){
+    try{item.runtime.update({passes:PASS_V2,coins:C,now})}
+    catch(e){err('research old 2 '+item.epoch.hash+' '+e.message)}
+  }
+  TWO_ERR='';
+  await upload('research-v2/status-two.json',result);
+  if(result.added>0||now-TWO_BANK_UPLOADED>20*60e3){
+    // Don't transfer a 300-minute price array for every bank sample to a phone.
+    // Publish frozen feature rows and a tiny server-aggregated curve separately.
+    const levelTwoRows=RESEARCH_TWO.select({limit:10000});
+    await upload('research-v2/polygon-2.json',{
+      updated:now,epochStart:result.cohortStart,settings:result.settings,counts:result.counts,
+      coins:levelTwoRows.map(({curve,minuteCurve,minuteCurvePacked,...row})=>row),
+      note:'Only fully observed server Passed stream; no orders'
+    });
+    await upload('research-v2/curve-two.json',{
+      updated:now,epochStart:result.cohortStart,origin:'server-verified-passed-only',
+      curves:RESEARCH_TWO.aggregateCurves()
+    });
+    TWO_BANK_UPLOADED=now;
+  }
+  if(AUTO_V2&&RESEARCH_V2&&(p.added||result.added||now-AUTO_UPLOADED>20*60e3)){
+    const levelOne=RESEARCH_V2.select({limit:10000}).map(x=>({
+      ...x,time:x.acceptedAt
+    }));
+    const levelTwo=RESEARCH_TWO.select({limit:10000});
+    const one=AUTO_V2.discover(levelOne,{level:'1'});
+    const two=AUTO_V2.discover(levelTwo,{level:'2'});
+    await upload('research-v2/auto-1.json',{updated:now,epochStart:RESEARCH_V2.cohortStart,...one});
+    await upload('research-v2/auto-2.json',{updated:now,epochStart:RESEARCH_TWO.cohortStart,...two});
+    if(FILTER_AUDIT){
+      const audit=FILTER_AUDIT.report({
+        config:PASS_V2.config,one:levelOne,two:levelTwo,
+        oneHours:RESEARCH_V2.config.hours,now
+      });
+      await upload('research-v2/filter-audit.json',audit);
+    }
+    await upload('research-v2/epochs.json',{
+      updated:now,
+      first:{current:RESEARCH_ONE_EPOCH?.summary()||null,
+        older:OLD_RESEARCH_ONE.map(x=>({hash:x.epoch.hash,from:x.epoch.activeAt,
+          to:x.epoch.endedAt,counts:x.runtime.summary().counts}))},
+      second:{current:RESEARCH_TWO_EPOCH?.summary()||null,
+        older:OLD_RESEARCH_TWO.map(x=>({hash:x.epoch.hash,from:x.epoch.activeAt,
+          to:x.epoch.endedAt,counts:x.runtime.summary().counts}))},
+      note:'Older cohorts continue their original observation settings and are never relabeled'
+    });
+    AUTO_UPLOADED=now;
+  }
+}
 async function exportDays(){const now=Date.now(),today=dayKey(now),yest=dayKey(now-864e5);
+  await reloadSourceAgeConfig();
+  await reloadResearchConfig();
   for(const d of [today,yest]){if(d===yest&&now-lastYest<30*60e3)continue;const list=[...C.values()].filter(c=>dayKey(c.t)===d);if(!list.length)continue;
     await upload(`day/${d}.json`,{day:d,tz:'Asia/Almaty',fv:FV,updated:now,count:list.length,coins:list.map(c=>rec(c,false))});
     if(d===yest||now-lastObs>=10*60e3){await upload(`obs/${d}.json`,{day:d,updated:now,coins:list.filter(observedEligible).map(c=>({a:c.a,t:c.t,ds:c.ds||[],lq:c.lq||[],path:c.path||null,
@@ -578,8 +830,12 @@ async function exportDays(){const now=Date.now(),today=dayKey(now),yest=dayKey(n
   await flushUploads();
   try{await exportSource(now)}catch(e){SOURCE_ERR='выгрузка источника: '+e.message;err('source export '+e.message)}
   try{await exportResearchV2(now)}catch(e){RESEARCH_V2_ERR=e.message;err('research-v2 export '+e.message)}
-  await upload('status.json',{updated:now,version:VERSION,source:{active:!!SOURCE,error:SOURCE_ERR,summary:SOURCE?.summary(now)||null},
-    researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,summary:RESEARCH_V2?.summary()||null},coins:C.size,today:[...C.values()].filter(c=>dayKey(c.t)===today).length,okToday:[...C.values()].filter(c=>dayKey(c.t)===today&&isOk(c)).length,
+  try{await exportPathsV2(now)}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('pass/r2 export '+e.message)}
+  await upload('status.json',{updated:now,version:VERSION,source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+    researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
+    passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,summary:PASS_V2?.summary(now)||null},
+    researchTwo:{active:!!RESEARCH_TWO,error:TWO_ERR,summary:RESEARCH_TWO?.summary()||null},
+    coins:C.size,today:[...C.values()].filter(c=>dayKey(c.t)===today).length,okToday:[...C.values()].filter(c=>dayKey(c.t)===today&&isOk(c)).length,
     gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),creditsBy:crLog.reduce((o,x)=>(o[x[2]]=(o[x[2]]||0)+x[1],o),{}),rpcCtx:RPCCTX,helius:!!HKEY,recon:RC.log.slice(-12),research:RSTAT,ws:{on:WS.on,since:WS.since,kb:Math.round(WS.bytes/1024),credits:+(WS.bytes/1e6*20).toFixed(1),msgs:WS.msgs,cand:WS.cand,err:WS.err},mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})}
 // живая лента для «Прошли»: монеты витрины младше 40 минут, раз в 30 секунд
 async function exportLive(){const now=Date.now();const list=[...C.values()].filter(c=>observedEligible(c)&&now-c.t<40*60e3);
@@ -657,8 +913,9 @@ let diagGen=null;async function diagCheck(){try{const tk=await token();const r=a
 /* ---------- старт ---------- */
 const STARTED=Date.now();
 (async()=>{fs.mkdirSync(DIR,{recursive:true});load();log('старт, версия',VERSION);
-  try{await initSource()}catch(e){SOURCE_ERR=e.message;err('главный источник не запустился: '+e.message)}
+  try{await initSource();await reloadSourceAgeConfig()}catch(e){SOURCE_ERR=e.message;err('главный источник не запустился: '+e.message)}
   try{await initResearchV2()}catch(e){RESEARCH_V2_ERR=e.message;err('исследование v2 не запустилось: '+e.message)}
+  try{await initPathsV2()}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('серверные пути не запустились: '+e.message)}
   for(const pg of [1,2,3])try{await addFromGT(await gt(`/new_pools?page=${pg}&include=base_token,quote_token,dex`,0,'boot'+pg))}catch(e){err('boot '+e.message)}
   setInterval(pollNew,90000);
   (async()=>{for(;;){try{await pollDS()}catch(e){err('dsloop '+e.message)}await sleep(15000)}})();

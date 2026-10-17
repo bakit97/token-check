@@ -1,0 +1,39 @@
+name: v2-server-paths-ci
+on:
+  push:
+    branches: ['feature/serverside-passed-r2-*']
+    paths:
+      - 'server/**'
+      - 'v2.js'
+      - 'v2.html'
+      - 'tests/research-collector-smoke.cjs'
+      - 'tests/v2-smoke.cjs'
+      - '.github/workflows/v2-server-paths-ci.yml'
+  pull_request:
+    paths:
+      - 'server/**'
+      - 'v2.js'
+      - 'v2.html'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax of all integrated source modules
+        run: |
+          set -euo pipefail
+          for file in server/*.js; do node --check "$file"; done
+          node --check v2.js
+      - name: Full read-only server contract suite
+        run: |
+          set -euo pipefail
+          node --test server/admission.test.js server/source-runtime.test.js server/pump-pre.test.js server/pre-watcher.test.js server/research-v2.test.js server/research-runtime.test.js server/v2-paths.test.js tests/research-collector-smoke.cjs
+      - name: All browser-view model contracts
+        run: node --test tests/v2-smoke.cjs

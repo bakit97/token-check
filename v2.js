@@ -24,6 +24,10 @@ signalLog=signalLog.filter(function(x){return x&&typeof x.mint==='string'&&Numbe
 var bank=Object.assign({'1':[],'2':[]},loadLocal(BANK,{'1':[],'2':[]}));
 for(var lv of ['1','2'])if(!Array.isArray(bank[lv]))bank[lv]=[];
 var dataset=[],status=null,dataErr='',loadedAt=0,picker=null,editorId=null,lastPassed=[],lastR1=[],lastR2=[],lastAccepted=[],lastVisible=[],testHtml='',lastBankWrite=0,lastResearchBankRead=0,researchMeta=null,researchServerBank=false,fetching=false,sourceActive=false,sourceMeta=null,sourceRecords=[];
+var serverPassActive=false,serverPassRows=[],passMeta=null,serverR2Active=false,serverR2Rows=[],twoMeta=null,autoOne=null,autoTwo=null,lastSecondBankRead=0;
+var controlEndpoint=null,serverR2Curve=null,filterAuditMeta=null;
+var moduleDraft=new Map();
+function draftModuleKey(m){return m.phase+':'+m.level+':'+m.filterId}
 var phaseNames={before:'🌱 До миграции',after:'🎓 После миграции'};
 function save(){try{localStorage.setItem(STORE,JSON.stringify(s))}catch(e){note('Не удалось сохранить настройки на устройстве')}}
 function saveSignals(){try{localStorage.setItem(PASS_LOG,JSON.stringify(signalLog))}catch(e){note('История сигналов не сохранилась на телефоне')}}
@@ -38,14 +42,42 @@ function time(t){return t?new Date(t).toLocaleTimeString('ru-RU',{timeZone:'Asia
 function ageM(t){return t?Math.max(0,Math.floor((now()-t)/60000))+' мин':'—'}
 function safeImg(src){try{var u=new URL(src);return u.protocol==='https:'?u.href:null}catch(e){return null}}
 function dataMetrics(c,cutoff){
-  var data=(c.ds||[]).filter(function(d){return Number(d[0])*1000<=cutoff}).sort(function(a,b){return a[0]-b[0]});
-  var d=data.length&&cutoff-Number(data[data.length-1][0])*1000<=7*60000?data[data.length-1]:null;
-  var bx=c.bx&&c.bx.cov&&c.bx.at<=cutoff?c.bx:null;
-  var gx=(c.gx||[]).filter(function(x){var t=Number(x[0])*1000;return Number.isFinite(t)&&t<=cutoff&&cutoff-t<=7*60000}).sort(function(a,b){return a[0]-b[0]}).at(-1);
-  function num(v){return v==null?null:Number.isFinite(+v)?+v:null}
-  return {buyers:num(gx&&gx[3]!=null?gx[3]:bx?bx.payers:null),
-    trades:d&&num(d[4])!=null&&num(d[5])!=null?num(d[4])+num(d[5]):null,
-    volume:d?num(d[6]):null,liq:d?num(d[2]):null};
+  // Match the server's featuresAt: keep pre-migration observations even if
+  // the same mint has already migrated to a new official pool.
+  const sources=[c.preObs].concat(c.origs||[],[c]).filter(Boolean);
+  let d=null,dAt=-Infinity;
+  for(const src of sources){
+    for(const row of src.ds||[]){
+      if(!Array.isArray(row))continue;
+      const t=Number(row[0])*1000;
+      if(Number.isFinite(t)&&t<=cutoff&&cutoff-t<=7*60000&&t>=dAt){
+        d=row;dAt=t;
+      }
+    }
+  }
+  let g=null,gAt=-Infinity;
+  for(const src of [c.preObs,c]){
+    if(!src)continue;
+    for(const row of src.gx||[]){
+      const t=Number(row[0])*1000;
+      if(Number.isFinite(t)&&t<=cutoff&&cutoff-t<=7*60000&&t>=gAt){
+        g=row;gAt=t;
+      }
+    }
+  }
+  let bx=null;
+  for(const src of [c.preObs,c]){
+    const v=src?.bx;
+    if(v&&v.cov&&Number.isFinite(v.at)&&v.at<=cutoff&&
+       cutoff-v.at<=7*60000&&(!bx||v.at>bx.at))bx=v;
+  }
+  function num(v){return typeof v==='number'&&Number.isFinite(v)?v:null}
+  const buys=d?num(d[4]):null,sells=d?num(d[5]):null;
+  const ratio=buys==null||sells==null?null:sells>0?buys/sells:buys;
+  return {buyers:num(g?.[3]??bx?.payers??null),
+    trades:buys==null||sells==null?null:buys+sells,
+    volume:d?num(d[6]):null,liq:d?num(d[2]):null,mc:d?num(d[3]):null,
+    buys,sells,buySellRatio:ratio};
 }
 function ruleStatus(features,f){
   const v=features?.[f.key];
@@ -135,6 +167,18 @@ function labTwo(c,passed) {
   return {label:ratio>=s.r2Strong?'strong':'weak',score:ratio,covered:covered,curve:curve,p0:p0};
 }
 function passedCoins(coins){
+  if(serverPassActive){
+    var lookup=new Map(coins.map(function(c){return [mint(c),c]}));
+    return serverPassRows.map(function(p){
+      var c=lookup.get(p.mint);
+      if(!c){
+        c={a:p.mint,n:p.name||'',s:'',ds:[],i:'',_entry:{
+          phase:p.phase,acceptedAt:p.acceptedAt,eventAt:p.acceptedAt}};
+      }
+      return {coin:c,deadline:p.zeroAt,matches:p.matches,
+        features:p.features,firstSeenAt:p.firstSeenAt,source:'server'};
+    }).sort(function(a,b){return b.firstSeenAt-a.firstSeenAt});
+  }
   // A filter change must never rewrite an earlier signal. Old admissions are
   // never backfilled into "Passed" after their original decision window.
   var previous=new Map(signalLog.map(function(x){return [x.mint,x]}));
@@ -149,7 +193,7 @@ function passedCoins(coins){
         var available=dataMetrics(c,seenAt);
         var matches=[];
         for(var m of enabled){
-          if(m.phase!==entry.phase)continue;
+          if(m.phase!==entry.phase||m.level!=='1')continue;
           var f=s.filters.find(function(x){return x.id===m.filterId&&x.level===m.level});
           if(f&&ruleMatch(available,f))matches.push({
             id:f.id,name:f.name,level:f.level,version:f.version,
@@ -187,6 +231,7 @@ function storeBank(level,rows){
 }
 function bankLabel(level,row){
   if(level==='1')return row.activity>=s.r1Activity&&row.idle<=s.r1Idle?'live':'dead';
+  if(serverR2Active&&['strong','weak'].includes(row.label))return row.label;
   return row.above>=s.r2Strong?'strong':'weak';
 }
 function analyze(){
@@ -205,8 +250,8 @@ function analyze(){
     var r=labTwo(q.coin,q);
     if(r.label!=='pending')lastR2.push({passed:q,result:r});
   }
-  if(!researchMeta)storeBank('1',lastR1.map(function(x){return {mint:mint(x.coin),t:x.coin._entry.acceptedAt,activity:x.result.score,idle:x.result.maxIdle,features:dataMetrics(x.coin,x.coin._entry.acceptedAt+s.decision*60000)}}));
-  storeBank('2',lastR2.map(function(x){return {mint:mint(x.passed.coin),t:x.passed.deadline,above:x.result.score,features:x.passed.features}}));
+  // Polygons contain ONLY server-labeled cohorts. Local estimates are never
+  // promoted to confirmed research-bank members.
 }
 function spark(c){
   var points=(c.ds||[]).slice(-12).map(function(x){return Number(x[1])}).filter(function(x){return x>0});
@@ -233,7 +278,15 @@ function detail(c){
     '<div class="stat"><span>Первое подтверждение</span><strong style="font-size:15px">'+time(e.acceptedAt)+'</strong></div>'+
     '<div class="stat"><span>Цена последняя</span><strong style="font-size:15px">'+price(p[1])+'</strong></div>'+
     '<div class="stat"><span>Объём 5 мин</span><strong style="font-size:15px">$'+fmt(p[6]||0)+'</strong></div></div>'+
-    '<p class="hint">Источники проверки: '+esc(c.mk||c.d||'нет данных')+'. Допуск рассчитан по доступной выгрузке, а не по новому серверному журналу.</p></div>';
+    '<p class="hint">Источники проверки: '+esc(c.mk||c.d||'нет данных')+'. Допуск подтверждается главным серверным журналом. Недостающие торговые данные отображаются как неизвестные.</p></div>';
+}
+function showCoinDetail(c,anchorId){
+  if(!c||!c._entry)return;
+  const old=$('openCoinDetail');if(old)old.remove();
+  $(anchorId).insertAdjacentHTML('afterend',detail(c));
+  $('closeCoin').addEventListener('click',function(){
+    const current=$('openCoinDetail');if(current)current.remove();
+  });
 }
 function renderAll(){
   var today=day(now());
@@ -247,6 +300,63 @@ function renderAll(){
   var list=lastVisible.slice(0,s.limit);
   $('coinList').innerHTML=list.length?list.map(function(c){return coinHtml(c)}).join(''):'<div class="empty-state">Пока нет подтверждённых записей в этом потоке. Монеты, не успевшие пройти фильтр возраста на входе, не добавляются позже задним числом.</div>';
 }
+function renderLocalPreview(){
+  if(!$('localPreview'))return;
+  const active=s.modules.filter(function(m){return m.enabled&&m.level==='1'});
+  if(!active.length){
+    $('localPreview').textContent='Включи и примени хотя бы один локальный модуль 1-го уровня.';
+    return;
+  }
+  if(!sourceActive){
+    $('localPreview').textContent='Главный источник недоступен. Локальный предварительный просмотр приостановлен.';
+    return;
+  }
+  const t=now(),limit=Math.min(1000,lastAccepted.length);
+  const results=[];
+  for(const coin of lastAccepted.slice(0,limit)){
+    const e=coin._entry;
+    const deadline=e.acceptedAt+s.decision*60000;
+    if(e.acceptedAt>t||deadline<t)continue;
+    const metrics=dataMetrics(coin,t);
+    const matches=active.filter(function(m){return m.phase===e.phase})
+      .map(function(m){return s.filters.find(function(f){return f.id===m.filterId&&f.level==='1'})})
+      .filter(function(f){return f&&ruleMatch(metrics,f)});
+    if(matches.length)results.push({coin,deadline,matches});
+  }
+  $('localPreview').innerHTML=results.length?
+    '<p class="muted">Локально совпали '+fmt(results.length)+' монет. Эти карточки НЕ являются фоновыми сигналами сервера.</p>'+
+    results.slice(0,20).map(function(p){
+      return '<div class="filter-row"><b>'+esc(p.coin.n||p.coin.s||mint(p.coin).slice(0,13))+'</b>'+
+        '<span class="badge mono">'+time(p.deadline)+'</span><p class="muted">'+
+        p.matches.map(function(f){return esc(f.name)+' · v'+esc(f.version)}).join(', ')+'</p></div>';
+    }).join(''):
+    '<p class="muted">Сейчас нет совпадений. Старые монеты не пересчитываются задним числом.</p>';
+}
+function renderServerModules(){
+  const meta=serverPassActive&&passMeta||null;
+  const cfg=meta&&meta.serverConfig;
+  if(!cfg){
+    $('serverModuleCount').textContent='Не подключено';
+    $('serverModules').textContent='Проверенная серверная конфигурация пока не опубликована. Черновики справа не заменяют её.';
+    return;
+  }
+  const filters=new Map((cfg.filters||[]).map(function(f){return [f.id,f]}));
+  const active=(cfg.modules||[]).filter(function(m){
+    return m.enabled&&filters.has(m.filterId);
+  });
+  $('serverModuleCount').textContent=cfg.enabled?fmt(active.length)+' включено':'Выключено';
+  if(!cfg.enabled){
+    $('serverModules').textContent='Новые серверные сигналы отключены; старая история «Прошли» сохраняется.';
+    return;
+  }
+  $('serverModules').innerHTML=active.length?active.map(function(m){
+    const f=filters.get(m.filterId);
+    return '<div class="filter-row"><b>'+esc(m.phase==='before'?'🌱 До':'🎓 После')+
+      ' · '+esc(m.level)+'-й уровень · '+esc(f.name)+'</b>'+
+      '<p class="muted">v'+esc(f.version)+' · '+esc(f.key)+' '+
+      esc(f.op)+' '+fmt(f.value)+'</p></div>';
+  }).join(''):'<p class="muted">Серверная версия включена, но активных модулей нет.</p>';
+}
 function renderModules(){
   var html='';
   for(var phase of ['before','after']){
@@ -257,13 +367,22 @@ function renderModules(){
       if(!modules.length)html+='<p class="muted small">Нет модулей</p>';
       for(var m of modules){
         var f=s.filters.find(function(x){return x.id===m.filterId});
-        html+='<div class="module"><input type="checkbox" data-toggle="'+esc(m.filterId)+'" data-phase="'+phase+'" '+(m.enabled?'checked':'')+' aria-label="Включить модуль"><span>'+esc(f.name)+'</span><button data-remove="'+esc(m.filterId)+'" data-phase="'+phase+'" aria-label="Удалить модуль">×</button></div>';
+        var key=draftModuleKey(m),state=moduleDraft.has(key)?moduleDraft.get(key):m.enabled;
+        html+='<div class="module"><input type="checkbox" data-toggle="'+esc(m.filterId)+'" data-phase="'+phase+'" '+(state?'checked':'')+' aria-label="Изменить модуль (потребуется применение)"><span>'+esc(f.name)+'</span><button data-remove="'+esc(m.filterId)+'" data-phase="'+phase+'" aria-label="Удалить модуль">×</button></div>';
       }
       html+='</div>';
     }
     html+='</div>';
   }
-  $('moduleGrid').innerHTML=html;
+  html+='<div class="card"><p class="hint">'+
+    (moduleDraft.size?'Есть несохранённые изменения: '+fmt(moduleDraft.size)+'.':'Изменения переключателей применяются только после подтверждения.')+
+    '</p><div class="action-bar"><button type="button" class="primary" data-apply-modules '+(!moduleDraft.size?'disabled':'')+
+    '>Применить изменения</button><button type="button" data-cancel-modules '+(!moduleDraft.size?'disabled':'')+
+    '>Отменить</button></div></div>';
+  $('moduleGrid').innerHTML='<p class="hint">'+(serverPassActive?
+    '⚠ Здесь локальные черновики модулей. Серверные активные правила имеют отдельную версию и не изменяются нажатием на телефоне.':
+    '⚠ Модули сейчас действуют только на этом телефоне. Для фонового серверного режима требуется отдельная публикация настроек.')+
+    '</p>'+html;
   $('activeModules').textContent=fmt(s.modules.filter(function(m){return m.enabled}).length);
 }
 function showPicker(phase,lev){
@@ -276,21 +395,54 @@ function showPicker(phase,lev){
 function renderPassed(){
   var list=lastPassed.filter(function(x){return x.deadline>now()});
   $('passedTab').textContent=list.length?' '+fmt(list.length):'';
-  $('passedStats').textContent='Сохранено проверенных сигналов из текущей выгрузки: '+fmt(lastPassed.length)+' · время решения не истекло: '+fmt(list.length)+'.';
+  $('passedStats').textContent=serverPassActive?
+    '✓ Серверный журнал: '+fmt(serverPassRows.length)+' записей в доступной выгрузке · активных: '+fmt(list.length)+
+    (passMeta.enabled?'. Новые совпадения продолжают записываться сервером.':'. Серверные правила временно выключены, история сохранена.'): 
+    '⚠ Предварительный режим на телефоне: '+fmt(lastPassed.length)+' сигналов. '+
+    'Правила этого устройства пока НЕ отправляются на сервер; при закрытом сайте новые сигналы не фиксируются.';
   $('passedList').innerHTML=list.length?list.map(function(q){
     var left=Math.max(0,q.deadline-now()),sec=Math.ceil(left/1000),mins=Math.floor(sec/60);
-    return '<div class="card"><div class="row"><b>'+esc(q.coin.n||q.coin.s||'Токен')+'</b><span class="badge warn mono">⏳ '+mins+':'+String(sec%60).padStart(2,'0')+'</span></div><p class="muted">Прошли: '+q.matches.map(function(f){return esc(f.name)+' · v'+esc(f.version)}).join(', ')+'</p>'+coinHtml(q.coin)+'</div>';
-  }).join(''):'<div class="empty-state">Нет активных сигналов. Старые монеты не проходят новые фильтры задним числом.</div>';
-  var history=signalLog.slice(-40).reverse();
-  $('passedArchiveCount').textContent=fmt(signalLog.length);
+    return '<div class="card"><div class="row"><b>'+esc(q.coin.n||q.coin.s||'Токен')+'</b><span class="badge warn mono">⏳ '+mins+':'+String(sec%60).padStart(2,'0')+'</span></div><p class="muted">'+
+      (serverPassActive?'Серверный журнал: ':'Локальный предварительный: ')+
+      q.matches.map(function(f){return esc(f.name)+' · v'+esc(f.version)}).join(', ')+'</p>'+coinHtml(q.coin)+'</div>';
+  }).join(''):'<div class="empty-state">Нет активных сигналов. Исторические записи не превращаются в новые сигналы.</div>';
+  var history=(serverPassActive?serverPassRows:signalLog).slice(0);
+  if(!serverPassActive)history=history.reverse();
+  history=history.slice(0,40);
+  $('passedArchiveCount').textContent=fmt(serverPassActive?serverPassRows.length:signalLog.length);
   $('passedArchiveList').innerHTML=history.length?history.map(function(x){
     var stamp=new Date(x.firstSeenAt).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
     return '<div class="vrow"><div class="row"><b>'+esc(x.name||x.mint)+'</b><span class="badge">'+esc(stamp)+'</span></div>'+
-      '<p class="muted">'+esc(x.phase==='before'?'🌱 До':'🎓 После')+' · '+esc(x.mint.slice(0,12))+'… · срок '+time(x.deadline)+'</p>'+
+      '<p class="muted">'+esc(x.phase==='before'?'🌱 До':'🎓 После')+' · '+esc(x.mint.slice(0,12))+'… · точка 0 '+time(x.zeroAt||x.deadline)+'</p>'+
       '<p class="muted">'+x.matches.map(function(f){return esc(f.name)+' · v'+esc(f.version)+' ('+esc(f.key)+' '+esc(f.op)+' '+fmt(f.value)+')'}).join(', ')+'</p></div>';
-  }).join(''):'<p class="muted">Журнал на этом телефоне пуст. Закрытый сайт не записывает новые сигналы.</p>';
+  }).join(''):'<p class="muted">Журнал пуст. Источником являются только признанные главным сервером монеты.</p>';
+}
+function renderAutoSuggestions(report){
+  if(!report||!Array.isArray(report.rules)||!report.rules.length)
+    return '<p class="hint">Недостаточно размеченных наблюдений для предложений.</p>';
+  const labels={buyers:'Покупатели',trades:'Сделки',volume:'Объём $',
+    liq:'Ликвидность $',mc:'Капитализация $',buys:'Покупки',
+    sells:'Продажи',buySellRatio:'Покупки/продажи'};
+  return '<p class="hint">Кандидаты из ранних наблюдений. Поздняя выборка используется только для отдельной оценки.</p>'+
+    report.rules.slice(0,8).map(function(x,i){
+      const v=x.holdout;
+      const stats=v&&v.positiveRecall!=null&&v.negativeRejection!=null?
+        'Поздняя выборка: 🟢 '+(v.positiveRecall*100).toFixed(1)+'% ('+v.passedPositive+'/'+v.totalPositive+
+        ') · 🔴 '+(v.negativeRejection*100).toFixed(1)+'% ('+v.rejectedNegative+'/'+v.totalNegative+
+        ') · неизвестно '+fmt(v.unknown):
+        'Отдельная проверка пока не готова';
+      return '<div class="filter-row"><b>'+esc(labels[x.rule.key]||x.rule.key)+' '+
+        esc(x.rule.op)+' '+fmt(x.rule.value)+'</b><p class="muted">'+
+        'Обучение: 🟢 '+(x.train.positiveRecall*100).toFixed(1)+'% · 🔴 '+
+        (x.train.negativeRejection*100).toFixed(1)+'%. '+esc(stats)+
+        (x.passesHoldout===true?' · ✅ порог пройден':
+         x.passesHoldout===false?' · ⚠ порог не пройден':'')+
+        '</p><button type="button" class="pbtn" data-stage-auto="'+esc(report.level)+
+        ':'+i+'">Открыть в редакторе</button></div>';
+    }).join('');
 }
 function renderR1(){
+  if($('r1Suggestions'))$('r1Suggestions').innerHTML=renderAutoSuggestions(autoOne);
   if(researchMeta){
     const cfg=researchMeta.settings||{},counts=researchMeta.counts||{},p=researchMeta.pending||{};
     const a=counts.live||0,b=counts.dead||0;
@@ -300,7 +452,14 @@ function renderR1(){
       '% · простой ≤'+cfg.maxIdle+' мин. Размечено живых: '+a+
       '/100. Ожидают окончания наблюдения: '+(p['not-yet-finished']||0)+
       ', недостаточно данных: '+(p['insufficient-activity-coverage']||0)+
-      '. Автоподбор правил пока не запущен.';
+      '. Автоподбор: требуется не меньше 100 живых и 40 мёртвых в обучении, затем отдельные 100 на поздней проверке.';
+    if(autoOne){
+      const text=autoOne.status==='rolling-holdout-ready'?
+        'Есть отдельная проверочная выборка '+fmt(autoOne.validation.total)+' монет.':
+        autoOne.status==='training-only'?'Подбор правил готовится; проверочная выборка ещё не накоплена.':
+        'Накопление обучающих живых и мёртвых.';
+      $('r1Auto').textContent+=' '+text+' Предложено условий: '+fmt(autoOne.rules.length)+'.';
+    }
     const rows=bank['1'].slice(-10).reverse();
     $('r1Rows').innerHTML=rows.length?'<h2>Размечено на сервере</h2>'+rows.map(function(x){
       const positive=x.activity>=cfg.minActive&&x.idle<=cfg.maxIdle;
@@ -310,12 +469,14 @@ function renderR1(){
     }).join(''):'<div class="muted">Пока нет монет с завершённым и достаточно полным наблюдением. Сервер продолжает сбор.</div>';
     return;
   }
-  var a=lastR1.filter(function(x){return x.result.label==='live'}).length;
-  var b=lastR1.filter(function(x){return x.result.label==='dead'}).length;
-  $('r1Live').textContent=fmt(a);$('r1Dead').textContent=fmt(b);
-  $('r1Meter').style.width=Math.min(100,a)+'%';
-  $('r1Auto').textContent='Размечено живых: '+a+'/100. '+(a<100?'Ожидание накопления. ':'Порог достигнут. ')+'Серверный поиск условий по зелёной зоне ещё не подключён.';
-  $('r1Rows').innerHTML=lastR1.length?'<h2>Завершённые наблюдения</h2>'+lastR1.slice(0,10).map(function(x){return '<div class="vrow"><div class="row"><b>'+esc(x.coin.n||x.coin.s||'Монета')+'</b><span class="badge '+(x.result.label==='live'?'good':'bad')+'">'+(x.result.label==='live'?'🟢 Живая':'🔴 Мёртвая')+'</span></div><p class="muted">Доля с активными сделками: '+x.result.score.toFixed(1)+'% · максимальный простой '+x.result.maxIdle+' мин · снимков '+x.result.observed+'/'+x.result.total+'</p></div>'}).join(''):'<div class="muted">Подтверждённой разметки пока нет. Нужны завершённые наблюдения 1–24 часа с достаточным покрытием торговых сделок.</div>';
+  const provisionalLive=lastR1.filter(function(x){return x.result.label==='live'}).length;
+  const provisionalDead=lastR1.filter(function(x){return x.result.label==='dead'}).length;
+  $('r1Live').textContent='—';$('r1Dead').textContent='—';
+  $('r1Meter').style.width='0%';
+  $('r1Auto').textContent='⛔ Авторитетная серверная разметка сейчас недоступна. '+
+    'Локальные предварительные оценки (живых '+fmt(provisionalLive)+
+    ', мёртвых '+fmt(provisionalDead)+') не считаются подтверждёнными и не входят в полигон.';
+  $('r1Rows').innerHTML='<div class="muted">Подтверждённые наблюдения сервера отсутствуют или не загружены. Не подменяем их расчётами телефона.</div>';
 }
 function lineGraph(rows){
   if(!rows.length)return '<div class="empty-state">Нет монет с полной историей от точки 0. Будущие цены не подставляем.</div>';
@@ -331,6 +492,17 @@ function lineGraph(rows){
   '<g fill="#acb5c8" font-size="12"><text x="18" y="37">До решения</text><text x="108" y="211">0</text><text x="185" y="211">60</text><text x="307" y="211">150</text><text x="465" y="211">270</text><text x="514" y="211">300</text></g></svg>';
 }
 function researchTwoDataset(){
+  if(serverR2Active){
+    const lines=serverR2Rows.filter(function(x){return x.phase===s.r2Stream});
+    const valid=lines.length;
+    const strong=lines.filter(function(x){return x.label==='strong'}).length;
+    const weak=lines.filter(function(x){return x.label==='weak'}).length;
+    const aggregate=serverR2Curve&&serverR2Curve[s.r2Stream]||[];
+    const curve=valid?[{min:0,pct:0,n:valid}].concat(aggregate):[];
+    const waiting=twoMeta&&twoMeta.pending||{};
+    const pending=Object.values(waiting).reduce(function(a,b){return a+(Number(b)||0)},0);
+    return {curve,valid,pending,strong,weak,lines,fromServer:true};
+  }
   var coins=lastPassed.filter(function(x){return x.coin._entry.phase===s.r2Stream});
   var lines=[],valid=0,pending=0,strong=0,weak=0;
   for(var q of coins){
@@ -344,16 +516,45 @@ function researchTwoDataset(){
     var vals=lines.map(function(r){var p=r.curve.find(function(v){return v.min===m});return p?p.pct:null}).filter(function(v){return v!=null});
     if(vals.length)curve.push({min:m,pct:vals.reduce(function(a,b){return a+b},0)/vals.length,n:vals.length});
   }
-  return {curve:curve,valid:valid,pending:pending,strong:strong,weak:weak,lines:lines};
+  return {curve:curve,valid:valid,pending:pending,strong:strong,weak:weak,lines:lines,fromServer:false};
 }
 function renderR2(){
+  if($('r2Suggestions'))$('r2Suggestions').innerHTML=renderAutoSuggestions(autoTwo);
   var r=researchTwoDataset();
+  if($('r2Matched')){
+    if(!serverR2Active)$('r2Matched').textContent=
+      '⚠ Предварительный режим. Подтверждённых совпадений 2-го уровня с сервера пока нет.';
+    else{
+      const matches=serverR2Rows.filter(function(x){
+        return x.phase===s.r2Stream&&Array.isArray(x.secondLevelMatches)&&x.secondLevelMatches.length;
+      });
+      $('r2Matched').innerHTML='<p class="muted">Совпало после завершённого наблюдения: '+
+        fmt(matches.length)+' монет. Нет подходящих данных — не засчитываем.</p>'+
+        matches.slice(0,15).map(function(x){
+          return '<div class="filter-row"><b class="mono">'+esc(x.mint.slice(0,14))+'…</b>'+
+            '<span class="badge '+(x.label==='strong'?'good':'bad')+'">'+
+            (x.label==='strong'?'Сильная':'Слабая')+'</span><p class="muted">'+
+            x.secondLevelMatches.map(function(f){return esc(f.name)+' · v'+esc(f.version)}).join(' · ')+
+            '</p></div>';
+        }).join('');
+    }
+  }
   $('r2Graph').innerHTML=lineGraph(r.curve.length>1?r.curve:[]);
-  $('r2Stats').textContent='Размечено: 🟢 сильных '+r.strong+' · 🔴 слабых '+r.weak+' · недостаточно данных '+r.pending+'.';
+  $('r2Stats').textContent=(r.fromServer?'✓ Серверные наблюдения. ':'⚠ Предварительный режим телефона. ')+
+    'Размечено: 🟢 сильных '+r.strong+' · 🔴 слабых '+r.weak+' · ожидание/пробелы '+r.pending+'.';
+  if($('r2AutoText'))$('r2AutoText').textContent=autoTwo?
+    'Автоподбор на сервере: '+fmt(autoTwo.rules.length)+' кандидатов · статус: '+
+    ({'waiting-training':'нужны 40 сильных и 40 слабых',
+      'training-only':'нужна отдельная поздняя проверочная выборка',
+      'waiting-both-holdout-classes':'нужны оба класса в проверочной группе',
+      'rolling-holdout-ready':'проверено на отдельной поздней выборке'}[autoTwo.status]||'сбор данных')+
+    '. Выводы предварительные.':
+    'Серверный подбор ещё не опубликован. Локальные графики не считаются независимой проверкой.';
   var out=[];
   for(var m=0;m<=300;m+=s.r2Step){
     var found=r.curve.find(function(p){return p.min===m});
-    if(!found&&m%5!==0){var nearest=r.curve.filter(function(p){return p.min<=m}).at(-1);found=nearest?{min:m,pct:nearest.pct,n:nearest.n}:null}
+    // A 1-minute row must have real minute evidence; never copy a 5m
+    // observation forward and present it as independently measured.
     out.push({m:m,p:found});
   }
   var pages=Math.max(1,Math.ceil(out.length/8));
@@ -374,7 +575,29 @@ function classified(level){
   }
   return [a.slice(-5000),b.slice(-5000)];
 }
+function renderServerRuleHistory(){
+  if(!$('serverRuleHistoryRows'))return;
+  const rows=filterAuditMeta?.rules?.filter(function(x){
+    return x.level===s.level&&(x.archived||!s.filters.some(function(f){
+      return f.id===x.id&&f.level===x.level&&f.version===x.version&&
+        f.key===x.rule.key&&f.op===x.rule.op&&f.value===x.rule.value;
+    }));
+  })||[];
+  $('serverRuleHistoryCount').textContent=fmt(rows.length);
+  $('serverRuleHistoryRows').innerHTML=rows.length?rows.slice(0,100).map(function(x){
+    const stats=function(v){return v&&v.positivePercent!=null&&v.negativePercent!=null?
+      '🟢 '+v.positivePercent.toFixed(1)+'% · 🔴 '+v.negativePercent.toFixed(1)+
+      '% · неизвестно '+fmt(v.missing):'Недостаточно обеих размеченных групп';};
+    return '<div class="filter-row"><b>'+esc(x.name)+' · v'+fmt(x.version)+'</b>'+
+      '<span class="badge">'+esc(x.phase==='before'?'🌱 До':'🎓 После')+'</span>'+
+      '<p class="muted">'+esc(x.rule.key)+' '+esc(x.rule.op)+' '+fmt(x.rule.value)+
+      ' · '+(x.archived?'Архив':'Серверная версия')+'</p>'+
+      '<p class="muted">Исходная проверка: '+stats(x.original)+'</p>'+
+      '<p class="muted">Новые данные: '+stats(x.background)+'</p></div>';
+  }).join(''):'<p class="muted">Нет архивных версий для выбранного уровня.</p>';
+}
 function renderLibrary(){
+  renderServerRuleHistory();
   var names=s.level==='1'?['Живые','Мёртвые']:['Сильные','Слабые'],target=s.poly[s.level],groups=classified(s.level),lenA=groups[0].length,lenB=groups[1].length;
   $('polyTitle').textContent=names.join(' / ');
   $('polyNameA').textContent=names[0];$('polyNameB').textContent=names[1];
@@ -387,10 +610,26 @@ function renderLibrary(){
   $('testResults').innerHTML=testHtml;
   var f=s.filters.filter(function(x){return x.level===s.level});
   $('libraryList').innerHTML=f.length?f.map(function(x){
-    var orig=x.original?x.original.livePercent.toFixed(1)+'% / '+x.original.deadPercent.toFixed(1)+'%':'не проверен';
+    var orig=x.original?x.original.livePercent.toFixed(1)+'% / '+x.original.deadPercent.toFixed(1)+'%':'локально не проверен';
+    var records=filterAuditMeta&&Array.isArray(filterAuditMeta.rules)?
+      filterAuditMeta.rules.filter(function(p){return p.id===x.id&&p.version===x.version&&
+        p.level===x.level&&p.rule.key===x.key&&p.rule.op===x.op&&p.rule.value===x.value}):[];
+    var audits=records.map(function(p){
+      var start=p.original&&p.original.positivePercent!=null&&p.original.negativePercent!=null?
+        '🟢 '+p.original.positivePercent.toFixed(1)+'% · 🔴 '+p.original.negativePercent.toFixed(1)+'%':
+        'недостаточно завершённых наблюдений';
+      var later=p.background&&p.background.positivePercent!=null&&p.background.negativePercent!=null?
+        '🟢 '+p.background.positivePercent.toFixed(1)+'% · 🔴 '+p.background.negativePercent.toFixed(1)+'%':
+        'ещё нет обеих групп';
+      return '<p class="muted">'+esc(p.phase==='before'?'🌱 До':'🎓 После')+
+        ' · начальные: '+start+' · новые: '+later+
+        ' · пропуски '+fmt(p.background?.missing||0)+'</p>';
+    }).join('');
     return '<div class="filter-row"><div class="row"><b>№'+esc(x.id)+' · '+esc(x.name)+'</b><button type="button" class="pbtn" data-edit="'+esc(x.id)+'">Открыть</button></div>'+
-      '<p class="muted">'+esc(({buyers:'Покупатели',trades:'Сделки',volume:'Объём $',liq:'Ликвидность $'})[x.key])+' '+esc(x.op)+' '+fmt(x.value)+' · версия '+fmt(x.version)+'</p>'+
-      '<div class="numbers"><span class="badge">Первоначальный: '+orig+'</span><span class="badge">Фоновый: ожидает новые данные</span></div></div>';
+      '<p class="muted">'+esc(({buyers:'Покупатели',trades:'Сделки',volume:'Объём $',liq:'Ликвидность $',mc:'Капитализация $',buys:'Покупки 5м',sells:'Продажи 5м',buySellRatio:'Покупки/продажи'})[x.key])+' '+esc(x.op)+' '+fmt(x.value)+' · версия '+fmt(x.version)+'</p>'+
+      (audits?'<p class="hint">Серверная история сравнения по версиям:</p>'+audits:
+      '<div class="numbers"><span class="badge">На телефоне: '+orig+'</span>'+
+      '<span class="badge">Серверная фоновая проверка: ожидает настройки</span></div>')+'</div>';
   }).join(''):'<div class="empty-state">Фильтров этого уровня пока нет. Нажми «+ Создать» — можно сделать собственное правило.</div>';
 }
 function testAll(){
@@ -430,7 +669,7 @@ function openEditor(id){
 function saveEditor(e){
   e.preventDefault();
   var name=$('filterName').value.trim(),key=$('filterKey').value,op=$('filterOp').value,value=Number($('filterValue').value);
-  if(!name||!['buyers','trades','volume','liq'].includes(key)||!['>=','<='].includes(op)||!Number.isFinite(value)||value<0||value>1e12){note('Проверь название и значение');return}
+  if(!name||!['buyers','trades','volume','liq','mc','buys','sells','buySellRatio'].includes(key)||!['>=','<='].includes(op)||!Number.isFinite(value)||value<0||value>1e12){note('Проверь название и значение');return}
   var same=s.filters.find(function(f){return f.id!==editorId&&f.level===s.level&&f.key===key&&f.op===op&&f.value===value});
   if(same){note('Такие же правила уже есть: №'+same.id);return}
   if(editorId){
@@ -454,9 +693,266 @@ function removeEditor(){
 }
 function refresh(){
   analyze();
-  renderAll();renderModules();renderPassed();renderR1();renderR2();renderLibrary();
+  renderAll();renderServerModules();renderModules();renderLocalPreview();renderPassed();renderR1();renderR2();renderLibrary();
+}
+function preparedServerConfig(){
+  // Include all library definitions so the server can evaluate background
+  // performance of disabled but configured modules. Only enabled level-1
+  // modules are permitted to add new first-level Passed records.
+  if(s.filters.length>200||s.modules.length>200){
+    note('Слишком много модулей/фильтров: максимум 200 в серверной версии');
+    return null;
+  }
+  const filters=s.filters.map(function(f){
+    return {id:String(f.id),name:String(f.name),level:String(f.level),
+      key:f.key,op:f.op,value:Number(f.value),version:Number(f.version)};
+  });
+  const ids=new Set(filters.map(function(f){return f.id}));
+  const modules=s.modules.filter(function(m){return ids.has(m.filterId)})
+    .map(function(m){return {
+      filterId:m.filterId,phase:m.phase,level:m.level,enabled:!!m.enabled
+    }});
+  if(!modules.some(function(m){return m.level==='1'&&m.enabled})){
+    note('Нужен хотя бы один подтверждённый активный модуль 1-го уровня');
+    return null;
+  }
+  return {schema:1,enabled:true,activatedAt:0,
+    decisionMinutes:s.decision,filters,modules};
+}
+function exportServerConfig(){
+  const config=preparedServerConfig();if(!config)return;
+  const blob=new Blob([JSON.stringify(config,null,2)+'\n'],{type:'application/json'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='pass-filters.json';
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(function(){URL.revokeObjectURL(url)},30000);
+  note('Конфигурация подготовлена. Для фоновой работы её надо опубликовать на сервере.');
+}
+function validControlEndpoint(value){
+  if(!value||value.enabled!==true||typeof value.url!=='string')return null;
+  try{
+    const u=new URL(value.url);
+    return u.protocol==='https:'&&u.hostname.endsWith('.run.app')&&!u.username&&!u.password?
+      u.origin:null;
+  }catch(e){return null}
+}
+async function publishResearchLevel(level){
+  const one=level==='1',keyField=one?'ownerResearchOneKey':'ownerResearchTwoKey';
+  const checkField=one?'confirmResearchOne':'confirmResearchTwo';
+  const statusField=one?'researchOneControlState':'researchTwoControlState';
+  const buttonField=one?'publishResearchOne':'publishResearchTwo';
+  const endpoint=one?'/api/research-one':'/api/research-two';
+  const current=one?researchMeta:twoMeta;
+  if(!controlEndpoint||!current){note('Серверное исследование ещё недоступно');return}
+  if(!$(checkField).checked){note('Подтверди изменение серверного исследования');return}
+  const key=$(keyField).value.trim();
+  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
+    note('Требуется отдельный ключ владельца');return;
+  }
+  let cfg;
+  if(one){
+    cfg={hours:Number($('r1Hours').value),
+      decisionMinutes:researchMeta.settings.decisionMinutes,
+      minActive:Number($('r1Activity').value),
+      maxIdle:Number($('r1Idle').value),
+      minCoverage:researchMeta.settings.minCoverage};
+    if(!Number.isInteger(cfg.hours)||cfg.hours<1||cfg.hours>24||
+       !Number.isInteger(cfg.maxIdle)||cfg.maxIdle<5||cfg.maxIdle>1440||
+       !Number.isFinite(cfg.minActive)||cfg.minActive<0||cfg.minActive>100){
+      note('Неверные параметры первого исследования');return;
+    }
+  }else{
+    cfg={minAbove:Number($('r2Strong').value),
+      minCoverage:twoMeta.settings.minCoverage};
+    if(!Number.isFinite(cfg.minAbove)||cfg.minAbove<0||cfg.minAbove>100){
+      note('Неверный порог второго исследования');return;
+    }
+  }
+  $(buttonField).disabled=true;
+  $(statusField).textContent='Отправка серверной версии…';
+  const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
+  try{
+    const r=await fetch(controlEndpoint+endpoint,{
+      method:'POST',cache:'no-store',signal:abort.signal,
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify(cfg)
+    });
+    if(!r.ok){
+      $(statusField).textContent='Сервер отклонил изменения. HTTP '+r.status;
+      note(r.status===401?'Ключ владельца не принят':'Публикация не удалась: '+r.status);
+      return;
+    }
+    $(keyField).value='';$(checkField).checked=false;
+    $(statusField).textContent='Версия принята. Для неё сервер создаст отдельную группу наблюдений.';
+    note('Сервер переключится на новые правила без переписывания старой истории.');
+  }catch(e){
+    $(statusField).textContent='Ошибка связи: '+String(e.message||e);
+  }finally{
+    clearTimeout(timer);$(buttonField).disabled=!controlEndpoint||!current;
+  }
+}
+async function publishSourceAge(){
+  if(!controlEndpoint||!sourceActive){
+    note('Нет защищённого сервера управления или главного источника');return;
+  }
+  if(!$('confirmAgePublish').checked){
+    note('Подтверди изменение двух возрастных фильтров');return;
+  }
+  const cfg={schema:1,beforeMinutes:Number($('ageBefore').value),
+    afterMinutes:Number($('ageAfter').value)};
+  if(![cfg.beforeMinutes,cfg.afterMinutes].every(function(v){
+    return Number.isInteger(v)&&v>=1&&v<=10;
+  })){
+    note('Возраст до и после миграции должен быть от 1 до 10 минут');return;
+  }
+  const key=$('ageOwnerKey').value.trim();
+  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
+    note('Для изменения порога нужен отдельный ключ владельца');return;
+  }
+  const button=$('publishSourceAge');
+  button.disabled=true;
+  $('sourceAgeControlState').textContent='Отправка новых возрастных порогов…';
+  const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
+  try{
+    const r=await fetch(controlEndpoint+'/api/source-age',{
+      method:'POST',cache:'no-store',signal:abort.signal,
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify(cfg)
+    });
+    if(!r.ok){
+      $('sourceAgeControlState').textContent='Сервер отклонил изменение: HTTP '+r.status;
+      note(r.status===401?'Ключ владельца не принят':'Ошибка изменения возраста: '+r.status);
+      return;
+    }
+    $('ageOwnerKey').value='';$('confirmAgePublish').checked=false;
+    $('sourceAgeControlState').textContent='Пороги получены сервером управления. Ждём подтверждения новых значений главным источником.';
+    note('Серверные пороги обновляются только для новых входящих событий.');
+  }catch(e){
+    $('sourceAgeControlState').textContent='Ошибка связи: '+String(e.message||e);
+  }finally{
+    clearTimeout(timer);
+    button.disabled=!controlEndpoint||!sourceActive;
+  }
+}
+async function publishServerConfig(){
+  if(!controlEndpoint){note('Защищённый сервер управления ещё не подключён');return}
+  if(!$('confirmControlPublish').checked){
+    note('Отметь подтверждение публикации серверной версии');return;
+  }
+  const config=preparedServerConfig();if(!config)return;
+  const key=$('ownerControlKey').value.trim();
+  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
+    note('Нужен действительный ключ владельца, не пароль от GitHub');return;
+  }
+  const button=$('publishServerConfig');
+  button.disabled=true;$('controlState').textContent='Отправка настроек на сервер…';
+  const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
+  try{
+    const r=await fetch(controlEndpoint+'/api/filter-config',{
+      method:'POST',cache:'no-store',signal:abort.signal,
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify(config)
+    });
+    if(!r.ok){
+      $('controlState').textContent='Не удалось применить серверную конфигурацию. HTTP '+r.status;
+      note(r.status===401?'Ключ владельца не принят':'Ошибка публикации: HTTP '+r.status);
+      return;
+    }
+    $('ownerControlKey').value='';
+    $('confirmControlPublish').checked=false;
+    $('controlState').textContent='Принято сервером управления. Журнал переключится после обновления конфигурации сборщика.';
+    note('Новая серверная версия передана. Старые монеты не добавляются задним числом.');
+  }catch(e){
+    $('controlState').textContent='Ошибка связи с защищённым сервером: '+String(e.message||e);
+  }finally{
+    clearTimeout(timer);
+    button.disabled=!controlEndpoint;
+  }
+}
+
+async function loadPassedArchiveDay(){
+  const selected=$('passedDay').value;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(selected)){
+    note('Неверная дата архива');return;
+  }
+  if(!serverPassActive){
+    $('passedDayStatus').textContent='Архив сервера недоступен. Локальную историю можно посмотреть выше.';
+    return;
+  }
+  const button=$('loadPassedDay');
+  button.disabled=true;
+  $('passedDayStatus').textContent='Получение проверенного журнала за '+selected+'…';
+  $('passedDayList').innerHTML='';
+  try{
+    const data=await getJSON('passed-v2/day/'+selected+'.json');
+    if(!data||data.day!==selected||data.origin!=='server-journal'||
+       !Array.isArray(data.coins)){
+      $('passedDayStatus').textContent='Файл за этот день не опубликован или недоступен. Это не означает ноль монет.';
+      return;
+    }
+    const records=data.coins.filter(function(p){
+      return p&&typeof p.mint==='string'&&['before','after'].includes(p.phase)&&
+        Number.isSafeInteger(p.firstSeenAt)&&Number.isSafeInteger(p.zeroAt)&&
+        Array.isArray(p.matches);
+    });
+    $('passedDayStatus').textContent='Серверная история за '+selected+': '+fmt(records.length)+
+      ' записей. Показаны последние '+fmt(Math.min(150,records.length))+'.';
+    $('passedDayList').innerHTML=records.slice(0,150).map(function(p){
+      return '<div class="filter-row"><div class="row"><b>'+esc(p.name||p.mint.slice(0,14))+
+        '</b><span class="badge mono">'+time(p.firstSeenAt)+'</span></div>'+
+        '<p class="muted">'+esc(p.phase==='before'?'🌱 До миграции':'🎓 После миграции')+
+        ' · '+esc(p.mint)+' · точка 0 '+time(p.zeroAt)+'</p>'+
+        '<p class="muted">'+p.matches.map(function(f){
+          return esc(f.name)+' · v'+esc(f.version)+' ('+esc(f.key)+' '+esc(f.op)+' '+fmt(f.value)+')';
+        }).join(' · ')+'</p></div>';
+    }).join('')||'<p class="muted">В опубликованном серверном журнале за этот день записей нет.</p>';
+  }catch(e){
+    $('passedDayStatus').textContent='Не удалось получить архив: '+String(e.message||e);
+  }finally{
+    button.disabled=false;
+  }
+}
+function stageAutoRule(e){
+  const btn=e.target.closest('[data-stage-auto]');
+  if(!btn)return;
+  const id=btn.dataset.stageAuto.split(':'),level=id[0],index=Number(id[1]);
+  const report=level==='1'?autoOne:level==='2'?autoTwo:null;
+  const item=report?.rules?.[index],rule=item?.rule;
+  if(!rule||!['buyers','trades','volume','liq','mc','buys','sells','buySellRatio'].includes(rule.key)||
+     !['>=','<='].includes(rule.op)||!Number.isFinite(rule.value)||rule.value<0){
+    note('Некорректное условие исследования');return;
+  }
+  s.level=level;s.tab='library';save();
+  document.querySelectorAll('#tabs [data-page]').forEach(function(x){
+    x.classList.toggle('active',x.dataset.page==='library');
+  });
+  document.querySelectorAll('.page').forEach(function(x){
+    x.hidden=x.id!=='p-library';
+  });
+  document.querySelectorAll('#levels [data-level]').forEach(function(x){
+    x.classList.toggle('active',x.dataset.level===level);
+  });
+  renderLibrary();
+  openEditor(null);
+  const titles={buyers:'Покупатели',trades:'Сделки',volume:'Объём',
+    liq:'Ликвидность',mc:'Капитализация',buys:'Покупки',sells:'Продажи',
+    buySellRatio:'Покупки/продажи'};
+  $('filterName').value=(titles[rule.key]||rule.key)+' '+rule.op+' '+fmt(rule.value);
+  $('filterKey').value=rule.key;
+  $('filterOp').value=rule.op;
+  $('filterValue').value=rule.value;
+  $('editorNote').textContent='Черновик из автоматического исследования. Проверь и нажми «Сохранить». Не включает модуль и не меняет сервер.';
+  note('Предложение скопировано в редактор. Подтверди сохранение вручную.');
 }
 function bind(){
+  $('exportServerConfig').addEventListener('click',exportServerConfig);
+  $('loadPassedDay').addEventListener('click',loadPassedArchiveDay);
+  $('r1Suggestions').addEventListener('click',stageAutoRule);
+  $('r2Suggestions').addEventListener('click',stageAutoRule);
+  $('publishServerConfig').addEventListener('click',publishServerConfig);
+  $('publishSourceAge').addEventListener('click',publishSourceAge);
+  $('publishResearchOne').addEventListener('click',function(){publishResearchLevel('1')});
+  $('publishResearchTwo').addEventListener('click',function(){publishResearchLevel('2')});
   $('tabs').addEventListener('click',function(e){
     var b=e.target.closest('button[data-page]');if(!b)return;
     s.tab=b.dataset.page;
@@ -476,26 +972,47 @@ function bind(){
     save();refresh();
   });
   $('coinList').addEventListener('click',function(e){
-    var b=e.target.closest('[data-coin]');if(!b)return;var c=lastAccepted.find(function(x){return mint(x)===b.dataset.coin});if(!c)return;
-    var old=$('openCoinDetail');if(old)old.remove();
-    $('coinList').insertAdjacentHTML('afterend',detail(c));
-    $('closeCoin').addEventListener('click',function(){$('openCoinDetail').remove()});
+    const button=e.target.closest('[data-coin]');if(!button)return;
+    showCoinDetail(lastAccepted.find(function(c){return mint(c)===button.dataset.coin}),'coinList');
+  });
+  $('passedList').addEventListener('click',function(e){
+    const button=e.target.closest('[data-coin]');if(!button)return;
+    const item=lastPassed.find(function(x){return mint(x.coin)===button.dataset.coin});
+    if(item)showCoinDetail(item.coin,'passedList');
   });
   $('moduleGrid').addEventListener('click',function(e){
+    if(e.target.closest('[data-apply-modules]')){
+      for(const m of s.modules)if(moduleDraft.has(draftModuleKey(m)))
+        m.enabled=moduleDraft.get(draftModuleKey(m));
+      moduleDraft.clear();save();refresh();note('Изменения модулей применены на этом телефоне');return;
+    }
+    if(e.target.closest('[data-cancel-modules]')){
+      moduleDraft.clear();renderModules();note('Неприменённые переключения отменены');return;
+    }
     var pick=e.target.closest('[data-pick-source]');if(pick){showPicker(pick.dataset.pickSource,pick.dataset.pickLevel);return}
     var remove=e.target.closest('[data-remove]');if(!remove)return;
+    if(!window.confirm('Удалить модуль из локальной схемы?'))return;
+    var target=s.modules.find(function(m){return m.filterId===remove.dataset.remove&&m.phase===remove.dataset.phase});
+    if(target)moduleDraft.delete(draftModuleKey(target));
     s.modules=s.modules.filter(function(x){return !(x.filterId===remove.dataset.remove&&x.phase===remove.dataset.phase)});
     save();refresh();
   });
   $('moduleGrid').addEventListener('change',function(e){
     if(!e.target.matches('[data-toggle]'))return;
     var m=s.modules.find(function(x){return x.filterId===e.target.dataset.toggle&&x.phase===e.target.dataset.phase});
-    if(m){m.enabled=e.target.checked;save();refresh()}
+    if(m){
+      const key=draftModuleKey(m);
+      if(e.target.checked===m.enabled)moduleDraft.delete(key);
+      else moduleDraft.set(key,e.target.checked);
+      renderModules();
+    }
   });
   $('pickerItems').addEventListener('click',function(e){
     var b=e.target.closest('[data-use]');if(!b||!picker)return;
-    s.modules.push({filterId:b.dataset.use,phase:picker.phase,level:picker.level,enabled:true});
+    var m={filterId:b.dataset.use,phase:picker.phase,level:picker.level,enabled:false};
+    s.modules.push(m);moduleDraft.set(draftModuleKey(m),true);
     $('filterPicker').hidden=true;picker=null;save();refresh();
+    note('Добавлен черновик модуля. Нажми «Применить изменения» для включения.');
   });
   $('pickerClose').addEventListener('click',function(){$('filterPicker').hidden=true;picker=null});
   $('decisionMins').addEventListener('input',function(){$('decisionValue').textContent=this.value+' мин'});
@@ -517,7 +1034,10 @@ function bind(){
     s.r1Hours=+ $('r1Hours').value;s.r1Activity=+ $('r1Activity').value;s.r1Idle=+ $('r1Idle').value;
     save();refresh();note('Правила разметки 1-го уровня применены');
   });
-  $('applyR2').addEventListener('click',function(){s.r2Strong=+ $('r2Strong').value;save();refresh();note('Порог сильных/слабых применён')});
+  $('applyR2').addEventListener('click',function(){
+    if(serverR2Active){note('Разметка второго уровня принадлежит серверу; с телефона пока доступен просмотр');return}
+    s.r2Strong=+ $('r2Strong').value;save();refresh();note('Локальный порог сильных/слабых применён');
+  });
   $('r2Streams').addEventListener('click',function(e){var b=e.target.closest('[data-stream]');if(!b)return;s.r2Stream=b.dataset.stream;this.querySelectorAll('button').forEach(function(x){x.classList.toggle('active',x===b)});save();renderR2()});
   $('r2Step').addEventListener('change',function(){s.r2Step=+this.value;s.r2Page=0;save();renderR2()});
   $('r2Prev').addEventListener('click',function(){s.r2Page--;save();renderR2()});
@@ -545,9 +1065,15 @@ async function load(){
   var today=day(now()),yesterday=day(now()-864e5);
   var names=['status.json','day/'+today+'.json','day/'+yesterday+'.json','obs/'+today+'.json','obs/'+yesterday+'.json','live.json',
     'source/status.json','source/day/'+today+'.json','source/day/'+yesterday+'.json','source/live.json',
-    'research-v2/status.json','research-v2/polygon-1.json'];
+    'research-v2/status.json','research-v2/polygon-1.json',
+    'passed-v2/status.json','passed-v2/live.json',
+    'passed-v2/day/'+today+'.json','passed-v2/day/'+yesterday+'.json',
+    'research-v2/status-two.json','research-v2/polygon-2.json',
+    'research-v2/auto-1.json','research-v2/auto-2.json','control/endpoint.json',
+    'research-v2/curve-two.json','research-v2/filter-audit.json'];
   var fetched=await Promise.allSettled(names.map(function(name,i){
     if(i===11&&lastResearchBankRead&&now()-lastResearchBankRead<300000)return Promise.resolve(null);
+    if(i===17&&lastSecondBankRead&&now()-lastSecondBankRead<300000)return Promise.resolve(null);
     return getJSON(name);
   }));
   var vals=fetched.map(function(q){return q.status==='fulfilled'?q.value:null});
@@ -557,6 +1083,8 @@ async function load(){
     // authoritative source is unavailable on a later refresh.
     sourceActive=false;sourceMeta=null;sourceRecords=[];
     researchMeta=null;researchServerBank=false;bank['1']=[];
+    serverPassActive=false;serverPassRows=[];passMeta=null;
+    serverR2Active=false;serverR2Rows=[];serverR2Curve=null;twoMeta=null;autoOne=null;filterAuditMeta=null;bank['2']=[];
     lastAccepted=[];lastVisible=[];lastPassed=[];
     renderAll();renderPassed();renderR1();renderLibrary();
     dataErr=errors.length?String(errors[0].reason):'Сервер пока не опубликовал данные';
@@ -565,6 +1093,20 @@ async function load(){
     fetching=false;return;
   }
   status=vals[0]||status;
+  controlEndpoint=validControlEndpoint(vals[20]);
+  $('publishServerConfig').disabled=!controlEndpoint;
+  $('ownerControlKey').disabled=!controlEndpoint;
+  $('ageOwnerKey').disabled=!controlEndpoint;
+  $('ownerResearchOneKey').disabled=!controlEndpoint;
+  $('ownerResearchTwoKey').disabled=!controlEndpoint;
+  if(!controlEndpoint)$('controlState').textContent=
+    'Защищённая отправка не включена. Можно подготовить серверную конфигурацию файлом.';
+  if(researchMeta&&vals[10]&&
+     researchMeta.cohortStart!==vals[10].cohortStart){
+    // A new research definition owns a NEW bank. Never reuse the old rows
+    // even during the 5-minute cache refresh interval.
+    bank['1']=[];researchServerBank=false;lastResearchBankRead=0;
+  }
   if(vals[10]&&vals[10].status==='observational'&&vals[10].settings &&
      Number.isFinite(vals[10].updated)&&now()-vals[10].updated<=7*60000){
     if(!researchMeta&&!researchServerBank)bank['1']=[];
@@ -577,12 +1119,15 @@ async function load(){
     $('r1Hours').value=s.r1Hours;$('r1HoursValue').textContent=s.r1Hours+' часов';
     $('r1Activity').value=s.r1Activity;$('r1ActivityValue').textContent=s.r1Activity+'%';
     $('r1Idle').value=s.r1Idle;$('r1IdleValue').textContent=s.r1Idle+' минут';
-    for(const id of ['r1Hours','r1Activity','r1Idle','applyR1'])$(id).disabled=true;
+    for(const id of ['r1Hours','r1Activity','r1Idle'])$(id).disabled=!controlEndpoint;
+    $('applyR1').disabled=true;
+    $('publishResearchOne').disabled=!controlEndpoint;
   }
   if(!vals[10]||vals[10].status!=='observational'||!Number.isFinite(vals[10].updated)||now()-vals[10].updated>7*60000){
     researchMeta=null;researchServerBank=false;bank['1']=[];
   }
-  if(researchMeta&&vals[11]&&Array.isArray(vals[11].coins)&&vals[11].counts){
+  if(researchMeta&&vals[11]&&vals[11].epochStart===researchMeta.cohortStart&&
+     Array.isArray(vals[11].coins)&&vals[11].counts){
     const sourceRows=vals[11].coins.filter(function(x){
       return x.mint&&Number.isFinite(x.activePct)&&Number.isFinite(x.maxIdleObserved)&&x.features;
     });
@@ -593,8 +1138,69 @@ async function load(){
     researchServerBank=true;
     lastResearchBankRead=now();
   }
+  // Server records are authoritative only while their own heartbeat is fresh.
+  passMeta=vals[12]&&Number.isFinite(vals[12].updated)&&
+    now()-vals[12].updated<7*60000&&
+    ['server-observational','disabled-no-server-rules'].includes(vals[12].status)&&
+    vals[12].serverOnly===true?vals[12]:null;
+  serverPassActive=!!passMeta;
+  if(serverPassActive){
+    const verified=new Map();
+    for(const source of [vals[15],vals[14],vals[13]]){
+      for(const p of source&&source.coins||[]){
+        if(p&&typeof p.mint==='string'&&Number.isSafeInteger(p.acceptedAt)&&
+           Number.isSafeInteger(p.firstSeenAt)&&Number.isSafeInteger(p.zeroAt)&&
+           ['before','after'].includes(p.phase)&&Array.isArray(p.matches))
+          verified.set(p.mint,p);
+      }
+    }
+    serverPassRows=[...verified.values()].sort(function(a,b){return b.firstSeenAt-a.firstSeenAt});
+  }else serverPassRows=[];
+  if(twoMeta&&vals[16]&&twoMeta.cohortStart!==vals[16].cohortStart){
+    serverR2Rows=[];serverR2Curve=null;bank['2']=[];lastSecondBankRead=0;
+  }
+  twoMeta=vals[16]&&vals[16].status==='observational'&&
+    vals[16].origin==='server-verified-passed-only'&&
+    Number.isFinite(vals[16].updated)&&now()-vals[16].updated<7*60000?vals[16]:null;
+  serverR2Active=!!twoMeta;
+  if(serverR2Active){
+    s.r2Strong=twoMeta.settings.minAbove;
+    $('r2Strong').value=s.r2Strong;$('r2StrongValue').textContent=s.r2Strong+'%';
+    $('r2Strong').disabled=!controlEndpoint;$('applyR2').disabled=true;
+    $('publishResearchTwo').disabled=!controlEndpoint;
+    if(vals[17]&&vals[17].epochStart===twoMeta.cohortStart&&Array.isArray(vals[17].coins)){
+      serverR2Rows=vals[17].coins.filter(function(row){
+        return row&&typeof row.mint==='string'&&['strong','weak'].includes(row.label)&&
+          Number.isFinite(row.pctAbove)&&row.features;
+      });
+      bank['2']=serverR2Rows.map(function(row){
+        return {mint:row.mint,t:row.zeroAt,above:row.pctAbove,
+          phase:row.phase,label:row.label,features:row.features}
+      });
+      lastSecondBankRead=now();
+    }else if(!lastSecondBankRead||now()-lastSecondBankRead>=300000){
+      serverR2Rows=[];bank['2']=[];
+    }
+  }else{
+    serverR2Rows=[];serverR2Curve=null;bank['2']=[];lastSecondBankRead=0;
+    $('r2Strong').disabled=false;$('applyR2').disabled=false;
+    $('publishResearchTwo').disabled=true;
+  }
+  serverR2Curve=serverR2Active&&vals[21]&&vals[21].epochStart===twoMeta.cohortStart&&
+    vals[21].origin==='server-verified-passed-only'&&vals[21].curves&&
+    Number.isFinite(vals[21].updated)&&now()-vals[21].updated<45*60000?
+    vals[21].curves:null;
+  autoOne=researchMeta&&vals[18]&&vals[18].epochStart===researchMeta.cohortStart&&
+    Number.isFinite(vals[18].updated)&&
+    now()-vals[18].updated<40*60000?vals[18]:null;
+  autoTwo=twoMeta&&vals[19]&&vals[19].epochStart===twoMeta.cohortStart&&
+    Number.isFinite(vals[19].updated)&&
+    now()-vals[19].updated<40*60000?vals[19]:null;
+  filterAuditMeta=vals[22]&&vals[22].origin==='server-observational-analytics'&&
+    Number.isFinite(vals[22].updated)&&now()-vals[22].updated<40*60000?vals[22]:null;
   sourceActive=false;sourceMeta=null;sourceRecords=[];
   $('ageBefore').disabled=true;$('ageAfter').disabled=true;
+  $('publishSourceAge').disabled=true;
   if(vals[6]&&['verified-post-only','verified-pre-post'].includes(vals[6].mode)&&
      vals[6].settings&&Number.isFinite(vals[6].updated)&&now()-vals[6].updated<=7*60000 &&
      [vals[6].settings.beforeMinutes,vals[6].settings.afterMinutes].every(function(v){
@@ -609,10 +1215,12 @@ async function load(){
     s.ageBefore=sourceMeta.settings.beforeMinutes;
     s.ageAfter=sourceMeta.settings.afterMinutes;
     $('ageBefore').value=s.ageBefore;$('ageAfter').value=s.ageAfter;
-    $('ageBefore').disabled=true;$('ageAfter').disabled=true;
-    $('ageBefore').title='Возрастные фильтры сейчас устанавливаются на сервере';
-    $('ageAfter').title='Возрастные фильтры сейчас устанавливаются на сервере';
+    $('ageBefore').disabled=!controlEndpoint;$('ageAfter').disabled=!controlEndpoint;
+    $('publishSourceAge').disabled=!controlEndpoint;
+    $('ageBefore').title=controlEndpoint?'Изменяется только по ключу владельца':'Управление возрастом ещё не подключено';
+    $('ageAfter').title=$('ageBefore').title;
   }
+  if(!sourceActive){serverPassActive=false;serverPassRows=[];}
   var by=new Map();
   for(var dayObj of [vals[2],vals[1]])for(var c of dayObj&&dayObj.coins||[]){
     if(mint(c))by.set(mint(c),Object.assign({},by.get(mint(c))||{},c));
@@ -652,6 +1260,12 @@ function init(){
   $('decisionValue').textContent=s.decision+' мин';$('decisionCurrent').textContent=s.decision+' мин';$('r1HoursValue').textContent=s.r1Hours+' часов';
   $('r1ActivityValue').textContent=s.r1Activity+'%';$('r1IdleValue').textContent=s.r1Idle+' минут';
   $('r2StrongValue').textContent=s.r2Strong+'%';$('r2Step').value=s.r2Step;
+  // Previously saved phone-side studies are not verified server polygons.
+  bank['1']=[];bank['2']=[];
+  $('passedDay').innerHTML=Array.from({length:14},function(_,i){
+    const d=day(now()-i*864e5);
+    return '<option value="'+d+'">'+d+'</option>';
+  }).join('');
   document.querySelectorAll('#tabs [data-page]').forEach(function(x){x.classList.toggle('active',x.dataset.page===s.tab)});
   document.querySelectorAll('.page').forEach(function(x){x.hidden=x.id!=='p-'+s.tab});
   document.querySelectorAll('#allStreams [data-stream]').forEach(function(x){x.classList.toggle('active',x.dataset.stream===s.stream)});
