@@ -482,7 +482,8 @@ function renderR2(){
   var out=[];
   for(var m=0;m<=300;m+=s.r2Step){
     var found=r.curve.find(function(p){return p.min===m});
-    if(!found&&m%5!==0){var nearest=r.curve.filter(function(p){return p.min<=m}).at(-1);found=nearest?{min:m,pct:nearest.pct,n:nearest.n}:null}
+    // A 1-minute row must have real minute evidence; never copy a 5m
+    // observation forward and present it as independently measured.
     out.push({m:m,p:found});
   }
   var pages=Math.max(1,Math.ceil(out.length/8));
