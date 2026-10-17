@@ -5,10 +5,14 @@
 const http=require('node:http');
 const crypto=require('node:crypto');
 const {configOf}=require('./pass-runtime');
+const {settings:settingsOne}=require('./research-runtime');
+const {configOf:settingsTwo}=require('./research-two-runtime');
 
 const BUCKET=process.env.SOLSCAN_BUCKET||'sol-scan-511718-data';
 const OBJECT='config/pass-filters.json';
 const AGE_OBJECT='config/source-age.json';
+const ONE_OBJECT='config/research-one.json';
+const TWO_OBJECT='config/research-two.json';
 const ORIGIN=process.env.SOLSCAN_CONTROL_ORIGIN||'https://bakit97.github.io';
 const SHA256=process.env.SOLSCAN_CONTROL_SHA256||'';
 const MAX_BYTES=48*1024;
@@ -54,7 +58,9 @@ async function readBody(req,which){
   let data;
   try{data=JSON.parse(Buffer.concat(chunks).toString('utf8'))}
   catch{throw Object.assign(Error('Invalid JSON'),{http:400})}
-  try{return which===AGE_OBJECT?validAges(data):configOf(data)}
+  try{return which===AGE_OBJECT?validAges(data):
+    which===ONE_OBJECT?settingsOne(data):
+    which===TWO_OBJECT?settingsTwo(data):configOf(data)}
   catch{throw Object.assign(Error('Invalid or unsafe owner settings'),{http:422})}
 }
 async function cloudToken(){
@@ -110,7 +116,9 @@ function handler(req,res){
   if(req.url==='/health'&&req.method==='GET')
     return reply(res,200,{status:'running',service:'solscan-owner-control'});
   const objectName=req.url==='/api/filter-config'?OBJECT:
-    req.url==='/api/source-age'?AGE_OBJECT:null;
+    req.url==='/api/source-age'?AGE_OBJECT:
+    req.url==='/api/research-one'?ONE_OBJECT:
+    req.url==='/api/research-two'?TWO_OBJECT:null;
   if(!objectName||!['GET','POST'].includes(req.method))
     return reply(res,404,{error:'not-found'});
   // This endpoint changes the background server's behavior. Only an
