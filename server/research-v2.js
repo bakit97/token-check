@@ -41,7 +41,7 @@ function featuresAt(coin,decisionAt){
     .sort((a,b)=>a[0]-b[0]);
   const g=latestBefore(gx,decisionAt,7*MIN,x=>x[0]*1000);
   const bx=[coin?.preObs?.bx,coin?.bx]
-    .filter(x=>x&&Number.isFinite(x.at)&&x.at<=decisionAt&&x.cov).sort((a,b)=>a.at-b.at).at(-1);
+    .filter(x=>x&&Number.isFinite(x.at)&&x.at<=decisionAt&&decisionAt-x.at<=7*MIN&&x.cov).sort((a,b)=>a.at-b.at).at(-1);
   const buys=d?.buys??null,sells=d?.sells??null;
   const ratio=buys!=null&&sells!=null?sells>0?buys/sells:buys:null;
   function finite(v){return typeof v==='number'&&Number.isFinite(v)?v:null}
