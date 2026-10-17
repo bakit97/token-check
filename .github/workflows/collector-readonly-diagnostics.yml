@@ -1,0 +1,48 @@
+name: collector-readonly-diagnostics
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/collector-readonly-diagnostics.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/421351476653/locations/global/workloadIdentityPools/github/providers/github
+          service_account: helper-ai@sol-scan-511718.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Read object generations, heartbeat and V2 public status
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '--- code generation on GCS ---'
+          gcloud storage objects describe gs://sol-scan-511718-data/code/collector.js \
+            --format='value(generation)'
+          echo '--- current public telemetry ---'
+          for name in status.json source/status.json research-v2/status.json passed-v2/status.json research-v2/status-two.json; do
+            echo "$name"
+            url="https://storage.googleapis.com/sol-scan-511718-data/$name?debug=$(date +%s%N)"
+            data=$(curl -fsS --max-time 20 "$url") || { echo 'UNAVAILABLE'; continue; }
+            case "$name" in
+              status.json)
+                jq -c '{updated,version,startedAt,source:{active:.source.active,error:(.source.error|if . then "set" else null end)},researchV2:{active:.researchV2.active,error:(.researchV2.error|if . then "set" else null end)},passedV2:{active:.passedV2.active,error:(.passedV2.error|if . then "set" else null end)},researchTwo:{active:.researchTwo.active,error:(.researchTwo.error|if . then "set" else null end)}}' <<< "$data" ;;
+              source/status.json)
+                jq -c '{updated,mode,preConnected,total,today}' <<< "$data" ;;
+              research-v2/status.json)
+                jq -c '{updated,status,counts,pending}' <<< "$data" ;;
+              passed-v2/status.json)
+                jq -c '{updated,status,enabled,storedLast72h,active}' <<< "$data" ;;
+              research-v2/status-two.json)
+                jq -c '{updated,status,origin,counts,pending}' <<< "$data" ;;
+            esac
+          done
+          echo '--- VM metadata read access ---'
+          gcloud compute instances list --project sol-scan-511718 --format='table(name,zone,status)' || true
