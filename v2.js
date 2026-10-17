@@ -902,9 +902,43 @@ async function loadPassedArchiveDay(){
     button.disabled=false;
   }
 }
+function stageAutoRule(e){
+  const btn=e.target.closest('[data-stage-auto]');
+  if(!btn)return;
+  const id=btn.dataset.stageAuto.split(':'),level=id[0],index=Number(id[1]);
+  const report=level==='1'?autoOne:level==='2'?autoTwo:null;
+  const item=report?.rules?.[index],rule=item?.rule;
+  if(!rule||!['buyers','trades','volume','liq','mc','buys','sells','buySellRatio'].includes(rule.key)||
+     !['>=','<='].includes(rule.op)||!Number.isFinite(rule.value)||rule.value<0){
+    note('Некорректное условие исследования');return;
+  }
+  s.level=level;s.tab='library';save();
+  document.querySelectorAll('#tabs [data-page]').forEach(function(x){
+    x.classList.toggle('active',x.dataset.page==='library');
+  });
+  document.querySelectorAll('.page').forEach(function(x){
+    x.hidden=x.id!=='p-library';
+  });
+  document.querySelectorAll('#levels [data-level]').forEach(function(x){
+    x.classList.toggle('active',x.dataset.level===level);
+  });
+  renderLibrary();
+  openEditor(null);
+  const titles={buyers:'Покупатели',trades:'Сделки',volume:'Объём',
+    liq:'Ликвидность',mc:'Капитализация',buys:'Покупки',sells:'Продажи',
+    buySellRatio:'Покупки/продажи'};
+  $('filterName').value=(titles[rule.key]||rule.key)+' '+rule.op+' '+fmt(rule.value);
+  $('filterKey').value=rule.key;
+  $('filterOp').value=rule.op;
+  $('filterValue').value=rule.value;
+  $('editorNote').textContent='Черновик из автоматического исследования. Проверь и нажми «Сохранить». Не включает модуль и не меняет сервер.';
+  note('Предложение скопировано в редактор. Подтверди сохранение вручную.');
+}
 function bind(){
   $('exportServerConfig').addEventListener('click',exportServerConfig);
   $('loadPassedDay').addEventListener('click',loadPassedArchiveDay);
+  $('r1Suggestions').addEventListener('click',stageAutoRule);
+  $('r2Suggestions').addEventListener('click',stageAutoRule);
   $('publishServerConfig').addEventListener('click',publishServerConfig);
   $('publishSourceAge').addEventListener('click',publishSourceAge);
   $('publishResearchOne').addEventListener('click',function(){publishResearchLevel('1')});
