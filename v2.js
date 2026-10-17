@@ -596,6 +596,49 @@ function validControlEndpoint(value){
       u.origin:null;
   }catch(e){return null}
 }
+async function publishSourceAge(){
+  if(!controlEndpoint||!sourceActive){
+    note('Нет защищённого сервера управления или главного источника');return;
+  }
+  if(!$('confirmAgePublish').checked){
+    note('Подтверди изменение двух возрастных фильтров');return;
+  }
+  const cfg={schema:1,beforeMinutes:Number($('ageBefore').value),
+    afterMinutes:Number($('ageAfter').value)};
+  if(![cfg.beforeMinutes,cfg.afterMinutes].every(function(v){
+    return Number.isInteger(v)&&v>=1&&v<=10;
+  })){
+    note('Возраст до и после миграции должен быть от 1 до 10 минут');return;
+  }
+  const key=$('ageOwnerKey').value.trim();
+  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
+    note('Для изменения порога нужен отдельный ключ владельца');return;
+  }
+  const button=$('publishSourceAge');
+  button.disabled=true;
+  $('sourceAgeControlState').textContent='Отправка новых возрастных порогов…';
+  const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
+  try{
+    const r=await fetch(controlEndpoint+'/api/source-age',{
+      method:'POST',cache:'no-store',signal:abort.signal,
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify(cfg)
+    });
+    if(!r.ok){
+      $('sourceAgeControlState').textContent='Сервер отклонил изменение: HTTP '+r.status;
+      note(r.status===401?'Ключ владельца не принят':'Ошибка изменения возраста: '+r.status);
+      return;
+    }
+    $('ageOwnerKey').value='';$('confirmAgePublish').checked=false;
+    $('sourceAgeControlState').textContent='Пороги получены сервером управления. Ждём подтверждения новых значений главным источником.';
+    note('Серверные пороги обновляются только для новых входящих событий.');
+  }catch(e){
+    $('sourceAgeControlState').textContent='Ошибка связи: '+String(e.message||e);
+  }finally{
+    clearTimeout(timer);
+    button.disabled=!controlEndpoint||!sourceActive;
+  }
+}
 async function publishServerConfig(){
   if(!controlEndpoint){note('Защищённый сервер управления ещё не подключён');return}
   if(!$('confirmControlPublish').checked){
@@ -635,6 +678,7 @@ async function publishServerConfig(){
 function bind(){
   $('exportServerConfig').addEventListener('click',exportServerConfig);
   $('publishServerConfig').addEventListener('click',publishServerConfig);
+  $('publishSourceAge').addEventListener('click',publishSourceAge);
   $('tabs').addEventListener('click',function(e){
     var b=e.target.closest('button[data-page]');if(!b)return;
     s.tab=b.dataset.page;
@@ -775,6 +819,7 @@ async function load(){
   controlEndpoint=validControlEndpoint(vals[20]);
   $('publishServerConfig').disabled=!controlEndpoint;
   $('ownerControlKey').disabled=!controlEndpoint;
+  $('ageOwnerKey').disabled=!controlEndpoint;
   if(!controlEndpoint)$('controlState').textContent=
     'Защищённая отправка не включена. Можно подготовить серверную конфигурацию файлом.';
   if(vals[10]&&vals[10].status==='observational'&&vals[10].settings &&
@@ -857,6 +902,7 @@ async function load(){
     now()-vals[19].updated<40*60000?vals[19]:null;
   sourceActive=false;sourceMeta=null;sourceRecords=[];
   $('ageBefore').disabled=true;$('ageAfter').disabled=true;
+  $('publishSourceAge').disabled=true;
   if(vals[6]&&['verified-post-only','verified-pre-post'].includes(vals[6].mode)&&
      vals[6].settings&&Number.isFinite(vals[6].updated)&&now()-vals[6].updated<=7*60000 &&
      [vals[6].settings.beforeMinutes,vals[6].settings.afterMinutes].every(function(v){
@@ -871,9 +917,10 @@ async function load(){
     s.ageBefore=sourceMeta.settings.beforeMinutes;
     s.ageAfter=sourceMeta.settings.afterMinutes;
     $('ageBefore').value=s.ageBefore;$('ageAfter').value=s.ageAfter;
-    $('ageBefore').disabled=true;$('ageAfter').disabled=true;
-    $('ageBefore').title='Возрастные фильтры сейчас устанавливаются на сервере';
-    $('ageAfter').title='Возрастные фильтры сейчас устанавливаются на сервере';
+    $('ageBefore').disabled=!controlEndpoint;$('ageAfter').disabled=!controlEndpoint;
+    $('publishSourceAge').disabled=!controlEndpoint;
+    $('ageBefore').title=controlEndpoint?'Изменяется только по ключу владельца':'Управление возрастом ещё не подключено';
+    $('ageAfter').title=$('ageBefore').title;
   }
   if(!sourceActive){serverPassActive=false;serverPassRows=[];}
   var by=new Map();
