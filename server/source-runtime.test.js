@@ -37,9 +37,9 @@ test('Попала до — не появляется после; путь фи�
  const src=new SourceRuntime({dir:ephemeral(t)});
  assert.equal(src.before({mint:A,publicTradingAt:stamp-500,observedAt:stamp,verified:true}).admitted,true);
  assert.equal(src.afterVerifiedMigration(migrated(A,stamp-5000,stamp)).reason,'already-admitted');
- assert.equal(src.path({predicate:()=>false}).length,0);
- assert.equal(src.path({phase:'before'}).length,1);
- assert.equal(src.path({phase:'after'}).length,0);
+ assert.equal(src.path({predicate:()=>false,at:stamp+1000}).length,0);
+ assert.equal(src.path({phase:'before',at:stamp+1000}).length,1);
+ assert.equal(src.path({phase:'after',at:stamp+1000}).length,0);
  assert.equal(src.records.size,1);
 });
 test('Настоящее доказательство пула + подпись обязательны',t=>{
