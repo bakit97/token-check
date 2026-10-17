@@ -423,6 +423,24 @@ function researchTwoDataset(){
 function renderR2(){
   if($('r2Suggestions'))$('r2Suggestions').innerHTML=renderAutoSuggestions(autoTwo);
   var r=researchTwoDataset();
+  if($('r2Matched')){
+    if(!serverR2Active)$('r2Matched').textContent=
+      '⚠ Предварительный режим. Подтверждённых совпадений 2-го уровня с сервера пока нет.';
+    else{
+      const matches=serverR2Rows.filter(function(x){
+        return x.phase===s.r2Stream&&Array.isArray(x.secondLevelMatches)&&x.secondLevelMatches.length;
+      });
+      $('r2Matched').innerHTML='<p class="muted">Совпало после завершённого наблюдения: '+
+        fmt(matches.length)+' монет. Нет подходящих данных — не засчитываем.</p>'+
+        matches.slice(0,15).map(function(x){
+          return '<div class="filter-row"><b class="mono">'+esc(x.mint.slice(0,14))+'…</b>'+
+            '<span class="badge '+(x.label==='strong'?'good':'bad')+'">'+
+            (x.label==='strong'?'Сильная':'Слабая')+'</span><p class="muted">'+
+            x.secondLevelMatches.map(function(f){return esc(f.name)+' · v'+esc(f.version)}).join(' · ')+
+            '</p></div>';
+        }).join('');
+    }
+  }
   $('r2Graph').innerHTML=lineGraph(r.curve.length>1?r.curve:[]);
   $('r2Stats').textContent=(r.fromServer?'✓ Серверные наблюдения. ':'⚠ Предварительный режим телефона. ')+
     'Размечено: 🟢 сильных '+r.strong+' · 🔴 слабых '+r.weak+' · ожидание/пробелы '+r.pending+'.';
