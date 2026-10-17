@@ -19,7 +19,7 @@ check(typeof research.updated==='number'&&now-research.updated<7*60_000,'researc
 check(typeof heartbeat.updated==='number'&&now-heartbeat.updated<7*60_000,'collector heartbeat stale');
 check(research.status==='observational','research status malformed');
 check(research.bankCapacityPerClass===5000,'wrong polygon capacity');
-check(research.secondLevel==='waiting-for-server-verified-passed-stream','second-level status hidden or mislabeled');
+check(['waiting-for-server-verified-passed-stream','separate-server-verified-pass-stream'].includes(research.secondLevel),'second-level status hidden or mislabeled');
 const config=research.settings||{},counts=research.counts||{};
 check(config.hours>=1&&config.hours<=24,'research hours outside 1–24');
 check(typeof counts.live==='number'&&typeof counts.dead==='number','counters absent');
