@@ -230,7 +230,7 @@ const C=new Map();const FV=2; // версия формата наблюдени�
 // Авторитетный «Все»: отдельный read-only журнал допуска, не зависит от телефона.
 let SOURCE=null, SOURCE_ERR='', SOURCE_CFG_ERR='', PRE=null;
 let RESEARCH_V2=null, RESEARCH_V2_ERR='', RESEARCH_BANK_UPLOADED=0;
-let PASS_V2=null, RESEARCH_TWO=null, AUTO_V2=null;
+let PASS_V2=null, RESEARCH_TWO=null, AUTO_V2=null, FILTER_AUDIT=null;
 let RESEARCH_ONE_EPOCH=null, RESEARCH_TWO_EPOCH=null, RESEARCH_CONFIG_ERR='';
 let PASS_ERR='', TWO_ERR='', PASS_CFG_ERR='', TWO_BANK_UPLOADED=0, AUTO_UPLOADED=0;
 async function admitVerifiedPublicLaunch(launch,record) {
@@ -322,7 +322,7 @@ async function initResearchV2() {
   log('исследование v2 готово, накоплено',RESEARCH_V2.rows.length);
 }
 async function initPathsV2(){
-  const names=['pass-runtime.js','research-two-runtime.js','auto-research-v2.js'];
+  const names=['pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js'];
   const auth=await token();
   for(const name of names){
     const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+
@@ -349,6 +349,7 @@ async function initPathsV2(){
     bankName:'research-v2-bank-two-'+two.hash+'-'+two.activeAt+'.json'
   });
   AUTO_V2=require(DIR+'/auto-research-v2.js');
+  FILTER_AUDIT=new (require(DIR+'/filter-audit.js').FilterAudit)({dir:DIR});
   PASS_ERR='';TWO_ERR='';PASS_CFG_ERR='';
   log('серверные пути готовы: Прошли',PASS_V2.records.size,
     'Уровень 2',RESEARCH_TWO.rows.length,'включено',PASS_V2.config.enabled);
@@ -725,6 +726,13 @@ async function exportPathsV2(now){
     const two=AUTO_V2.discover(levelTwo,{level:'2'});
     await upload('research-v2/auto-1.json',{updated:now,...one});
     await upload('research-v2/auto-2.json',{updated:now,...two});
+    if(FILTER_AUDIT){
+      const audit=FILTER_AUDIT.report({
+        config:PASS_V2.config,one:levelOne,two:levelTwo,
+        oneHours:RESEARCH_V2.config.hours,now
+      });
+      await upload('research-v2/filter-audit.json',audit);
+    }
     AUTO_UPLOADED=now;
   }
 }
