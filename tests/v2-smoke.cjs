@@ -100,5 +100,5 @@ test('главный источник authoritative: только принято
   assert.match(el('coinList').innerHTML,/Допущена/);
   assert.doesNotMatch(el('coinList').innerHTML,/Не допущена/);
   assert.equal(el('ageAfter').disabled,true,'браузер не должен притворяться серверной настройкой');
-  assert.match(el('sourceNote').textContent,/журнал сервера/);
+  assert.match(el('sourceNote').textContent,/Источник до миграции|журнал сервера/);
 });

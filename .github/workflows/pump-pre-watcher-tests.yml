@@ -1,0 +1,32 @@
+name: pump-pre-watcher-tests
+on:
+  pull_request:
+    paths:
+      - 'server/pump-pre.js'
+      - 'server/pre-watcher.js'
+      - 'server/pump-pre.test.js'
+      - 'server/pre-watcher.test.js'
+      - 'server/collector.js'
+      - '.github/workflows/deploy-server.yml'
+      - '.github/workflows/pump-pre-watcher-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'server/pump-pre.js'
+      - 'server/pre-watcher.js'
+      - 'server/pump-pre.test.js'
+      - 'server/pre-watcher.test.js'
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Node syntax
+        run: node --check server/pump-pre.js && node --check server/pre-watcher.js && node --check server/collector.js
+      - name: Unit tests
+        run: node --test server/admission.test.js server/source-runtime.test.js server/pump-pre.test.js server/pre-watcher.test.js tests/source-collector-smoke.cjs

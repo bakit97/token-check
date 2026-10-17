@@ -217,7 +217,7 @@ function renderAll(){
   $('admitCount').textContent=fmt(count);$('visibleCount').textContent=fmt(lastVisible.length);
   $('todayTab').textContent=count?' '+fmt(count):'';
   $('sourceNote').textContent=sourceActive?
-    '✓ Главный источник: журнал сервера, подтверждённые миграции, без дублей. Источник до миграции ещё не подключён. Возраст проверяется при ДОПУСКЕ, а не при скрытии карточки.':
+    (sourceMeta?.preConnected?'✓ Главный источник: журнал сервера. До миграции — публичные торговые кривые Pump.fun; после — подтверждённые миграции. Дублей нет.':'⚠ Источник до миграции пока не подтвердил связь с сетью. Постмиграционные события продолжают проверяться.')+' Возраст проверяется при ВХОДЕ, карточка не исчезает через 2 минуты.':
     '⚠ Рабочий журнал источника пока не доступен. Список ниже — ПРЕДВАРИТЕЛЬНОЕ отображение старых данных, а не подтверждённый новый главный источник.';
   var list=lastVisible.slice(0,s.limit);
   $('coinList').innerHTML=list.length?list.map(function(c){return coinHtml(c)}).join(''):'<div class="empty-state">Пока нет подтверждённых записей в этом потоке. Монеты, не успевшие пройти фильтр возраста на входе, не добавляются позже задним числом.</div>';
@@ -500,7 +500,7 @@ async function load(){
     $('net').textContent='● Ожидание';$('net').className='live bad';fetching=false;return;
   }
   status=vals[0]||status;
-  if(vals[6]&&vals[6].mode==='verified-post-only'&&vals[6].settings) {
+  if(vals[6]&&['verified-post-only','verified-pre-post'].includes(vals[6].mode)&&vals[6].settings) {
     sourceActive=true;sourceMeta=vals[6];
     var unique=new Map();
     for(var item of (vals[8]?.coins||[]).concat(vals[7]?.coins||[],vals[9]?.coins||[])) {
@@ -534,7 +534,7 @@ async function load(){
   var connected=age!=null&&age<=8;
   $('net').textContent=connected?'● LIVE':'● '+(age==null?'Данные':'Задержка '+Math.max(0,age)+' мин');
   $('net').className='live '+(connected?'good':'warn');
-  $('dataState').textContent='Сервер: '+(updated?time(updated):'—')+' (Казахстан) · '+(sourceActive?'главный источник '+fmt(sourceRecords.length)+' записей, сегодня '+fmt(sourceMeta.today):'устаревший поток '+fmt(dataset.length)+' записей')+' · обновление каждые 45 секунд.';
+  $('dataState').textContent='Сервер: '+(updated?time(updated):'—')+' (Казахстан) · '+(sourceActive?'главный источник '+fmt(sourceRecords.length)+' записей, сегодня '+fmt(sourceMeta.today)+' (до '+fmt(sourceMeta.todayBefore)+', после '+fmt(sourceMeta.todayAfter)+')':'устаревший поток '+fmt(dataset.length)+' записей')+' · обновление каждые 45 секунд.';
   refresh();fetching=false;
 }
 function init(){
