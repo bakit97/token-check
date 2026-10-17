@@ -3,7 +3,7 @@
 // Price is observational; incomplete periods have no strong/weak label.
 const fs=require('node:fs');
 const path=require('node:path');
-const {strengthOutcome,capBank}=require('./research-v2');
+const {strengthOutcome,capBank,evaluation}=require('./research-v2');
 
 const MIN=60000,HOUR=60*MIN,FRESH=48*HOUR,RETRY=15*MIN;
 const MAX_PER_CLASS=5000,MAX_CHECKS=200;
@@ -85,13 +85,23 @@ class ResearchTwoRuntime {
         continue;
       }
       this.retry.delete(pass.mint);
+      // Level-two modules are applied ONLY to a completed, verified
+      // Passed cohort. They cannot manufacture a fresh first-level signal.
+      const settings=passes.config,available=new Map(
+        (settings?.filters||[]).filter(f=>f.level==='2').map(f=>[f.id,f]));
+      const secondLevelMatches=(settings?.modules||[])
+        .filter(m=>m.enabled&&m.level==='2'&&m.phase===pass.phase)
+        .map(m=>available.get(m.filterId)).filter(Boolean)
+        .filter(f=>evaluation(pass.features,f)==='pass')
+        .map(f=>({...f}));
       this.rows.push({
         mint:pass.mint,phase:pass.phase,acceptedAt:pass.acceptedAt,
         firstSeenAt:pass.firstSeenAt,zeroAt:pass.zeroAt,
         configHash:pass.configHash,sourceFilterVersions:pass.matches.map(f=>({
           id:f.id,version:f.version,level:f.level
         })),
-        label:result.label,pctAbove:result.pctAbove,covered:result.covered,
+        label:result.label,secondLevelMatches,
+        pctAbove:result.pctAbove,covered:result.covered,
         p0:result.p0,curve:result.curve,features:{...pass.features},
         threshold:this.config.minAbove,coverageThreshold:this.config.minCoverage,
         time:pass.zeroAt
