@@ -25,6 +25,8 @@ var bank=Object.assign({'1':[],'2':[]},loadLocal(BANK,{'1':[],'2':[]}));
 for(var lv of ['1','2'])if(!Array.isArray(bank[lv]))bank[lv]=[];
 var dataset=[],status=null,dataErr='',loadedAt=0,picker=null,editorId=null,lastPassed=[],lastR1=[],lastR2=[],lastAccepted=[],lastVisible=[],testHtml='',lastBankWrite=0,lastResearchBankRead=0,researchMeta=null,researchServerBank=false,fetching=false,sourceActive=false,sourceMeta=null,sourceRecords=[];
 var serverPassActive=false,serverPassRows=[],passMeta=null,serverR2Active=false,serverR2Rows=[],twoMeta=null,autoOne=null,autoTwo=null,lastSecondBankRead=0;
+var moduleDraft=new Map();
+function draftModuleKey(m){return m.phase+':'+m.level+':'+m.filterId}
 var phaseNames={before:'🌱 До миграции',after:'🎓 После миграции'};
 function save(){try{localStorage.setItem(STORE,JSON.stringify(s))}catch(e){note('Не удалось сохранить настройки на устройстве')}}
 function saveSignals(){try{localStorage.setItem(PASS_LOG,JSON.stringify(signalLog))}catch(e){note('История сигналов не сохранилась на телефоне')}}
@@ -271,12 +273,18 @@ function renderModules(){
       if(!modules.length)html+='<p class="muted small">Нет модулей</p>';
       for(var m of modules){
         var f=s.filters.find(function(x){return x.id===m.filterId});
-        html+='<div class="module"><input type="checkbox" data-toggle="'+esc(m.filterId)+'" data-phase="'+phase+'" '+(m.enabled?'checked':'')+' aria-label="Включить модуль"><span>'+esc(f.name)+'</span><button data-remove="'+esc(m.filterId)+'" data-phase="'+phase+'" aria-label="Удалить модуль">×</button></div>';
+        var key=draftModuleKey(m),state=moduleDraft.has(key)?moduleDraft.get(key):m.enabled;
+        html+='<div class="module"><input type="checkbox" data-toggle="'+esc(m.filterId)+'" data-phase="'+phase+'" '+(state?'checked':'')+' aria-label="Изменить модуль (потребуется применение)"><span>'+esc(f.name)+'</span><button data-remove="'+esc(m.filterId)+'" data-phase="'+phase+'" aria-label="Удалить модуль">×</button></div>';
       }
       html+='</div>';
     }
     html+='</div>';
   }
+  html+='<div class="card"><p class="hint">'+
+    (moduleDraft.size?'Есть несохранённые изменения: '+fmt(moduleDraft.size)+'.':'Изменения переключателей применяются только после подтверждения.')+
+    '</p><div class="action-bar"><button type="button" class="primary" data-apply-modules '+(!moduleDraft.size?'disabled':'')+
+    '>Применить изменения</button><button type="button" data-cancel-modules '+(!moduleDraft.size?'disabled':'')+
+    '>Отменить</button></div></div>';
   $('moduleGrid').innerHTML='<p class="hint">'+(serverPassActive?
     '⚠ Здесь локальные черновики модулей. Серверные активные правила имеют отдельную версию и не изменяются нажатием на телефоне.':
     '⚠ Модули сейчас действуют только на этом телефоне. Для фонового серверного режима требуется отдельная публикация настроек.')+
@@ -610,20 +618,38 @@ function bind(){
     $('closeCoin').addEventListener('click',function(){$('openCoinDetail').remove()});
   });
   $('moduleGrid').addEventListener('click',function(e){
+    if(e.target.closest('[data-apply-modules]')){
+      for(const m of s.modules)if(moduleDraft.has(draftModuleKey(m)))
+        m.enabled=moduleDraft.get(draftModuleKey(m));
+      moduleDraft.clear();save();refresh();note('Изменения модулей применены на этом телефоне');return;
+    }
+    if(e.target.closest('[data-cancel-modules]')){
+      moduleDraft.clear();renderModules();note('Неприменённые переключения отменены');return;
+    }
     var pick=e.target.closest('[data-pick-source]');if(pick){showPicker(pick.dataset.pickSource,pick.dataset.pickLevel);return}
     var remove=e.target.closest('[data-remove]');if(!remove)return;
+    if(!window.confirm('Удалить модуль из локальной схемы?'))return;
+    var target=s.modules.find(function(m){return m.filterId===remove.dataset.remove&&m.phase===remove.dataset.phase});
+    if(target)moduleDraft.delete(draftModuleKey(target));
     s.modules=s.modules.filter(function(x){return !(x.filterId===remove.dataset.remove&&x.phase===remove.dataset.phase)});
     save();refresh();
   });
   $('moduleGrid').addEventListener('change',function(e){
     if(!e.target.matches('[data-toggle]'))return;
     var m=s.modules.find(function(x){return x.filterId===e.target.dataset.toggle&&x.phase===e.target.dataset.phase});
-    if(m){m.enabled=e.target.checked;save();refresh()}
+    if(m){
+      const key=draftModuleKey(m);
+      if(e.target.checked===m.enabled)moduleDraft.delete(key);
+      else moduleDraft.set(key,e.target.checked);
+      renderModules();
+    }
   });
   $('pickerItems').addEventListener('click',function(e){
     var b=e.target.closest('[data-use]');if(!b||!picker)return;
-    s.modules.push({filterId:b.dataset.use,phase:picker.phase,level:picker.level,enabled:true});
+    var m={filterId:b.dataset.use,phase:picker.phase,level:picker.level,enabled:false};
+    s.modules.push(m);moduleDraft.set(draftModuleKey(m),true);
     $('filterPicker').hidden=true;picker=null;save();refresh();
+    note('Добавлен черновик модуля. Нажми «Применить изменения» для включения.');
   });
   $('pickerClose').addEventListener('click',function(){$('filterPicker').hidden=true;picker=null});
   $('decisionMins').addEventListener('input',function(){$('decisionValue').textContent=this.value+' мин'});
