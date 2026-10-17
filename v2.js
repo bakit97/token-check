@@ -596,6 +596,61 @@ function validControlEndpoint(value){
       u.origin:null;
   }catch(e){return null}
 }
+async function publishResearchLevel(level){
+  const one=level==='1',keyField=one?'ownerResearchOneKey':'ownerResearchTwoKey';
+  const checkField=one?'confirmResearchOne':'confirmResearchTwo';
+  const statusField=one?'researchOneControlState':'researchTwoControlState';
+  const buttonField=one?'publishResearchOne':'publishResearchTwo';
+  const endpoint=one?'/api/research-one':'/api/research-two';
+  const current=one?researchMeta:twoMeta;
+  if(!controlEndpoint||!current){note('Серверное исследование ещё недоступно');return}
+  if(!$(checkField).checked){note('Подтверди изменение серверного исследования');return}
+  const key=$(keyField).value.trim();
+  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
+    note('Требуется отдельный ключ владельца');return;
+  }
+  let cfg;
+  if(one){
+    cfg={hours:Number($('r1Hours').value),
+      decisionMinutes:researchMeta.settings.decisionMinutes,
+      minActive:Number($('r1Activity').value),
+      maxIdle:Number($('r1Idle').value),
+      minCoverage:researchMeta.settings.minCoverage};
+    if(!Number.isInteger(cfg.hours)||cfg.hours<1||cfg.hours>24||
+       !Number.isInteger(cfg.maxIdle)||cfg.maxIdle<5||cfg.maxIdle>1440||
+       !Number.isFinite(cfg.minActive)||cfg.minActive<0||cfg.minActive>100){
+      note('Неверные параметры первого исследования');return;
+    }
+  }else{
+    cfg={minAbove:Number($('r2Strong').value),
+      minCoverage:twoMeta.settings.minCoverage};
+    if(!Number.isFinite(cfg.minAbove)||cfg.minAbove<0||cfg.minAbove>100){
+      note('Неверный порог второго исследования');return;
+    }
+  }
+  $(buttonField).disabled=true;
+  $(statusField).textContent='Отправка серверной версии…';
+  const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
+  try{
+    const r=await fetch(controlEndpoint+endpoint,{
+      method:'POST',cache:'no-store',signal:abort.signal,
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify(cfg)
+    });
+    if(!r.ok){
+      $(statusField).textContent='Сервер отклонил изменения. HTTP '+r.status;
+      note(r.status===401?'Ключ владельца не принят':'Публикация не удалась: '+r.status);
+      return;
+    }
+    $(keyField).value='';$(checkField).checked=false;
+    $(statusField).textContent='Версия принята. Для неё сервер создаст отдельную группу наблюдений.';
+    note('Сервер переключится на новые правила без переписывания старой истории.');
+  }catch(e){
+    $(statusField).textContent='Ошибка связи: '+String(e.message||e);
+  }finally{
+    clearTimeout(timer);$(buttonField).disabled=!controlEndpoint||!current;
+  }
+}
 async function publishSourceAge(){
   if(!controlEndpoint||!sourceActive){
     note('Нет защищённого сервера управления или главного источника');return;
@@ -679,6 +734,8 @@ function bind(){
   $('exportServerConfig').addEventListener('click',exportServerConfig);
   $('publishServerConfig').addEventListener('click',publishServerConfig);
   $('publishSourceAge').addEventListener('click',publishSourceAge);
+  $('publishResearchOne').addEventListener('click',function(){publishResearchLevel('1')});
+  $('publishResearchTwo').addEventListener('click',function(){publishResearchLevel('2')});
   $('tabs').addEventListener('click',function(e){
     var b=e.target.closest('button[data-page]');if(!b)return;
     s.tab=b.dataset.page;
@@ -820,6 +877,8 @@ async function load(){
   $('publishServerConfig').disabled=!controlEndpoint;
   $('ownerControlKey').disabled=!controlEndpoint;
   $('ageOwnerKey').disabled=!controlEndpoint;
+  $('ownerResearchOneKey').disabled=!controlEndpoint;
+  $('ownerResearchTwoKey').disabled=!controlEndpoint;
   if(!controlEndpoint)$('controlState').textContent=
     'Защищённая отправка не включена. Можно подготовить серверную конфигурацию файлом.';
   if(vals[10]&&vals[10].status==='observational'&&vals[10].settings &&
@@ -834,7 +893,9 @@ async function load(){
     $('r1Hours').value=s.r1Hours;$('r1HoursValue').textContent=s.r1Hours+' часов';
     $('r1Activity').value=s.r1Activity;$('r1ActivityValue').textContent=s.r1Activity+'%';
     $('r1Idle').value=s.r1Idle;$('r1IdleValue').textContent=s.r1Idle+' минут';
-    for(const id of ['r1Hours','r1Activity','r1Idle','applyR1'])$(id).disabled=true;
+    for(const id of ['r1Hours','r1Activity','r1Idle'])$(id).disabled=!controlEndpoint;
+    $('applyR1').disabled=true;
+    $('publishResearchOne').disabled=!controlEndpoint;
   }
   if(!vals[10]||vals[10].status!=='observational'||!Number.isFinite(vals[10].updated)||now()-vals[10].updated>7*60000){
     researchMeta=null;researchServerBank=false;bank['1']=[];
@@ -874,7 +935,8 @@ async function load(){
   if(serverR2Active){
     s.r2Strong=twoMeta.settings.minAbove;
     $('r2Strong').value=s.r2Strong;$('r2StrongValue').textContent=s.r2Strong+'%';
-    $('r2Strong').disabled=true;$('applyR2').disabled=true;
+    $('r2Strong').disabled=!controlEndpoint;$('applyR2').disabled=true;
+    $('publishResearchTwo').disabled=!controlEndpoint;
     if(vals[17]&&Array.isArray(vals[17].coins)){
       serverR2Rows=vals[17].coins.filter(function(row){
         return row&&typeof row.mint==='string'&&['strong','weak'].includes(row.label)&&
@@ -891,6 +953,7 @@ async function load(){
   }else{
     serverR2Rows=[];serverR2Curve=null;bank['2']=[];lastSecondBankRead=0;
     $('r2Strong').disabled=false;$('applyR2').disabled=false;
+    $('publishResearchTwo').disabled=true;
   }
   serverR2Curve=serverR2Active&&vals[21]&&
     vals[21].origin==='server-verified-passed-only'&&vals[21].curves&&
