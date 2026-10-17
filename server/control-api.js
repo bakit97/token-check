@@ -8,16 +8,23 @@ const {configOf}=require('./pass-runtime');
 
 const BUCKET=process.env.SOLSCAN_BUCKET||'sol-scan-511718-data';
 const OBJECT='config/pass-filters.json';
+const AGE_OBJECT='config/source-age.json';
 const ORIGIN=process.env.SOLSCAN_CONTROL_ORIGIN||'https://bakit97.github.io';
 const SHA256=process.env.SOLSCAN_CONTROL_SHA256||'';
 const MAX_BYTES=48*1024;
 const MAX_PER_MINUTE=8;
 const strikes=new Map();
 const hash=s=>crypto.createHash('sha256').update(s).digest();
-const writePath='https://storage.googleapis.com/upload/storage/v1/b/'+encodeURIComponent(BUCKET)+
-  '/o?uploadType=media&name='+encodeURIComponent(OBJECT);
-const readPath='https://storage.googleapis.com/storage/v1/b/'+encodeURIComponent(BUCKET)+
-  '/o/'+encodeURIComponent(OBJECT);
+const storageWrite=name=>'https://storage.googleapis.com/upload/storage/v1/b/'+encodeURIComponent(BUCKET)+
+  '/o?uploadType=media&name='+encodeURIComponent(name);
+const storageRead=name=>'https://storage.googleapis.com/storage/v1/b/'+encodeURIComponent(BUCKET)+
+  '/o/'+encodeURIComponent(name);
+function validAges(c){
+  if(!c||c.schema!==1||!Number.isInteger(c.beforeMinutes)||!Number.isInteger(c.afterMinutes)||
+     c.beforeMinutes<1||c.beforeMinutes>10||c.afterMinutes<1||c.afterMinutes>10)
+    throw TypeError('Both admission ages must be integers 1–10');
+  return {schema:1,beforeMinutes:c.beforeMinutes,afterMinutes:c.afterMinutes};
+}
 
 function authorized(req){
   const m=/^Bearer ([A-Za-z0-9_-]{32,256})$/.exec(req.headers.authorization||'');
@@ -37,7 +44,7 @@ function reply(res,status,data){
     'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
   res.end(JSON.stringify(data));
 }
-async function readBody(req){
+async function readBody(req,which){
   const chunks=[];let size=0;
   for await (const chunk of req){
     size+=chunk.length;
@@ -47,8 +54,8 @@ async function readBody(req){
   let data;
   try{data=JSON.parse(Buffer.concat(chunks).toString('utf8'))}
   catch{throw Object.assign(Error('Invalid JSON'),{http:400})}
-  try{return configOf(data)}
-  catch{throw Object.assign(Error('Invalid or unsafe filter settings'),{http:422})}
+  try{return which===AGE_OBJECT?validAges(data):configOf(data)}
+  catch{throw Object.assign(Error('Invalid or unsafe owner settings'),{http:422})}
 }
 async function cloudToken(){
   const r=await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',{
@@ -57,16 +64,16 @@ async function cloudToken(){
   if(!r.ok)throw Error('Metadata token inaccessible');
   return (await r.json()).access_token;
 }
-async function storageGet(token){
-  const r=await fetch(readPath+'?alt=media',{
+async function storageGet(token,objectName){
+  const r=await fetch(storageRead(objectName)+'?alt=media',{
     headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(10000)
   });
   if(r.status===404)return null;
   if(!r.ok)throw Error('Reading GCS config failed: '+r.status);
   return r.json();
 }
-async function storageGeneration(token){
-  const r=await fetch(readPath+'?fields=generation',{
+async function storageGeneration(token,objectName){
+  const r=await fetch(storageRead(objectName)+'?fields=generation',{
     headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(10000)
   });
   if(r.status===404)return '0';
@@ -75,9 +82,9 @@ async function storageGeneration(token){
   if(!/^\d+$/.test(String(meta.generation)))throw Error('Invalid GCS generation');
   return String(meta.generation);
 }
-async function storagePut(token,config){
-  const generation=await storageGeneration(token);
-  const r=await fetch(writePath+'&ifGenerationMatch='+encodeURIComponent(generation),{
+async function storagePut(token,config,objectName){
+  const generation=await storageGeneration(token,objectName);
+  const r=await fetch(storageWrite(objectName)+'&ifGenerationMatch='+encodeURIComponent(generation),{
     method:'POST',
     headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
     body:Buffer.from(JSON.stringify(config)),
@@ -102,7 +109,9 @@ function handler(req,res){
   }
   if(req.url==='/health'&&req.method==='GET')
     return reply(res,200,{status:'running',service:'solscan-owner-control'});
-  if(req.url!=='/api/filter-config'||!['GET','POST'].includes(req.method))
+  const objectName=req.url==='/api/filter-config'?OBJECT:
+    req.url==='/api/source-age'?AGE_OBJECT:null;
+  if(!objectName||!['GET','POST'].includes(req.method))
     return reply(res,404,{error:'not-found'});
   // This endpoint changes the background server's behavior. Only an
   // out-of-band 256-bit owner credential can modify it.
@@ -112,19 +121,18 @@ function handler(req,res){
     return reply(res,415,{error:'application-json-required'});
   (async()=>{
     if(req.method==='GET'){
-      const value=await storageGet(await cloudToken());
+      const value=await storageGet(await cloudToken(),objectName);
       return reply(res,200,{config:value});
     }
-    const proposed=await readBody(req);
-    // activatedAt is always managed by the collector's receipt/activation
-    // ledger. A client cannot backdate a filter's authoritative start time.
-    proposed.activatedAt=0;
-    const stored=await storagePut(await cloudToken(),proposed);
+    const proposed=await readBody(req,objectName);
+    // Server receipt controls first activation; no client can backdate rules.
+    if(objectName===OBJECT)proposed.activatedAt=0;
+    const stored=await storagePut(await cloudToken(),proposed,objectName);
     if(stored.conflict)return reply(res,409,{error:'concurrent-update-retry'});
     return reply(res,200,{accepted:true,
       sha256:hash(JSON.stringify(proposed)).toString('hex').slice(0,20),
       generation:stored.generation,
-      note:'Await collector config reload; no retroactive admissions'});
+      note:'Await collector config reload; only future admissions can use new thresholds'});
   })().catch(e=>{
     if(e.http)return reply(res,e.http,{error:e.message});
     console.error('config gateway:',e.message);
