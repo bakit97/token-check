@@ -1,0 +1,38 @@
+name: research-v2-tests
+on:
+  push:
+    branches:
+      - 'feature/verified-research-v2-*'
+    paths:
+      - 'server/research-v2.js'
+      - 'server/research-v2.test.js'
+      - 'server/research-runtime.js'
+      - 'server/research-runtime.test.js'
+      - '.github/workflows/research-v2-tests.yml'
+      - 'server/collector.js'
+      - 'tests/research-collector-smoke.cjs'
+      - '.github/workflows/deploy-server.yml'
+  pull_request:
+    paths:
+      - 'server/research-v2.js'
+      - 'server/research-v2.test.js'
+      - 'server/research-runtime.js'
+      - 'server/research-runtime.test.js'
+      - '.github/workflows/research-v2-tests.yml'
+      - 'server/collector.js'
+      - 'tests/research-collector-smoke.cjs'
+      - '.github/workflows/deploy-server.yml'
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax
+        run: node --check server/research-v2.js && node --check server/research-v2.test.js && node --check server/research-runtime.js && node --check server/research-runtime.test.js && node --check server/collector.js && node --check tests/research-collector-smoke.cjs
+      - name: Research integrity tests
+        run: node --test server/research-v2.test.js server/research-runtime.test.js tests/research-collector-smoke.cjs

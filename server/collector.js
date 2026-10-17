@@ -229,6 +229,7 @@ async function chainLoop(){let lastSweep=0;for(;;){const now=Date.now();
 const C=new Map();const FV=2; // версия формата наблюдений
 // Авторитетный «Все»: отдельный read-only журнал допуска, не зависит от телефона.
 let SOURCE=null, SOURCE_ERR='', PRE=null;
+let RESEARCH_V2=null, RESEARCH_V2_ERR='', RESEARCH_BANK_UPLOADED=0;
 async function admitVerifiedPublicLaunch(launch,record) {
   const existing=C.get(record.mint);
   if(existing){existing.preCurve=existing.preCurve||1;existing.preTradingAt=record.eventAt;
@@ -268,6 +269,23 @@ async function initSource() {
   }
   SOURCE_ERR='';
   log('главный источник готов, принято',SOURCE.records.size,'настройки',SOURCE.settings());
+}
+async function initResearchV2() {
+  // Separate initialization: invalid research settings must never stop
+  // the authoritative token source or the on-chain listeners.
+  const names=['research-v2.js','research-runtime.js'];
+  const auth=await token();
+  for(const name of names) {
+    const res=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
+      {headers:{Authorization:'Bearer '+auth},signal:AbortSignal.timeout(30000)});
+    if(!res.ok)throw new Error('research module '+name+' HTTP '+res.status);
+    const target=DIR+'/'+name,tmp=target+'.tmp';
+    fs.writeFileSync(tmp,await res.text());
+    fs.renameSync(tmp,target);
+  }
+  RESEARCH_V2=new (require(DIR+'/research-runtime.js').ResearchRuntime)({dir:DIR});
+  RESEARCH_V2_ERR='';
+  log('исследование v2 готово, накоплено',RESEARCH_V2.rows.length);
 }
 function admitVerifiedMigration(c){
   if(!SOURCE)return;
@@ -537,6 +555,20 @@ async function exportSource(now) {
   await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});
   await upload('source/live.json',{updated:now,count:today.length,coins:SOURCE.latest(200).map(enrich)});
 }
+async function exportResearchV2(now) {
+  if(!RESEARCH_V2||!SOURCE)return;
+  // All read-only observations originate from the accepted main source.
+  const result=RESEARCH_V2.update({source:SOURCE,coins:C,now});
+  await upload('research-v2/status.json',result);
+  if(result.added>0||now-RESEARCH_BANK_UPLOADED>20*60e3){
+    await upload('research-v2/polygon-1.json',{
+      updated:now,settings:result.settings,counts:result.counts,
+      coins:RESEARCH_V2.select({limit:10000}),
+      note:'Observed classifications only; no buy/sell signals'
+    });
+    RESEARCH_BANK_UPLOADED=now;
+  }
+}
 async function exportDays(){const now=Date.now(),today=dayKey(now),yest=dayKey(now-864e5);
   for(const d of [today,yest]){if(d===yest&&now-lastYest<30*60e3)continue;const list=[...C.values()].filter(c=>dayKey(c.t)===d);if(!list.length)continue;
     await upload(`day/${d}.json`,{day:d,tz:'Asia/Almaty',fv:FV,updated:now,count:list.length,coins:list.map(c=>rec(c,false))});
@@ -545,7 +577,9 @@ async function exportDays(){const now=Date.now(),today=dayKey(now),yest=dayKey(n
     if(d===yest)lastYest=now}
   await flushUploads();
   try{await exportSource(now)}catch(e){SOURCE_ERR='выгрузка источника: '+e.message;err('source export '+e.message)}
-  await upload('status.json',{updated:now,version:VERSION,source:{active:!!SOURCE,error:SOURCE_ERR,summary:SOURCE?.summary(now)||null},coins:C.size,today:[...C.values()].filter(c=>dayKey(c.t)===today).length,okToday:[...C.values()].filter(c=>dayKey(c.t)===today&&isOk(c)).length,
+  try{await exportResearchV2(now)}catch(e){RESEARCH_V2_ERR=e.message;err('research-v2 export '+e.message)}
+  await upload('status.json',{updated:now,version:VERSION,source:{active:!!SOURCE,error:SOURCE_ERR,summary:SOURCE?.summary(now)||null},
+    researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,summary:RESEARCH_V2?.summary()||null},coins:C.size,today:[...C.values()].filter(c=>dayKey(c.t)===today).length,okToday:[...C.values()].filter(c=>dayKey(c.t)===today&&isOk(c)).length,
     gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),creditsBy:crLog.reduce((o,x)=>(o[x[2]]=(o[x[2]]||0)+x[1],o),{}),rpcCtx:RPCCTX,helius:!!HKEY,recon:RC.log.slice(-12),research:RSTAT,ws:{on:WS.on,since:WS.since,kb:Math.round(WS.bytes/1024),credits:+(WS.bytes/1e6*20).toFixed(1),msgs:WS.msgs,cand:WS.cand,err:WS.err},mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})}
 // живая лента для «Прошли»: монеты витрины младше 40 минут, раз в 30 секунд
 async function exportLive(){const now=Date.now();const list=[...C.values()].filter(c=>observedEligible(c)&&now-c.t<40*60e3);
@@ -624,6 +658,7 @@ let diagGen=null;async function diagCheck(){try{const tk=await token();const r=a
 const STARTED=Date.now();
 (async()=>{fs.mkdirSync(DIR,{recursive:true});load();log('старт, версия',VERSION);
   try{await initSource()}catch(e){SOURCE_ERR=e.message;err('главный источник не запустился: '+e.message)}
+  try{await initResearchV2()}catch(e){RESEARCH_V2_ERR=e.message;err('исследование v2 не запустилось: '+e.message)}
   for(const pg of [1,2,3])try{await addFromGT(await gt(`/new_pools?page=${pg}&include=base_token,quote_token,dex`,0,'boot'+pg))}catch(e){err('boot '+e.message)}
   setInterval(pollNew,90000);
   (async()=>{for(;;){try{await pollDS()}catch(e){err('dsloop '+e.message)}await sleep(15000)}})();
