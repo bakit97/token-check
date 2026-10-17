@@ -1,3 +1,12 @@
+# Verification correction
+
+See `docs/DEPLOYMENT-CHECK-2026-10-18.md` for the final live checkpoint and CI.
+A 620 MB RSS peak recurred after disabling legacy research. That timer was not
+the only source of memory pressure; the 400 MB RSS requirement remains unresolved.
+Migration/pre separation, 18-credit target, pool collection and loss diagnostics
+are deployed. A retained proof backlog remains visible and must not be described
+as completed proof coverage.
+
 # Latest correction — 2026-10-18 (UTC+5)
 
 Owner requested migration coverage and meaningful pool observations over the

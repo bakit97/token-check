@@ -24,9 +24,9 @@ jobs:
           node --check v2.js
           node --check lab-core.js
       - name: Offline tests; no cloud credentials or deployment
-        run: node --test server/*.test.js tests/resource-collector-smoke.cjs tests/source-collector-smoke.cjs tests/research-collector-smoke.cjs tests/v2-smoke.cjs tests/upload-queue-recovery.cjs tests/migration-ws-budget.cjs tests/pool-observation-budget.cjs tests/migration-restart-budget.cjs
+        run: node --test server/*.test.js tests/resource-collector-smoke.cjs tests/source-collector-smoke.cjs tests/research-collector-smoke.cjs tests/v2-smoke.cjs tests/upload-queue-recovery.cjs tests/migration-ws-budget.cjs tests/pool-observation-budget.cjs tests/migration-restart-budget.cjs tests/migration-queue-age.cjs
       - name: Reproduce and verify the production recovery build
         run: |
           python3 deployment/build-recovery.py
           for file in work/recovery-build/server/*.js; do node --check "$file"; done
-          SOLSCAN_TEST_COLLECTOR="$PWD/work/recovery-build/server/collector.js" node --test server/resource-budget.test.js tests/resource-collector-smoke.cjs tests/upload-queue-recovery.cjs tests/migration-ws-budget.cjs tests/pool-observation-budget.cjs tests/migration-restart-budget.cjs
+          SOLSCAN_TEST_COLLECTOR="$PWD/work/recovery-build/server/collector.js" node --test server/resource-budget.test.js tests/resource-collector-smoke.cjs tests/upload-queue-recovery.cjs tests/migration-ws-budget.cjs tests/pool-observation-budget.cjs tests/migration-restart-budget.cjs tests/migration-queue-age.cjs

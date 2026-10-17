@@ -24,8 +24,8 @@ def main():
     for name in names:
         (target / name).write_bytes(blob(BASE, 'server/' + name))
     (target / 'pre-watcher.js').write_bytes(blob(SUPPORT, 'server/pre-watcher.js'))
-    resource = (ROOT / 'server/resource-budget.js').read_bytes().replace(b'\r\n', b'\n')
-    (target / 'resource-budget.js').write_bytes(resource)
+    for helper in ['resource-budget.js', 'runtime-health.js']:
+        (target / helper).write_bytes((ROOT / 'server' / helper).read_bytes().replace(b'\r\n', b'\n'))
     (OUT / 'lab-core.js').write_bytes(blob(BASE, 'lab-core.js'))
     patch = (ROOT / 'deployment/recovery-48cb0f8-helius.patch').read_bytes().replace(b'\r\n', b'\n')
     subprocess.run(['git', 'apply', '--directory=work/recovery-build', '-'],
