@@ -99,7 +99,7 @@ class ResearchTwoRuntime {
         })),
         label:result.label,secondLevelMatches,
         pctAbove:result.pctAbove,covered:result.covered,
-        p0:result.p0,curve:result.curve,features:F,
+        p0:result.p0,curve:result.curve,minuteCurve:result.minuteCurve,features:F,
         firstPassFeatures:{...pass.features},
         threshold:this.config.minAbove,coverageThreshold:this.config.minCoverage,
         time:pass.zeroAt
@@ -133,18 +133,23 @@ class ResearchTwoRuntime {
   aggregateCurves(){
     const result={before:[],after:[]},buckets={before:new Map(),after:new Map()};
     for(const row of this.rows){
-      if(!buckets[row.phase])continue;
-      for(const point of row.curve||[]){
+      const grid=buckets[row.phase];
+      if(!grid)continue;
+      // Actual 1m observations, not linear interpolation of 5m snapshots.
+      // Earlier completed rows may only contain 5m values (legacy bank).
+      const samples=Array.isArray(row.minuteCurve)&&row.minuteCurve.length===300?
+        row.minuteCurve.map((pct,i)=>[i+1,pct]):row.curve||[];
+      for(const point of samples){
         if(!Array.isArray(point)||!Number.isInteger(point[0])||
-           point[0]<5||point[0]>300||!Number.isFinite(point[1]))continue;
-        let x=buckets[row.phase].get(point[0]);
-        if(!x){x={sum:0,n:0};buckets[row.phase].set(point[0],x)}
+           point[0]<1||point[0]>300||!Number.isFinite(point[1]))continue;
+        let x=grid.get(point[0]);
+        if(!x){x={sum:0,n:0};grid.set(point[0],x)}
         x.sum+=point[1];x.n++;
       }
     }
     for(const phase of ['before','after']){
       result[phase]=[...buckets[phase]].sort((a,b)=>a[0]-b[0])
-        .map(([m,x])=>({min:m,pct:x.sum/x.n,n:x.n}));
+        .map(([m,x])=>({min:m,pct:Math.round(x.sum/x.n*1000)/1000,n:x.n}));
     }
     return result;
   }
