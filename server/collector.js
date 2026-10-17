@@ -740,7 +740,7 @@ async function exportPathsV2(now){
     const levelTwoRows=RESEARCH_TWO.select({limit:10000});
     await upload('research-v2/polygon-2.json',{
       updated:now,settings:result.settings,counts:result.counts,
-      coins:levelTwoRows.map(({curve,minuteCurve,...row})=>row),
+      coins:levelTwoRows.map(({curve,minuteCurve,minuteCurvePacked,...row})=>row),
       note:'Only fully observed server Passed stream; no orders'
     });
     await upload('research-v2/curve-two.json',{
