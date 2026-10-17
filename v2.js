@@ -540,7 +540,33 @@ function refresh(){
   analyze();
   renderAll();renderModules();renderPassed();renderR1();renderR2();renderLibrary();
 }
+function exportServerConfig(){
+  const enabled=s.modules.filter(function(m){return m.enabled});
+  const usedIds=new Set(enabled.map(function(m){return m.filterId}));
+  const filters=s.filters.filter(function(f){return usedIds.has(f.id)}).map(function(f){
+    return {id:String(f.id),name:String(f.name),level:String(f.level),
+      key:f.key,op:f.op,value:Number(f.value),version:Number(f.version)};
+  });
+  const enabledIds=new Set(filters.map(function(f){return f.id}));
+  const modules=enabled.filter(function(m){return enabledIds.has(m.filterId)})
+    .map(function(m){return {
+      filterId:m.filterId,phase:m.phase,level:m.level,enabled:true
+    }});
+  if(!modules.some(function(m){return m.level==='1'})){
+    note('Для фонового потока «Прошли» нужен хотя бы один активный фильтр 1-го уровня');
+    return;
+  }
+  const config={schema:1,enabled:true,activatedAt:0,
+    decisionMinutes:s.decision,filters,modules};
+  const blob=new Blob([JSON.stringify(config,null,2)+'\n'],{type:'application/json'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='pass-filters.json';
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(function(){URL.revokeObjectURL(url)},30000);
+  note('Конфигурация подготовлена. Для фоновой работы её надо опубликовать на сервере.');
+}
 function bind(){
+  $('exportServerConfig').addEventListener('click',exportServerConfig);
   $('tabs').addEventListener('click',function(e){
     var b=e.target.closest('button[data-page]');if(!b)return;
     s.tab=b.dataset.page;
