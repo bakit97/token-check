@@ -35,6 +35,7 @@ jobs:
           gcloud storage cp server/auto-research-v2.js gs://sol-scan-511718-data/code/auto-research-v2.js
           # Never overwrite an owner-published configuration during code deployment.
           gcloud storage cp -n server/pass-filters.json gs://sol-scan-511718-data/config/pass-filters.json
+          gcloud storage cp -n server/source-age.json gs://sol-scan-511718-data/config/source-age.json
           gcloud storage cp lab-core.js gs://sol-scan-511718-data/code/lab-core.js
           gcloud storage cp server/collector.js gs://sol-scan-511718-data/code/collector.js
       - name: verify running collector
