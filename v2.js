@@ -280,6 +280,14 @@ function detail(c){
     '<div class="stat"><span>Объём 5 мин</span><strong style="font-size:15px">$'+fmt(p[6]||0)+'</strong></div></div>'+
     '<p class="hint">Источники проверки: '+esc(c.mk||c.d||'нет данных')+'. Допуск подтверждается главным серверным журналом. Недостающие торговые данные отображаются как неизвестные.</p></div>';
 }
+function showCoinDetail(c,anchorId){
+  if(!c||!c._entry)return;
+  const old=$('openCoinDetail');if(old)old.remove();
+  $(anchorId).insertAdjacentHTML('afterend',detail(c));
+  $('closeCoin').addEventListener('click',function(){
+    const current=$('openCoinDetail');if(current)current.remove();
+  });
+}
 function renderAll(){
   var today=day(now());
   var count=sourceActive?sourceMeta.today:0;
@@ -964,10 +972,13 @@ function bind(){
     save();refresh();
   });
   $('coinList').addEventListener('click',function(e){
-    var b=e.target.closest('[data-coin]');if(!b)return;var c=lastAccepted.find(function(x){return mint(x)===b.dataset.coin});if(!c)return;
-    var old=$('openCoinDetail');if(old)old.remove();
-    $('coinList').insertAdjacentHTML('afterend',detail(c));
-    $('closeCoin').addEventListener('click',function(){$('openCoinDetail').remove()});
+    const button=e.target.closest('[data-coin]');if(!button)return;
+    showCoinDetail(lastAccepted.find(function(c){return mint(c)===button.dataset.coin}),'coinList');
+  });
+  $('passedList').addEventListener('click',function(e){
+    const button=e.target.closest('[data-coin]');if(!button)return;
+    const item=lastPassed.find(function(x){return mint(x.coin)===button.dataset.coin});
+    if(item)showCoinDetail(item.coin,'passedList');
   });
   $('moduleGrid').addEventListener('click',function(e){
     if(e.target.closest('[data-apply-modules]')){
