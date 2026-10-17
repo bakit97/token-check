@@ -767,7 +767,9 @@ async function exportResearchV2(now) {
 async function exportPathsV2(now){
   if(!PASS_V2||!RESEARCH_TWO||!SOURCE)return;
   await reloadPassConfig();
-  const p=PASS_V2.update({source:SOURCE,coins:C,now});
+  const p=PASS_CFG_ERR
+    ?{added:0,...PASS_V2.summary(now),status:'paused-control-unavailable'}
+    :PASS_V2.update({source:SOURCE,coins:C,now});
   PASS_ERR='';
   await upload('passed-v2/status.json',{...p,
     controlError:PASS_CFG_ERR||null,
@@ -834,6 +836,39 @@ async function exportPathsV2(now){
     AUTO_UPLOADED=now;
   }
 }
+// Critical path: durable first-level matches must not wait for the 120s
+// export cycle, especially when the decision timer is only one minute.
+let FAST_PASS_PUBLISH_AT=0,FAST_PASS_CONFIG_AT=0,FAST_PASS_ATTEMPTS=0,FAST_PASS_LAST_ADDED=0;
+async function fastPassedLoop(){
+  for(;;){
+    const now=Date.now();
+    try{
+      if(SOURCE&&PASS_V2){
+        if(now-FAST_PASS_CONFIG_AT>=30000){
+          FAST_PASS_CONFIG_AT=now;
+          await reloadPassConfig();
+        }
+        if(!PASS_CFG_ERR){
+          const outcome=PASS_V2.update({source:SOURCE,coins:C,now:Date.now()});
+          FAST_PASS_ATTEMPTS++;
+          FAST_PASS_LAST_ADDED=outcome.added;
+          if(outcome.added||now-FAST_PASS_PUBLISH_AT>=30000){
+            const publishAt=Date.now();
+            await upload('passed-v2/live.json',{
+              updated:publishAt,origin:'server-journal',
+              coins:PASS_V2.latest(1000).filter(x=>x.zeroAt>publishAt)
+            });
+            FAST_PASS_PUBLISH_AT=publishAt;
+          }
+        }else FAST_PASS_LAST_ADDED=0;
+      }
+    }catch(e){
+      PASS_ERR='быстрый журнал: '+e.message;
+      err('fast pass '+e.message);
+    }
+    await sleep(15000);
+  }
+}
 async function exportDays(){const now=Date.now(),today=dayKey(now),yest=dayKey(now-864e5);
   await reloadSourceAgeConfig();
   await reloadResearchConfig();
@@ -848,7 +883,9 @@ async function exportDays(){const now=Date.now(),today=dayKey(now),yest=dayKey(n
   try{await exportPathsV2(now)}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('pass/r2 export '+e.message)}
   await upload('status.json',{updated:now,version:VERSION,source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
-    passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,summary:PASS_V2?.summary(now)||null},
+    passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
+      fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,publishedAt:FAST_PASS_PUBLISH_AT},
+      summary:PASS_V2?.summary(now)||null},
     researchTwo:{active:!!RESEARCH_TWO,error:TWO_ERR,summary:RESEARCH_TWO?.summary()||null},
     coins:C.size,today:[...C.values()].filter(c=>dayKey(c.t)===today).length,okToday:[...C.values()].filter(c=>dayKey(c.t)===today&&isOk(c)).length,
     gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),creditsBy:crLog.reduce((o,x)=>(o[x[2]]=(o[x[2]]||0)+x[1],o),{}),rpcCtx:RPCCTX,helius:!!HKEY,recon:RC.log.slice(-12),research:RSTAT,ws:{on:WS.on,since:WS.since,kb:Math.round(WS.bytes/1024),credits:+(WS.bytes/1e6*20).toFixed(1),msgs:WS.msgs,cand:WS.cand,err:WS.err},mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})}
@@ -939,6 +976,7 @@ const STARTED=Date.now();
   setTimeout(()=>{reconcile();setInterval(reconcile,60*60e3)},60000);
   setTimeout(()=>{const go=()=>researchRun().catch(e=>err('research '+e.message));go();setInterval(go,60*60e3)},180000);
   setInterval(()=>{prune();save()},120000);
+  fastPassedLoop().catch(e=>err('fast pass loop '+e.message));
   (async()=>{for(;;){await sleep(120000);try{await exportDays()}catch(e){err('export '+e.message)}}})();
   (async()=>{await sleep(45000);for(;;){try{await exportLive()}catch(e){err('live '+e.message)}await sleep(30000)}})();
   setTimeout(()=>exportDays().catch(e=>err('export '+e.message)),30000);
