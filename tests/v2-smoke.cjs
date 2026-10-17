@@ -204,3 +204,24 @@ test('после пропадания сервера старые карточк
   assert.equal(el('net').textContent,'● Источник недоступен');
   assert.equal(el('visibleCount').textContent,'—');
 });
+
+test('UI buyers must match server frozen 5-minute features, with stale data unknown',()=>{
+  const begin=js.indexOf('function dataMetrics('),end=js.indexOf('\\nfunction ruleStatus(',begin);
+  assert.ok(begin>=0&&end>begin);
+  const calc=vm.runInNewContext('('+js.slice(begin,end)+')');
+  const cutoff=Date.UTC(2026,9,17,1,0,0),recent=Math.floor((cutoff-60000)/1000);
+  const fresh=calc({ds:[[recent,1,200,300,4,5,123]],
+    gx:[[recent,40,20,3,2,60,35,80,70]],
+    bx:{at:cutoff-30000,cov:true,payers:45}},cutoff);
+  assert.equal(fresh.buyers,3,'5m unique buyers must win over 15m and 10m');
+  assert.equal(fresh.trades,9);
+  const old=Math.floor((cutoff-9*60000)/1000);
+  const stale=calc({ds:[[old,1,200,300,4,5,123]],gx:[[old,40,20,3,2,60,35,80,70]],
+    bx:{at:cutoff-30000,cov:false,payers:45}},cutoff);
+  assert.equal(stale.buyers,null,'missing or old coverage is not a zero or historical pass');
+  assert.equal(stale.trades,null);
+  assert.equal(stale.liq,null);
+  const verified=calc({gx:[[recent,40,20,null,2,60,35,80,70]],
+    bx:{at:cutoff-30000,cov:true,payers:17}},cutoff);
+  assert.equal(verified.buyers,17,'verified 10m first-window fallback is allowed');
+});
