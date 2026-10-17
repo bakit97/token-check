@@ -64,7 +64,13 @@
 <h1>Прошли</h1><p class="muted">Монеты из главного источника, прошедшие условия. Серверные сигналы фиксируются независимо от телефона; локальные правила — только черновики до синхронизации с сервером.</p>
 <details class="card" id="decisionSettings"><summary>⚙ Настроить таймер решения <span class="badge" id="decisionCurrent">10 мин</span></summary><div style="padding-top:14px"><div class="row"><label for="decisionMins">Время на решение</label><b id="decisionValue">10 минут</b></div><input type="range" min="1" max="30" step="1" id="decisionMins"><div class="row" style="margin-top:10px"><button type="button" class="primary" id="applyDecision">Применить</button><span class="muted">От 1 до 30 минут</span></div><p class="hint">Локальный таймер изменяется кнопкой «Применить». Для серверных сигналов значение фиксирует серверная конфигурация; точка 0 остаётся неизменной при последующем редактировании.</p></div></details>
 <div id="passedStats" class="muted"></div><div class="list" id="passedList"></div>
-<details class="card" id="passedArchive"><summary>История сигналов · <span id="passedArchiveCount">0</span></summary><p class="hint">В серверном режиме: журнал продолжается при закрытом телефоне. В предварительном режиме: история остаётся только в этом браузере. Все версии правил и исходное время решения сохраняются.</p><div id="passedArchiveList" class="list"></div></details>
+<details class="card" id="passedArchive"><summary>История сигналов · <span id="passedArchiveCount">0</span></summary><p class="hint">В серверном режиме: журнал продолжается при закрытом телефоне. В предварительном режиме: история остаётся только в этом браузере. Все версии правил и исходное время решения сохраняются.</p><div id="passedArchiveList" class="list"></div>
+<div class="controls" style="margin-top:16px">
+<label class="control"><span>Посмотреть архив сервера за день (Казахстан)</span><select class="input" id="passedDay"></select></label>
+</div>
+<button class="primary" type="button" id="loadPassedDay" style="margin-top:9px">Показать выбранный день</button>
+<p class="hint" id="passedDayStatus">Архивный запрос выполняется только по кнопке, чтобы не расходовать мобильный интернет.</p>
+<div class="list" id="passedDayList"></div></details>
 </section>
 <section class="page" id="p-r1" hidden>
 <h1>Исследование 1-го уровня</h1><p class="muted">Из главного источника, через собственный путь. Живые и мёртвые определяются торговой активностью, а НЕ ростом цены.</p>
@@ -127,5 +133,5 @@
 <p id="toast" role="status" aria-live="polite"></p>
 <footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — разделены серверные записи и локальные черновики; неполные наблюдения не выдаются за результат. <a href="./classic.html">Открыть прежний сайт</a></footer>
 </main>
-<script src="./v2.js?v=20261017-20" defer></script>
+<script src="./v2.js?v=20261017-21" defer></script>
 </body></html>
