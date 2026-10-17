@@ -6,6 +6,8 @@ on:
       - 'server/**'
       - 'v2.js'
       - 'v2.html'
+      - 'tests/research-collector-smoke.cjs'
+      - 'tests/v2-smoke.cjs'
       - '.github/workflows/v2-server-paths-ci.yml'
   pull_request:
     paths:
