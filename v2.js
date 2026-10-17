@@ -615,7 +615,7 @@ function renderLibrary(){
         ' · пропуски '+fmt(p.background?.missing||0)+'</p>';
     }).join('');
     return '<div class="filter-row"><div class="row"><b>№'+esc(x.id)+' · '+esc(x.name)+'</b><button type="button" class="pbtn" data-edit="'+esc(x.id)+'">Открыть</button></div>'+
-      '<p class="muted">'+esc(({buyers:'Покупатели',trades:'Сделки',volume:'Объём $',liq:'Ликвидность $'})[x.key])+' '+esc(x.op)+' '+fmt(x.value)+' · версия '+fmt(x.version)+'</p>'+
+      '<p class="muted">'+esc(({buyers:'Покупатели',trades:'Сделки',volume:'Объём )[x.key])+' '+esc(x.op)+' '+fmt(x.value)+' · версия '+fmt(x.version)+'</p>'+
       (audits?'<p class="hint">Серверная история сравнения по версиям:</p>'+audits:
       '<div class="numbers"><span class="badge">На телефоне: '+orig+'</span>'+
       '<span class="badge">Серверная фоновая проверка: ожидает настройки</span></div>')+'</div>';
@@ -658,7 +658,1807 @@ function openEditor(id){
 function saveEditor(e){
   e.preventDefault();
   var name=$('filterName').value.trim(),key=$('filterKey').value,op=$('filterOp').value,value=Number($('filterValue').value);
-  if(!name||!['buyers','trades','volume','liq'].includes(key)||!['>=','<='].includes(op)||!Number.isFinite(value)||value<0||value>1e12){note('Проверь название и значение');return}
+  if(!name||!['buyers','trades','volume','liq','mc','buys','sells','buySellRatio'].includes(key)||!['>=','<='].includes(op)||!Number.isFinite(value)||value<0||value>1e12){note('Проверь название и значение');return}
+  var same=s.filters.find(function(f){return f.id!==editorId&&f.level===s.level&&f.key===key&&f.op===op&&f.value===value});
+  if(same){note('Такие же правила уже есть: №'+same.id);return}
+  if(editorId){
+    var f=s.filters.find(function(x){return x.id===editorId});
+    if(!f)return;
+    if(f.key!==key||f.op!==op||f.value!==value){
+      f.version++;f.original=null;f.history=f.history||[];f.history.push({version:f.version-1,changedAt:now()});
+    }
+    Object.assign(f,{name:name,key:key,op:op,value:value});
+  }else{
+    var id=String(Math.max(0,...s.filters.map(function(f){return Number(f.id)||0}))+1).padStart(3,'0');
+    s.filters.push({id:id,level:s.level,name:name,key:key,op:op,value:value,version:1,original:null,history:[],createdAt:now()});
+  }
+  $('editor').hidden=true;testHtml='';save();refresh();note('Фильтр сохранён');
+}
+function removeEditor(){
+  if(!editorId||!window.confirm('Удалить фильтр №'+editorId+' из библиотеки и активных модулей?'))return;
+  s.filters=s.filters.filter(function(x){return x.id!==editorId});
+  s.modules=s.modules.filter(function(x){return x.filterId!==editorId});
+  editorId=null;$('editor').hidden=true;testHtml='';save();refresh();note('Фильтр удалён');
+}
+function refresh(){
+  analyze();
+  renderAll();renderServerModules();renderModules();renderLocalPreview();renderPassed();renderR1();renderR2();renderLibrary();
+}
+function preparedServerConfig(){
+  // Include all library definitions so the server can evaluate background
+  // performance of disabled but configured modules. Only enabled level-1
+  // modules are permitted to add new first-level Passed records.
+  if(s.filters.length>200||s.modules.length>200){
+    note('Слишком много модулей/фильтров: максимум 200 в серверной версии');
+    return null;
+  }
+  const filters=s.filters.map(function(f){
+    return {id:String(f.id),name:String(f.name),level:String(f.level),
+      key:f.key,op:f.op,value:Number(f.value),version:Number(f.version)};
+  });
+  const ids=new Set(filters.map(function(f){return f.id}));
+  const modules=s.modules.filter(function(m){return ids.has(m.filterId)})
+    .map(function(m){return {
+      filterId:m.filterId,phase:m.phase,level:m.level,enabled:!!m.enabled
+    }});
+  if(!modules.some(function(m){return m.level==='1'&&m.enabled})){
+    note('Нужен хотя бы один подтверждённый активный модуль 1-го уровня');
+    return null;
+  }
+  return {schema:1,enabled:true,activatedAt:0,
+    decisionMinutes:s.decision,filters,modules};
+}
+function exportServerConfig(){
+  const config=preparedServerConfig();if(!config)return;
+  const blob=new Blob([JSON.stringify(config,null,2)+'\n'],{type:'application/json'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='pass-filters.json';
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(function(){URL.revokeObjectURL(url)},30000);
+  note('Конфигурация подготовлена. Для фоновой работы её надо опубликовать на сервере.');
+}
+function validControlEndpoint(value){
+  if(!value||value.enabled!==true||typeof value.url!=='string')return null;
+  try{
+    const u=new URL(value.url);
+    return u.protocol==='https:'&&u.hostname.endsWith('.run.app')&&!u.username&&!u.password?
+      u.origin:null;
+  }catch(e){return null}
+}
+async function publishResearchLevel(level){
+  const one=level==='1',keyField=one?'ownerResearchOneKey':'ownerResearchTwoKey';
+  const checkField=one?'confirmResearchOne':'confirmResearchTwo';
+  const statusField=one?'researchOneControlState':'researchTwoControlState';
+  const buttonField=one?'publishResearchOne':'publishResearchTwo';
+  const endpoint=one?'/api/research-one':'/api/research-two';
+  const current=one?researchMeta:twoMeta;
+  if(!controlEndpoint||!current){note('Серверное исследование ещё недоступно');return}
+  if(!$(checkField).checked){note('Подтверди изменение серверного исследования');return}
+  const key=$(keyField).value.trim();
+  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
+    note('Требуется отдельный ключ владельца');return;
+  }
+  let cfg;
+  if(one){
+    cfg={hours:Number($('r1Hours').value),
+      decisionMinutes:researchMeta.settings.decisionMinutes,
+      minActive:Number($('r1Activity').value),
+      maxIdle:Number($('r1Idle').value),
+      minCoverage:researchMeta.settings.minCoverage};
+    if(!Number.isInteger(cfg.hours)||cfg.hours<1||cfg.hours>24||
+       !Number.isInteger(cfg.maxIdle)||cfg.maxIdle<5||cfg.maxIdle>1440||
+       !Number.isFinite(cfg.minActive)||cfg.minActive<0||cfg.minActive>100){
+      note('Неверные параметры первого исследования');return;
+    }
+  }else{
+    cfg={minAbove:Number($('r2Strong').value),
+      minCoverage:twoMeta.settings.minCoverage};
+    if(!Number.isFinite(cfg.minAbove)||cfg.minAbove<0||cfg.minAbove>100){
+      note('Неверный порог второго исследования');return;
+    }
+  }
+  $(buttonField).disabled=true;
+  $(statusField).textContent='Отправка серверной версии…';
+  const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
+  try{
+    const r=await fetch(controlEndpoint+endpoint,{
+      method:'POST',cache:'no-store',signal:abort.signal,
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify(cfg)
+    });
+    if(!r.ok){
+      $(statusField).textContent='Сервер отклонил изменения. HTTP '+r.status;
+      note(r.status===401?'Ключ владельца не принят':'Публикация не удалась: '+r.status);
+      return;
+    }
+    $(keyField).value='';$(checkField).checked=false;
+    $(statusField).textContent='Версия принята. Для неё сервер создаст отдельную группу наблюдений.';
+    note('Сервер переключится на новые правила без переписывания старой истории.');
+  }catch(e){
+    $(statusField).textContent='Ошибка связи: '+String(e.message||e);
+  }finally{
+    clearTimeout(timer);$(buttonField).disabled=!controlEndpoint||!current;
+  }
+}
+async function publishSourceAge(){
+  if(!controlEndpoint||!sourceActive){
+    note('Нет защищённого сервера управления или главного источника');return;
+  }
+  if(!$('confirmAgePublish').checked){
+    note('Подтверди изменение двух возрастных фильтров');return;
+  }
+  const cfg={schema:1,beforeMinutes:Number($('ageBefore').value),
+    afterMinutes:Number($('ageAfter').value)};
+  if(![cfg.beforeMinutes,cfg.afterMinutes].every(function(v){
+    return Number.isInteger(v)&&v>=1&&v<=10;
+  })){
+    note('Возраст до и после миграции должен быть от 1 до 10 минут');return;
+  }
+  const key=$('ageOwnerKey').value.trim();
+  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
+    note('Для изменения порога нужен отдельный ключ владельца');return;
+  }
+  const button=$('publishSourceAge');
+  button.disabled=true;
+  $('sourceAgeControlState').textContent='Отправка новых возрастных порогов…';
+  const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
+  try{
+    const r=await fetch(controlEndpoint+'/api/source-age',{
+      method:'POST',cache:'no-store',signal:abort.signal,
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify(cfg)
+    });
+    if(!r.ok){
+      $('sourceAgeControlState').textContent='Сервер отклонил изменение: HTTP '+r.status;
+      note(r.status===401?'Ключ владельца не принят':'Ошибка изменения возраста: '+r.status);
+      return;
+    }
+    $('ageOwnerKey').value='';$('confirmAgePublish').checked=false;
+    $('sourceAgeControlState').textContent='Пороги получены сервером управления. Ждём подтверждения новых значений главным источником.';
+    note('Серверные пороги обновляются только для новых входящих событий.');
+  }catch(e){
+    $('sourceAgeControlState').textContent='Ошибка связи: '+String(e.message||e);
+  }finally{
+    clearTimeout(timer);
+    button.disabled=!controlEndpoint||!sourceActive;
+  }
+}
+async function publishServerConfig(){
+  if(!controlEndpoint){note('Защищённый сервер управления ещё не подключён');return}
+  if(!$('confirmControlPublish').checked){
+    note('Отметь подтверждение публикации серверной версии');return;
+  }
+  const config=preparedServerConfig();if(!config)return;
+  const key=$('ownerControlKey').value.trim();
+  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
+    note('Нужен действительный ключ владельца, не пароль от GitHub');return;
+  }
+  const button=$('publishServerConfig');
+  button.disabled=true;$('controlState').textContent='Отправка настроек на сервер…';
+  const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
+  try{
+    const r=await fetch(controlEndpoint+'/api/filter-config',{
+      method:'POST',cache:'no-store',signal:abort.signal,
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify(config)
+    });
+    if(!r.ok){
+      $('controlState').textContent='Не удалось применить серверную конфигурацию. HTTP '+r.status;
+      note(r.status===401?'Ключ владельца не принят':'Ошибка публикации: HTTP '+r.status);
+      return;
+    }
+    $('ownerControlKey').value='';
+    $('confirmControlPublish').checked=false;
+    $('controlState').textContent='Принято сервером управления. Журнал переключится после обновления конфигурации сборщика.';
+    note('Новая серверная версия передана. Старые монеты не добавляются задним числом.');
+  }catch(e){
+    $('controlState').textContent='Ошибка связи с защищённым сервером: '+String(e.message||e);
+  }finally{
+    clearTimeout(timer);
+    button.disabled=!controlEndpoint;
+  }
+}
+
+async function loadPassedArchiveDay(){
+  const selected=$('passedDay').value;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(selected)){
+    note('Неверная дата архива');return;
+  }
+  if(!serverPassActive){
+    $('passedDayStatus').textContent='Архив сервера недоступен. Локальную историю можно посмотреть выше.';
+    return;
+  }
+  const button=$('loadPassedDay');
+  button.disabled=true;
+  $('passedDayStatus').textContent='Получение проверенного журнала за '+selected+'…';
+  $('passedDayList').innerHTML='';
+  try{
+    const data=await getJSON('passed-v2/day/'+selected+'.json');
+    if(!data||data.day!==selected||data.origin!=='server-journal'||
+       !Array.isArray(data.coins)){
+      $('passedDayStatus').textContent='Файл за этот день не опубликован или недоступен. Это не означает ноль монет.';
+      return;
+    }
+    const records=data.coins.filter(function(p){
+      return p&&typeof p.mint==='string'&&['before','after'].includes(p.phase)&&
+        Number.isSafeInteger(p.firstSeenAt)&&Number.isSafeInteger(p.zeroAt)&&
+        Array.isArray(p.matches);
+    });
+    $('passedDayStatus').textContent='Серверная история за '+selected+': '+fmt(records.length)+
+      ' записей. Показаны последние '+fmt(Math.min(150,records.length))+'.';
+    $('passedDayList').innerHTML=records.slice(0,150).map(function(p){
+      return '<div class="filter-row"><div class="row"><b>'+esc(p.name||p.mint.slice(0,14))+
+        '</b><span class="badge mono">'+time(p.firstSeenAt)+'</span></div>'+
+        '<p class="muted">'+esc(p.phase==='before'?'🌱 До миграции':'🎓 После миграции')+
+        ' · '+esc(p.mint)+' · точка 0 '+time(p.zeroAt)+'</p>'+
+        '<p class="muted">'+p.matches.map(function(f){
+          return esc(f.name)+' · v'+esc(f.version)+' ('+esc(f.key)+' '+esc(f.op)+' '+fmt(f.value)+')';
+        }).join(' · ')+'</p></div>';
+    }).join('')||'<p class="muted">В опубликованном серверном журнале за этот день записей нет.</p>';
+  }catch(e){
+    $('passedDayStatus').textContent='Не удалось получить архив: '+String(e.message||e);
+  }finally{
+    button.disabled=false;
+  }
+}
+function bind(){
+  $('exportServerConfig').addEventListener('click',exportServerConfig);
+  $('loadPassedDay').addEventListener('click',loadPassedArchiveDay);
+  $('publishServerConfig').addEventListener('click',publishServerConfig);
+  $('publishSourceAge').addEventListener('click',publishSourceAge);
+  $('publishResearchOne').addEventListener('click',function(){publishResearchLevel('1')});
+  $('publishResearchTwo').addEventListener('click',function(){publishResearchLevel('2')});
+  $('tabs').addEventListener('click',function(e){
+    var b=e.target.closest('button[data-page]');if(!b)return;
+    s.tab=b.dataset.page;
+    document.querySelectorAll('#tabs button').forEach(function(x){x.classList.toggle('active',x===b)});
+    document.querySelectorAll('.page').forEach(function(x){x.hidden=x.id!=='p-'+s.tab});
+    save();
+  });
+  $('allStreams').addEventListener('click',function(e){var b=e.target.closest('button[data-stream]');if(!b)return;s.stream=b.dataset.stream;this.querySelectorAll('button').forEach(function(x){x.classList.toggle('active',x===b)});save();refresh()});
+  $('applySource').addEventListener('click',function(){
+    s.limit=+ $('cardLimit').value;
+    if(!sourceActive){
+      note('Количество карточек сохранено. Настройки возраста нельзя менять без серверного источника.');
+    }else{
+      s.ageBefore=sourceMeta.settings.beforeMinutes;s.ageAfter=sourceMeta.settings.afterMinutes;
+      note('Количество карточек сохранено. Возрастные фильтры работают на сервере.');
+    }
+    save();refresh();
+  });
+  $('coinList').addEventListener('click',function(e){
+    var b=e.target.closest('[data-coin]');if(!b)return;var c=lastAccepted.find(function(x){return mint(x)===b.dataset.coin});if(!c)return;
+    var old=$('openCoinDetail');if(old)old.remove();
+    $('coinList').insertAdjacentHTML('afterend',detail(c));
+    $('closeCoin').addEventListener('click',function(){$('openCoinDetail').remove()});
+  });
+  $('moduleGrid').addEventListener('click',function(e){
+    if(e.target.closest('[data-apply-modules]')){
+      for(const m of s.modules)if(moduleDraft.has(draftModuleKey(m)))
+        m.enabled=moduleDraft.get(draftModuleKey(m));
+      moduleDraft.clear();save();refresh();note('Изменения модулей применены на этом телефоне');return;
+    }
+    if(e.target.closest('[data-cancel-modules]')){
+      moduleDraft.clear();renderModules();note('Неприменённые переключения отменены');return;
+    }
+    var pick=e.target.closest('[data-pick-source]');if(pick){showPicker(pick.dataset.pickSource,pick.dataset.pickLevel);return}
+    var remove=e.target.closest('[data-remove]');if(!remove)return;
+    if(!window.confirm('Удалить модуль из локальной схемы?'))return;
+    var target=s.modules.find(function(m){return m.filterId===remove.dataset.remove&&m.phase===remove.dataset.phase});
+    if(target)moduleDraft.delete(draftModuleKey(target));
+    s.modules=s.modules.filter(function(x){return !(x.filterId===remove.dataset.remove&&x.phase===remove.dataset.phase)});
+    save();refresh();
+  });
+  $('moduleGrid').addEventListener('change',function(e){
+    if(!e.target.matches('[data-toggle]'))return;
+    var m=s.modules.find(function(x){return x.filterId===e.target.dataset.toggle&&x.phase===e.target.dataset.phase});
+    if(m){
+      const key=draftModuleKey(m);
+      if(e.target.checked===m.enabled)moduleDraft.delete(key);
+      else moduleDraft.set(key,e.target.checked);
+      renderModules();
+    }
+  });
+  $('pickerItems').addEventListener('click',function(e){
+    var b=e.target.closest('[data-use]');if(!b||!picker)return;
+    var m={filterId:b.dataset.use,phase:picker.phase,level:picker.level,enabled:false};
+    s.modules.push(m);moduleDraft.set(draftModuleKey(m),true);
+    $('filterPicker').hidden=true;picker=null;save();refresh();
+    note('Добавлен черновик модуля. Нажми «Применить изменения» для включения.');
+  });
+  $('pickerClose').addEventListener('click',function(){$('filterPicker').hidden=true;picker=null});
+  $('decisionMins').addEventListener('input',function(){$('decisionValue').textContent=this.value+' мин'});
+  $('applyDecision').addEventListener('click',function(){
+    s.decision=clamp(+$('decisionMins').value,1,30,10);
+    $('decisionCurrent').textContent=s.decision+' мин';
+    save();refresh();$('decisionSettings').open=false;
+    note('Таймер решения: '+s.decision+' мин · применено');
+  });
+  $('decisionSettings').addEventListener('toggle',function(){
+    if(!this.open){$('decisionMins').value=s.decision;$('decisionValue').textContent=s.decision+' мин';}
+  });
+  for(var id of ['r1Hours','r1Activity','r1Idle','r2Strong']){
+    $(id).addEventListener('input',function(){
+      $(this.id+'Value').textContent=this.value+(this.id==='r1Hours'?' часов':this.id==='r1Idle'?' минут':'%');
+    });
+  }
+  $('applyR1').addEventListener('click',function(){
+    s.r1Hours=+ $('r1Hours').value;s.r1Activity=+ $('r1Activity').value;s.r1Idle=+ $('r1Idle').value;
+    save();refresh();note('Правила разметки 1-го уровня применены');
+  });
+  $('applyR2').addEventListener('click',function(){
+    if(serverR2Active){note('Разметка второго уровня принадлежит серверу; с телефона пока доступен просмотр');return}
+    s.r2Strong=+ $('r2Strong').value;save();refresh();note('Локальный порог сильных/слабых применён');
+  });
+  $('r2Streams').addEventListener('click',function(e){var b=e.target.closest('[data-stream]');if(!b)return;s.r2Stream=b.dataset.stream;this.querySelectorAll('button').forEach(function(x){x.classList.toggle('active',x===b)});save();renderR2()});
+  $('r2Step').addEventListener('change',function(){s.r2Step=+this.value;s.r2Page=0;save();renderR2()});
+  $('r2Prev').addEventListener('click',function(){s.r2Page--;save();renderR2()});
+  $('r2Next').addEventListener('click',function(){s.r2Page++;save();renderR2()});
+  $('levels').addEventListener('click',function(e){var b=e.target.closest('[data-level]');if(!b)return;s.level=b.dataset.level;testHtml='';$('editor').hidden=true;this.querySelectorAll('button').forEach(function(x){x.classList.toggle('active',x===b)});save();renderLibrary()});
+  for(var id2 of ['polyA','polyB'])$(id2).addEventListener('input',function(){$(this.id+'Value').textContent=fmt(+this.value)});
+  $('polyApply').addEventListener('click',function(){s.poly[s.level]=[+$('polyA').value,+$('polyB').value];testHtml='';save();renderLibrary();note('Размеры полигона сохранены')});
+  $('testAll').addEventListener('click',testAll);
+  $('createFilter').addEventListener('click',function(){openEditor(null)});
+  $('libraryList').addEventListener('click',function(e){var b=e.target.closest('[data-edit]');if(b)openEditor(b.dataset.edit)});
+  $('closeEditor').addEventListener('click',function(){$('editor').hidden=true});
+  $('deleteFilter').addEventListener('click',removeEditor);
+  $('editor').addEventListener('submit',saveEditor);
+}
+async function getJSON(path){
+  var ctl=new AbortController(),timer=setTimeout(function(){ctl.abort()},20000);
+  try{var r=await fetch(BASE+path+'?v='+now(),{signal:ctl.signal,cache:'no-store'});
+    if(r.status===404||r.status===403)return null;
+    if(!r.ok)throw new Error(path+' HTTP '+r.status);
+    return await r.json();
+  }finally{clearTimeout(timer)}
+}
+async function load(){
+  if(fetching)return;fetching=true;
+  var today=day(now()),yesterday=day(now()-864e5);
+  var names=['status.json','day/'+today+'.json','day/'+yesterday+'.json','obs/'+today+'.json','obs/'+yesterday+'.json','live.json',
+    'source/status.json','source/day/'+today+'.json','source/day/'+yesterday+'.json','source/live.json',
+    'research-v2/status.json','research-v2/polygon-1.json',
+    'passed-v2/status.json','passed-v2/live.json',
+    'passed-v2/day/'+today+'.json','passed-v2/day/'+yesterday+'.json',
+    'research-v2/status-two.json','research-v2/polygon-2.json',
+    'research-v2/auto-1.json','research-v2/auto-2.json','control/endpoint.json',
+    'research-v2/curve-two.json','research-v2/filter-audit.json'];
+  var fetched=await Promise.allSettled(names.map(function(name,i){
+    if(i===11&&lastResearchBankRead&&now()-lastResearchBankRead<300000)return Promise.resolve(null);
+    if(i===17&&lastSecondBankRead&&now()-lastSecondBankRead<300000)return Promise.resolve(null);
+    return getJSON(name);
+  }));
+  var vals=fetched.map(function(q){return q.status==='fulfilled'?q.value:null});
+  var errors=fetched.filter(function(q){return q.status==='rejected'});
+  if(vals.slice(1,3).every(function(x){return !x})&&!vals[5]&&!vals[6]){
+    // Previously rendered candidates must not remain active when the
+    // authoritative source is unavailable on a later refresh.
+    sourceActive=false;sourceMeta=null;sourceRecords=[];
+    researchMeta=null;researchServerBank=false;bank['1']=[];
+    serverPassActive=false;serverPassRows=[];passMeta=null;
+    serverR2Active=false;serverR2Rows=[];serverR2Curve=null;twoMeta=null;autoOne=null;filterAuditMeta=null;bank['2']=[];
+    lastAccepted=[];lastVisible=[];lastPassed=[];
+    renderAll();renderPassed();renderR1();renderLibrary();
+    dataErr=errors.length?String(errors[0].reason):'Сервер пока не опубликовал данные';
+    $('dataState').textContent='Не удалось получить главный источник: '+dataErr+'. Повтор через 45 секунд.';
+    $('net').textContent='● Источник недоступен';$('net').className='live bad';
+    fetching=false;return;
+  }
+  status=vals[0]||status;
+  controlEndpoint=validControlEndpoint(vals[20]);
+  $('publishServerConfig').disabled=!controlEndpoint;
+  $('ownerControlKey').disabled=!controlEndpoint;
+  $('ageOwnerKey').disabled=!controlEndpoint;
+  $('ownerResearchOneKey').disabled=!controlEndpoint;
+  $('ownerResearchTwoKey').disabled=!controlEndpoint;
+  if(!controlEndpoint)$('controlState').textContent=
+    'Защищённая отправка не включена. Можно подготовить серверную конфигурацию файлом.';
+  if(vals[10]&&vals[10].status==='observational'&&vals[10].settings &&
+     Number.isFinite(vals[10].updated)&&now()-vals[10].updated<=7*60000){
+    if(!researchMeta&&!researchServerBank)bank['1']=[];
+    researchMeta=vals[10];
+    // The polygon is owned by the server. Phone sliders cannot change
+    // server labels until a secure settings API has been implemented.
+    s.r1Hours=researchMeta.settings.hours;
+    s.r1Activity=researchMeta.settings.minActive;
+    s.r1Idle=researchMeta.settings.maxIdle;
+    $('r1Hours').value=s.r1Hours;$('r1HoursValue').textContent=s.r1Hours+' часов';
+    $('r1Activity').value=s.r1Activity;$('r1ActivityValue').textContent=s.r1Activity+'%';
+    $('r1Idle').value=s.r1Idle;$('r1IdleValue').textContent=s.r1Idle+' минут';
+    for(const id of ['r1Hours','r1Activity','r1Idle'])$(id).disabled=!controlEndpoint;
+    $('applyR1').disabled=true;
+    $('publishResearchOne').disabled=!controlEndpoint;
+  }
+  if(!vals[10]||vals[10].status!=='observational'||!Number.isFinite(vals[10].updated)||now()-vals[10].updated>7*60000){
+    researchMeta=null;researchServerBank=false;bank['1']=[];
+  }
+  if(researchMeta&&vals[11]&&Array.isArray(vals[11].coins)&&vals[11].counts){
+    const sourceRows=vals[11].coins.filter(function(x){
+      return x.mint&&Number.isFinite(x.activePct)&&Number.isFinite(x.maxIdleObserved)&&x.features;
+    });
+    bank['1']=sourceRows.map(function(x){
+      return {mint:x.mint,t:x.acceptedAt,activity:x.activePct,
+        idle:x.maxIdleObserved,features:x.features};
+    }).sort(function(a,b){return a.t-b.t});
+    researchServerBank=true;
+    lastResearchBankRead=now();
+  }
+  // Server records are authoritative only while their own heartbeat is fresh.
+  passMeta=vals[12]&&Number.isFinite(vals[12].updated)&&
+    now()-vals[12].updated<7*60000&&
+    ['server-observational','disabled-no-server-rules'].includes(vals[12].status)&&
+    vals[12].serverOnly===true?vals[12]:null;
+  serverPassActive=!!passMeta;
+  if(serverPassActive){
+    const verified=new Map();
+    for(const source of [vals[15],vals[14],vals[13]]){
+      for(const p of source&&source.coins||[]){
+        if(p&&typeof p.mint==='string'&&Number.isSafeInteger(p.acceptedAt)&&
+           Number.isSafeInteger(p.firstSeenAt)&&Number.isSafeInteger(p.zeroAt)&&
+           ['before','after'].includes(p.phase)&&Array.isArray(p.matches))
+          verified.set(p.mint,p);
+      }
+    }
+    serverPassRows=[...verified.values()].sort(function(a,b){return b.firstSeenAt-a.firstSeenAt});
+  }else serverPassRows=[];
+  twoMeta=vals[16]&&vals[16].status==='observational'&&
+    vals[16].origin==='server-verified-passed-only'&&
+    Number.isFinite(vals[16].updated)&&now()-vals[16].updated<7*60000?vals[16]:null;
+  serverR2Active=!!twoMeta;
+  if(serverR2Active){
+    s.r2Strong=twoMeta.settings.minAbove;
+    $('r2Strong').value=s.r2Strong;$('r2StrongValue').textContent=s.r2Strong+'%';
+    $('r2Strong').disabled=!controlEndpoint;$('applyR2').disabled=true;
+    $('publishResearchTwo').disabled=!controlEndpoint;
+    if(vals[17]&&Array.isArray(vals[17].coins)){
+      serverR2Rows=vals[17].coins.filter(function(row){
+        return row&&typeof row.mint==='string'&&['strong','weak'].includes(row.label)&&
+          Number.isFinite(row.pctAbove)&&row.features;
+      });
+      bank['2']=serverR2Rows.map(function(row){
+        return {mint:row.mint,t:row.zeroAt,above:row.pctAbove,
+          phase:row.phase,label:row.label,features:row.features}
+      });
+      lastSecondBankRead=now();
+    }else if(!lastSecondBankRead||now()-lastSecondBankRead>=300000){
+      serverR2Rows=[];bank['2']=[];
+    }
+  }else{
+    serverR2Rows=[];serverR2Curve=null;bank['2']=[];lastSecondBankRead=0;
+    $('r2Strong').disabled=false;$('applyR2').disabled=false;
+    $('publishResearchTwo').disabled=true;
+  }
+  serverR2Curve=serverR2Active&&vals[21]&&
+    vals[21].origin==='server-verified-passed-only'&&vals[21].curves&&
+    Number.isFinite(vals[21].updated)&&now()-vals[21].updated<45*60000?
+    vals[21].curves:null;
+  autoOne=vals[18]&&Number.isFinite(vals[18].updated)&&
+    now()-vals[18].updated<40*60000?vals[18]:null;
+  autoTwo=vals[19]&&Number.isFinite(vals[19].updated)&&
+    now()-vals[19].updated<40*60000?vals[19]:null;
+  filterAuditMeta=vals[22]&&vals[22].origin==='server-observational-analytics'&&
+    Number.isFinite(vals[22].updated)&&now()-vals[22].updated<40*60000?vals[22]:null;
+  sourceActive=false;sourceMeta=null;sourceRecords=[];
+  $('ageBefore').disabled=true;$('ageAfter').disabled=true;
+  $('publishSourceAge').disabled=true;
+  if(vals[6]&&['verified-post-only','verified-pre-post'].includes(vals[6].mode)&&
+     vals[6].settings&&Number.isFinite(vals[6].updated)&&now()-vals[6].updated<=7*60000 &&
+     [vals[6].settings.beforeMinutes,vals[6].settings.afterMinutes].every(function(v){
+       return Number.isInteger(v)&&v>=1&&v<=10;
+     })&&(vals[7]||vals[9])) {
+    sourceActive=true;sourceMeta=vals[6];
+    var unique=new Map();
+    for(var item of (vals[8]?.coins||[]).concat(vals[7]?.coins||[],vals[9]?.coins||[])) {
+      if(item.a&&item.phase&&Number.isSafeInteger(item.eventAt)&&Number.isSafeInteger(item.acceptedAt))unique.set(item.a,item);
+    }
+    sourceRecords=[...unique.values()];
+    s.ageBefore=sourceMeta.settings.beforeMinutes;
+    s.ageAfter=sourceMeta.settings.afterMinutes;
+    $('ageBefore').value=s.ageBefore;$('ageAfter').value=s.ageAfter;
+    $('ageBefore').disabled=!controlEndpoint;$('ageAfter').disabled=!controlEndpoint;
+    $('publishSourceAge').disabled=!controlEndpoint;
+    $('ageBefore').title=controlEndpoint?'Изменяется только по ключу владельца':'Управление возрастом ещё не подключено';
+    $('ageAfter').title=$('ageBefore').title;
+  }
+  if(!sourceActive){serverPassActive=false;serverPassRows=[];}
+  var by=new Map();
+  for(var dayObj of [vals[2],vals[1]])for(var c of dayObj&&dayObj.coins||[]){
+    if(mint(c))by.set(mint(c),Object.assign({},by.get(mint(c))||{},c));
+  }
+  for(var o of [vals[4],vals[3]])for(var d of o&&o.coins||[]){
+    var existing=by.get(mint(d));if(!existing)continue;
+    if(Array.isArray(d.ds)&&d.ds.length>=(existing.ds||[]).length)existing.ds=d.ds;
+    if(d.path)existing.path=d.path;
+    if(d.lq)existing.lq=d.lq;
+  }
+  for(var c2 of vals[5]&&vals[5].coins||[]){
+    var prior=by.get(mint(c2));by.set(mint(c2),Object.assign({},prior||{},c2));
+  }
+  dataset=[...by.values()];
+  dataErr='';
+  loadedAt=now();
+  var updated=status&&ts(status.updated),age=updated?Math.floor((now()-updated)/60000):null;
+  var connected=age!=null&&age<=8&&sourceActive;
+  $('net').textContent=connected?'● LIVE':'● '+(!sourceActive?'Источник недоступен':age==null?'Данные':'Задержка '+Math.max(0,age)+' мин');
+  $('net').className='live '+(connected?'good':'warn');
+  $('dataState').textContent='Сервер: '+(updated?time(updated):'—')+' (Казахстан) · '+(sourceActive?'главный источник '+fmt(sourceRecords.length)+' записей, сегодня '+fmt(sourceMeta.today)+' (до '+fmt(sourceMeta.todayBefore)+', после '+fmt(sourceMeta.todayAfter)+')':'допуск приостановлен (основной журнал недоступен)')+' · обновление каждые 45 секунд.';
+  refresh();fetching=false;
+}
+function init(){
+  s.ageBefore=clamp(s.ageBefore,1,10,2);s.ageAfter=clamp(s.ageAfter,1,10,2);
+  s.limit=[10,20,30,50,100].includes(+s.limit)?+s.limit:20;
+  s.decision=clamp(s.decision,1,30,10);s.r1Hours=clamp(s.r1Hours,1,24,5);
+  s.r1Activity=clamp(s.r1Activity,0,100,70);s.r1Idle=clamp(s.r1Idle,5,120,60);
+  s.r2Strong=clamp(s.r2Strong,1,100,70);s.r2Step=[1,5,10,15,30,60].includes(+s.r2Step)?+s.r2Step:5;
+  s.level=['1','2'].includes(s.level)?s.level:'1';s.stream=['all','before','after'].includes(s.stream)?s.stream:'all';
+  s.r2Stream=['before','after'].includes(s.r2Stream)?s.r2Stream:'after';
+  if(!['all','mine','passed','r1','r2','library'].includes(s.tab))s.tab='all';
+  $('ageBefore').innerHTML=Array.from({length:10},function(_,i){return '<option value="'+(i+1)+'">'+(i+1)+' мин</option>'}).join('');
+  $('ageAfter').innerHTML=$('ageBefore').innerHTML;
+  $('ageBefore').value=s.ageBefore;$('ageAfter').value=s.ageAfter;$('cardLimit').value=s.limit;
+  for(var pair of [['decisionMins',s.decision],['r1Hours',s.r1Hours],['r1Activity',s.r1Activity],['r1Idle',s.r1Idle],['r2Strong',s.r2Strong]])$(pair[0]).value=pair[1];
+  $('decisionValue').textContent=s.decision+' мин';$('decisionCurrent').textContent=s.decision+' мин';$('r1HoursValue').textContent=s.r1Hours+' часов';
+  $('r1ActivityValue').textContent=s.r1Activity+'%';$('r1IdleValue').textContent=s.r1Idle+' минут';
+  $('r2StrongValue').textContent=s.r2Strong+'%';$('r2Step').value=s.r2Step;
+  $('passedDay').innerHTML=Array.from({length:14},function(_,i){
+    const d=day(now()-i*864e5);
+    return '<option value="'+d+'">'+d+'</option>';
+  }).join('');
+  document.querySelectorAll('#tabs [data-page]').forEach(function(x){x.classList.toggle('active',x.dataset.page===s.tab)});
+  document.querySelectorAll('.page').forEach(function(x){x.hidden=x.id!=='p-'+s.tab});
+  document.querySelectorAll('#allStreams [data-stream]').forEach(function(x){x.classList.toggle('active',x.dataset.stream===s.stream)});
+  document.querySelectorAll('#r2Streams [data-stream]').forEach(function(x){x.classList.toggle('active',x.dataset.stream===s.r2Stream)});
+  document.querySelectorAll('#levels [data-level]').forEach(function(x){x.classList.toggle('active',x.dataset.level===s.level)});
+  bind();refresh();load();
+  setInterval(load,45000);
+  setInterval(function(){if(dataset.length){renderAll();renderPassed()}},10000);
+}
+window.addEventListener('error',function(e){if($('dataState'))$('dataState').textContent='Ошибка интерфейса: '+(e.message||'неизвестная')+'. Старый сайт доступен по кнопке сверху.'});
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+})();,liq:'Ликвидность )[x.key])+' '+esc(x.op)+' '+fmt(x.value)+' · версия '+fmt(x.version)+'</p>'+
+      (audits?'<p class="hint">Серверная история сравнения по версиям:</p>'+audits:
+      '<div class="numbers"><span class="badge">На телефоне: '+orig+'</span>'+
+      '<span class="badge">Серверная фоновая проверка: ожидает настройки</span></div>')+'</div>';
+  }).join(''):'<div class="empty-state">Фильтров этого уровня пока нет. Нажми «+ Создать» — можно сделать собственное правило.</div>';
+}
+function testAll(){
+  var f=s.filters.filter(function(x){return x.level===s.level});
+  var groups=classified(s.level),targets=s.poly[s.level];
+  if(groups[0].length<targets[0]||groups[1].length<targets[1]){note('Сначала нужно накопить выбранное количество обоих классов');return}
+  var positives=groups[0].slice(-targets[0]),negatives=groups[1].slice(-targets[1]);
+  var results=[];
+  for(var x of f){
+    var good=positives.filter(function(c){return ruleStatus(c.features,x)==='pass'}).length;
+    var blocked=negatives.filter(function(c){return ruleStatus(c.features,x)==='reject'}).length;
+    var unknownPositive=positives.filter(function(c){return ruleStatus(c.features,x)==='unknown'}).length;
+    var unknownNegative=negatives.filter(function(c){return ruleStatus(c.features,x)==='unknown'}).length;
+    var a=good/positives.length*100,b=blocked/negatives.length*100;
+    if(!x.original)x.original={livePercent:a,deadPercent:b,liveCount:good,liveTotal:positives.length,deadCount:blocked,deadTotal:negatives.length,at:now()};
+    results.push({f:x,a:a,b:b,good:good,blocked:blocked,unknownPositive,unknownNegative});
+  }
+  results.sort(function(a,b){return (b.a+b.b)-(a.a+a.b)});
+  testHtml='<h3 style="margin-top:12px">Результаты на '+fmt(positives.length+negatives.length)+' монетах</h3>'+
+    '<p class="muted">🟢 Доля правильно пропущенных · 🔴 доля правильно отклонённых. Обучавшиеся монеты не исключаются; это не независимая проверка.</p>'+
+    (results.length?results.map(function(r,i){return '<div class="result"><div class="row"><b>'+(i+1)+'. №'+esc(r.f.id)+' · '+esc(r.f.name)+'</b><span class="badge">v'+r.f.version+'</span></div>'+
+      '<div class="numbers" style="margin-top:8px"><span class="good">🟢 '+r.a.toFixed(1)+'% ('+r.good+'/'+positives.length+')</span> · <span class="bad">🔴 '+r.b.toFixed(1)+'% ('+r.blocked+'/'+negatives.length+')</span></div>'+
+        '<p class="muted">Нет показателя: живые '+r.unknownPositive+', мёртвые '+r.unknownNegative+'. Не засчитываем их как успешно отклонённые.</p></div>'}).join(''):'<p class="muted">В этом уровне ещё нет фильтров.</p>');
+  save();renderLibrary();
+}
+function openEditor(id){
+  editorId=id||null;var f=s.filters.find(function(x){return x.id===editorId});
+  $('editor').hidden=false;
+  $('editorTitle').textContent=f?'Редактор №'+f.id+' · v'+f.version:'Новый фильтр · '+s.level+'-й уровень';
+  $('filterName').value=f?f.name:'';
+  $('filterKey').value=f?f.key:'buyers';$('filterOp').value=f?f.op:'>=';
+  $('filterValue').value=f?f.value:20;
+  $('deleteFilter').hidden=!f;
+  $('editorNote').textContent='Сохраняется только в этом браузере. Изменение условия создаёт новую версию.';
+  $('editor').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function saveEditor(e){
+  e.preventDefault();
+  var name=$('filterName').value.trim(),key=$('filterKey').value,op=$('filterOp').value,value=Number($('filterValue').value);
+  if(!name||!['buyers','trades','volume','liq','mc','buys','sells','buySellRatio'].includes(key)||!['>=','<='].includes(op)||!Number.isFinite(value)||value<0||value>1e12){note('Проверь название и значение');return}
+  var same=s.filters.find(function(f){return f.id!==editorId&&f.level===s.level&&f.key===key&&f.op===op&&f.value===value});
+  if(same){note('Такие же правила уже есть: №'+same.id);return}
+  if(editorId){
+    var f=s.filters.find(function(x){return x.id===editorId});
+    if(!f)return;
+    if(f.key!==key||f.op!==op||f.value!==value){
+      f.version++;f.original=null;f.history=f.history||[];f.history.push({version:f.version-1,changedAt:now()});
+    }
+    Object.assign(f,{name:name,key:key,op:op,value:value});
+  }else{
+    var id=String(Math.max(0,...s.filters.map(function(f){return Number(f.id)||0}))+1).padStart(3,'0');
+    s.filters.push({id:id,level:s.level,name:name,key:key,op:op,value:value,version:1,original:null,history:[],createdAt:now()});
+  }
+  $('editor').hidden=true;testHtml='';save();refresh();note('Фильтр сохранён');
+}
+function removeEditor(){
+  if(!editorId||!window.confirm('Удалить фильтр №'+editorId+' из библиотеки и активных модулей?'))return;
+  s.filters=s.filters.filter(function(x){return x.id!==editorId});
+  s.modules=s.modules.filter(function(x){return x.filterId!==editorId});
+  editorId=null;$('editor').hidden=true;testHtml='';save();refresh();note('Фильтр удалён');
+}
+function refresh(){
+  analyze();
+  renderAll();renderServerModules();renderModules();renderLocalPreview();renderPassed();renderR1();renderR2();renderLibrary();
+}
+function preparedServerConfig(){
+  // Include all library definitions so the server can evaluate background
+  // performance of disabled but configured modules. Only enabled level-1
+  // modules are permitted to add new first-level Passed records.
+  if(s.filters.length>200||s.modules.length>200){
+    note('Слишком много модулей/фильтров: максимум 200 в серверной версии');
+    return null;
+  }
+  const filters=s.filters.map(function(f){
+    return {id:String(f.id),name:String(f.name),level:String(f.level),
+      key:f.key,op:f.op,value:Number(f.value),version:Number(f.version)};
+  });
+  const ids=new Set(filters.map(function(f){return f.id}));
+  const modules=s.modules.filter(function(m){return ids.has(m.filterId)})
+    .map(function(m){return {
+      filterId:m.filterId,phase:m.phase,level:m.level,enabled:!!m.enabled
+    }});
+  if(!modules.some(function(m){return m.level==='1'&&m.enabled})){
+    note('Нужен хотя бы один подтверждённый активный модуль 1-го уровня');
+    return null;
+  }
+  return {schema:1,enabled:true,activatedAt:0,
+    decisionMinutes:s.decision,filters,modules};
+}
+function exportServerConfig(){
+  const config=preparedServerConfig();if(!config)return;
+  const blob=new Blob([JSON.stringify(config,null,2)+'\n'],{type:'application/json'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='pass-filters.json';
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(function(){URL.revokeObjectURL(url)},30000);
+  note('Конфигурация подготовлена. Для фоновой работы её надо опубликовать на сервере.');
+}
+function validControlEndpoint(value){
+  if(!value||value.enabled!==true||typeof value.url!=='string')return null;
+  try{
+    const u=new URL(value.url);
+    return u.protocol==='https:'&&u.hostname.endsWith('.run.app')&&!u.username&&!u.password?
+      u.origin:null;
+  }catch(e){return null}
+}
+async function publishResearchLevel(level){
+  const one=level==='1',keyField=one?'ownerResearchOneKey':'ownerResearchTwoKey';
+  const checkField=one?'confirmResearchOne':'confirmResearchTwo';
+  const statusField=one?'researchOneControlState':'researchTwoControlState';
+  const buttonField=one?'publishResearchOne':'publishResearchTwo';
+  const endpoint=one?'/api/research-one':'/api/research-two';
+  const current=one?researchMeta:twoMeta;
+  if(!controlEndpoint||!current){note('Серверное исследование ещё недоступно');return}
+  if(!$(checkField).checked){note('Подтверди изменение серверного исследования');return}
+  const key=$(keyField).value.trim();
+  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
+    note('Требуется отдельный ключ владельца');return;
+  }
+  let cfg;
+  if(one){
+    cfg={hours:Number($('r1Hours').value),
+      decisionMinutes:researchMeta.settings.decisionMinutes,
+      minActive:Number($('r1Activity').value),
+      maxIdle:Number($('r1Idle').value),
+      minCoverage:researchMeta.settings.minCoverage};
+    if(!Number.isInteger(cfg.hours)||cfg.hours<1||cfg.hours>24||
+       !Number.isInteger(cfg.maxIdle)||cfg.maxIdle<5||cfg.maxIdle>1440||
+       !Number.isFinite(cfg.minActive)||cfg.minActive<0||cfg.minActive>100){
+      note('Неверные параметры первого исследования');return;
+    }
+  }else{
+    cfg={minAbove:Number($('r2Strong').value),
+      minCoverage:twoMeta.settings.minCoverage};
+    if(!Number.isFinite(cfg.minAbove)||cfg.minAbove<0||cfg.minAbove>100){
+      note('Неверный порог второго исследования');return;
+    }
+  }
+  $(buttonField).disabled=true;
+  $(statusField).textContent='Отправка серверной версии…';
+  const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
+  try{
+    const r=await fetch(controlEndpoint+endpoint,{
+      method:'POST',cache:'no-store',signal:abort.signal,
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify(cfg)
+    });
+    if(!r.ok){
+      $(statusField).textContent='Сервер отклонил изменения. HTTP '+r.status;
+      note(r.status===401?'Ключ владельца не принят':'Публикация не удалась: '+r.status);
+      return;
+    }
+    $(keyField).value='';$(checkField).checked=false;
+    $(statusField).textContent='Версия принята. Для неё сервер создаст отдельную группу наблюдений.';
+    note('Сервер переключится на новые правила без переписывания старой истории.');
+  }catch(e){
+    $(statusField).textContent='Ошибка связи: '+String(e.message||e);
+  }finally{
+    clearTimeout(timer);$(buttonField).disabled=!controlEndpoint||!current;
+  }
+}
+async function publishSourceAge(){
+  if(!controlEndpoint||!sourceActive){
+    note('Нет защищённого сервера управления или главного источника');return;
+  }
+  if(!$('confirmAgePublish').checked){
+    note('Подтверди изменение двух возрастных фильтров');return;
+  }
+  const cfg={schema:1,beforeMinutes:Number($('ageBefore').value),
+    afterMinutes:Number($('ageAfter').value)};
+  if(![cfg.beforeMinutes,cfg.afterMinutes].every(function(v){
+    return Number.isInteger(v)&&v>=1&&v<=10;
+  })){
+    note('Возраст до и после миграции должен быть от 1 до 10 минут');return;
+  }
+  const key=$('ageOwnerKey').value.trim();
+  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
+    note('Для изменения порога нужен отдельный ключ владельца');return;
+  }
+  const button=$('publishSourceAge');
+  button.disabled=true;
+  $('sourceAgeControlState').textContent='Отправка новых возрастных порогов…';
+  const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
+  try{
+    const r=await fetch(controlEndpoint+'/api/source-age',{
+      method:'POST',cache:'no-store',signal:abort.signal,
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify(cfg)
+    });
+    if(!r.ok){
+      $('sourceAgeControlState').textContent='Сервер отклонил изменение: HTTP '+r.status;
+      note(r.status===401?'Ключ владельца не принят':'Ошибка изменения возраста: '+r.status);
+      return;
+    }
+    $('ageOwnerKey').value='';$('confirmAgePublish').checked=false;
+    $('sourceAgeControlState').textContent='Пороги получены сервером управления. Ждём подтверждения новых значений главным источником.';
+    note('Серверные пороги обновляются только для новых входящих событий.');
+  }catch(e){
+    $('sourceAgeControlState').textContent='Ошибка связи: '+String(e.message||e);
+  }finally{
+    clearTimeout(timer);
+    button.disabled=!controlEndpoint||!sourceActive;
+  }
+}
+async function publishServerConfig(){
+  if(!controlEndpoint){note('Защищённый сервер управления ещё не подключён');return}
+  if(!$('confirmControlPublish').checked){
+    note('Отметь подтверждение публикации серверной версии');return;
+  }
+  const config=preparedServerConfig();if(!config)return;
+  const key=$('ownerControlKey').value.trim();
+  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
+    note('Нужен действительный ключ владельца, не пароль от GitHub');return;
+  }
+  const button=$('publishServerConfig');
+  button.disabled=true;$('controlState').textContent='Отправка настроек на сервер…';
+  const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
+  try{
+    const r=await fetch(controlEndpoint+'/api/filter-config',{
+      method:'POST',cache:'no-store',signal:abort.signal,
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify(config)
+    });
+    if(!r.ok){
+      $('controlState').textContent='Не удалось применить серверную конфигурацию. HTTP '+r.status;
+      note(r.status===401?'Ключ владельца не принят':'Ошибка публикации: HTTP '+r.status);
+      return;
+    }
+    $('ownerControlKey').value='';
+    $('confirmControlPublish').checked=false;
+    $('controlState').textContent='Принято сервером управления. Журнал переключится после обновления конфигурации сборщика.';
+    note('Новая серверная версия передана. Старые монеты не добавляются задним числом.');
+  }catch(e){
+    $('controlState').textContent='Ошибка связи с защищённым сервером: '+String(e.message||e);
+  }finally{
+    clearTimeout(timer);
+    button.disabled=!controlEndpoint;
+  }
+}
+
+async function loadPassedArchiveDay(){
+  const selected=$('passedDay').value;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(selected)){
+    note('Неверная дата архива');return;
+  }
+  if(!serverPassActive){
+    $('passedDayStatus').textContent='Архив сервера недоступен. Локальную историю можно посмотреть выше.';
+    return;
+  }
+  const button=$('loadPassedDay');
+  button.disabled=true;
+  $('passedDayStatus').textContent='Получение проверенного журнала за '+selected+'…';
+  $('passedDayList').innerHTML='';
+  try{
+    const data=await getJSON('passed-v2/day/'+selected+'.json');
+    if(!data||data.day!==selected||data.origin!=='server-journal'||
+       !Array.isArray(data.coins)){
+      $('passedDayStatus').textContent='Файл за этот день не опубликован или недоступен. Это не означает ноль монет.';
+      return;
+    }
+    const records=data.coins.filter(function(p){
+      return p&&typeof p.mint==='string'&&['before','after'].includes(p.phase)&&
+        Number.isSafeInteger(p.firstSeenAt)&&Number.isSafeInteger(p.zeroAt)&&
+        Array.isArray(p.matches);
+    });
+    $('passedDayStatus').textContent='Серверная история за '+selected+': '+fmt(records.length)+
+      ' записей. Показаны последние '+fmt(Math.min(150,records.length))+'.';
+    $('passedDayList').innerHTML=records.slice(0,150).map(function(p){
+      return '<div class="filter-row"><div class="row"><b>'+esc(p.name||p.mint.slice(0,14))+
+        '</b><span class="badge mono">'+time(p.firstSeenAt)+'</span></div>'+
+        '<p class="muted">'+esc(p.phase==='before'?'🌱 До миграции':'🎓 После миграции')+
+        ' · '+esc(p.mint)+' · точка 0 '+time(p.zeroAt)+'</p>'+
+        '<p class="muted">'+p.matches.map(function(f){
+          return esc(f.name)+' · v'+esc(f.version)+' ('+esc(f.key)+' '+esc(f.op)+' '+fmt(f.value)+')';
+        }).join(' · ')+'</p></div>';
+    }).join('')||'<p class="muted">В опубликованном серверном журнале за этот день записей нет.</p>';
+  }catch(e){
+    $('passedDayStatus').textContent='Не удалось получить архив: '+String(e.message||e);
+  }finally{
+    button.disabled=false;
+  }
+}
+function bind(){
+  $('exportServerConfig').addEventListener('click',exportServerConfig);
+  $('loadPassedDay').addEventListener('click',loadPassedArchiveDay);
+  $('publishServerConfig').addEventListener('click',publishServerConfig);
+  $('publishSourceAge').addEventListener('click',publishSourceAge);
+  $('publishResearchOne').addEventListener('click',function(){publishResearchLevel('1')});
+  $('publishResearchTwo').addEventListener('click',function(){publishResearchLevel('2')});
+  $('tabs').addEventListener('click',function(e){
+    var b=e.target.closest('button[data-page]');if(!b)return;
+    s.tab=b.dataset.page;
+    document.querySelectorAll('#tabs button').forEach(function(x){x.classList.toggle('active',x===b)});
+    document.querySelectorAll('.page').forEach(function(x){x.hidden=x.id!=='p-'+s.tab});
+    save();
+  });
+  $('allStreams').addEventListener('click',function(e){var b=e.target.closest('button[data-stream]');if(!b)return;s.stream=b.dataset.stream;this.querySelectorAll('button').forEach(function(x){x.classList.toggle('active',x===b)});save();refresh()});
+  $('applySource').addEventListener('click',function(){
+    s.limit=+ $('cardLimit').value;
+    if(!sourceActive){
+      note('Количество карточек сохранено. Настройки возраста нельзя менять без серверного источника.');
+    }else{
+      s.ageBefore=sourceMeta.settings.beforeMinutes;s.ageAfter=sourceMeta.settings.afterMinutes;
+      note('Количество карточек сохранено. Возрастные фильтры работают на сервере.');
+    }
+    save();refresh();
+  });
+  $('coinList').addEventListener('click',function(e){
+    var b=e.target.closest('[data-coin]');if(!b)return;var c=lastAccepted.find(function(x){return mint(x)===b.dataset.coin});if(!c)return;
+    var old=$('openCoinDetail');if(old)old.remove();
+    $('coinList').insertAdjacentHTML('afterend',detail(c));
+    $('closeCoin').addEventListener('click',function(){$('openCoinDetail').remove()});
+  });
+  $('moduleGrid').addEventListener('click',function(e){
+    if(e.target.closest('[data-apply-modules]')){
+      for(const m of s.modules)if(moduleDraft.has(draftModuleKey(m)))
+        m.enabled=moduleDraft.get(draftModuleKey(m));
+      moduleDraft.clear();save();refresh();note('Изменения модулей применены на этом телефоне');return;
+    }
+    if(e.target.closest('[data-cancel-modules]')){
+      moduleDraft.clear();renderModules();note('Неприменённые переключения отменены');return;
+    }
+    var pick=e.target.closest('[data-pick-source]');if(pick){showPicker(pick.dataset.pickSource,pick.dataset.pickLevel);return}
+    var remove=e.target.closest('[data-remove]');if(!remove)return;
+    if(!window.confirm('Удалить модуль из локальной схемы?'))return;
+    var target=s.modules.find(function(m){return m.filterId===remove.dataset.remove&&m.phase===remove.dataset.phase});
+    if(target)moduleDraft.delete(draftModuleKey(target));
+    s.modules=s.modules.filter(function(x){return !(x.filterId===remove.dataset.remove&&x.phase===remove.dataset.phase)});
+    save();refresh();
+  });
+  $('moduleGrid').addEventListener('change',function(e){
+    if(!e.target.matches('[data-toggle]'))return;
+    var m=s.modules.find(function(x){return x.filterId===e.target.dataset.toggle&&x.phase===e.target.dataset.phase});
+    if(m){
+      const key=draftModuleKey(m);
+      if(e.target.checked===m.enabled)moduleDraft.delete(key);
+      else moduleDraft.set(key,e.target.checked);
+      renderModules();
+    }
+  });
+  $('pickerItems').addEventListener('click',function(e){
+    var b=e.target.closest('[data-use]');if(!b||!picker)return;
+    var m={filterId:b.dataset.use,phase:picker.phase,level:picker.level,enabled:false};
+    s.modules.push(m);moduleDraft.set(draftModuleKey(m),true);
+    $('filterPicker').hidden=true;picker=null;save();refresh();
+    note('Добавлен черновик модуля. Нажми «Применить изменения» для включения.');
+  });
+  $('pickerClose').addEventListener('click',function(){$('filterPicker').hidden=true;picker=null});
+  $('decisionMins').addEventListener('input',function(){$('decisionValue').textContent=this.value+' мин'});
+  $('applyDecision').addEventListener('click',function(){
+    s.decision=clamp(+$('decisionMins').value,1,30,10);
+    $('decisionCurrent').textContent=s.decision+' мин';
+    save();refresh();$('decisionSettings').open=false;
+    note('Таймер решения: '+s.decision+' мин · применено');
+  });
+  $('decisionSettings').addEventListener('toggle',function(){
+    if(!this.open){$('decisionMins').value=s.decision;$('decisionValue').textContent=s.decision+' мин';}
+  });
+  for(var id of ['r1Hours','r1Activity','r1Idle','r2Strong']){
+    $(id).addEventListener('input',function(){
+      $(this.id+'Value').textContent=this.value+(this.id==='r1Hours'?' часов':this.id==='r1Idle'?' минут':'%');
+    });
+  }
+  $('applyR1').addEventListener('click',function(){
+    s.r1Hours=+ $('r1Hours').value;s.r1Activity=+ $('r1Activity').value;s.r1Idle=+ $('r1Idle').value;
+    save();refresh();note('Правила разметки 1-го уровня применены');
+  });
+  $('applyR2').addEventListener('click',function(){
+    if(serverR2Active){note('Разметка второго уровня принадлежит серверу; с телефона пока доступен просмотр');return}
+    s.r2Strong=+ $('r2Strong').value;save();refresh();note('Локальный порог сильных/слабых применён');
+  });
+  $('r2Streams').addEventListener('click',function(e){var b=e.target.closest('[data-stream]');if(!b)return;s.r2Stream=b.dataset.stream;this.querySelectorAll('button').forEach(function(x){x.classList.toggle('active',x===b)});save();renderR2()});
+  $('r2Step').addEventListener('change',function(){s.r2Step=+this.value;s.r2Page=0;save();renderR2()});
+  $('r2Prev').addEventListener('click',function(){s.r2Page--;save();renderR2()});
+  $('r2Next').addEventListener('click',function(){s.r2Page++;save();renderR2()});
+  $('levels').addEventListener('click',function(e){var b=e.target.closest('[data-level]');if(!b)return;s.level=b.dataset.level;testHtml='';$('editor').hidden=true;this.querySelectorAll('button').forEach(function(x){x.classList.toggle('active',x===b)});save();renderLibrary()});
+  for(var id2 of ['polyA','polyB'])$(id2).addEventListener('input',function(){$(this.id+'Value').textContent=fmt(+this.value)});
+  $('polyApply').addEventListener('click',function(){s.poly[s.level]=[+$('polyA').value,+$('polyB').value];testHtml='';save();renderLibrary();note('Размеры полигона сохранены')});
+  $('testAll').addEventListener('click',testAll);
+  $('createFilter').addEventListener('click',function(){openEditor(null)});
+  $('libraryList').addEventListener('click',function(e){var b=e.target.closest('[data-edit]');if(b)openEditor(b.dataset.edit)});
+  $('closeEditor').addEventListener('click',function(){$('editor').hidden=true});
+  $('deleteFilter').addEventListener('click',removeEditor);
+  $('editor').addEventListener('submit',saveEditor);
+}
+async function getJSON(path){
+  var ctl=new AbortController(),timer=setTimeout(function(){ctl.abort()},20000);
+  try{var r=await fetch(BASE+path+'?v='+now(),{signal:ctl.signal,cache:'no-store'});
+    if(r.status===404||r.status===403)return null;
+    if(!r.ok)throw new Error(path+' HTTP '+r.status);
+    return await r.json();
+  }finally{clearTimeout(timer)}
+}
+async function load(){
+  if(fetching)return;fetching=true;
+  var today=day(now()),yesterday=day(now()-864e5);
+  var names=['status.json','day/'+today+'.json','day/'+yesterday+'.json','obs/'+today+'.json','obs/'+yesterday+'.json','live.json',
+    'source/status.json','source/day/'+today+'.json','source/day/'+yesterday+'.json','source/live.json',
+    'research-v2/status.json','research-v2/polygon-1.json',
+    'passed-v2/status.json','passed-v2/live.json',
+    'passed-v2/day/'+today+'.json','passed-v2/day/'+yesterday+'.json',
+    'research-v2/status-two.json','research-v2/polygon-2.json',
+    'research-v2/auto-1.json','research-v2/auto-2.json','control/endpoint.json',
+    'research-v2/curve-two.json','research-v2/filter-audit.json'];
+  var fetched=await Promise.allSettled(names.map(function(name,i){
+    if(i===11&&lastResearchBankRead&&now()-lastResearchBankRead<300000)return Promise.resolve(null);
+    if(i===17&&lastSecondBankRead&&now()-lastSecondBankRead<300000)return Promise.resolve(null);
+    return getJSON(name);
+  }));
+  var vals=fetched.map(function(q){return q.status==='fulfilled'?q.value:null});
+  var errors=fetched.filter(function(q){return q.status==='rejected'});
+  if(vals.slice(1,3).every(function(x){return !x})&&!vals[5]&&!vals[6]){
+    // Previously rendered candidates must not remain active when the
+    // authoritative source is unavailable on a later refresh.
+    sourceActive=false;sourceMeta=null;sourceRecords=[];
+    researchMeta=null;researchServerBank=false;bank['1']=[];
+    serverPassActive=false;serverPassRows=[];passMeta=null;
+    serverR2Active=false;serverR2Rows=[];serverR2Curve=null;twoMeta=null;autoOne=null;filterAuditMeta=null;bank['2']=[];
+    lastAccepted=[];lastVisible=[];lastPassed=[];
+    renderAll();renderPassed();renderR1();renderLibrary();
+    dataErr=errors.length?String(errors[0].reason):'Сервер пока не опубликовал данные';
+    $('dataState').textContent='Не удалось получить главный источник: '+dataErr+'. Повтор через 45 секунд.';
+    $('net').textContent='● Источник недоступен';$('net').className='live bad';
+    fetching=false;return;
+  }
+  status=vals[0]||status;
+  controlEndpoint=validControlEndpoint(vals[20]);
+  $('publishServerConfig').disabled=!controlEndpoint;
+  $('ownerControlKey').disabled=!controlEndpoint;
+  $('ageOwnerKey').disabled=!controlEndpoint;
+  $('ownerResearchOneKey').disabled=!controlEndpoint;
+  $('ownerResearchTwoKey').disabled=!controlEndpoint;
+  if(!controlEndpoint)$('controlState').textContent=
+    'Защищённая отправка не включена. Можно подготовить серверную конфигурацию файлом.';
+  if(vals[10]&&vals[10].status==='observational'&&vals[10].settings &&
+     Number.isFinite(vals[10].updated)&&now()-vals[10].updated<=7*60000){
+    if(!researchMeta&&!researchServerBank)bank['1']=[];
+    researchMeta=vals[10];
+    // The polygon is owned by the server. Phone sliders cannot change
+    // server labels until a secure settings API has been implemented.
+    s.r1Hours=researchMeta.settings.hours;
+    s.r1Activity=researchMeta.settings.minActive;
+    s.r1Idle=researchMeta.settings.maxIdle;
+    $('r1Hours').value=s.r1Hours;$('r1HoursValue').textContent=s.r1Hours+' часов';
+    $('r1Activity').value=s.r1Activity;$('r1ActivityValue').textContent=s.r1Activity+'%';
+    $('r1Idle').value=s.r1Idle;$('r1IdleValue').textContent=s.r1Idle+' минут';
+    for(const id of ['r1Hours','r1Activity','r1Idle'])$(id).disabled=!controlEndpoint;
+    $('applyR1').disabled=true;
+    $('publishResearchOne').disabled=!controlEndpoint;
+  }
+  if(!vals[10]||vals[10].status!=='observational'||!Number.isFinite(vals[10].updated)||now()-vals[10].updated>7*60000){
+    researchMeta=null;researchServerBank=false;bank['1']=[];
+  }
+  if(researchMeta&&vals[11]&&Array.isArray(vals[11].coins)&&vals[11].counts){
+    const sourceRows=vals[11].coins.filter(function(x){
+      return x.mint&&Number.isFinite(x.activePct)&&Number.isFinite(x.maxIdleObserved)&&x.features;
+    });
+    bank['1']=sourceRows.map(function(x){
+      return {mint:x.mint,t:x.acceptedAt,activity:x.activePct,
+        idle:x.maxIdleObserved,features:x.features};
+    }).sort(function(a,b){return a.t-b.t});
+    researchServerBank=true;
+    lastResearchBankRead=now();
+  }
+  // Server records are authoritative only while their own heartbeat is fresh.
+  passMeta=vals[12]&&Number.isFinite(vals[12].updated)&&
+    now()-vals[12].updated<7*60000&&
+    ['server-observational','disabled-no-server-rules'].includes(vals[12].status)&&
+    vals[12].serverOnly===true?vals[12]:null;
+  serverPassActive=!!passMeta;
+  if(serverPassActive){
+    const verified=new Map();
+    for(const source of [vals[15],vals[14],vals[13]]){
+      for(const p of source&&source.coins||[]){
+        if(p&&typeof p.mint==='string'&&Number.isSafeInteger(p.acceptedAt)&&
+           Number.isSafeInteger(p.firstSeenAt)&&Number.isSafeInteger(p.zeroAt)&&
+           ['before','after'].includes(p.phase)&&Array.isArray(p.matches))
+          verified.set(p.mint,p);
+      }
+    }
+    serverPassRows=[...verified.values()].sort(function(a,b){return b.firstSeenAt-a.firstSeenAt});
+  }else serverPassRows=[];
+  twoMeta=vals[16]&&vals[16].status==='observational'&&
+    vals[16].origin==='server-verified-passed-only'&&
+    Number.isFinite(vals[16].updated)&&now()-vals[16].updated<7*60000?vals[16]:null;
+  serverR2Active=!!twoMeta;
+  if(serverR2Active){
+    s.r2Strong=twoMeta.settings.minAbove;
+    $('r2Strong').value=s.r2Strong;$('r2StrongValue').textContent=s.r2Strong+'%';
+    $('r2Strong').disabled=!controlEndpoint;$('applyR2').disabled=true;
+    $('publishResearchTwo').disabled=!controlEndpoint;
+    if(vals[17]&&Array.isArray(vals[17].coins)){
+      serverR2Rows=vals[17].coins.filter(function(row){
+        return row&&typeof row.mint==='string'&&['strong','weak'].includes(row.label)&&
+          Number.isFinite(row.pctAbove)&&row.features;
+      });
+      bank['2']=serverR2Rows.map(function(row){
+        return {mint:row.mint,t:row.zeroAt,above:row.pctAbove,
+          phase:row.phase,label:row.label,features:row.features}
+      });
+      lastSecondBankRead=now();
+    }else if(!lastSecondBankRead||now()-lastSecondBankRead>=300000){
+      serverR2Rows=[];bank['2']=[];
+    }
+  }else{
+    serverR2Rows=[];serverR2Curve=null;bank['2']=[];lastSecondBankRead=0;
+    $('r2Strong').disabled=false;$('applyR2').disabled=false;
+    $('publishResearchTwo').disabled=true;
+  }
+  serverR2Curve=serverR2Active&&vals[21]&&
+    vals[21].origin==='server-verified-passed-only'&&vals[21].curves&&
+    Number.isFinite(vals[21].updated)&&now()-vals[21].updated<45*60000?
+    vals[21].curves:null;
+  autoOne=vals[18]&&Number.isFinite(vals[18].updated)&&
+    now()-vals[18].updated<40*60000?vals[18]:null;
+  autoTwo=vals[19]&&Number.isFinite(vals[19].updated)&&
+    now()-vals[19].updated<40*60000?vals[19]:null;
+  filterAuditMeta=vals[22]&&vals[22].origin==='server-observational-analytics'&&
+    Number.isFinite(vals[22].updated)&&now()-vals[22].updated<40*60000?vals[22]:null;
+  sourceActive=false;sourceMeta=null;sourceRecords=[];
+  $('ageBefore').disabled=true;$('ageAfter').disabled=true;
+  $('publishSourceAge').disabled=true;
+  if(vals[6]&&['verified-post-only','verified-pre-post'].includes(vals[6].mode)&&
+     vals[6].settings&&Number.isFinite(vals[6].updated)&&now()-vals[6].updated<=7*60000 &&
+     [vals[6].settings.beforeMinutes,vals[6].settings.afterMinutes].every(function(v){
+       return Number.isInteger(v)&&v>=1&&v<=10;
+     })&&(vals[7]||vals[9])) {
+    sourceActive=true;sourceMeta=vals[6];
+    var unique=new Map();
+    for(var item of (vals[8]?.coins||[]).concat(vals[7]?.coins||[],vals[9]?.coins||[])) {
+      if(item.a&&item.phase&&Number.isSafeInteger(item.eventAt)&&Number.isSafeInteger(item.acceptedAt))unique.set(item.a,item);
+    }
+    sourceRecords=[...unique.values()];
+    s.ageBefore=sourceMeta.settings.beforeMinutes;
+    s.ageAfter=sourceMeta.settings.afterMinutes;
+    $('ageBefore').value=s.ageBefore;$('ageAfter').value=s.ageAfter;
+    $('ageBefore').disabled=!controlEndpoint;$('ageAfter').disabled=!controlEndpoint;
+    $('publishSourceAge').disabled=!controlEndpoint;
+    $('ageBefore').title=controlEndpoint?'Изменяется только по ключу владельца':'Управление возрастом ещё не подключено';
+    $('ageAfter').title=$('ageBefore').title;
+  }
+  if(!sourceActive){serverPassActive=false;serverPassRows=[];}
+  var by=new Map();
+  for(var dayObj of [vals[2],vals[1]])for(var c of dayObj&&dayObj.coins||[]){
+    if(mint(c))by.set(mint(c),Object.assign({},by.get(mint(c))||{},c));
+  }
+  for(var o of [vals[4],vals[3]])for(var d of o&&o.coins||[]){
+    var existing=by.get(mint(d));if(!existing)continue;
+    if(Array.isArray(d.ds)&&d.ds.length>=(existing.ds||[]).length)existing.ds=d.ds;
+    if(d.path)existing.path=d.path;
+    if(d.lq)existing.lq=d.lq;
+  }
+  for(var c2 of vals[5]&&vals[5].coins||[]){
+    var prior=by.get(mint(c2));by.set(mint(c2),Object.assign({},prior||{},c2));
+  }
+  dataset=[...by.values()];
+  dataErr='';
+  loadedAt=now();
+  var updated=status&&ts(status.updated),age=updated?Math.floor((now()-updated)/60000):null;
+  var connected=age!=null&&age<=8&&sourceActive;
+  $('net').textContent=connected?'● LIVE':'● '+(!sourceActive?'Источник недоступен':age==null?'Данные':'Задержка '+Math.max(0,age)+' мин');
+  $('net').className='live '+(connected?'good':'warn');
+  $('dataState').textContent='Сервер: '+(updated?time(updated):'—')+' (Казахстан) · '+(sourceActive?'главный источник '+fmt(sourceRecords.length)+' записей, сегодня '+fmt(sourceMeta.today)+' (до '+fmt(sourceMeta.todayBefore)+', после '+fmt(sourceMeta.todayAfter)+')':'допуск приостановлен (основной журнал недоступен)')+' · обновление каждые 45 секунд.';
+  refresh();fetching=false;
+}
+function init(){
+  s.ageBefore=clamp(s.ageBefore,1,10,2);s.ageAfter=clamp(s.ageAfter,1,10,2);
+  s.limit=[10,20,30,50,100].includes(+s.limit)?+s.limit:20;
+  s.decision=clamp(s.decision,1,30,10);s.r1Hours=clamp(s.r1Hours,1,24,5);
+  s.r1Activity=clamp(s.r1Activity,0,100,70);s.r1Idle=clamp(s.r1Idle,5,120,60);
+  s.r2Strong=clamp(s.r2Strong,1,100,70);s.r2Step=[1,5,10,15,30,60].includes(+s.r2Step)?+s.r2Step:5;
+  s.level=['1','2'].includes(s.level)?s.level:'1';s.stream=['all','before','after'].includes(s.stream)?s.stream:'all';
+  s.r2Stream=['before','after'].includes(s.r2Stream)?s.r2Stream:'after';
+  if(!['all','mine','passed','r1','r2','library'].includes(s.tab))s.tab='all';
+  $('ageBefore').innerHTML=Array.from({length:10},function(_,i){return '<option value="'+(i+1)+'">'+(i+1)+' мин</option>'}).join('');
+  $('ageAfter').innerHTML=$('ageBefore').innerHTML;
+  $('ageBefore').value=s.ageBefore;$('ageAfter').value=s.ageAfter;$('cardLimit').value=s.limit;
+  for(var pair of [['decisionMins',s.decision],['r1Hours',s.r1Hours],['r1Activity',s.r1Activity],['r1Idle',s.r1Idle],['r2Strong',s.r2Strong]])$(pair[0]).value=pair[1];
+  $('decisionValue').textContent=s.decision+' мин';$('decisionCurrent').textContent=s.decision+' мин';$('r1HoursValue').textContent=s.r1Hours+' часов';
+  $('r1ActivityValue').textContent=s.r1Activity+'%';$('r1IdleValue').textContent=s.r1Idle+' минут';
+  $('r2StrongValue').textContent=s.r2Strong+'%';$('r2Step').value=s.r2Step;
+  $('passedDay').innerHTML=Array.from({length:14},function(_,i){
+    const d=day(now()-i*864e5);
+    return '<option value="'+d+'">'+d+'</option>';
+  }).join('');
+  document.querySelectorAll('#tabs [data-page]').forEach(function(x){x.classList.toggle('active',x.dataset.page===s.tab)});
+  document.querySelectorAll('.page').forEach(function(x){x.hidden=x.id!=='p-'+s.tab});
+  document.querySelectorAll('#allStreams [data-stream]').forEach(function(x){x.classList.toggle('active',x.dataset.stream===s.stream)});
+  document.querySelectorAll('#r2Streams [data-stream]').forEach(function(x){x.classList.toggle('active',x.dataset.stream===s.r2Stream)});
+  document.querySelectorAll('#levels [data-level]').forEach(function(x){x.classList.toggle('active',x.dataset.level===s.level)});
+  bind();refresh();load();
+  setInterval(load,45000);
+  setInterval(function(){if(dataset.length){renderAll();renderPassed()}},10000);
+}
+window.addEventListener('error',function(e){if($('dataState'))$('dataState').textContent='Ошибка интерфейса: '+(e.message||'неизвестная')+'. Старый сайт доступен по кнопке сверху.'});
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+})();,mc:'Капитализация )[x.key])+' '+esc(x.op)+' '+fmt(x.value)+' · версия '+fmt(x.version)+'</p>'+
+      (audits?'<p class="hint">Серверная история сравнения по версиям:</p>'+audits:
+      '<div class="numbers"><span class="badge">На телефоне: '+orig+'</span>'+
+      '<span class="badge">Серверная фоновая проверка: ожидает настройки</span></div>')+'</div>';
+  }).join(''):'<div class="empty-state">Фильтров этого уровня пока нет. Нажми «+ Создать» — можно сделать собственное правило.</div>';
+}
+function testAll(){
+  var f=s.filters.filter(function(x){return x.level===s.level});
+  var groups=classified(s.level),targets=s.poly[s.level];
+  if(groups[0].length<targets[0]||groups[1].length<targets[1]){note('Сначала нужно накопить выбранное количество обоих классов');return}
+  var positives=groups[0].slice(-targets[0]),negatives=groups[1].slice(-targets[1]);
+  var results=[];
+  for(var x of f){
+    var good=positives.filter(function(c){return ruleStatus(c.features,x)==='pass'}).length;
+    var blocked=negatives.filter(function(c){return ruleStatus(c.features,x)==='reject'}).length;
+    var unknownPositive=positives.filter(function(c){return ruleStatus(c.features,x)==='unknown'}).length;
+    var unknownNegative=negatives.filter(function(c){return ruleStatus(c.features,x)==='unknown'}).length;
+    var a=good/positives.length*100,b=blocked/negatives.length*100;
+    if(!x.original)x.original={livePercent:a,deadPercent:b,liveCount:good,liveTotal:positives.length,deadCount:blocked,deadTotal:negatives.length,at:now()};
+    results.push({f:x,a:a,b:b,good:good,blocked:blocked,unknownPositive,unknownNegative});
+  }
+  results.sort(function(a,b){return (b.a+b.b)-(a.a+a.b)});
+  testHtml='<h3 style="margin-top:12px">Результаты на '+fmt(positives.length+negatives.length)+' монетах</h3>'+
+    '<p class="muted">🟢 Доля правильно пропущенных · 🔴 доля правильно отклонённых. Обучавшиеся монеты не исключаются; это не независимая проверка.</p>'+
+    (results.length?results.map(function(r,i){return '<div class="result"><div class="row"><b>'+(i+1)+'. №'+esc(r.f.id)+' · '+esc(r.f.name)+'</b><span class="badge">v'+r.f.version+'</span></div>'+
+      '<div class="numbers" style="margin-top:8px"><span class="good">🟢 '+r.a.toFixed(1)+'% ('+r.good+'/'+positives.length+')</span> · <span class="bad">🔴 '+r.b.toFixed(1)+'% ('+r.blocked+'/'+negatives.length+')</span></div>'+
+        '<p class="muted">Нет показателя: живые '+r.unknownPositive+', мёртвые '+r.unknownNegative+'. Не засчитываем их как успешно отклонённые.</p></div>'}).join(''):'<p class="muted">В этом уровне ещё нет фильтров.</p>');
+  save();renderLibrary();
+}
+function openEditor(id){
+  editorId=id||null;var f=s.filters.find(function(x){return x.id===editorId});
+  $('editor').hidden=false;
+  $('editorTitle').textContent=f?'Редактор №'+f.id+' · v'+f.version:'Новый фильтр · '+s.level+'-й уровень';
+  $('filterName').value=f?f.name:'';
+  $('filterKey').value=f?f.key:'buyers';$('filterOp').value=f?f.op:'>=';
+  $('filterValue').value=f?f.value:20;
+  $('deleteFilter').hidden=!f;
+  $('editorNote').textContent='Сохраняется только в этом браузере. Изменение условия создаёт новую версию.';
+  $('editor').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function saveEditor(e){
+  e.preventDefault();
+  var name=$('filterName').value.trim(),key=$('filterKey').value,op=$('filterOp').value,value=Number($('filterValue').value);
+  if(!name||!['buyers','trades','volume','liq','mc','buys','sells','buySellRatio'].includes(key)||!['>=','<='].includes(op)||!Number.isFinite(value)||value<0||value>1e12){note('Проверь название и значение');return}
+  var same=s.filters.find(function(f){return f.id!==editorId&&f.level===s.level&&f.key===key&&f.op===op&&f.value===value});
+  if(same){note('Такие же правила уже есть: №'+same.id);return}
+  if(editorId){
+    var f=s.filters.find(function(x){return x.id===editorId});
+    if(!f)return;
+    if(f.key!==key||f.op!==op||f.value!==value){
+      f.version++;f.original=null;f.history=f.history||[];f.history.push({version:f.version-1,changedAt:now()});
+    }
+    Object.assign(f,{name:name,key:key,op:op,value:value});
+  }else{
+    var id=String(Math.max(0,...s.filters.map(function(f){return Number(f.id)||0}))+1).padStart(3,'0');
+    s.filters.push({id:id,level:s.level,name:name,key:key,op:op,value:value,version:1,original:null,history:[],createdAt:now()});
+  }
+  $('editor').hidden=true;testHtml='';save();refresh();note('Фильтр сохранён');
+}
+function removeEditor(){
+  if(!editorId||!window.confirm('Удалить фильтр №'+editorId+' из библиотеки и активных модулей?'))return;
+  s.filters=s.filters.filter(function(x){return x.id!==editorId});
+  s.modules=s.modules.filter(function(x){return x.filterId!==editorId});
+  editorId=null;$('editor').hidden=true;testHtml='';save();refresh();note('Фильтр удалён');
+}
+function refresh(){
+  analyze();
+  renderAll();renderServerModules();renderModules();renderLocalPreview();renderPassed();renderR1();renderR2();renderLibrary();
+}
+function preparedServerConfig(){
+  // Include all library definitions so the server can evaluate background
+  // performance of disabled but configured modules. Only enabled level-1
+  // modules are permitted to add new first-level Passed records.
+  if(s.filters.length>200||s.modules.length>200){
+    note('Слишком много модулей/фильтров: максимум 200 в серверной версии');
+    return null;
+  }
+  const filters=s.filters.map(function(f){
+    return {id:String(f.id),name:String(f.name),level:String(f.level),
+      key:f.key,op:f.op,value:Number(f.value),version:Number(f.version)};
+  });
+  const ids=new Set(filters.map(function(f){return f.id}));
+  const modules=s.modules.filter(function(m){return ids.has(m.filterId)})
+    .map(function(m){return {
+      filterId:m.filterId,phase:m.phase,level:m.level,enabled:!!m.enabled
+    }});
+  if(!modules.some(function(m){return m.level==='1'&&m.enabled})){
+    note('Нужен хотя бы один подтверждённый активный модуль 1-го уровня');
+    return null;
+  }
+  return {schema:1,enabled:true,activatedAt:0,
+    decisionMinutes:s.decision,filters,modules};
+}
+function exportServerConfig(){
+  const config=preparedServerConfig();if(!config)return;
+  const blob=new Blob([JSON.stringify(config,null,2)+'\n'],{type:'application/json'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='pass-filters.json';
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(function(){URL.revokeObjectURL(url)},30000);
+  note('Конфигурация подготовлена. Для фоновой работы её надо опубликовать на сервере.');
+}
+function validControlEndpoint(value){
+  if(!value||value.enabled!==true||typeof value.url!=='string')return null;
+  try{
+    const u=new URL(value.url);
+    return u.protocol==='https:'&&u.hostname.endsWith('.run.app')&&!u.username&&!u.password?
+      u.origin:null;
+  }catch(e){return null}
+}
+async function publishResearchLevel(level){
+  const one=level==='1',keyField=one?'ownerResearchOneKey':'ownerResearchTwoKey';
+  const checkField=one?'confirmResearchOne':'confirmResearchTwo';
+  const statusField=one?'researchOneControlState':'researchTwoControlState';
+  const buttonField=one?'publishResearchOne':'publishResearchTwo';
+  const endpoint=one?'/api/research-one':'/api/research-two';
+  const current=one?researchMeta:twoMeta;
+  if(!controlEndpoint||!current){note('Серверное исследование ещё недоступно');return}
+  if(!$(checkField).checked){note('Подтверди изменение серверного исследования');return}
+  const key=$(keyField).value.trim();
+  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
+    note('Требуется отдельный ключ владельца');return;
+  }
+  let cfg;
+  if(one){
+    cfg={hours:Number($('r1Hours').value),
+      decisionMinutes:researchMeta.settings.decisionMinutes,
+      minActive:Number($('r1Activity').value),
+      maxIdle:Number($('r1Idle').value),
+      minCoverage:researchMeta.settings.minCoverage};
+    if(!Number.isInteger(cfg.hours)||cfg.hours<1||cfg.hours>24||
+       !Number.isInteger(cfg.maxIdle)||cfg.maxIdle<5||cfg.maxIdle>1440||
+       !Number.isFinite(cfg.minActive)||cfg.minActive<0||cfg.minActive>100){
+      note('Неверные параметры первого исследования');return;
+    }
+  }else{
+    cfg={minAbove:Number($('r2Strong').value),
+      minCoverage:twoMeta.settings.minCoverage};
+    if(!Number.isFinite(cfg.minAbove)||cfg.minAbove<0||cfg.minAbove>100){
+      note('Неверный порог второго исследования');return;
+    }
+  }
+  $(buttonField).disabled=true;
+  $(statusField).textContent='Отправка серверной версии…';
+  const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
+  try{
+    const r=await fetch(controlEndpoint+endpoint,{
+      method:'POST',cache:'no-store',signal:abort.signal,
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify(cfg)
+    });
+    if(!r.ok){
+      $(statusField).textContent='Сервер отклонил изменения. HTTP '+r.status;
+      note(r.status===401?'Ключ владельца не принят':'Публикация не удалась: '+r.status);
+      return;
+    }
+    $(keyField).value='';$(checkField).checked=false;
+    $(statusField).textContent='Версия принята. Для неё сервер создаст отдельную группу наблюдений.';
+    note('Сервер переключится на новые правила без переписывания старой истории.');
+  }catch(e){
+    $(statusField).textContent='Ошибка связи: '+String(e.message||e);
+  }finally{
+    clearTimeout(timer);$(buttonField).disabled=!controlEndpoint||!current;
+  }
+}
+async function publishSourceAge(){
+  if(!controlEndpoint||!sourceActive){
+    note('Нет защищённого сервера управления или главного источника');return;
+  }
+  if(!$('confirmAgePublish').checked){
+    note('Подтверди изменение двух возрастных фильтров');return;
+  }
+  const cfg={schema:1,beforeMinutes:Number($('ageBefore').value),
+    afterMinutes:Number($('ageAfter').value)};
+  if(![cfg.beforeMinutes,cfg.afterMinutes].every(function(v){
+    return Number.isInteger(v)&&v>=1&&v<=10;
+  })){
+    note('Возраст до и после миграции должен быть от 1 до 10 минут');return;
+  }
+  const key=$('ageOwnerKey').value.trim();
+  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
+    note('Для изменения порога нужен отдельный ключ владельца');return;
+  }
+  const button=$('publishSourceAge');
+  button.disabled=true;
+  $('sourceAgeControlState').textContent='Отправка новых возрастных порогов…';
+  const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
+  try{
+    const r=await fetch(controlEndpoint+'/api/source-age',{
+      method:'POST',cache:'no-store',signal:abort.signal,
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify(cfg)
+    });
+    if(!r.ok){
+      $('sourceAgeControlState').textContent='Сервер отклонил изменение: HTTP '+r.status;
+      note(r.status===401?'Ключ владельца не принят':'Ошибка изменения возраста: '+r.status);
+      return;
+    }
+    $('ageOwnerKey').value='';$('confirmAgePublish').checked=false;
+    $('sourceAgeControlState').textContent='Пороги получены сервером управления. Ждём подтверждения новых значений главным источником.';
+    note('Серверные пороги обновляются только для новых входящих событий.');
+  }catch(e){
+    $('sourceAgeControlState').textContent='Ошибка связи: '+String(e.message||e);
+  }finally{
+    clearTimeout(timer);
+    button.disabled=!controlEndpoint||!sourceActive;
+  }
+}
+async function publishServerConfig(){
+  if(!controlEndpoint){note('Защищённый сервер управления ещё не подключён');return}
+  if(!$('confirmControlPublish').checked){
+    note('Отметь подтверждение публикации серверной версии');return;
+  }
+  const config=preparedServerConfig();if(!config)return;
+  const key=$('ownerControlKey').value.trim();
+  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
+    note('Нужен действительный ключ владельца, не пароль от GitHub');return;
+  }
+  const button=$('publishServerConfig');
+  button.disabled=true;$('controlState').textContent='Отправка настроек на сервер…';
+  const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
+  try{
+    const r=await fetch(controlEndpoint+'/api/filter-config',{
+      method:'POST',cache:'no-store',signal:abort.signal,
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+      body:JSON.stringify(config)
+    });
+    if(!r.ok){
+      $('controlState').textContent='Не удалось применить серверную конфигурацию. HTTP '+r.status;
+      note(r.status===401?'Ключ владельца не принят':'Ошибка публикации: HTTP '+r.status);
+      return;
+    }
+    $('ownerControlKey').value='';
+    $('confirmControlPublish').checked=false;
+    $('controlState').textContent='Принято сервером управления. Журнал переключится после обновления конфигурации сборщика.';
+    note('Новая серверная версия передана. Старые монеты не добавляются задним числом.');
+  }catch(e){
+    $('controlState').textContent='Ошибка связи с защищённым сервером: '+String(e.message||e);
+  }finally{
+    clearTimeout(timer);
+    button.disabled=!controlEndpoint;
+  }
+}
+
+async function loadPassedArchiveDay(){
+  const selected=$('passedDay').value;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(selected)){
+    note('Неверная дата архива');return;
+  }
+  if(!serverPassActive){
+    $('passedDayStatus').textContent='Архив сервера недоступен. Локальную историю можно посмотреть выше.';
+    return;
+  }
+  const button=$('loadPassedDay');
+  button.disabled=true;
+  $('passedDayStatus').textContent='Получение проверенного журнала за '+selected+'…';
+  $('passedDayList').innerHTML='';
+  try{
+    const data=await getJSON('passed-v2/day/'+selected+'.json');
+    if(!data||data.day!==selected||data.origin!=='server-journal'||
+       !Array.isArray(data.coins)){
+      $('passedDayStatus').textContent='Файл за этот день не опубликован или недоступен. Это не означает ноль монет.';
+      return;
+    }
+    const records=data.coins.filter(function(p){
+      return p&&typeof p.mint==='string'&&['before','after'].includes(p.phase)&&
+        Number.isSafeInteger(p.firstSeenAt)&&Number.isSafeInteger(p.zeroAt)&&
+        Array.isArray(p.matches);
+    });
+    $('passedDayStatus').textContent='Серверная история за '+selected+': '+fmt(records.length)+
+      ' записей. Показаны последние '+fmt(Math.min(150,records.length))+'.';
+    $('passedDayList').innerHTML=records.slice(0,150).map(function(p){
+      return '<div class="filter-row"><div class="row"><b>'+esc(p.name||p.mint.slice(0,14))+
+        '</b><span class="badge mono">'+time(p.firstSeenAt)+'</span></div>'+
+        '<p class="muted">'+esc(p.phase==='before'?'🌱 До миграции':'🎓 После миграции')+
+        ' · '+esc(p.mint)+' · точка 0 '+time(p.zeroAt)+'</p>'+
+        '<p class="muted">'+p.matches.map(function(f){
+          return esc(f.name)+' · v'+esc(f.version)+' ('+esc(f.key)+' '+esc(f.op)+' '+fmt(f.value)+')';
+        }).join(' · ')+'</p></div>';
+    }).join('')||'<p class="muted">В опубликованном серверном журнале за этот день записей нет.</p>';
+  }catch(e){
+    $('passedDayStatus').textContent='Не удалось получить архив: '+String(e.message||e);
+  }finally{
+    button.disabled=false;
+  }
+}
+function bind(){
+  $('exportServerConfig').addEventListener('click',exportServerConfig);
+  $('loadPassedDay').addEventListener('click',loadPassedArchiveDay);
+  $('publishServerConfig').addEventListener('click',publishServerConfig);
+  $('publishSourceAge').addEventListener('click',publishSourceAge);
+  $('publishResearchOne').addEventListener('click',function(){publishResearchLevel('1')});
+  $('publishResearchTwo').addEventListener('click',function(){publishResearchLevel('2')});
+  $('tabs').addEventListener('click',function(e){
+    var b=e.target.closest('button[data-page]');if(!b)return;
+    s.tab=b.dataset.page;
+    document.querySelectorAll('#tabs button').forEach(function(x){x.classList.toggle('active',x===b)});
+    document.querySelectorAll('.page').forEach(function(x){x.hidden=x.id!=='p-'+s.tab});
+    save();
+  });
+  $('allStreams').addEventListener('click',function(e){var b=e.target.closest('button[data-stream]');if(!b)return;s.stream=b.dataset.stream;this.querySelectorAll('button').forEach(function(x){x.classList.toggle('active',x===b)});save();refresh()});
+  $('applySource').addEventListener('click',function(){
+    s.limit=+ $('cardLimit').value;
+    if(!sourceActive){
+      note('Количество карточек сохранено. Настройки возраста нельзя менять без серверного источника.');
+    }else{
+      s.ageBefore=sourceMeta.settings.beforeMinutes;s.ageAfter=sourceMeta.settings.afterMinutes;
+      note('Количество карточек сохранено. Возрастные фильтры работают на сервере.');
+    }
+    save();refresh();
+  });
+  $('coinList').addEventListener('click',function(e){
+    var b=e.target.closest('[data-coin]');if(!b)return;var c=lastAccepted.find(function(x){return mint(x)===b.dataset.coin});if(!c)return;
+    var old=$('openCoinDetail');if(old)old.remove();
+    $('coinList').insertAdjacentHTML('afterend',detail(c));
+    $('closeCoin').addEventListener('click',function(){$('openCoinDetail').remove()});
+  });
+  $('moduleGrid').addEventListener('click',function(e){
+    if(e.target.closest('[data-apply-modules]')){
+      for(const m of s.modules)if(moduleDraft.has(draftModuleKey(m)))
+        m.enabled=moduleDraft.get(draftModuleKey(m));
+      moduleDraft.clear();save();refresh();note('Изменения модулей применены на этом телефоне');return;
+    }
+    if(e.target.closest('[data-cancel-modules]')){
+      moduleDraft.clear();renderModules();note('Неприменённые переключения отменены');return;
+    }
+    var pick=e.target.closest('[data-pick-source]');if(pick){showPicker(pick.dataset.pickSource,pick.dataset.pickLevel);return}
+    var remove=e.target.closest('[data-remove]');if(!remove)return;
+    if(!window.confirm('Удалить модуль из локальной схемы?'))return;
+    var target=s.modules.find(function(m){return m.filterId===remove.dataset.remove&&m.phase===remove.dataset.phase});
+    if(target)moduleDraft.delete(draftModuleKey(target));
+    s.modules=s.modules.filter(function(x){return !(x.filterId===remove.dataset.remove&&x.phase===remove.dataset.phase)});
+    save();refresh();
+  });
+  $('moduleGrid').addEventListener('change',function(e){
+    if(!e.target.matches('[data-toggle]'))return;
+    var m=s.modules.find(function(x){return x.filterId===e.target.dataset.toggle&&x.phase===e.target.dataset.phase});
+    if(m){
+      const key=draftModuleKey(m);
+      if(e.target.checked===m.enabled)moduleDraft.delete(key);
+      else moduleDraft.set(key,e.target.checked);
+      renderModules();
+    }
+  });
+  $('pickerItems').addEventListener('click',function(e){
+    var b=e.target.closest('[data-use]');if(!b||!picker)return;
+    var m={filterId:b.dataset.use,phase:picker.phase,level:picker.level,enabled:false};
+    s.modules.push(m);moduleDraft.set(draftModuleKey(m),true);
+    $('filterPicker').hidden=true;picker=null;save();refresh();
+    note('Добавлен черновик модуля. Нажми «Применить изменения» для включения.');
+  });
+  $('pickerClose').addEventListener('click',function(){$('filterPicker').hidden=true;picker=null});
+  $('decisionMins').addEventListener('input',function(){$('decisionValue').textContent=this.value+' мин'});
+  $('applyDecision').addEventListener('click',function(){
+    s.decision=clamp(+$('decisionMins').value,1,30,10);
+    $('decisionCurrent').textContent=s.decision+' мин';
+    save();refresh();$('decisionSettings').open=false;
+    note('Таймер решения: '+s.decision+' мин · применено');
+  });
+  $('decisionSettings').addEventListener('toggle',function(){
+    if(!this.open){$('decisionMins').value=s.decision;$('decisionValue').textContent=s.decision+' мин';}
+  });
+  for(var id of ['r1Hours','r1Activity','r1Idle','r2Strong']){
+    $(id).addEventListener('input',function(){
+      $(this.id+'Value').textContent=this.value+(this.id==='r1Hours'?' часов':this.id==='r1Idle'?' минут':'%');
+    });
+  }
+  $('applyR1').addEventListener('click',function(){
+    s.r1Hours=+ $('r1Hours').value;s.r1Activity=+ $('r1Activity').value;s.r1Idle=+ $('r1Idle').value;
+    save();refresh();note('Правила разметки 1-го уровня применены');
+  });
+  $('applyR2').addEventListener('click',function(){
+    if(serverR2Active){note('Разметка второго уровня принадлежит серверу; с телефона пока доступен просмотр');return}
+    s.r2Strong=+ $('r2Strong').value;save();refresh();note('Локальный порог сильных/слабых применён');
+  });
+  $('r2Streams').addEventListener('click',function(e){var b=e.target.closest('[data-stream]');if(!b)return;s.r2Stream=b.dataset.stream;this.querySelectorAll('button').forEach(function(x){x.classList.toggle('active',x===b)});save();renderR2()});
+  $('r2Step').addEventListener('change',function(){s.r2Step=+this.value;s.r2Page=0;save();renderR2()});
+  $('r2Prev').addEventListener('click',function(){s.r2Page--;save();renderR2()});
+  $('r2Next').addEventListener('click',function(){s.r2Page++;save();renderR2()});
+  $('levels').addEventListener('click',function(e){var b=e.target.closest('[data-level]');if(!b)return;s.level=b.dataset.level;testHtml='';$('editor').hidden=true;this.querySelectorAll('button').forEach(function(x){x.classList.toggle('active',x===b)});save();renderLibrary()});
+  for(var id2 of ['polyA','polyB'])$(id2).addEventListener('input',function(){$(this.id+'Value').textContent=fmt(+this.value)});
+  $('polyApply').addEventListener('click',function(){s.poly[s.level]=[+$('polyA').value,+$('polyB').value];testHtml='';save();renderLibrary();note('Размеры полигона сохранены')});
+  $('testAll').addEventListener('click',testAll);
+  $('createFilter').addEventListener('click',function(){openEditor(null)});
+  $('libraryList').addEventListener('click',function(e){var b=e.target.closest('[data-edit]');if(b)openEditor(b.dataset.edit)});
+  $('closeEditor').addEventListener('click',function(){$('editor').hidden=true});
+  $('deleteFilter').addEventListener('click',removeEditor);
+  $('editor').addEventListener('submit',saveEditor);
+}
+async function getJSON(path){
+  var ctl=new AbortController(),timer=setTimeout(function(){ctl.abort()},20000);
+  try{var r=await fetch(BASE+path+'?v='+now(),{signal:ctl.signal,cache:'no-store'});
+    if(r.status===404||r.status===403)return null;
+    if(!r.ok)throw new Error(path+' HTTP '+r.status);
+    return await r.json();
+  }finally{clearTimeout(timer)}
+}
+async function load(){
+  if(fetching)return;fetching=true;
+  var today=day(now()),yesterday=day(now()-864e5);
+  var names=['status.json','day/'+today+'.json','day/'+yesterday+'.json','obs/'+today+'.json','obs/'+yesterday+'.json','live.json',
+    'source/status.json','source/day/'+today+'.json','source/day/'+yesterday+'.json','source/live.json',
+    'research-v2/status.json','research-v2/polygon-1.json',
+    'passed-v2/status.json','passed-v2/live.json',
+    'passed-v2/day/'+today+'.json','passed-v2/day/'+yesterday+'.json',
+    'research-v2/status-two.json','research-v2/polygon-2.json',
+    'research-v2/auto-1.json','research-v2/auto-2.json','control/endpoint.json',
+    'research-v2/curve-two.json','research-v2/filter-audit.json'];
+  var fetched=await Promise.allSettled(names.map(function(name,i){
+    if(i===11&&lastResearchBankRead&&now()-lastResearchBankRead<300000)return Promise.resolve(null);
+    if(i===17&&lastSecondBankRead&&now()-lastSecondBankRead<300000)return Promise.resolve(null);
+    return getJSON(name);
+  }));
+  var vals=fetched.map(function(q){return q.status==='fulfilled'?q.value:null});
+  var errors=fetched.filter(function(q){return q.status==='rejected'});
+  if(vals.slice(1,3).every(function(x){return !x})&&!vals[5]&&!vals[6]){
+    // Previously rendered candidates must not remain active when the
+    // authoritative source is unavailable on a later refresh.
+    sourceActive=false;sourceMeta=null;sourceRecords=[];
+    researchMeta=null;researchServerBank=false;bank['1']=[];
+    serverPassActive=false;serverPassRows=[];passMeta=null;
+    serverR2Active=false;serverR2Rows=[];serverR2Curve=null;twoMeta=null;autoOne=null;filterAuditMeta=null;bank['2']=[];
+    lastAccepted=[];lastVisible=[];lastPassed=[];
+    renderAll();renderPassed();renderR1();renderLibrary();
+    dataErr=errors.length?String(errors[0].reason):'Сервер пока не опубликовал данные';
+    $('dataState').textContent='Не удалось получить главный источник: '+dataErr+'. Повтор через 45 секунд.';
+    $('net').textContent='● Источник недоступен';$('net').className='live bad';
+    fetching=false;return;
+  }
+  status=vals[0]||status;
+  controlEndpoint=validControlEndpoint(vals[20]);
+  $('publishServerConfig').disabled=!controlEndpoint;
+  $('ownerControlKey').disabled=!controlEndpoint;
+  $('ageOwnerKey').disabled=!controlEndpoint;
+  $('ownerResearchOneKey').disabled=!controlEndpoint;
+  $('ownerResearchTwoKey').disabled=!controlEndpoint;
+  if(!controlEndpoint)$('controlState').textContent=
+    'Защищённая отправка не включена. Можно подготовить серверную конфигурацию файлом.';
+  if(vals[10]&&vals[10].status==='observational'&&vals[10].settings &&
+     Number.isFinite(vals[10].updated)&&now()-vals[10].updated<=7*60000){
+    if(!researchMeta&&!researchServerBank)bank['1']=[];
+    researchMeta=vals[10];
+    // The polygon is owned by the server. Phone sliders cannot change
+    // server labels until a secure settings API has been implemented.
+    s.r1Hours=researchMeta.settings.hours;
+    s.r1Activity=researchMeta.settings.minActive;
+    s.r1Idle=researchMeta.settings.maxIdle;
+    $('r1Hours').value=s.r1Hours;$('r1HoursValue').textContent=s.r1Hours+' часов';
+    $('r1Activity').value=s.r1Activity;$('r1ActivityValue').textContent=s.r1Activity+'%';
+    $('r1Idle').value=s.r1Idle;$('r1IdleValue').textContent=s.r1Idle+' минут';
+    for(const id of ['r1Hours','r1Activity','r1Idle'])$(id).disabled=!controlEndpoint;
+    $('applyR1').disabled=true;
+    $('publishResearchOne').disabled=!controlEndpoint;
+  }
+  if(!vals[10]||vals[10].status!=='observational'||!Number.isFinite(vals[10].updated)||now()-vals[10].updated>7*60000){
+    researchMeta=null;researchServerBank=false;bank['1']=[];
+  }
+  if(researchMeta&&vals[11]&&Array.isArray(vals[11].coins)&&vals[11].counts){
+    const sourceRows=vals[11].coins.filter(function(x){
+      return x.mint&&Number.isFinite(x.activePct)&&Number.isFinite(x.maxIdleObserved)&&x.features;
+    });
+    bank['1']=sourceRows.map(function(x){
+      return {mint:x.mint,t:x.acceptedAt,activity:x.activePct,
+        idle:x.maxIdleObserved,features:x.features};
+    }).sort(function(a,b){return a.t-b.t});
+    researchServerBank=true;
+    lastResearchBankRead=now();
+  }
+  // Server records are authoritative only while their own heartbeat is fresh.
+  passMeta=vals[12]&&Number.isFinite(vals[12].updated)&&
+    now()-vals[12].updated<7*60000&&
+    ['server-observational','disabled-no-server-rules'].includes(vals[12].status)&&
+    vals[12].serverOnly===true?vals[12]:null;
+  serverPassActive=!!passMeta;
+  if(serverPassActive){
+    const verified=new Map();
+    for(const source of [vals[15],vals[14],vals[13]]){
+      for(const p of source&&source.coins||[]){
+        if(p&&typeof p.mint==='string'&&Number.isSafeInteger(p.acceptedAt)&&
+           Number.isSafeInteger(p.firstSeenAt)&&Number.isSafeInteger(p.zeroAt)&&
+           ['before','after'].includes(p.phase)&&Array.isArray(p.matches))
+          verified.set(p.mint,p);
+      }
+    }
+    serverPassRows=[...verified.values()].sort(function(a,b){return b.firstSeenAt-a.firstSeenAt});
+  }else serverPassRows=[];
+  twoMeta=vals[16]&&vals[16].status==='observational'&&
+    vals[16].origin==='server-verified-passed-only'&&
+    Number.isFinite(vals[16].updated)&&now()-vals[16].updated<7*60000?vals[16]:null;
+  serverR2Active=!!twoMeta;
+  if(serverR2Active){
+    s.r2Strong=twoMeta.settings.minAbove;
+    $('r2Strong').value=s.r2Strong;$('r2StrongValue').textContent=s.r2Strong+'%';
+    $('r2Strong').disabled=!controlEndpoint;$('applyR2').disabled=true;
+    $('publishResearchTwo').disabled=!controlEndpoint;
+    if(vals[17]&&Array.isArray(vals[17].coins)){
+      serverR2Rows=vals[17].coins.filter(function(row){
+        return row&&typeof row.mint==='string'&&['strong','weak'].includes(row.label)&&
+          Number.isFinite(row.pctAbove)&&row.features;
+      });
+      bank['2']=serverR2Rows.map(function(row){
+        return {mint:row.mint,t:row.zeroAt,above:row.pctAbove,
+          phase:row.phase,label:row.label,features:row.features}
+      });
+      lastSecondBankRead=now();
+    }else if(!lastSecondBankRead||now()-lastSecondBankRead>=300000){
+      serverR2Rows=[];bank['2']=[];
+    }
+  }else{
+    serverR2Rows=[];serverR2Curve=null;bank['2']=[];lastSecondBankRead=0;
+    $('r2Strong').disabled=false;$('applyR2').disabled=false;
+    $('publishResearchTwo').disabled=true;
+  }
+  serverR2Curve=serverR2Active&&vals[21]&&
+    vals[21].origin==='server-verified-passed-only'&&vals[21].curves&&
+    Number.isFinite(vals[21].updated)&&now()-vals[21].updated<45*60000?
+    vals[21].curves:null;
+  autoOne=vals[18]&&Number.isFinite(vals[18].updated)&&
+    now()-vals[18].updated<40*60000?vals[18]:null;
+  autoTwo=vals[19]&&Number.isFinite(vals[19].updated)&&
+    now()-vals[19].updated<40*60000?vals[19]:null;
+  filterAuditMeta=vals[22]&&vals[22].origin==='server-observational-analytics'&&
+    Number.isFinite(vals[22].updated)&&now()-vals[22].updated<40*60000?vals[22]:null;
+  sourceActive=false;sourceMeta=null;sourceRecords=[];
+  $('ageBefore').disabled=true;$('ageAfter').disabled=true;
+  $('publishSourceAge').disabled=true;
+  if(vals[6]&&['verified-post-only','verified-pre-post'].includes(vals[6].mode)&&
+     vals[6].settings&&Number.isFinite(vals[6].updated)&&now()-vals[6].updated<=7*60000 &&
+     [vals[6].settings.beforeMinutes,vals[6].settings.afterMinutes].every(function(v){
+       return Number.isInteger(v)&&v>=1&&v<=10;
+     })&&(vals[7]||vals[9])) {
+    sourceActive=true;sourceMeta=vals[6];
+    var unique=new Map();
+    for(var item of (vals[8]?.coins||[]).concat(vals[7]?.coins||[],vals[9]?.coins||[])) {
+      if(item.a&&item.phase&&Number.isSafeInteger(item.eventAt)&&Number.isSafeInteger(item.acceptedAt))unique.set(item.a,item);
+    }
+    sourceRecords=[...unique.values()];
+    s.ageBefore=sourceMeta.settings.beforeMinutes;
+    s.ageAfter=sourceMeta.settings.afterMinutes;
+    $('ageBefore').value=s.ageBefore;$('ageAfter').value=s.ageAfter;
+    $('ageBefore').disabled=!controlEndpoint;$('ageAfter').disabled=!controlEndpoint;
+    $('publishSourceAge').disabled=!controlEndpoint;
+    $('ageBefore').title=controlEndpoint?'Изменяется только по ключу владельца':'Управление возрастом ещё не подключено';
+    $('ageAfter').title=$('ageBefore').title;
+  }
+  if(!sourceActive){serverPassActive=false;serverPassRows=[];}
+  var by=new Map();
+  for(var dayObj of [vals[2],vals[1]])for(var c of dayObj&&dayObj.coins||[]){
+    if(mint(c))by.set(mint(c),Object.assign({},by.get(mint(c))||{},c));
+  }
+  for(var o of [vals[4],vals[3]])for(var d of o&&o.coins||[]){
+    var existing=by.get(mint(d));if(!existing)continue;
+    if(Array.isArray(d.ds)&&d.ds.length>=(existing.ds||[]).length)existing.ds=d.ds;
+    if(d.path)existing.path=d.path;
+    if(d.lq)existing.lq=d.lq;
+  }
+  for(var c2 of vals[5]&&vals[5].coins||[]){
+    var prior=by.get(mint(c2));by.set(mint(c2),Object.assign({},prior||{},c2));
+  }
+  dataset=[...by.values()];
+  dataErr='';
+  loadedAt=now();
+  var updated=status&&ts(status.updated),age=updated?Math.floor((now()-updated)/60000):null;
+  var connected=age!=null&&age<=8&&sourceActive;
+  $('net').textContent=connected?'● LIVE':'● '+(!sourceActive?'Источник недоступен':age==null?'Данные':'Задержка '+Math.max(0,age)+' мин');
+  $('net').className='live '+(connected?'good':'warn');
+  $('dataState').textContent='Сервер: '+(updated?time(updated):'—')+' (Казахстан) · '+(sourceActive?'главный источник '+fmt(sourceRecords.length)+' записей, сегодня '+fmt(sourceMeta.today)+' (до '+fmt(sourceMeta.todayBefore)+', после '+fmt(sourceMeta.todayAfter)+')':'допуск приостановлен (основной журнал недоступен)')+' · обновление каждые 45 секунд.';
+  refresh();fetching=false;
+}
+function init(){
+  s.ageBefore=clamp(s.ageBefore,1,10,2);s.ageAfter=clamp(s.ageAfter,1,10,2);
+  s.limit=[10,20,30,50,100].includes(+s.limit)?+s.limit:20;
+  s.decision=clamp(s.decision,1,30,10);s.r1Hours=clamp(s.r1Hours,1,24,5);
+  s.r1Activity=clamp(s.r1Activity,0,100,70);s.r1Idle=clamp(s.r1Idle,5,120,60);
+  s.r2Strong=clamp(s.r2Strong,1,100,70);s.r2Step=[1,5,10,15,30,60].includes(+s.r2Step)?+s.r2Step:5;
+  s.level=['1','2'].includes(s.level)?s.level:'1';s.stream=['all','before','after'].includes(s.stream)?s.stream:'all';
+  s.r2Stream=['before','after'].includes(s.r2Stream)?s.r2Stream:'after';
+  if(!['all','mine','passed','r1','r2','library'].includes(s.tab))s.tab='all';
+  $('ageBefore').innerHTML=Array.from({length:10},function(_,i){return '<option value="'+(i+1)+'">'+(i+1)+' мин</option>'}).join('');
+  $('ageAfter').innerHTML=$('ageBefore').innerHTML;
+  $('ageBefore').value=s.ageBefore;$('ageAfter').value=s.ageAfter;$('cardLimit').value=s.limit;
+  for(var pair of [['decisionMins',s.decision],['r1Hours',s.r1Hours],['r1Activity',s.r1Activity],['r1Idle',s.r1Idle],['r2Strong',s.r2Strong]])$(pair[0]).value=pair[1];
+  $('decisionValue').textContent=s.decision+' мин';$('decisionCurrent').textContent=s.decision+' мин';$('r1HoursValue').textContent=s.r1Hours+' часов';
+  $('r1ActivityValue').textContent=s.r1Activity+'%';$('r1IdleValue').textContent=s.r1Idle+' минут';
+  $('r2StrongValue').textContent=s.r2Strong+'%';$('r2Step').value=s.r2Step;
+  $('passedDay').innerHTML=Array.from({length:14},function(_,i){
+    const d=day(now()-i*864e5);
+    return '<option value="'+d+'">'+d+'</option>';
+  }).join('');
+  document.querySelectorAll('#tabs [data-page]').forEach(function(x){x.classList.toggle('active',x.dataset.page===s.tab)});
+  document.querySelectorAll('.page').forEach(function(x){x.hidden=x.id!=='p-'+s.tab});
+  document.querySelectorAll('#allStreams [data-stream]').forEach(function(x){x.classList.toggle('active',x.dataset.stream===s.stream)});
+  document.querySelectorAll('#r2Streams [data-stream]').forEach(function(x){x.classList.toggle('active',x.dataset.stream===s.r2Stream)});
+  document.querySelectorAll('#levels [data-level]').forEach(function(x){x.classList.toggle('active',x.dataset.level===s.level)});
+  bind();refresh();load();
+  setInterval(load,45000);
+  setInterval(function(){if(dataset.length){renderAll();renderPassed()}},10000);
+}
+window.addEventListener('error',function(e){if($('dataState'))$('dataState').textContent='Ошибка интерфейса: '+(e.message||'неизвестная')+'. Старый сайт доступен по кнопке сверху.'});
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+})();,buys:'Покупки 5м',sells:'Продажи 5м',buySellRatio:'Покупки/продажи'})[x.key])+' '+esc(x.op)+' '+fmt(x.value)+' · версия '+fmt(x.version)+'</p>'+
+      (audits?'<p class="hint">Серверная история сравнения по версиям:</p>'+audits:
+      '<div class="numbers"><span class="badge">На телефоне: '+orig+'</span>'+
+      '<span class="badge">Серверная фоновая проверка: ожидает настройки</span></div>')+'</div>';
+  }).join(''):'<div class="empty-state">Фильтров этого уровня пока нет. Нажми «+ Создать» — можно сделать собственное правило.</div>';
+}
+function testAll(){
+  var f=s.filters.filter(function(x){return x.level===s.level});
+  var groups=classified(s.level),targets=s.poly[s.level];
+  if(groups[0].length<targets[0]||groups[1].length<targets[1]){note('Сначала нужно накопить выбранное количество обоих классов');return}
+  var positives=groups[0].slice(-targets[0]),negatives=groups[1].slice(-targets[1]);
+  var results=[];
+  for(var x of f){
+    var good=positives.filter(function(c){return ruleStatus(c.features,x)==='pass'}).length;
+    var blocked=negatives.filter(function(c){return ruleStatus(c.features,x)==='reject'}).length;
+    var unknownPositive=positives.filter(function(c){return ruleStatus(c.features,x)==='unknown'}).length;
+    var unknownNegative=negatives.filter(function(c){return ruleStatus(c.features,x)==='unknown'}).length;
+    var a=good/positives.length*100,b=blocked/negatives.length*100;
+    if(!x.original)x.original={livePercent:a,deadPercent:b,liveCount:good,liveTotal:positives.length,deadCount:blocked,deadTotal:negatives.length,at:now()};
+    results.push({f:x,a:a,b:b,good:good,blocked:blocked,unknownPositive,unknownNegative});
+  }
+  results.sort(function(a,b){return (b.a+b.b)-(a.a+a.b)});
+  testHtml='<h3 style="margin-top:12px">Результаты на '+fmt(positives.length+negatives.length)+' монетах</h3>'+
+    '<p class="muted">🟢 Доля правильно пропущенных · 🔴 доля правильно отклонённых. Обучавшиеся монеты не исключаются; это не независимая проверка.</p>'+
+    (results.length?results.map(function(r,i){return '<div class="result"><div class="row"><b>'+(i+1)+'. №'+esc(r.f.id)+' · '+esc(r.f.name)+'</b><span class="badge">v'+r.f.version+'</span></div>'+
+      '<div class="numbers" style="margin-top:8px"><span class="good">🟢 '+r.a.toFixed(1)+'% ('+r.good+'/'+positives.length+')</span> · <span class="bad">🔴 '+r.b.toFixed(1)+'% ('+r.blocked+'/'+negatives.length+')</span></div>'+
+        '<p class="muted">Нет показателя: живые '+r.unknownPositive+', мёртвые '+r.unknownNegative+'. Не засчитываем их как успешно отклонённые.</p></div>'}).join(''):'<p class="muted">В этом уровне ещё нет фильтров.</p>');
+  save();renderLibrary();
+}
+function openEditor(id){
+  editorId=id||null;var f=s.filters.find(function(x){return x.id===editorId});
+  $('editor').hidden=false;
+  $('editorTitle').textContent=f?'Редактор №'+f.id+' · v'+f.version:'Новый фильтр · '+s.level+'-й уровень';
+  $('filterName').value=f?f.name:'';
+  $('filterKey').value=f?f.key:'buyers';$('filterOp').value=f?f.op:'>=';
+  $('filterValue').value=f?f.value:20;
+  $('deleteFilter').hidden=!f;
+  $('editorNote').textContent='Сохраняется только в этом браузере. Изменение условия создаёт новую версию.';
+  $('editor').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function saveEditor(e){
+  e.preventDefault();
+  var name=$('filterName').value.trim(),key=$('filterKey').value,op=$('filterOp').value,value=Number($('filterValue').value);
+  if(!name||!['buyers','trades','volume','liq','mc','buys','sells','buySellRatio'].includes(key)||!['>=','<='].includes(op)||!Number.isFinite(value)||value<0||value>1e12){note('Проверь название и значение');return}
   var same=s.filters.find(function(f){return f.id!==editorId&&f.level===s.level&&f.key===key&&f.op===op&&f.value===value});
   if(same){note('Такие же правила уже есть: №'+same.id);return}
   if(editorId){
