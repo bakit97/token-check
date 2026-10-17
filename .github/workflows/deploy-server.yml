@@ -2,7 +2,7 @@ name: deploy-server
 on:
   push:
     branches: [main]
-    paths: ['server/collector.js', 'lab-core.js', 'server/source-runtime.js', 'server/admission.js', 'server/pump-pre.js', 'server/pre-watcher.js', 'server/research-v2.js', 'server/research-runtime.js', 'server/pass-runtime.js', 'server/research-two-runtime.js', 'server/auto-research-v2.js', 'server/pass-filters.json']
+    paths: ['server/collector.js', 'lab-core.js', 'server/source-runtime.js', 'server/admission.js', 'server/pump-pre.js', 'server/pre-watcher.js', 'server/research-v2.js', 'server/research-runtime.js', 'server/pass-runtime.js', 'server/research-two-runtime.js', 'server/auto-research-v2.js']
   workflow_dispatch:
 permissions:
   contents: read
