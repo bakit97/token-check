@@ -104,6 +104,13 @@ class PassRuntime {
         try{fs.fsyncSync(dir)}finally{fs.closeSync(dir)}
       }
     }
+    if(!cfg.enabled&&fs.existsSync(this.activationFile)){
+      // Disabling invalidates this activation epoch. A later re-enable
+      // must not resurrect admissions from the interval while disabled.
+      fs.unlinkSync(this.activationFile);
+      const fd=fs.openSync(path.dirname(this.activationFile),'r');
+      try{fs.fsyncSync(fd)}finally{fs.closeSync(fd)}
+    }
     this.config=cfg;
     this.configHash=h;
     return true;
