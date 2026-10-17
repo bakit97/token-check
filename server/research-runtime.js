@@ -94,9 +94,9 @@ class ResearchRuntime {
         pending['not-yet-finished']=(pending['not-yet-finished']||0)+1;
         continue;
       }
-      if(this.lastAttemptAt.has(row.mint) &&
-         now-this.lastAttemptAt.get(row.mint).at<RETRY_INCOMPLETE_MS){
-        pending['retry-later']=(pending['retry-later']||0)+1;
+      const previous=this.lastAttemptAt.get(row.mint);
+      if(previous&&now-previous.at<RETRY_INCOMPLETE_MS){
+        pending[previous.why]=(pending[previous.why]||0)+1;
         continue;
       }
       if(attempted>=MAX_CLASSIFICATION_CHECKS){
@@ -106,14 +106,14 @@ class ResearchRuntime {
       attempted++;
       const coin=coins.get(row.mint);
       if(!coin){
-        this.lastAttemptAt.set(row.mint,{at:now,acceptedAt:row.acceptedAt});
+        this.lastAttemptAt.set(row.mint,{at:now,acceptedAt:row.acceptedAt,why:'candidate-missing'});
         pending['candidate-missing']=(pending['candidate-missing']||0)+1;
         continue;
       }
       const decisionAt=row.acceptedAt+this.config.decisionMinutes*MIN;
       const result=activityOutcome(coin,row.acceptedAt,this.config,now);
       if(result.label==='pending'){
-        this.lastAttemptAt.set(row.mint,{at:now,acceptedAt:row.acceptedAt});
+        this.lastAttemptAt.set(row.mint,{at:now,acceptedAt:row.acceptedAt,why:result.why});
         pending[result.why]=(pending[result.why]||0)+1;
         continue;
       }
