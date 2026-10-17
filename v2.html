@@ -42,10 +42,10 @@
 <div class="card"><div class="row"><span>Включено модулей</span><strong id="activeModules" class="accent">0</strong></div><p class="hint">Новые фильтры создавай и проверяй во вкладке «Библиотека», затем подключай здесь.</p></div>
 </section>
 <section class="page" id="p-passed" hidden>
-<h1>Прошли</h1><p class="muted">Здесь только монеты из главного источника, прошедшие хотя бы один из твоих активных фильтров.</p>
-<details class="card" id="decisionSettings"><summary>⚙ Настроить таймер решения <span class="badge" id="decisionCurrent">10 мин</span></summary><div style="padding-top:14px"><div class="row"><label for="decisionMins">Время на решение</label><b id="decisionValue">10 минут</b></div><input type="range" min="1" max="30" step="1" id="decisionMins"><div class="row" style="margin-top:10px"><button type="button" class="primary" id="applyDecision">Применить</button><span class="muted">От 1 до 30 минут</span></div><p class="hint">Новый таймер сохранится только после нажатия «Применить». После его завершения монеты поступают в исследование второго уровня.</p></div></details>
+<h1>Прошли</h1><p class="muted">Монеты из главного источника, прошедшие условия. Серверные сигналы фиксируются независимо от телефона; локальные правила — только черновики до синхронизации с сервером.</p>
+<details class="card" id="decisionSettings"><summary>⚙ Настроить таймер решения <span class="badge" id="decisionCurrent">10 мин</span></summary><div style="padding-top:14px"><div class="row"><label for="decisionMins">Время на решение</label><b id="decisionValue">10 минут</b></div><input type="range" min="1" max="30" step="1" id="decisionMins"><div class="row" style="margin-top:10px"><button type="button" class="primary" id="applyDecision">Применить</button><span class="muted">От 1 до 30 минут</span></div><p class="hint">Локальный таймер изменяется кнопкой «Применить». Для серверных сигналов значение фиксирует серверная конфигурация; точка 0 остаётся неизменной при последующем редактировании.</p></div></details>
 <div id="passedStats" class="muted"></div><div class="list" id="passedList"></div>
-<details class="card" id="passedArchive"><summary>История сигналов на этом телефоне · <span id="passedArchiveCount">0</span></summary><p class="hint">История сохраняет название, версию и условия фильтра на момент обнаружения; не пересчитывается после изменения правил. При закрытом сайте новые сигналы на телефон не записываются.</p><div id="passedArchiveList" class="list"></div></details>
+<details class="card" id="passedArchive"><summary>История сигналов · <span id="passedArchiveCount">0</span></summary><p class="hint">В серверном режиме: журнал продолжается при закрытом телефоне. В предварительном режиме: история остаётся только в этом браузере. Все версии правил и исходное время решения сохраняются.</p><div id="passedArchiveList" class="list"></div></details>
 </section>
 <section class="page" id="p-r1" hidden>
 <h1>Исследование 1-го уровня</h1><p class="muted">Из главного источника, через собственный путь. Живые и мёртвые определяются торговой активностью, а НЕ ростом цены.</p>
@@ -56,7 +56,7 @@
 <button class="primary" id="applyR1">Применить</button>
 <p class="hint">Зелёная зона — подробные данные до конца решения; дальше достаточно цены, времени и реальных сделок. При плохом покрытии — «недостаточно данных».</p></div>
 <div class="statgrid"><div class="stat"><span>🟢 Живые, подтверждены данными</span><strong id="r1Live">—</strong></div><div class="stat"><span>🔴 Мёртвые, подтверждены данными</span><strong id="r1Dead">—</strong></div></div>
-<div class="card"><h2>Автоматическое исследование</h2><div class="muted" id="r1Auto">Нужно минимум 100 живых монет. Серверный движок нового исследования ещё не подключён.</div><div class="meter" style="margin-top:10px"><div id="r1Meter" style="width:0"></div></div></div>
+<div class="card"><h2>Автоматическое исследование</h2><div class="muted" id="r1Auto">Нужно минимум 100 живых и 40 мёртвых в обучении; ещё 100 наблюдений позже для отдельной проверки.</div><div class="meter" style="margin-top:10px"><div id="r1Meter" style="width:0"></div></div><div id="r1Suggestions"></div></div>
 <div id="r1Rows" class="card"><div class="muted">Нет завершённых наблюдений.</div></div>
 </section>
 <section class="page" id="p-r2" hidden>
@@ -68,10 +68,10 @@
 <div class="row"><span class="muted" id="r2Paging"></span><div class="action-bar"><button id="r2Prev">←</button><button id="r2Next">→</button></div></div></div>
 <div class="card"><h2>Ручная классификация</h2><div class="row"><label for="r2Strong">Доля 300 минут выше цены в точке 0</label><b id="r2StrongValue">70%</b></div><input type="range" id="r2Strong" min="1" max="100" value="70">
 <button id="applyR2" class="primary">Применить</button><div id="r2Stats" class="muted" style="margin-top:10px"></div></div>
-<div class="card"><h2>Непрерывное автоисследование</h2><p class="muted">План: обучающие 40 сильных + 40 слабых; независимая проверка на 100 размеченных монет; пользовательский порог точности. Фоновый серверный процесс ещё не внедрён — фиктивный запуск не показываем.</p><button disabled title="Сначала требуется серверное исследование">▶ Исследовать · ожидает сервер</button></div>
+<div class="card"><h2>Непрерывное автоисследование</h2><p class="muted" id="r2AutoText">Требуется 40 сильных + 40 слабых для обучения, затем отдельные 100 размеченных монет для более поздней проверки. Неполное наблюдение не считается слабой монетой.</p><div id="r2Suggestions"></div></div>
 </section>
 <section class="page" id="p-library" hidden>
-<h1>Библиотека фильтров</h1><p class="muted">Сохраняй правила, изменяй версии и проверяй каждый уровень на своём полигоне. В этой первой версии пользовательские правила сохраняются в браузере.</p>
+<h1>Библиотека фильтров</h1><p class="muted">Сохраняй правила, изменяй версии и проверяй каждый уровень на своём полигоне. Локальные редакции правил сохраняются в браузере; серверный журнал работает только с отдельно опубликованной серверной конфигурацией.</p>
 <div class="chips" id="levels"><button class="active" data-level="1">Первый уровень</button><button data-level="2">Второй уровень</button></div>
 <div class="card"><div class="row"><h2>🧪 Полигон <span id="polyTitle">Живые / мёртвые</span></h2><span class="badge">до 5 000 каждой</span></div>
 <div class="row"><label id="polyNameA" for="polyA">Живые</label><b id="polyAValue">2 000</b></div><input type="range" min="500" max="5000" value="2000" step="100" id="polyA">
@@ -79,7 +79,7 @@
 <button class="primary" id="polyApply">Применить</button>
 <div id="polyProgress" style="margin-top:12px"></div>
 <button id="testAll" class="primary" style="width:100%;margin-top:12px">Проверить все фильтры</button>
-<div class="hint">Накопление на сервере ещё в разработке. Локальные записи помогают проверять интерфейс; исчезнувшие с устройства записи сервер пока не восстанавливает.</div>
+<div class="hint">Полигон 1 заполняется серверной классификацией активности, полигон 2 — серверной классификацией после «Прошли», когда эти журналы активны. Локальные черновики не меняют серверные сигналы.</div>
 <div id="testResults"></div></div>
 <div class="row" style="margin:20px 0 8px"><h2>Сохранённые фильтры</h2><button id="createFilter" class="primary">+ Создать</button></div>
 <div id="libraryList"></div>
@@ -92,7 +92,7 @@
 <div class="action-bar"><button class="primary" type="submit">Сохранить</button><button id="deleteFilter" type="button" class="dangerbtn">Удалить</button></div><p class="hint" id="editorNote">Для изменённых условий результаты прошлой версии не переписываются.</p></form>
 </section>
 <p id="toast" role="status" aria-live="polite"></p>
-<footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — постепенный переход. Новые источники и серверное обучение подключаются отдельно; неполные данные не выдаются за результат. <a href="./classic.html">Открыть прежний сайт</a></footer>
+<footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — разделены серверные записи и локальные черновики; неполные наблюдения не выдаются за результат. <a href="./classic.html">Открыть прежний сайт</a></footer>
 </main>
-<script src="./v2.js?v=20261017-11" defer></script>
+<script src="./v2.js?v=20261017-12" defer></script>
 </body></html>
