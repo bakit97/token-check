@@ -24,6 +24,7 @@ const config=research.settings||{},counts=research.counts||{};
 check(config.hours>=1&&config.hours<=24,'research hours outside 1–24');
 check(typeof counts.live==='number'&&typeof counts.dead==='number','counters absent');
 check(Array.isArray(polygon.coins),'polygon data not an array');
+warn(typeof polygon.updated==='number'&&now-polygon.updated<45*60_000,'polygon snapshot older than 45 minutes');
 const labeled=new Map(),phaseCounts={before:{live:0,dead:0},after:{live:0,dead:0}};
 for(const row of polygon.coins||[]){
   check(typeof row.mint==='string'&&row.mint.length>=32,'malformed mint');
