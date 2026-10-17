@@ -72,7 +72,8 @@ class PumpPreWatcher {
         mint:launch.mint,publicTradingAt:launch.blockAt,
         observedAt:launch.observedAt,verified:true,
         proof:{family:'pump',signature:launch.signature,curve:launch.curve,
-          slot:launch.slot,kind:'pump-bonding-curve'}
+          slot:launch.slot,quote:launch.quote,name:launch.name,symbol:launch.symbol,
+          kind:'pump-bonding-curve'}
       });
       if(accepted.admitted){
         this.stats.accepted++;this.stats.lastAt=Date.now();
