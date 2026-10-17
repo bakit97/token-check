@@ -23,6 +23,38 @@ function durableJSON(file,value){
   const d=fs.openSync(path.dirname(file),'r');
   try{fs.fsyncSync(d)}finally{fs.closeSync(d)}
 }
+function packMinuteCurve(values){
+  if(!Array.isArray(values)||values.length!==300)return null;
+  // 300 * float32 = 1200 bytes, compared with thousands of JSON numbers.
+  // NaN is only an internal missing-value marker and never exported as a price.
+  const bytes=Buffer.allocUnsafe(1200);
+  for(let i=0;i<300;i++){
+    const value=values[i];
+    bytes.writeFloatLE(Number.isFinite(value)?value:NaN,i*4);
+  }
+  return bytes.toString('base64');
+}
+function eachMinutePoint(row,visit){
+  if(typeof row.minuteCurvePacked==='string'){
+    const bytes=Buffer.from(row.minuteCurvePacked,'base64');
+    if(bytes.length!==1200)throw Error('Corrupted compact minute curve');
+    for(let i=0;i<300;i++){
+      const v=bytes.readFloatLE(i*4);
+      if(Number.isFinite(v))visit(i+1,v);
+    }
+    return;
+  }
+  if(Array.isArray(row.minuteCurve)&&row.minuteCurve.length===300){
+    for(let i=0;i<300;i++){
+      const v=row.minuteCurve[i];
+      if(Number.isFinite(v))visit(i+1,v);
+    }
+    return;
+  }
+  for(const point of row.curve||[])
+    if(Array.isArray(point)&&Number.isInteger(point[0])&&Number.isFinite(point[1]))
+      visit(point[0],point[1]);
+}
 class ResearchTwoRuntime {
   constructor({dir,config,bankName='research-v2-bank-two.json',cohortStart=0}={}){
     if(!dir)throw TypeError('Research-two directory required');
@@ -41,7 +73,9 @@ class ResearchTwoRuntime {
       for(const row of data.rows){
         if(!row||typeof row.mint!=='string'||!Number.isSafeInteger(row.zeroAt)||
            !['strong','weak'].includes(row.label)||!Number.isFinite(row.pctAbove)||
-           !Number.isFinite(row.covered)||!row.features||typeof row.features!=='object')
+           !Number.isFinite(row.covered)||!row.features||typeof row.features!=='object'||
+           (row.minuteCurvePacked!=null&&
+             (typeof row.minuteCurvePacked!=='string'||Buffer.from(row.minuteCurvePacked,'base64').length!==1200)))
           throw Error('Corrupted second-level research row');
       }
       this.rows=capBank(data.rows,r=>r.label,'strong','weak',MAX_PER_CLASS);
@@ -99,7 +133,7 @@ class ResearchTwoRuntime {
         })),
         label:result.label,secondLevelMatches,
         pctAbove:result.pctAbove,covered:result.covered,
-        p0:result.p0,curve:result.curve,minuteCurve:result.minuteCurve,features:F,
+        p0:result.p0,curve:result.curve,minuteCurvePacked:packMinuteCurve(result.minuteCurve),features:F,
         firstPassFeatures:{...pass.features},
         threshold:this.config.minAbove,coverageThreshold:this.config.minCoverage,
         time:pass.zeroAt
@@ -135,17 +169,12 @@ class ResearchTwoRuntime {
     for(const row of this.rows){
       const grid=buckets[row.phase];
       if(!grid)continue;
-      // Actual 1m observations, not linear interpolation of 5m snapshots.
-      // Earlier completed rows may only contain 5m values (legacy bank).
-      const samples=Array.isArray(row.minuteCurve)&&row.minuteCurve.length===300?
-        row.minuteCurve.map((pct,i)=>[i+1,pct]):row.curve||[];
-      for(const point of samples){
-        if(!Array.isArray(point)||!Number.isInteger(point[0])||
-           point[0]<1||point[0]>300||!Number.isFinite(point[1]))continue;
-        let x=grid.get(point[0]);
-        if(!x){x={sum:0,n:0};grid.set(point[0],x)}
-        x.sum+=point[1];x.n++;
-      }
+      eachMinutePoint(row,(m,value)=>{
+        if(m<1||m>300)return;
+        let x=grid.get(m);
+        if(!x){x={sum:0,n:0};grid.set(m,x)}
+        x.sum+=value;x.n++;
+      });
     }
     for(const phase of ['before','after']){
       result[phase]=[...buckets[phase]].sort((a,b)=>a[0]-b[0])
