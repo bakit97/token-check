@@ -125,7 +125,7 @@
 <form id="editor" class="card" hidden>
 <div class="row"><h2 id="editorTitle">Новый фильтр</h2><button type="button" id="closeEditor">Закрыть</button></div>
 <label class="control" style="margin-top:10px"><span>Название</span><input type="text" class="input" id="filterName" maxlength="64" required></label>
-<div class="controls" style="margin-top:11px"><label class="control"><span>Показатель</span><select id="filterKey" class="input"><option value="buyers">Покупатели</option><option value="trades">Сделки за 5 мин</option><option value="volume">Объём за 5 мин ($)</option><option value="liq">Ликвидность ($)</option></select></label>
+<div class="controls" style="margin-top:11px"><label class="control"><span>Показатель</span><select id="filterKey" class="input"><option value="buyers">Покупатели</option><option value="trades">Сделки за 5 мин</option><option value="volume">Объём за 5 мин ($)</option><option value="liq">Ликвидность ($)</option><option value="mc">Капитализация ($)</option><option value="buys">Покупки за 5 мин</option><option value="sells">Продажи за 5 мин</option><option value="buySellRatio">Покупки / продажи</option></select></label>
 <label class="control"><span>Условие</span><select class="input" id="filterOp"><option value=">=">Не меньше ≥</option><option value="<=">Не больше ≤</option></select></label></div>
 <label class="control" style="margin-top:11px"><span>Значение</span><input class="input" type="number" min="0" max="1000000000000" step="any" id="filterValue" value="20" required></label>
 <div class="action-bar"><button class="primary" type="submit">Сохранить</button><button id="deleteFilter" type="button" class="dangerbtn">Удалить</button></div><p class="hint" id="editorNote">Для изменённых условий результаты прошлой версии не переписываются.</p></form>
@@ -133,5 +133,5 @@
 <p id="toast" role="status" aria-live="polite"></p>
 <footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — разделены серверные записи и локальные черновики; неполные наблюдения не выдаются за результат. <a href="./classic.html">Открыть прежний сайт</a></footer>
 </main>
-<script src="./v2.js?v=20261017-22" defer></script>
+<script src="./v2.js?v=20261017-23" defer></script>
 </body></html>
