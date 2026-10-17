@@ -22,8 +22,7 @@ function configOf(raw={}){
   if(!Number.isSafeInteger(cfg.activatedAt)||cfg.activatedAt<0||
      !Number.isInteger(cfg.decisionMinutes)||cfg.decisionMinutes<1||cfg.decisionMinutes>30||
      !Array.isArray(cfg.filters)||cfg.filters.length>200||
-     !Array.isArray(cfg.modules)||cfg.modules.length>200||
-     (cfg.enabled&&cfg.activatedAt<=0))
+     !Array.isArray(cfg.modules)||cfg.modules.length>200)
     throw new RangeError('Invalid pass configuration');
   const ids=new Set();
   for(const f of cfg.filters){
@@ -60,11 +59,12 @@ class PassRuntime {
     if(!dir)throw new TypeError('Pass journal directory required');
     fs.mkdirSync(dir,{recursive:true});
     this.file=path.join(dir,'pass-v2.journal');
+    this.activationFile=path.join(dir,'pass-v2-activation.json');
     this.records=new Map();
-    this.config=configOf(config||{
+    this.config=null;this.configHash='';
+    this.applyConfig(config||{
       schema:1,enabled:false,activatedAt:0,decisionMinutes:10,filters:[],modules:[]
     });
-    this.configHash=digest(this.config);
     this.updated=null;
     this.appended=0;
     if(fs.existsSync(this.file)){
@@ -82,6 +82,28 @@ class PassRuntime {
   applyConfig(raw){
     const cfg=configOf(raw),h=digest(cfg);
     if(h===this.configHash)return false;
+    if(cfg.enabled){
+      let old=null;
+      try{old=JSON.parse(fs.readFileSync(this.activationFile,'utf8'))}
+      catch(e){if(e.code!=='ENOENT')throw e}
+      // Only the moment the SERVER received this version can activate it.
+      // Never backfill a previously admitted coin when an editor publishes it.
+      const serverAt=old&&old.hash===h&&Number.isSafeInteger(old.serverAt)?
+        old.serverAt:Date.now();
+      cfg.activatedAt=Math.max(cfg.activatedAt,serverAt);
+      if(!old||old.hash!==h){
+        const temp=this.activationFile+'.tmp',data=Buffer.from(JSON.stringify({
+          schema:1,hash:h,serverAt
+        }));
+        const fd=fs.openSync(temp,'w',0o600);
+        try{let written=0;while(written<data.length)
+          written+=fs.writeSync(fd,data,written,data.length-written);fs.fsyncSync(fd)}
+        finally{fs.closeSync(fd)}
+        fs.renameSync(temp,this.activationFile);
+        const dir=fs.openSync(path.dirname(this.activationFile),'r');
+        try{fs.fsyncSync(dir)}finally{fs.closeSync(dir)}
+      }
+    }
     this.config=cfg;
     this.configHash=h;
     return true;
