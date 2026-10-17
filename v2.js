@@ -18,10 +18,10 @@ if(!Array.isArray(s.filters))s.filters=[];
 if(!Array.isArray(s.modules))s.modules=[];
 var bank=Object.assign({'1':[],'2':[]},loadLocal(BANK,{'1':[],'2':[]}));
 for(var lv of ['1','2'])if(!Array.isArray(bank[lv]))bank[lv]=[];
-var dataset=[],status=null,dataErr='',loadedAt=0,picker=null,editorId=null,lastPassed=[],lastR1=[],lastR2=[],lastAccepted=[],lastVisible=[],testHtml='',lastBankWrite=0,fetching=false,sourceActive=false,sourceMeta=null,sourceRecords=[];
+var dataset=[],status=null,dataErr='',loadedAt=0,picker=null,editorId=null,lastPassed=[],lastR1=[],lastR2=[],lastAccepted=[],lastVisible=[],testHtml='',lastBankWrite=0,lastResearchBankRead=0,researchMeta=null,researchServerBank=false,fetching=false,sourceActive=false,sourceMeta=null,sourceRecords=[];
 var phaseNames={before:'🌱 До миграции',after:'🎓 После миграции'};
 function save(){try{localStorage.setItem(STORE,JSON.stringify(s))}catch(e){note('Не удалось сохранить настройки на устройстве')}}
-function saveBank(){try{localStorage.setItem(BANK,JSON.stringify(bank));lastBankWrite=now()}catch(e){note('Память браузера заполнена. Серверный банк пока не подключён.')}}
+function saveBank(){try{localStorage.setItem(BANK,JSON.stringify(researchServerBank?{'1':[],'2':bank['2']}:bank));lastBankWrite=now()}catch(e){note('Локальная память телефона заполнена: проверьте сохранение данных')}}
 function clamp(v,min,max,def){v=Number(v);return Number.isFinite(v)?Math.min(max,Math.max(min,v)):def}
 function note(message){$('toast').textContent=message;clearTimeout(note.timer);note.timer=setTimeout(function(){$('toast').textContent=''},6000)}
 function day(t){return new Date(t+5*3600e3).toISOString().slice(0,10)}
@@ -41,7 +41,12 @@ function dataMetrics(c,cutoff){
     trades:d&&num(d[4])!=null&&num(d[5])!=null?num(d[4])+num(d[5]):null,
     volume:d?num(d[6]):null,liq:d?num(d[2]):null};
 }
-function ruleMatch(features,f){var v=features[f.key];if(v==null||!Number.isFinite(v))return false;return f.op==='>='?v>=f.value:v<=f.value}
+function ruleStatus(features,f){
+  const v=features?.[f.key];
+  if(typeof v!=='number'||!Number.isFinite(v))return 'unknown';
+  return f.op==='>='?(v>=f.value?'pass':'reject'):(v<=f.value?'pass':'reject');
+}
+function ruleMatch(features,f){return ruleStatus(features,f)==='pass'}
 function freshAdmission(c) {
   // Основание для ДО = подтверждённое открытие публичной торговли, НЕ token creation / seen.
   var p=ts(c.publicTradingAt),pv=c.publicTradingVerified===true,ps=ts(c.publicTradingSeenAt);
@@ -181,7 +186,7 @@ function analyze(){
     var r=labTwo(q.coin,q);
     if(r.label!=='pending')lastR2.push({passed:q,result:r});
   }
-  storeBank('1',lastR1.map(function(x){return {mint:mint(x.coin),t:x.coin._entry.acceptedAt,activity:x.result.score,idle:x.result.maxIdle,features:dataMetrics(x.coin,x.coin._entry.acceptedAt+s.decision*60000)}}));
+  if(!researchMeta)storeBank('1',lastR1.map(function(x){return {mint:mint(x.coin),t:x.coin._entry.acceptedAt,activity:x.result.score,idle:x.result.maxIdle,features:dataMetrics(x.coin,x.coin._entry.acceptedAt+s.decision*60000)}}));
   storeBank('2',lastR2.map(function(x){return {mint:mint(x.passed.coin),t:x.passed.deadline,above:x.result.score,features:x.passed.features}}));
 }
 function spark(c){
@@ -258,6 +263,25 @@ function renderPassed(){
   }).join(''):'<div class="empty-state">Пока нет монет, прошедших включённые модули с действующим таймером. Создай фильтр в библиотеке и включи его в «Мои фильтры».</div>';
 }
 function renderR1(){
+  if(researchMeta){
+    const cfg=researchMeta.settings||{},counts=researchMeta.counts||{},p=researchMeta.pending||{};
+    const a=counts.live||0,b=counts.dead||0;
+    $('r1Live').textContent=fmt(a);$('r1Dead').textContent=fmt(b);
+    $('r1Meter').style.width=Math.min(100,a)+'%';
+    $('r1Auto').textContent='Серверные наблюдения · '+cfg.hours+' ч · активность ≥'+cfg.minActive+
+      '% · простой ≤'+cfg.maxIdle+' мин. Размечено живых: '+a+
+      '/100. Ожидают окончания наблюдения: '+(p['not-yet-finished']||0)+
+      ', недостаточно данных: '+(p['insufficient-activity-coverage']||0)+
+      '. Автоподбор правил пока не запущен.';
+    const rows=bank['1'].slice(-10).reverse();
+    $('r1Rows').innerHTML=rows.length?'<h2>Размечено на сервере</h2>'+rows.map(function(x){
+      const positive=x.activity>=cfg.minActive&&x.idle<=cfg.maxIdle;
+      return '<div class="vrow"><div class="row"><b class="mono">'+esc(x.mint.slice(0,11))+'…</b>'+
+        '<span class="badge '+(positive?'good':'bad')+'">'+(positive?'🟢 Живая':'🔴 Мёртвая')+'</span></div>'+
+        '<p class="muted">Активность '+x.activity.toFixed(1)+'% · пауза '+x.idle+' мин · данные сохранены на сервере</p></div>';
+    }).join(''):'<div class="muted">Пока нет монет с завершённым и достаточно полным наблюдением. Сервер продолжает сбор.</div>';
+    return;
+  }
   var a=lastR1.filter(function(x){return x.result.label==='live'}).length;
   var b=lastR1.filter(function(x){return x.result.label==='dead'}).length;
   $('r1Live').textContent=fmt(a);$('r1Dead').textContent=fmt(b);
@@ -348,17 +372,20 @@ function testAll(){
   var positives=groups[0].slice(-targets[0]),negatives=groups[1].slice(-targets[1]);
   var results=[];
   for(var x of f){
-    var good=positives.filter(function(c){return ruleMatch(c.features,x)}).length;
-    var blocked=negatives.filter(function(c){return !ruleMatch(c.features,x)}).length;
+    var good=positives.filter(function(c){return ruleStatus(c.features,x)==='pass'}).length;
+    var blocked=negatives.filter(function(c){return ruleStatus(c.features,x)==='reject'}).length;
+    var unknownPositive=positives.filter(function(c){return ruleStatus(c.features,x)==='unknown'}).length;
+    var unknownNegative=negatives.filter(function(c){return ruleStatus(c.features,x)==='unknown'}).length;
     var a=good/positives.length*100,b=blocked/negatives.length*100;
     if(!x.original)x.original={livePercent:a,deadPercent:b,liveCount:good,liveTotal:positives.length,deadCount:blocked,deadTotal:negatives.length,at:now()};
-    results.push({f:x,a:a,b:b,good:good,blocked:blocked});
+    results.push({f:x,a:a,b:b,good:good,blocked:blocked,unknownPositive,unknownNegative});
   }
   results.sort(function(a,b){return (b.a+b.b)-(a.a+a.b)});
   testHtml='<h3 style="margin-top:12px">Результаты на '+fmt(positives.length+negatives.length)+' монетах</h3>'+
     '<p class="muted">🟢 Доля правильно пропущенных · 🔴 доля правильно отклонённых. Обучавшиеся монеты не исключаются; это не независимая проверка.</p>'+
     (results.length?results.map(function(r,i){return '<div class="result"><div class="row"><b>'+(i+1)+'. №'+esc(r.f.id)+' · '+esc(r.f.name)+'</b><span class="badge">v'+r.f.version+'</span></div>'+
-      '<div class="numbers" style="margin-top:8px"><span class="good">🟢 '+r.a.toFixed(1)+'% ('+r.good+'/'+positives.length+')</span> · <span class="bad">🔴 '+r.b.toFixed(1)+'% ('+r.blocked+'/'+negatives.length+')</span></div></div>'}).join(''):'<p class="muted">В этом уровне ещё нет фильтров.</p>');
+      '<div class="numbers" style="margin-top:8px"><span class="good">🟢 '+r.a.toFixed(1)+'% ('+r.good+'/'+positives.length+')</span> · <span class="bad">🔴 '+r.b.toFixed(1)+'% ('+r.blocked+'/'+negatives.length+')</span></div>'+
+        '<p class="muted">Нет показателя: живые '+r.unknownPositive+', мёртвые '+r.unknownNegative+'. Не засчитываем их как успешно отклонённые.</p></div>'}).join(''):'<p class="muted">В этом уровне ещё нет фильтров.</p>');
   save();renderLibrary();
 }
 function openEditor(id){
@@ -490,8 +517,12 @@ async function load(){
   if(fetching)return;fetching=true;
   var today=day(now()),yesterday=day(now()-864e5);
   var names=['status.json','day/'+today+'.json','day/'+yesterday+'.json','obs/'+today+'.json','obs/'+yesterday+'.json','live.json',
-    'source/status.json','source/day/'+today+'.json','source/day/'+yesterday+'.json','source/live.json'];
-  var fetched=await Promise.allSettled(names.map(getJSON));
+    'source/status.json','source/day/'+today+'.json','source/day/'+yesterday+'.json','source/live.json',
+    'research-v2/status.json','research-v2/polygon-1.json'];
+  var fetched=await Promise.allSettled(names.map(function(name,i){
+    if(i===11&&lastResearchBankRead&&now()-lastResearchBankRead<300000)return Promise.resolve(null);
+    return getJSON(name);
+  }));
   var vals=fetched.map(function(q){return q.status==='fulfilled'?q.value:null});
   var errors=fetched.filter(function(q){return q.status==='rejected'});
   if(vals.slice(1,3).every(function(x){return !x})&&!vals[5]){
@@ -500,6 +531,30 @@ async function load(){
     $('net').textContent='● Ожидание';$('net').className='live bad';fetching=false;return;
   }
   status=vals[0]||status;
+  if(vals[10]&&vals[10].status==='observational'&&vals[10].settings){
+    if(!researchMeta&&!researchServerBank)bank['1']=[];
+    researchMeta=vals[10];
+    // The polygon is owned by the server. Phone sliders cannot change
+    // server labels until a secure settings API has been implemented.
+    s.r1Hours=researchMeta.settings.hours;
+    s.r1Activity=researchMeta.settings.minActive;
+    s.r1Idle=researchMeta.settings.maxIdle;
+    $('r1Hours').value=s.r1Hours;$('r1HoursValue').textContent=s.r1Hours+' часов';
+    $('r1Activity').value=s.r1Activity;$('r1ActivityValue').textContent=s.r1Activity+'%';
+    $('r1Idle').value=s.r1Idle;$('r1IdleValue').textContent=s.r1Idle+' минут';
+    for(const id of ['r1Hours','r1Activity','r1Idle','applyR1'])$(id).disabled=true;
+  }
+  if(vals[11]&&Array.isArray(vals[11].coins)){
+    const sourceRows=vals[11].coins.filter(function(x){
+      return x.mint&&Number.isFinite(x.activePct)&&Number.isFinite(x.maxIdleObserved)&&x.features;
+    });
+    bank['1']=sourceRows.map(function(x){
+      return {mint:x.mint,t:x.acceptedAt,activity:x.activePct,
+        idle:x.maxIdleObserved,features:x.features};
+    }).sort(function(a,b){return a.t-b.t});
+    researchServerBank=true;
+    lastResearchBankRead=now();
+  }
   if(vals[6]&&['verified-post-only','verified-pre-post'].includes(vals[6].mode)&&vals[6].settings) {
     sourceActive=true;sourceMeta=vals[6];
     var unique=new Map();
