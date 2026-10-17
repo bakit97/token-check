@@ -1,3 +1,119 @@
+# HANDOFF — Codex resource controls, 2026-10-17
+
+Branch: `feature/serverside-passed-r2-20261017`; existing draft PR: https://github.com/bakit97/token-check/pull/15
+Implementation commit: **8df8c12d47ed6334333088a8680c8998f9306bcc**.
+This report is a subsequent documentation-only commit; use the branch HEAD for its SHA.
+Claude's original report is preserved below as historical context, not current verification.
+
+## Scope actually completed
+
+The owner's follow-up requested a combined Helius budget of <=20 credits/minute,
+monthly forecast and automatic background throttling, plus Always Free VM/GCS
+protections. This commit implements that scope. It does **not** complete or
+certify the whole original SOL·СКАН v2 specification.
+
+Changed files: `server/collector.js`, `server/resource-budget.js`,
+`server/resource-budget.test.js`, `server/pre-watcher.js`, `server/source-runtime.js`,
+`tests/resource-collector-smoke.cjs`, `.github/workflows/resource-budget-tests.yml`,
+`.github/workflows/deploy-server.yml`, `docs/RESOURCE-BUDGET.md`.
+
+- Helius accounting persists before RPC attempts, includes failures/retries,
+  accounts archival methods at 10 credits, and reserves received WS payload at
+  20 credits/MB. RPC contexts capture priority at submission. Shared rolling
+  minute/hour/month guards defer background first; fresh proofs have priority.
+- Forecast, estimated balance, reset deadline and throttling diagnostics appear
+  under `status.json.resources.helius`. Checkpoint starts at owner-reported
+  174,302 credits; exact reset time/current usage still require dashboard reconciliation.
+- Background pool requests slowed to 5 minutes; curve sweeps to 10 minutes.
+  Five-minute, 128-entry proof cache avoids paying repeatedly for immutable
+  responses during partially completed migration proofs.
+- GCS governor limits this collector to 4,000 paced write attempts/month,
+  including failed requests, leaving 1,000 for other consumers. It merges gzip
+  content and metadata in one multipart operation (removed metadata PATCH).
+  Actual successful and attempted writes/hour are separate diagnostics.
+- Changed exports coalesce into a bounded disk spool (128 MiB / 1,000 files),
+  survive restart/failures, and rotate fairly. Raw observations are only removed
+  from RAM after durable queue acceptance. Full spool reports errors and retains
+  local observations; it does not imply successful cloud publication.
+- RSS/heap, event-loop lag, memory backpressure, bounded candidate/dedup/GT
+  queues, expired background work and distinct budget deferral counters added.
+  Hourly discovery and filter audit run sequentially in bounded workers.
+- Source lifetime index/replay have explicit capacity safety stops. Historical
+  deduplication and labels are retained; capacity is not cleared on restart.
+
+## Validation actually performed
+
+1. `node --check` for every `server/*.js`, `lab-core.js`, `v2.js`: PASS.
+2. `git diff --check`: PASS before implementation commit.
+3. Windows focused suite:
+   `node --test server/resource-budget.test.js tests/resource-collector-smoke.cjs server/pre-watcher.test.js server/source-runtime.test.js`
+   **29/29 PASS** (TEMP/TMP pointed at workspace test scratch).
+4. Windows full suite:
+   `node --test server/*.test.js tests/source-collector-smoke.cjs tests/research-collector-smoke.cjs tests/v2-smoke.cjs tests/resource-collector-smoke.cjs`
+   **87 PASS / 13 FAIL**; all 13 failures are existing directory-fsync EPERM on
+   Windows. Directory fsync was not disabled in the Linux production modules.
+5. Exact implementation SHA on GitHub, Ubuntu + Node 20:
+   https://github.com/bakit97/token-check/actions/runs/39057623504
+   Same full offline suite: **100 tests / 100 PASS / 0 FAIL**; syntax PASS.
+6. Existing GitHub workflows for that SHA also PASS:
+   https://github.com/bakit97/token-check/actions/runs/39057623467 (v2-path-integration)
+   https://github.com/bakit97/token-check/actions/runs/39057623432 (v2-server-paths-ci).
+7. Live Helius, actual VM state/RSS/load, actual GCS Billing, real create_v2
+   subscription discovery and production deployment: **NOT performed**.
+
+## Release blockers / next work, in order
+
+1. **Freshness versus free writes is unresolved architecturally.** A single
+   object/minute costs 43,200 writes/30 days; 5,000 free writes cannot support
+   dozens of fresh objects every 30–60 seconds. Strict mode can delay individual
+   public files by hours. Existing UI freshness checks correctly reject old
+   files. Do not deploy this as a ready LIVE website. Plan a compact shared
+   snapshot / suitable read endpoint; do not merely loosen stale thresholds.
+   Existing deployment verification requires 180-second freshness and was
+   deliberately not weakened to accept this delayed mode.
+2. Reconcile provider checkpoints: exact Helius reset/usage, GCS month-to-date
+   Class A usage, other consumers, Class B reads, egress/storage and Billing.
+   Initial GCS used=0 is an unverified estimate, not evidence of free headroom.
+   Helius default reset 2026-11-14T00:00:00Z is a conservative interpretation of
+   the owner's October 17 '28 days left' report. Existing ledger takes precedence
+   over first-start env defaults. Renewal stops spending until reconciled.
+3. Proving every incoming Pump launch is impossible with 20 credits/minute at
+   10 credits/transaction proof. Measure achievable sampling and explicitly show
+   deferred/lost candidates. Keep missing observations as unknown.
+4. Load-test actual existing state on a separate environment, including replay
+   and JSON peaks. Target <400 MiB is not a measured VM guarantee. The candidate
+   cap is 5,000; source index 100,000, replay max 64 MiB. Safety stops need a proper
+   bounded disk index/streamed archival replay for indefinite operation. Do not
+   delete historical ledgers or truncate active cohorts to bypass the limits.
+5. After explicit owner approval only, deploy and verify real create_v2 coverage,
+   provider counters, heartbeat, lag, memory and recovery. Add no credentials
+   to chat/git/public objects. Helius key remains VM metadata `helius-key`.
+6. The existing draft PR is open and reports mergeable=false against current
+   main. No merge/conflict resolution against main was performed in this scope.
+7. Continue original full-spec audit: six tabs, owner control, no-lookahead,
+   cohort epochs, audit/holdout correctness and mobile lazy loading. Current
+   statuses of all six tabs and both end-to-end research paths remain
+   **unverified in production**, not certified complete by this budget change.
+
+## Restart and rollback
+
+Keep `resource-budget.json` and `publish-spool/` with the existing data volume.
+Budget ledger is atomic/fsynced; damaged accounting fails closed instead of
+resetting spend. Spool restores pending exports. Preserve existing source,
+Passed, research journals, epochs and owner configs. See `docs/RESOURCE-BUDGET.md`
+for exact limits, settings, tradeoffs and the reset procedure.
+
+No `main` update, merge, production VM command, machine/disk change, GCS code/
+config publication, owner-rule activation or production deploy was performed.
+Workflows were edited only as source code in the feature branch; test runs used
+no cloud credentials. Production status from Claude's earlier report was not
+re-verified. His inconsistent historical claims about a code/ upload remain
+unresolved; do not infer a successful deployment from them.
+
+---
+
+## Historical Claude handoff (unchanged)
+
 # HANDOFF FOR GPT-6 (from Claude Code, 2026-10-17)
 
 Ветка: `feature/serverside-passed-r2-20261017` · PR #15. SHA см. в последнем коммите (`fix(collector): pump WS only on create + single module loader`).
