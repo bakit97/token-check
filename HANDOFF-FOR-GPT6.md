@@ -34,9 +34,15 @@ Class A/B and Billing remain unverified; legacy frequent exports still run.
 
 Tests: queue repair 3/3 local PASS; final recovery-focused suite 18 PASS,
 1 deliberate SKIP (multipart GCS path is not installed in recovery build).
-Reconstruction verifies exact artifact hashes. Updated Linux workflow now checks
-both feature source and the reproduced production recovery build; inspect its
-run results for the commit containing this update.
+Reconstruction verifies exact artifact hashes. Verified Linux workflow for implementation commit
+`602c364ceeb72b4384f3036410d66da10ae10f36`:
+https://github.com/bakit97/token-check/actions/runs/39060970383 — **105/105 PASS**,
+plus exact recovery reconstruction and **18 PASS / 1 deliberate SKIP**.
+Existing v2-path-integration and v2-server-paths-ci also PASS.
+Latest live verification at 2026-10-18 00:07:35 UTC+5: heartbeat age 72 seconds,
+version 1792263193310124, memory 309 MB, estimated minute credits 13.62144,
+source initialization error empty, source total 6276. WS was budget-paused in
+that sample; do not describe it as continuously connected.
 
 **Next required work — single-version migration is NOT complete:**
 1. Complete `docs/OBSERVATION-MIGRATION.md` contract gate. New source files have

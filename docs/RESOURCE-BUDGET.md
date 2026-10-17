@@ -1,6 +1,11 @@
 # Resource controls (development only)
 
-No VM, disk, GCS configuration, secret or production deployment was changed.
+This describes the full feature design, not every feature active in production.
+The owner later authorized a staged production recovery; see
+[the recovery record](../deployment/README.md). That build enables Helius-only
+budgeting and preserves legacy exports. Strict GCS pacing and the 5,000-candidate
+cap are **not** enabled there. VM/disk types, owner configs and the metadata key
+remain unchanged. Its conservative estimated checkpoint is 185,000 credits.
 
 ## Helius
 
