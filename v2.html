@@ -29,7 +29,13 @@
 <label class="control"><span>🎓 Возраст после миграции</span><select class="input" id="ageAfter"></select></label>
 <label class="control"><span>Последних карточек</span><select class="input" id="cardLimit"><option>10</option><option>20</option><option>30</option><option>50</option><option>100</option></select></label>
 </div><button class="primary" id="applySource" style="margin-top:12px">Применить</button>
-<p class="hint">Возраст — фильтр при входе монеты в систему, а не срок показа карточки. Сервер работает даже при закрытом телефоне. Пока безопасное управление серверным порогом с телефона не подключено, возрастные настройки отображаются только для просмотра.</p>
+<p class="hint">Возраст проверяется при первом появлении монеты на публичной витрине. Обычная кнопка «Применить» меняет только число карточек. Новые возрастные границы требуют отдельного подтверждения владельца и применяются сервером только к будущим событиям.</p>
+<div class="controls" style="margin-top:10px">
+<label class="control"><span>Ключ владельца (не сохраняется)</span><input type="password" class="input" id="ageOwnerKey" autocomplete="off" spellcheck="false" placeholder="Только после подключения защищённого сервиса"></label>
+</div>
+<label class="hint" style="display:block;margin:10px 0"><input type="checkbox" id="confirmAgePublish"> Подтверждаю изменение серверных возрастов до/после миграции</label>
+<button type="button" id="publishSourceAge" class="primary" disabled>Изменить возраст на сервере</button>
+<p id="sourceAgeControlState" class="hint">Защищённый канал управления пока не включён.</p>
 </details>
 <div class="statgrid"><div class="stat"><span>Допущено за сегодня · доступная выгрузка</span><strong id="admitCount">—</strong></div><div class="stat"><span>На витрине сейчас</span><strong id="visibleCount">—</strong></div></div>
 <div id="sourceNote" class="notice">Источник до миграции ещё подключается. Не показываем непроверенные данные.</div>
@@ -103,5 +109,5 @@
 <p id="toast" role="status" aria-live="polite"></p>
 <footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — разделены серверные записи и локальные черновики; неполные наблюдения не выдаются за результат. <a href="./classic.html">Открыть прежний сайт</a></footer>
 </main>
-<script src="./v2.js?v=20261017-15" defer></script>
+<script src="./v2.js?v=20261017-16" defer></script>
 </body></html>
