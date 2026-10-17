@@ -764,7 +764,15 @@ const UPQ=[];function uploadLater(name,obj){
   // Serialize immediately into a bounded disk spool, never retain raw payloads in RAM.
   return upload(name,obj);
 }
-async function flushUploads(){while(UPQ.length){const [n,o]=UPQ.shift();try{await upload(n,o)}catch(e){err('up '+e.message);UPQ.push([n,o]);break}}}
+async function flushUploads(){
+  // A restored raw backlog must not hold source/status/heartbeat publication hostage.
+  // Keep the unsent tail intact; never drain a producer-fed queue without a bound.
+  const limit=Math.min(4,UPQ.length),started=Date.now();
+  for(let i=0;i<limit&&UPQ.length&&Date.now()-started<10000;i++){
+    const [n,o]=UPQ.shift();
+    try{await upload(n,o)}catch(e){err('up '+e.message);UPQ.push([n,o]);break}
+  }
+}
 function rec(c,full){const mg=c.mg||{};
   const r={a:c.a,n:c.n,s:c.s,i:c.i,p:c.p,d:c.d,q:c.q,t:c.t,tSrc:c.tSrc||'gt',t0:c.t0||null,seen:c.seen,disc:c.disc||null,rcSeen:c.rcSeen||null,wsSeen:c.wsSeen||null,firstPostSeenAt:c.firstPostSeenAt||null,preCurve:!!c.preCurve,preTradingAt:c.preTradingAt||null,ty:launchType(c),
     mk:mg.k||null,mst:mg.st||null,mw:mg.why||'',mT:mg.mT||null,mSig:mg.sig||null,mSeen:mg.seenAt||null,mCr:mg.creator??null,mH:c.mgH||[],mk0:c.mg0?.k||null,
