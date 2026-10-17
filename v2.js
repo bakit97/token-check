@@ -33,11 +33,11 @@ function ageM(t){return t?Math.max(0,Math.floor((now()-t)/60000))+' мин':'—
 function safeImg(src){try{var u=new URL(src);return u.protocol==='https:'?u.href:null}catch(e){return null}}
 function dataMetrics(c,cutoff){
   var data=(c.ds||[]).filter(function(d){return Number(d[0])*1000<=cutoff}).sort(function(a,b){return a[0]-b[0]});
-  var d=data.length?data[data.length-1]:null;
-  var bx=c.bx&&c.bx.at<=cutoff?c.bx:null;
-  var gx=(c.gx||[]).filter(function(x){return x[0]*1000<=cutoff}).at(-1);
+  var d=data.length&&cutoff-Number(data[data.length-1][0])*1000<=7*60000?data[data.length-1]:null;
+  var bx=c.bx&&c.bx.cov&&c.bx.at<=cutoff?c.bx:null;
+  var gx=(c.gx||[]).filter(function(x){var t=Number(x[0])*1000;return Number.isFinite(t)&&t<=cutoff&&cutoff-t<=7*60000}).sort(function(a,b){return a[0]-b[0]}).at(-1);
   function num(v){return v==null?null:Number.isFinite(+v)?+v:null}
-  return {buyers:num(bx&&bx.payers!=null?bx.payers:gx?gx[7]:null),
+  return {buyers:num(gx&&gx[3]!=null?gx[3]:bx?bx.payers:null),
     trades:d&&num(d[4])!=null&&num(d[5])!=null?num(d[4])+num(d[5]):null,
     volume:d?num(d[6]):null,liq:d?num(d[2]):null};
 }
