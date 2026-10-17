@@ -24,6 +24,7 @@ signalLog=signalLog.filter(function(x){return x&&typeof x.mint==='string'&&Numbe
 var bank=Object.assign({'1':[],'2':[]},loadLocal(BANK,{'1':[],'2':[]}));
 for(var lv of ['1','2'])if(!Array.isArray(bank[lv]))bank[lv]=[];
 var dataset=[],status=null,dataErr='',loadedAt=0,picker=null,editorId=null,lastPassed=[],lastR1=[],lastR2=[],lastAccepted=[],lastVisible=[],testHtml='',lastBankWrite=0,lastResearchBankRead=0,researchMeta=null,researchServerBank=false,fetching=false,sourceActive=false,sourceMeta=null,sourceRecords=[];
+var serverPassActive=false,serverPassRows=[],passMeta=null,serverR2Active=false,serverR2Rows=[],twoMeta=null,autoOne=null,autoTwo=null;
 var phaseNames={before:'🌱 До миграции',after:'🎓 После миграции'};
 function save(){try{localStorage.setItem(STORE,JSON.stringify(s))}catch(e){note('Не удалось сохранить настройки на устройстве')}}
 function saveSignals(){try{localStorage.setItem(PASS_LOG,JSON.stringify(signalLog))}catch(e){note('История сигналов не сохранилась на телефоне')}}
@@ -135,6 +136,18 @@ function labTwo(c,passed) {
   return {label:ratio>=s.r2Strong?'strong':'weak',score:ratio,covered:covered,curve:curve,p0:p0};
 }
 function passedCoins(coins){
+  if(serverPassActive){
+    var lookup=new Map(coins.map(function(c){return [mint(c),c]}));
+    return serverPassRows.map(function(p){
+      var c=lookup.get(p.mint);
+      if(!c){
+        c={a:p.mint,n:p.name||'',s:'',ds:[],i:'',_entry:{
+          phase:p.phase,acceptedAt:p.acceptedAt,eventAt:p.acceptedAt}};
+      }
+      return {coin:c,deadline:p.zeroAt,matches:p.matches,
+        features:p.features,firstSeenAt:p.firstSeenAt,source:'server'};
+    }).sort(function(a,b){return b.firstSeenAt-a.firstSeenAt});
+  }
   // A filter change must never rewrite an earlier signal. Old admissions are
   // never backfilled into "Passed" after their original decision window.
   var previous=new Map(signalLog.map(function(x){return [x.mint,x]}));
@@ -149,7 +162,7 @@ function passedCoins(coins){
         var available=dataMetrics(c,seenAt);
         var matches=[];
         for(var m of enabled){
-          if(m.phase!==entry.phase)continue;
+          if(m.phase!==entry.phase||m.level!=='1')continue;
           var f=s.filters.find(function(x){return x.id===m.filterId&&x.level===m.level});
           if(f&&ruleMatch(available,f))matches.push({
             id:f.id,name:f.name,level:f.level,version:f.version,
@@ -187,6 +200,7 @@ function storeBank(level,rows){
 }
 function bankLabel(level,row){
   if(level==='1')return row.activity>=s.r1Activity&&row.idle<=s.r1Idle?'live':'dead';
+  if(serverR2Active&&['strong','weak'].includes(row.label))return row.label;
   return row.above>=s.r2Strong?'strong':'weak';
 }
 function analyze(){
@@ -206,7 +220,7 @@ function analyze(){
     if(r.label!=='pending')lastR2.push({passed:q,result:r});
   }
   if(!researchMeta)storeBank('1',lastR1.map(function(x){return {mint:mint(x.coin),t:x.coin._entry.acceptedAt,activity:x.result.score,idle:x.result.maxIdle,features:dataMetrics(x.coin,x.coin._entry.acceptedAt+s.decision*60000)}}));
-  storeBank('2',lastR2.map(function(x){return {mint:mint(x.passed.coin),t:x.passed.deadline,above:x.result.score,features:x.passed.features}}));
+  if(!serverR2Active)storeBank('2',lastR2.map(function(x){return {mint:mint(x.passed.coin),t:x.passed.deadline,above:x.result.score,features:x.passed.features}}));
 }
 function spark(c){
   var points=(c.ds||[]).slice(-12).map(function(x){return Number(x[1])}).filter(function(x){return x>0});
@@ -233,7 +247,7 @@ function detail(c){
     '<div class="stat"><span>Первое подтверждение</span><strong style="font-size:15px">'+time(e.acceptedAt)+'</strong></div>'+
     '<div class="stat"><span>Цена последняя</span><strong style="font-size:15px">'+price(p[1])+'</strong></div>'+
     '<div class="stat"><span>Объём 5 мин</span><strong style="font-size:15px">$'+fmt(p[6]||0)+'</strong></div></div>'+
-    '<p class="hint">Источники проверки: '+esc(c.mk||c.d||'нет данных')+'. Допуск рассчитан по доступной выгрузке, а не по новому серверному журналу.</p></div>';
+    '<p class="hint">Источники проверки: '+esc(c.mk||c.d||'нет данных')+'. Допуск подтверждается главным серверным журналом. Недостающие торговые данные отображаются как неизвестные.</p></div>';
 }
 function renderAll(){
   var today=day(now());
@@ -263,7 +277,10 @@ function renderModules(){
     }
     html+='</div>';
   }
-  $('moduleGrid').innerHTML=html;
+  $('moduleGrid').innerHTML='<p class="hint">'+(serverPassActive?
+    '⚠ Здесь локальные черновики модулей. Серверные активные правила имеют отдельную версию и не изменяются нажатием на телефоне.':
+    '⚠ Модули сейчас действуют только на этом телефоне. Для фонового серверного режима требуется отдельная публикация настроек.')+
+    '</p>'+html;
   $('activeModules').textContent=fmt(s.modules.filter(function(m){return m.enabled}).length);
 }
 function showPicker(phase,lev){
@@ -276,19 +293,27 @@ function showPicker(phase,lev){
 function renderPassed(){
   var list=lastPassed.filter(function(x){return x.deadline>now()});
   $('passedTab').textContent=list.length?' '+fmt(list.length):'';
-  $('passedStats').textContent='Сохранено проверенных сигналов из текущей выгрузки: '+fmt(lastPassed.length)+' · время решения не истекло: '+fmt(list.length)+'.';
+  $('passedStats').textContent=serverPassActive?
+    '✓ Серверный журнал: '+fmt(serverPassRows.length)+' записей в доступной выгрузке · активных: '+fmt(list.length)+
+    '. Работает при закрытом телефоне.':
+    '⚠ Предварительный режим на телефоне: '+fmt(lastPassed.length)+' сигналов. '+
+    'Правила этого устройства пока НЕ отправляются на сервер; при закрытом сайте новые сигналы не фиксируются.';
   $('passedList').innerHTML=list.length?list.map(function(q){
     var left=Math.max(0,q.deadline-now()),sec=Math.ceil(left/1000),mins=Math.floor(sec/60);
-    return '<div class="card"><div class="row"><b>'+esc(q.coin.n||q.coin.s||'Токен')+'</b><span class="badge warn mono">⏳ '+mins+':'+String(sec%60).padStart(2,'0')+'</span></div><p class="muted">Прошли: '+q.matches.map(function(f){return esc(f.name)+' · v'+esc(f.version)}).join(', ')+'</p>'+coinHtml(q.coin)+'</div>';
-  }).join(''):'<div class="empty-state">Нет активных сигналов. Старые монеты не проходят новые фильтры задним числом.</div>';
-  var history=signalLog.slice(-40).reverse();
-  $('passedArchiveCount').textContent=fmt(signalLog.length);
+    return '<div class="card"><div class="row"><b>'+esc(q.coin.n||q.coin.s||'Токен')+'</b><span class="badge warn mono">⏳ '+mins+':'+String(sec%60).padStart(2,'0')+'</span></div><p class="muted">'+
+      (serverPassActive?'Серверный журнал: ':'Локальный предварительный: ')+
+      q.matches.map(function(f){return esc(f.name)+' · v'+esc(f.version)}).join(', ')+'</p>'+coinHtml(q.coin)+'</div>';
+  }).join(''):'<div class="empty-state">Нет активных сигналов. Исторические записи не превращаются в новые сигналы.</div>';
+  var history=(serverPassActive?serverPassRows:signalLog).slice(0);
+  if(!serverPassActive)history=history.reverse();
+  history=history.slice(0,40);
+  $('passedArchiveCount').textContent=fmt(serverPassActive?serverPassRows.length:signalLog.length);
   $('passedArchiveList').innerHTML=history.length?history.map(function(x){
     var stamp=new Date(x.firstSeenAt).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
     return '<div class="vrow"><div class="row"><b>'+esc(x.name||x.mint)+'</b><span class="badge">'+esc(stamp)+'</span></div>'+
-      '<p class="muted">'+esc(x.phase==='before'?'🌱 До':'🎓 После')+' · '+esc(x.mint.slice(0,12))+'… · срок '+time(x.deadline)+'</p>'+
+      '<p class="muted">'+esc(x.phase==='before'?'🌱 До':'🎓 После')+' · '+esc(x.mint.slice(0,12))+'… · точка 0 '+time(x.zeroAt||x.deadline)+'</p>'+
       '<p class="muted">'+x.matches.map(function(f){return esc(f.name)+' · v'+esc(f.version)+' ('+esc(f.key)+' '+esc(f.op)+' '+fmt(f.value)+')'}).join(', ')+'</p></div>';
-  }).join(''):'<p class="muted">Журнал на этом телефоне пуст. Закрытый сайт не записывает новые сигналы.</p>';
+  }).join(''):'<p class="muted">Журнал пуст. Источником являются только признанные главным сервером монеты.</p>';
 }
 function renderR1(){
   if(researchMeta){
