@@ -1243,6 +1243,35 @@ async function loadInternal(){
   $('dataState').textContent='Сервер: '+(updated?time(updated):'—')+' (Казахстан) · '+(sourceActive?'главный источник '+fmt(sourceRecords.length)+' записей, сегодня '+fmt(sourceMeta.today)+' (до '+fmt(sourceMeta.todayBefore)+', после '+fmt(sourceMeta.todayAfter)+')':'допуск приостановлен (основной журнал недоступен)')+' · обновление каждые 45 секунд.';
   refresh();
 }
+// Lightweight foreground refresh for short Passed windows. Do not poll all
+// research files on a 15-second timer on low-memory Android devices.
+let passPolling=false;
+async function pollPassedLive(){
+  if(passPolling||fetching||!sourceActive||!serverPassActive||document.hidden)return;
+  passPolling=true;
+  try{
+    const payload=await getJSON('passed-v2/live.json');
+    if(!payload||payload.origin!=='server-journal'||!Array.isArray(payload.coins)||
+       !Number.isFinite(payload.updated)||now()-payload.updated>180000)return;
+    const current=new Map(serverPassRows.filter(function(p){
+      return p.firstSeenAt>now()-72*3600000;
+    }).map(function(p){return [p.mint,p]}));
+    for(const row of payload.coins){
+      if(!row||typeof row.mint!=='string'||!Number.isSafeInteger(row.acceptedAt)||
+         !Number.isSafeInteger(row.firstSeenAt)||!Number.isSafeInteger(row.zeroAt)||
+         !['before','after'].includes(row.phase)||!Array.isArray(row.matches)||
+         row.zeroAt<=row.firstSeenAt||row.firstSeenAt>now()+60000)continue;
+      current.set(row.mint,row);
+    }
+    serverPassRows=[...current.values()].sort(function(a,b){
+      return b.firstSeenAt-a.firstSeenAt;
+    });
+    lastPassed=passedCoins(lastAccepted);
+    renderPassed();
+  }catch(e){
+    // The normal 45-second full refresh is responsible for error reporting.
+  }finally{passPolling=false}
+}
 async function load(){
   if(fetching)return;
   fetching=true;
@@ -1296,6 +1325,10 @@ function init(){
   document.querySelectorAll('#levels [data-level]').forEach(function(x){x.classList.toggle('active',x.dataset.level===s.level)});
   bind();refresh();load();
   setInterval(load,45000);
+  setInterval(pollPassedLive,15000);
+  document.addEventListener('visibilitychange',function(){
+    if(!document.hidden){pollPassedLive();if(now()-loadedAt>60000)load()}
+  });
   setInterval(function(){if(dataset.length){renderAll();renderPassed()}},10000);
 }
 window.addEventListener('error',function(e){if($('dataState'))$('dataState').textContent='Ошибка интерфейса: '+(e.message||'неизвестная')+'. Старый сайт доступен по кнопке сверху.'});
