@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),vm=require(
 const code=fs.readFileSync(process.env.SOLSCAN_TEST_COLLECTOR||path.join(__dirname,'../server/collector.js'),'utf8');
 test('restart restores budget-deferred migration candidates without an abandoned in-flight lock',()=>{
  const coin={a:'mint',t:Date.now(),fv:2,disc:'ws',d:'meteora-dbc',chTry:1,proofRetryAt:60000,proofBudgetDeferredAt:1};
- const ctx={HEALTH:null,require:()=>({loadRows:(file,visit)=>[coin].forEach(visit)}),fs:{existsSync:()=>false,readFileSync:name=>JSON.stringify(name.endsWith('state.json')?[coin]:{})},DIR:'test',FV:2,C:new Map(),RC:{},log:()=>{},err:()=>{}};
+ const ctx={HEALTH:null,require:p=>p.endsWith('packed-observations.js')?require('../server/packed-observations'):({loadRows:(file,visit)=>[coin].forEach(visit)}),fs:{existsSync:()=>false,readFileSync:name=>JSON.stringify(name.endsWith('state.json')?[coin]:{})},DIR:'test',FV:2,C:new Map(),RC:{},log:()=>{},err:()=>{}};
  vm.createContext(ctx);vm.runInContext(code.slice(code.indexOf('function load(){'),code.indexOf('function save(){'))+'\nload();',ctx);
  const restored=ctx.C.get('mint');assert.ok(restored);assert.equal(restored.chTry,undefined);assert.equal(restored.proofBudgetDeferredAt,1);assert.equal(restored.proofRetryAt,60000);
 });

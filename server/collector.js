@@ -295,7 +295,7 @@ async function admitVerifiedPublicLaunch(launch,record) {
 // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
 // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
 const MODULES=['admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
-  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js'];
+  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js'];
 let MODULES_OK=null;
 function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
   for(const name of MODULES){const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
@@ -500,12 +500,12 @@ function admitVerifiedMigration(c){
   }catch(e){SOURCE_ERR='ошибка записи источника: '+e.message;err('source '+e.message)}
 }
 
-const OBS_KEYS=['ds','k10','path','hold','bx','lq','gx','vaults','vmint','vdec','legacy'],OBS_TMP=['tr','raw','dsAt','dsTryAt','tokAt','gxAt','lastTrade','kTry','pTry','trTry','trDone','lqAt','rawUp','vTry'];
+const OBS_KEYS=['ds','k10','path','hold','bx','lq','gx','vaults','vmint','vdec','legacy','raw','tr','rawUp','trDone'],OBS_TMP=['tr','raw','dsAt','dsTryAt','tokAt','gxAt','lastTrade','kTry','pTry','trTry','trDone','lqAt','rawUp','vTry'];
 function takeObs(c){const o={};for(const k of OBS_KEYS){if(c[k]!=null)o[k]=c[k];delete c[k]}for(const k of OBS_TMP)delete c[k];return o}
 function load(){try{if(fs.existsSync(DIR+'/state.json')&&fs.statSync(DIR+'/state.json').size>64*1024*1024)throw Error('Candidate snapshot exceeds safe replay size');require(DIR+'/stream-json.js').loadRows(DIR+'/state.json',c=>{
     delete c.chTry; // in-flight lock belongs to the old process, never to restored work
     if(c.fv!==FV){c.legacy={snap:c.snap,act:c.act,k:c.k};for(const k of ['snap','act','k','o','cur','cn','orig'])delete c[k];c.fv=FV}
-    if(c.t<Date.now()-50*3600e3||C.size>=5000)return;if(c.disc==='ws'&&c.d==='pumpswap')return;C.set(c.a,c)},HEALTH);log('загружено монет',C.size)}catch(e){if(e.code!=='ENOENT'){err('state restore '+e.message);throw e}}
+    if(c.t<Date.now()-50*3600e3||C.size>=5000)return;if(c.disc==='ws'&&c.d==='pumpswap')return;require(DIR+'/packed-observations.js').compactCoin(c);C.set(c.a,c)},HEALTH);log('загружено монет',C.size)}catch(e){if(e.code!=='ENOENT'){err('state restore '+e.message);throw e}}
   try{RC=JSON.parse(fs.readFileSync(DIR+'/recon.json','utf8'))}catch{}}
 function save(){try{require(DIR+'/stream-json.js').saveRows(DIR+'/state.json',C.values(),HEALTH);
   fs.writeFileSync(DIR+'/recon.json',JSON.stringify(RC))}catch(e){err('save '+e.message)}}
@@ -717,7 +717,7 @@ async function collectPoolBatch(part){
   }
   const commit=row=>{const {c,rm,vaults,vs}=row;if(vs.length!==2||vs.some(x=>!x||b64(x.data?.[0]).length<72)){c.vaultMissingAt=Date.now();return}
     const mints=vs.map(x=>pk(b64(x.data?.[0]),0));if(!mints.includes(c.a)){c.vaultMismatchAt=Date.now();return}
-    c.vaults=vaults;c.vmint=mints;
+    c.vaults=vaults;c.vmint=mints;c.vaultIdentityAt=c.vaultIdentityAt||row.at;
     const am=vs.map(x=>u64(b64(x.data?.[0]),64));c.lq=c.lq||[];c.lq.push([Math.round(row.at/1000),row.slot,...am]);if(c.lq.length>320)c.lq.splice(10,1);
     c.lqAt=row.at;delete c.poolBudgetDeferredAt;
     if(rm!=null&&c.raw[rm])Object.assign(c.raw[rm],{vaultAt:row.at,vaultSlot:row.slot,b:[row.pv.data?.[0],...vs.map(x=>x.data?.[0])]});
@@ -862,6 +862,7 @@ async function sendPublication(name,body,contentType){
 }
 async function upload(name,obj){
   if(!PUBLICATIONS)throw Error('Publication accounting unavailable');
+  if(obj.coins&&!Array.isArray(obj.coins)&&typeof obj.coins[Symbol.iterator]==='function'){const payload=await require(DIR+'/stream-json.js').gzipJson({dir:DIR,value:obj,health:HEALTH,name});try{const body=fs.readFileSync(payload.file),hash=require('crypto').createHash('sha256').update(body).digest('hex');await PUBLICATIONS.enqueue(name,body,hash);return}finally{await payload.dispose()}}
   const json=JSON.stringify(obj),stable=JSON.stringify(obj,(key,value)=>key==='updated'?undefined:value);
   const hash=require('crypto').createHash('sha256').update(stable).digest('hex');
   await PUBLICATIONS.enqueue(name,await gzip(Buffer.from(json)),hash);
@@ -1012,6 +1013,12 @@ async function fastPassedLoop(){
     await sleep(15000);
   }
 }
+const OBS_CONTRACT={schema:2,mode:'mirror',days:{}};
+async function exportObservationContract(name,list,now){
+  const contract=require(DIR+'/observation-contract.js'),{rowStream}=require(DIR+'/stream-json.js');
+  await upload(name,{schema:2,updated:now,receiptTimeUnit:'unix-ms',count:list.length,coins:rowStream(function*(){for(const c of list)yield contract.project(c,{metadata:rec(c,false),admission:SOURCE?.get(c.a)||null})})});
+  return {path:name,at:now,coins:list.length,rawStates:list.reduce((n,c)=>n+Object.keys(c.raw||{}).length,0),dsRows:list.reduce((n,c)=>n+(c.ds?.length||0),0),vaultRows:list.reduce((n,c)=>n+(c.lq?.length||0),0)};
+}
 let EXPORT_BUSY=false;
 async function exportDays(){if(EXPORT_BUSY)return;EXPORT_BUSY=true;try{await exportDaysBody()}finally{EXPORT_BUSY=false}}
 async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayKey(now-864e5);
@@ -1021,6 +1028,7 @@ async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayK
     await upload(`day/${d}.json`,{day:d,tz:'Asia/Almaty',fv:FV,updated:now,count:list.length,coins:list.map(c=>rec(c,false))});
     if(d===yest||now-lastObs>=10*60e3){await upload(`obs/${d}.json`,{day:d,updated:now,coins:list.filter(observedEligible).map(c=>({a:c.a,t:c.t,ds:c.ds||[],lq:c.lq||[],path:c.path||null,
       preObs:c.preCurve?((c.origs||[]).find(o=>o.d==='pump-fun')||null):null}))});if(d===today)lastObs=now}
+    OBS_CONTRACT.days[d]=await exportObservationContract('observations-v2/'+d+'.json',list,now);
     if(d===yest)lastYest=now}
   await flushUploads();
   try{await exportSource(now)}catch(e){SOURCE_ERR='выгрузка источника: '+e.message;err('source export '+e.message)}
@@ -1030,7 +1038,7 @@ async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayK
 let STATUS_BUSY=false;
 async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const now=Date.now(),today=dayKey(now);
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,memory,migrationQueue:migrationQueueSummary(now),version:VERSION,resources:{...RESOURCE_STATS,rssMB:Math.round(process.memoryUsage().rss/1048576),heapMB:Math.round(process.memoryUsage().heapUsed/1048576),helius:RESOURCE?.summary(),gcs:{...RESOURCE?.storageSummary(),...PUBLICATIONS?.summary()}},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,memory,packedObservations:require(DIR+'/packed-observations.js').packedStats(C),migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,resources:{...RESOURCE_STATS,rssMB:Math.round(process.memoryUsage().rss/1048576),heapMB:Math.round(process.memoryUsage().heapUsed/1048576),helius:RESOURCE?.summary(),gcs:{...RESOURCE?.storageSummary(),...PUBLICATIONS?.summary()}},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,queuedAt:FAST_PASS_PUBLISH_AT,publishedAt:PUBLICATIONS?.sent['passed-v2/live.json']?.at||0},
@@ -1043,7 +1051,7 @@ async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const n
 // живая лента для «Прошли»: монеты витрины младше 40 минут, раз в 30 секунд
 async function exportLive(){const now=Date.now();const list=[...C.values()].filter(c=>observedEligible(c)&&now-c.t<40*60e3);
   await upload('live.json',{updated:now,coins:list.map(c=>rec(c,true))})}
-function prune(){const lim=Date.now()-50*3600e3;for(const [a,c] of C)if(c.t<lim)C.delete(a)}
+function prune(){const now=Date.now(),lim=now-50*3600e3;const {compactCoin}=require(DIR+'/packed-observations.js');for(const [a,c] of C){if(c.t<lim)C.delete(a);else compactCoin(c,now)}}
 
 /* ---------- 7. автоисследование: сервер сам считает живых/мёртвых, ищет признаки и проверяет их на следующих днях ----------
    Расчёт — тем же кодом, что и сайт (lab-core.js). Правило ищется на прошлых днях (до 3) и проверяется на следующем дне —

@@ -2,11 +2,13 @@
 const fs=require('node:fs'),path=require('node:path'),zlib=require('node:zlib');
 const {Readable}=require('node:stream'),{pipeline}=require('node:stream/promises');
 let sequence=0;const cleaned=new Set();
+class JsonRows{constructor(factory){this.factory=factory}[Symbol.iterator](){return this.factory()}}
+const rowStream=factory=>new JsonRows(factory);
 // Preserve ordinary JSON wire semantics; split the large top-level row collections.
 async function* jsonPieces(value,depth=0){
  if(value&&typeof value.toJSON==='function')value=value.toJSON();
  if(value===null||typeof value!=='object'||depth>=2){const json=JSON.stringify(value);if(json===undefined)throw TypeError('Undefined JSON root');yield json;return}
- if(Array.isArray(value)){yield '[';let first=true,n=0;for(const item of value){if(!first)yield ',';first=false;
+ if(Array.isArray(value)||value instanceof JsonRows){yield '[';let first=true,n=0;for(const item of value){if(!first)yield ',';first=false;
    if(item===undefined||typeof item==='function'||typeof item==='symbol')yield 'null';else yield*jsonPieces(item,depth+1);
    if(++n%64===0)await new Promise(r=>setImmediate(r));}yield ']';return}
  yield '{';let first=true;for(const key of Object.keys(value)){const item=value[key];if(item===undefined||typeof item==='function'||typeof item==='symbol')continue;
@@ -59,4 +61,4 @@ function multipartGzip(payload,name){
  const close=stream=>stream.closed?Promise.resolve():new Promise(resolve=>{stream.once('close',resolve);stream.once('error',()=>{});stream.destroy()});
  return {body,contentType:'multipart/related; boundary='+boundary,length:head.length+payload.bytes+tail.length,close:async()=>{await close(body);await close(file)}};
 }
-module.exports={jsonChunks,gzipJson,saveRows,loadRows,multipartGzip};
+module.exports={jsonChunks,gzipJson,saveRows,loadRows,multipartGzip,rowStream};

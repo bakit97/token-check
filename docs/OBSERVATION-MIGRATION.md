@@ -5,19 +5,32 @@ coverage. Each absent sample remains absent. No old research outcome, label,
 auto-discovered rule or evaluation statistic is imported into the new research.
 `day/`, `obs/` and `raw/` must remain available until replacements are verified.
 
-| Required observation | Current persisted path / fields | Time meaning | Present in new source files? |
-| --- | --- | --- | --- |
-| DS snapshots every minute for 2h, then every 5m through 24h | `obs/YYYY-MM-DD.json`, `coins[].ds` | `[0]` is receipt Unix seconds; multiply by 1000 | No |
-| Vault balances | `obs/YYYY-MM-DD.json`, `coins[].lq` | `[0]` receipt Unix seconds, `[1]` slot, `[2:4]` balances | No |
-| Vault identity and decimals | `day/YYYY-MM-DD.json`, `vmint`, `vdec`; addresses `vaults` in VM `state.json` and `raw/*-state.json` | Identity at actual check; do not guess missing addresses | No |
-| First-ten-minute candles from covered trades | `day/YYYY-MM-DD.json`, `k10` with `src: trades`; underlying `raw/YYYY-MM-DD/<mint>-trades.json` (`f`, `x`) | `k10.at` is receipt/computation time; candle `[0]` is market interval time | No |
-| Holders at minute ten | `day/YYYY-MM-DD.json`, `hold["10"]` | `.at` is actual receipt; missed window is `.miss`, not zero | No |
-| Raw pool and vault accounts | Live VM `c.raw[minute]`; `raw/YYYY-MM-DD/<mint>-state.json` after archival | `.at`, `.slot`, `.b` (base64 account data) | No |
+Mirror deployed and verified: collector generation `1792268659649883`.
+Each coin lives at `observations-v2/YYYY-MM-DD.json -> coins[]`; the current
+and previous pools are separate entries in `observations.pools[]`.
 
-`source/day/*` and `source/live.json` currently contain admission identity,
-proof and event times. `research-v2/*` contains results and frozen feature rows;
-neither replaces the observation table above. `day/` alone also does not replace
-`obs/`: day serialization truncates DS and vault series to the first 20 minutes.
+| Required observation | New persisted location under each pool | Receipt time / limits |
+| --- | --- | --- |
+| DS snapshots | `ds[].at`, `ds[].values` | Unix ms converted losslessly from legacy Unix seconds; no invented missing polls |
+| Vault balances | `vaults.samples[].at`, `.slot`, `.balances` | Actual receipt, not inferred from slot |
+| Vault identity / decimals | `vaults.addresses`, `.mints`, `.decimals`, `.identityAt` | Unknown historical identity time stays null |
+| First ten minute candles | `candles10`, `tradeCoverage`, `tradeFetches`, `tradeRows` | Candles retain receipt `.at` and provenance; market times stay distinct |
+| Holders at minute ten | `holders10`, also `holders["10"]` | Receipt `.at` and missed-window markers retained |
+| Raw pool / vault accounts | `rawStates[minute]` including `.at`, `.slot`, `.b`, vault receipt/slot | Full retained base64; previous pools remain separate |
+| Already archived raw/trade files | `archives.rawStates`, `.trades` | Legacy references explicitly `legacy-reference-not-reconciled` |
+
+Live comparison of October 18 exports checked 1,331 DS rows and 53 vault rows
+from the legacy obs file against the newer mirror through their common receipt
+cutoff: no differences and no missing admitted coins (11 legacy obs coins;
+809 total candidates in mirror). This proves that sample, not all history.
+Fixtures additionally verify holders, raw bytes, candles, prior pools and
+cutoff filtering. Existing historical gaps remain gaps.
+
+`source/day/*` and `source/live.json` retain admission identity. The mirror
+includes its admission record, but old research results are excluded. New
+research and UI consumers have NOT switched to this contract yet.
+`day/`, `obs/` and `raw/` remain active. Legacy day serialization truncates
+DS/vault series to twenty minutes, so it cannot substitute for full obs files.
 
 Additional points that must survive migration:
 
@@ -29,8 +42,8 @@ Additional points that must survive migration:
   are market trade times. They are not interchangeable.
 - Full base64 raw states are absent from `day/` (`raw` there is only at/slot/miss).
 - Pool changes preserve observation provenance. Audit `takeObs()` carefully:
-  raw data currently sits in its temporary-deletion list, which can lose an
-  unarchived pre-migration pool snapshot. Preserve it before removing old logic.
+  raw/trade data now moves through OBS_KEYS before temporary fields are deleted,
+  with a collector integration regression covering original receipt evidence.
 - The new contract needs actual historical vault maxima / quote identity for
   the <5% drain rule. Do not transfer the old dollar-liquidity rug heuristic or
   fabricated post-rug prices.
