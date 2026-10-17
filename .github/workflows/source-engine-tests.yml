@@ -1,0 +1,31 @@
+name: source-engine-tests
+on:
+  push:
+    branches: ['feature/mobile-safe-settings-*', 'main']
+    paths:
+      - 'server/admission.js'
+      - 'server/admission.test.js'
+      - 'server/source-runtime.js'
+      - 'server/source-runtime.test.js'
+      - '.github/workflows/source-engine-tests.yml'
+  pull_request:
+    paths:
+      - 'server/admission.js'
+      - 'server/admission.test.js'
+      - 'server/source-runtime.js'
+      - 'server/source-runtime.test.js'
+      - '.github/workflows/source-engine-tests.yml'
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax
+        run: node --check server/source-runtime.js && node --check server/admission.js
+      - name: Admission + source runtime tests
+        run: node --test server/admission.test.js server/source-runtime.test.js
