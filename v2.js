@@ -42,14 +42,42 @@ function time(t){return t?new Date(t).toLocaleTimeString('ru-RU',{timeZone:'Asia
 function ageM(t){return t?Math.max(0,Math.floor((now()-t)/60000))+' мин':'—'}
 function safeImg(src){try{var u=new URL(src);return u.protocol==='https:'?u.href:null}catch(e){return null}}
 function dataMetrics(c,cutoff){
-  var data=(c.ds||[]).filter(function(d){return Number(d[0])*1000<=cutoff}).sort(function(a,b){return a[0]-b[0]});
-  var d=data.length&&cutoff-Number(data[data.length-1][0])*1000<=7*60000?data[data.length-1]:null;
-  var bx=c.bx&&c.bx.cov&&c.bx.at<=cutoff&&cutoff-c.bx.at<=7*60000?c.bx:null;
-  var gx=(c.gx||[]).filter(function(x){var t=Number(x[0])*1000;return Number.isFinite(t)&&t<=cutoff&&cutoff-t<=7*60000}).sort(function(a,b){return a[0]-b[0]}).at(-1);
-  function num(v){return v==null?null:Number.isFinite(+v)?+v:null}
-  return {buyers:num(gx&&gx[3]!=null?gx[3]:bx?bx.payers:null),
-    trades:d&&num(d[4])!=null&&num(d[5])!=null?num(d[4])+num(d[5]):null,
-    volume:d?num(d[6]):null,liq:d?num(d[2]):null};
+  // Match the server's featuresAt: keep pre-migration observations even if
+  // the same mint has already migrated to a new official pool.
+  const sources=[c.preObs].concat(c.origs||[],[c]).filter(Boolean);
+  let d=null,dAt=-Infinity;
+  for(const src of sources){
+    for(const row of src.ds||[]){
+      if(!Array.isArray(row))continue;
+      const t=Number(row[0])*1000;
+      if(Number.isFinite(t)&&t<=cutoff&&cutoff-t<=7*60000&&t>=dAt){
+        d=row;dAt=t;
+      }
+    }
+  }
+  let g=null,gAt=-Infinity;
+  for(const src of [c.preObs,c]){
+    if(!src)continue;
+    for(const row of src.gx||[]){
+      const t=Number(row[0])*1000;
+      if(Number.isFinite(t)&&t<=cutoff&&cutoff-t<=7*60000&&t>=gAt){
+        g=row;gAt=t;
+      }
+    }
+  }
+  let bx=null;
+  for(const src of [c.preObs,c]){
+    const v=src?.bx;
+    if(v&&v.cov&&Number.isFinite(v.at)&&v.at<=cutoff&&
+       cutoff-v.at<=7*60000&&(!bx||v.at>bx.at))bx=v;
+  }
+  function num(v){return typeof v==='number'&&Number.isFinite(v)?v:null}
+  const buys=d?num(d[4]):null,sells=d?num(d[5]):null;
+  const ratio=buys==null||sells==null?null:sells>0?buys/sells:buys;
+  return {buyers:num(g?.[3]??bx?.payers??null),
+    trades:buys==null||sells==null?null:buys+sells,
+    volume:d?num(d[6]):null,liq:d?num(d[2]):null,mc:d?num(d[3]):null,
+    buys,sells,buySellRatio:ratio};
 }
 function ruleStatus(features,f){
   const v=features?.[f.key];
