@@ -264,6 +264,38 @@ function renderAll(){
   var list=lastVisible.slice(0,s.limit);
   $('coinList').innerHTML=list.length?list.map(function(c){return coinHtml(c)}).join(''):'<div class="empty-state">Пока нет подтверждённых записей в этом потоке. Монеты, не успевшие пройти фильтр возраста на входе, не добавляются позже задним числом.</div>';
 }
+function renderLocalPreview(){
+  if(!$('localPreview'))return;
+  const active=s.modules.filter(function(m){return m.enabled&&m.level==='1'});
+  if(!active.length){
+    $('localPreview').textContent='Включи и примени хотя бы один локальный модуль 1-го уровня.';
+    return;
+  }
+  if(!sourceActive){
+    $('localPreview').textContent='Главный источник недоступен. Локальный предварительный просмотр приостановлен.';
+    return;
+  }
+  const t=now(),limit=Math.min(1000,lastAccepted.length);
+  const results=[];
+  for(const coin of lastAccepted.slice(0,limit)){
+    const e=coin._entry;
+    const deadline=e.acceptedAt+s.decision*60000;
+    if(e.acceptedAt>t||deadline<t)continue;
+    const metrics=dataMetrics(coin,t);
+    const matches=active.filter(function(m){return m.phase===e.phase})
+      .map(function(m){return s.filters.find(function(f){return f.id===m.filterId&&f.level==='1'})})
+      .filter(function(f){return f&&ruleMatch(metrics,f)});
+    if(matches.length)results.push({coin,deadline,matches});
+  }
+  $('localPreview').innerHTML=results.length?
+    '<p class="muted">Локально совпали '+fmt(results.length)+' монет. Эти карточки НЕ являются фоновыми сигналами сервера.</p>'+
+    results.slice(0,20).map(function(p){
+      return '<div class="filter-row"><b>'+esc(p.coin.n||p.coin.s||mint(p.coin).slice(0,13))+'</b>'+
+        '<span class="badge mono">'+time(p.deadline)+'</span><p class="muted">'+
+        p.matches.map(function(f){return esc(f.name)+' · v'+esc(f.version)}).join(', ')+'</p></div>';
+    }).join(''):
+    '<p class="muted">Сейчас нет совпадений. Старые монеты не пересчитываются задним числом.</p>';
+}
 function renderServerModules(){
   const meta=serverPassActive&&passMeta||null;
   const cfg=meta&&meta.serverConfig;
@@ -600,7 +632,7 @@ function removeEditor(){
 }
 function refresh(){
   analyze();
-  renderAll();renderServerModules();renderModules();renderPassed();renderR1();renderR2();renderLibrary();
+  renderAll();renderServerModules();renderModules();renderLocalPreview();renderPassed();renderR1();renderR2();renderLibrary();
 }
 function preparedServerConfig(){
   // Include all library definitions so the server can evaluate background
