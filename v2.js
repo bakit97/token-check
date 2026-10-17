@@ -59,25 +59,17 @@ function freshAdmission(c) {
   return null;
 }
 function admitted() {
-  if(sourceActive) {
-    const byMint=new Map(dataset.map(function(c){return [mint(c),c]}));
-    return sourceRecords.map(function(record){
-      var raw=byMint.get(record.a)||{};
-      return Object.assign({},raw,{a:record.a,n:raw.n||record.n||'',
-        s:raw.s||record.s||'',i:raw.i||record.i||'',
-        _entry:{phase:record.phase,eventAt:record.eventAt,acceptedAt:record.acceptedAt},
-        _sourceProof:record.proofSig||null});
-    }).sort(function(a,b){return b._entry.acceptedAt-a._entry.acceptedAt});
-  }
-  var list=[];
-  var used=new Set();
-  for(var c of dataset){
-    var a=mint(c);if(!a||used.has(a))continue;
-    var entry=freshAdmission(c);if(!entry)continue;
-    used.add(a);list.push(Object.assign({_entry:entry},c));
-  }
-  list.sort(function(a,b){return b._entry.acceptedAt-a._entry.acceptedAt});
-  return list;
+  // FAIL CLOSED: if the authoritative server source is stale or missing,
+  // historic third-party candidates must never be treated as admitted coins.
+  if(!sourceActive)return [];
+  const byMint=new Map(dataset.map(function(c){return [mint(c),c]}));
+  return sourceRecords.map(function(record){
+    var raw=byMint.get(record.a)||{};
+    return Object.assign({},raw,{a:record.a,n:raw.n||record.n||'',
+      s:raw.s||record.s||'',i:raw.i||record.i||'',
+      _entry:{phase:record.phase,eventAt:record.eventAt,acceptedAt:record.acceptedAt},
+      _sourceProof:record.proofSig||null});
+  }).sort(function(a,b){return b._entry.acceptedAt-a._entry.acceptedAt});
 }
 function visibleAll(coins) {
   // Возраст 1–10 минут — условие ВХОДА, не таймер исчезновения карточки.
@@ -218,12 +210,13 @@ function detail(c){
 }
 function renderAll(){
   var today=day(now());
-  var count=sourceActive?sourceMeta.today:lastAccepted.filter(function(c){return day(c._entry.acceptedAt)===today}).length;
-  $('admitCount').textContent=fmt(count);$('visibleCount').textContent=fmt(lastVisible.length);
+  var count=sourceActive?sourceMeta.today:0;
+  $('admitCount').textContent=sourceActive?fmt(count):'—';
+  $('visibleCount').textContent=sourceActive?fmt(lastVisible.length):'—';
   $('todayTab').textContent=count?' '+fmt(count):'';
   $('sourceNote').textContent=sourceActive?
     (sourceMeta?.preConnected?'✓ Главный источник: журнал сервера. До миграции — публичные торговые кривые Pump.fun; после — подтверждённые миграции. Дублей нет.':'⚠ Источник до миграции пока не подтвердил связь с сетью. Постмиграционные события продолжают проверяться.')+' Возраст проверяется при ВХОДЕ, карточка не исчезает через 2 минуты.':
-    '⚠ Рабочий журнал источника пока не доступен. Список ниже — ПРЕДВАРИТЕЛЬНОЕ отображение старых данных, а не подтверждённый новый главный источник.';
+    '⛔ Главный источник сервера недоступен или устарел. Вход новых монет приостановлен. Непроверенные кандидаты из старых данных сюда не подставляются.';
   var list=lastVisible.slice(0,s.limit);
   $('coinList').innerHTML=list.length?list.map(function(c){return coinHtml(c)}).join(''):'<div class="empty-state">Пока нет подтверждённых записей в этом потоке. Монеты, не успевшие пройти фильтр возраста на входе, не добавляются позже задним числом.</div>';
 }
@@ -440,8 +433,7 @@ function bind(){
   $('applySource').addEventListener('click',function(){
     s.limit=+ $('cardLimit').value;
     if(!sourceActive){
-      s.ageBefore=+$('ageBefore').value;s.ageAfter=+$('ageAfter').value;
-      note('Настройки витрины сохранены локально; серверные ограничения не изменены.');
+      note('Количество карточек сохранено. Настройки возраста нельзя менять без серверного источника.');
     }else{
       s.ageBefore=sourceMeta.settings.beforeMinutes;s.ageAfter=sourceMeta.settings.afterMinutes;
       note('Количество карточек сохранено. Возрастные фильтры работают на сервере.');
@@ -525,13 +517,14 @@ async function load(){
   }));
   var vals=fetched.map(function(q){return q.status==='fulfilled'?q.value:null});
   var errors=fetched.filter(function(q){return q.status==='rejected'});
-  if(vals.slice(1,3).every(function(x){return !x})&&!vals[5]){
+  if(vals.slice(1,3).every(function(x){return !x})&&!vals[5]&&!vals[6]){
     dataErr=errors.length?String(errors[0].reason):'Сервер пока не опубликовал данные';
     $('dataState').textContent='Не удалось получить выгрузку: '+dataErr+'. Повтор через 45 секунд.';
     $('net').textContent='● Ожидание';$('net').className='live bad';fetching=false;return;
   }
   status=vals[0]||status;
-  if(vals[10]&&vals[10].status==='observational'&&vals[10].settings){
+  if(vals[10]&&vals[10].status==='observational'&&vals[10].settings &&
+     Number.isFinite(vals[10].updated)&&now()-vals[10].updated<=7*60000){
     if(!researchMeta&&!researchServerBank)bank['1']=[];
     researchMeta=vals[10];
     // The polygon is owned by the server. Phone sliders cannot change
@@ -544,6 +537,9 @@ async function load(){
     $('r1Idle').value=s.r1Idle;$('r1IdleValue').textContent=s.r1Idle+' минут';
     for(const id of ['r1Hours','r1Activity','r1Idle','applyR1'])$(id).disabled=true;
   }
+  if(!vals[10]||!Number.isFinite(vals[10].updated)||now()-vals[10].updated>7*60000){
+    researchMeta=null;researchServerBank=false;bank['1']=[];
+  }
   if(researchMeta&&vals[11]&&Array.isArray(vals[11].coins)&&vals[11].counts){
     const sourceRows=vals[11].coins.filter(function(x){
       return x.mint&&Number.isFinite(x.activePct)&&Number.isFinite(x.maxIdleObserved)&&x.features;
@@ -555,7 +551,13 @@ async function load(){
     researchServerBank=true;
     lastResearchBankRead=now();
   }
-  if(vals[6]&&['verified-post-only','verified-pre-post'].includes(vals[6].mode)&&vals[6].settings) {
+  sourceActive=false;sourceMeta=null;sourceRecords=[];
+  $('ageBefore').disabled=true;$('ageAfter').disabled=true;
+  if(vals[6]&&['verified-post-only','verified-pre-post'].includes(vals[6].mode)&&
+     vals[6].settings&&Number.isFinite(vals[6].updated)&&now()-vals[6].updated<=7*60000 &&
+     [vals[6].settings.beforeMinutes,vals[6].settings.afterMinutes].every(function(v){
+       return Number.isInteger(v)&&v>=1&&v<=10;
+     })&&(vals[7]||vals[9])) {
     sourceActive=true;sourceMeta=vals[6];
     var unique=new Map();
     for(var item of (vals[8]?.coins||[]).concat(vals[7]?.coins||[],vals[9]?.coins||[])) {
@@ -586,10 +588,10 @@ async function load(){
   dataErr='';
   loadedAt=now();
   var updated=status&&ts(status.updated),age=updated?Math.floor((now()-updated)/60000):null;
-  var connected=age!=null&&age<=8;
-  $('net').textContent=connected?'● LIVE':'● '+(age==null?'Данные':'Задержка '+Math.max(0,age)+' мин');
+  var connected=age!=null&&age<=8&&sourceActive;
+  $('net').textContent=connected?'● LIVE':'● '+(!sourceActive?'Источник недоступен':age==null?'Данные':'Задержка '+Math.max(0,age)+' мин');
   $('net').className='live '+(connected?'good':'warn');
-  $('dataState').textContent='Сервер: '+(updated?time(updated):'—')+' (Казахстан) · '+(sourceActive?'главный источник '+fmt(sourceRecords.length)+' записей, сегодня '+fmt(sourceMeta.today)+' (до '+fmt(sourceMeta.todayBefore)+', после '+fmt(sourceMeta.todayAfter)+')':'устаревший поток '+fmt(dataset.length)+' записей')+' · обновление каждые 45 секунд.';
+  $('dataState').textContent='Сервер: '+(updated?time(updated):'—')+' (Казахстан) · '+(sourceActive?'главный источник '+fmt(sourceRecords.length)+' записей, сегодня '+fmt(sourceMeta.today)+' (до '+fmt(sourceMeta.todayBefore)+', после '+fmt(sourceMeta.todayAfter)+')':'допуск приостановлен (основной журнал недоступен)')+' · обновление каждые 45 секунд.';
   refresh();fetching=false;
 }
 function init(){
