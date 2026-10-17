@@ -1060,8 +1060,7 @@ async function getJSON(path){
     return await r.json();
   }finally{clearTimeout(timer)}
 }
-async function load(){
-  if(fetching)return;fetching=true;
+async function loadInternal(){
   var today=day(now()),yesterday=day(now()-864e5);
   var names=['status.json','day/'+today+'.json','day/'+yesterday+'.json','obs/'+today+'.json','obs/'+yesterday+'.json','live.json',
     'source/status.json','source/day/'+today+'.json','source/day/'+yesterday+'.json','source/live.json',
@@ -1090,7 +1089,7 @@ async function load(){
     dataErr=errors.length?String(errors[0].reason):'Сервер пока не опубликовал данные';
     $('dataState').textContent='Не удалось получить главный источник: '+dataErr+'. Повтор через 45 секунд.';
     $('net').textContent='● Источник недоступен';$('net').className='live bad';
-    fetching=false;return;
+    return;
   }
   status=vals[0]||status;
   controlEndpoint=validControlEndpoint(vals[20]);
@@ -1242,7 +1241,31 @@ async function load(){
   $('net').textContent=connected?'● LIVE':'● '+(!sourceActive?'Источник недоступен':age==null?'Данные':'Задержка '+Math.max(0,age)+' мин');
   $('net').className='live '+(connected?'good':'warn');
   $('dataState').textContent='Сервер: '+(updated?time(updated):'—')+' (Казахстан) · '+(sourceActive?'главный источник '+fmt(sourceRecords.length)+' записей, сегодня '+fmt(sourceMeta.today)+' (до '+fmt(sourceMeta.todayBefore)+', после '+fmt(sourceMeta.todayAfter)+')':'допуск приостановлен (основной журнал недоступен)')+' · обновление каждые 45 секунд.';
-  refresh();fetching=false;
+  refresh();
+}
+async function load(){
+  if(fetching)return;
+  fetching=true;
+  try{
+    await loadInternal();
+  }catch(e){
+    // A malformed server response or UI rendering error must not deadlock
+    // the refresh loop: the next 45-second cycle can recover automatically.
+    sourceActive=false;sourceMeta=null;sourceRecords=[];
+    serverPassActive=false;serverPassRows=[];passMeta=null;
+    serverR2Active=false;serverR2Rows=[];serverR2Curve=null;twoMeta=null;
+    researchMeta=null;autoOne=null;autoTwo=null;
+    bank['1']=[];bank['2']=[];
+    lastAccepted=[];lastPassed=[];lastVisible=[];
+    const message=String(e&&e.message||e).slice(0,180);
+    $('net').textContent='● Ошибка получения данных';
+    $('net').className='live bad';
+    $('dataState').textContent='Ошибка обновления данных: '+message+
+      '. Следующая попытка через 45 секунд.';
+    try{renderAll();renderPassed();renderR1();renderR2();renderLibrary()}catch(_ignored){}
+  }finally{
+    fetching=false;
+  }
 }
 function init(){
   s.ageBefore=clamp(s.ageBefore,1,10,2);s.ageAfter=clamp(s.ageAfter,1,10,2);
