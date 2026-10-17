@@ -5,6 +5,7 @@ window.__SOLSCAN_V2__=true;
 var BASE='https://storage.googleapis.com/sol-scan-511718-data/';
 var STORE='solscan_v2_state_20261017';
 var BANK='solscan_v2_polygons_20261017';
+var PASS_LOG='solscan_v2_verified_passes_20261017';
 var $=function(id){return document.getElementById(id)};
 var now=function(){return Date.now()};
 var fmt=function(n){return Number(n||0).toLocaleString('ru-RU')};
@@ -16,11 +17,16 @@ var s=Object.assign(clone(defaultS),loadLocal(STORE,defaultS));
 s.poly=Object.assign(clone(defaultS.poly),s.poly||{});
 if(!Array.isArray(s.filters))s.filters=[];
 if(!Array.isArray(s.modules))s.modules=[];
+// Signals are immutable local observations; no backfilled alerts after a deadline.
+var signalLog=loadLocal(PASS_LOG,[]);
+if(!Array.isArray(signalLog))signalLog=[];
+signalLog=signalLog.filter(function(x){return x&&typeof x.mint==='string'&&Number.isSafeInteger(x.acceptedAt)&&Number.isSafeInteger(x.deadline)&&Array.isArray(x.matches)}).slice(-2000);
 var bank=Object.assign({'1':[],'2':[]},loadLocal(BANK,{'1':[],'2':[]}));
 for(var lv of ['1','2'])if(!Array.isArray(bank[lv]))bank[lv]=[];
 var dataset=[],status=null,dataErr='',loadedAt=0,picker=null,editorId=null,lastPassed=[],lastR1=[],lastR2=[],lastAccepted=[],lastVisible=[],testHtml='',lastBankWrite=0,lastResearchBankRead=0,researchMeta=null,researchServerBank=false,fetching=false,sourceActive=false,sourceMeta=null,sourceRecords=[];
 var phaseNames={before:'🌱 До миграции',after:'🎓 После миграции'};
 function save(){try{localStorage.setItem(STORE,JSON.stringify(s))}catch(e){note('Не удалось сохранить настройки на устройстве')}}
+function saveSignals(){try{localStorage.setItem(PASS_LOG,JSON.stringify(signalLog))}catch(e){note('История сигналов не сохранилась на телефоне')}}
 function saveBank(){try{localStorage.setItem(BANK,JSON.stringify(researchServerBank?{'1':[],'2':bank['2']}:bank));lastBankWrite=now()}catch(e){note('Локальная память телефона заполнена: проверьте сохранение данных')}}
 function clamp(v,min,max,def){v=Number(v);return Number.isFinite(v)?Math.min(max,Math.max(min,v)):def}
 function note(message){$('toast').textContent=message;clearTimeout(note.timer);note.timer=setTimeout(function(){$('toast').textContent=''},6000)}
@@ -129,19 +135,40 @@ function labTwo(c,passed) {
   return {label:ratio>=s.r2Strong?'strong':'weak',score:ratio,covered:covered,curve:curve,p0:p0};
 }
 function passedCoins(coins){
-  if(!s.modules.some(function(m){return m.enabled}))return [];
-  var out=[];
+  // A filter change must never rewrite an earlier signal. Old admissions are
+  // never backfilled into "Passed" after their original decision window.
+  var previous=new Map(signalLog.map(function(x){return [x.mint,x]}));
+  var enabled=s.modules.filter(function(m){return m.enabled});
+  var out=[],dirty=false,seenAt=now();
   for(var c of coins){
-    var start=c._entry.acceptedAt,deadline=start+s.decision*60000;
-    var available=dataMetrics(c,Math.min(now(),deadline));
-    var matches=[];
-    for(var m of s.modules){
-      if(!m.enabled||m.phase!==c._entry.phase)continue;
-      var f=s.filters.find(function(x){return x.id===m.filterId});
-      if(f&&ruleMatch(available,f))matches.push(f);
+    var key=mint(c),entry=c._entry,record=previous.get(key);
+    if(record&&(record.acceptedAt!==entry.acceptedAt||record.phase!==entry.phase))record=null;
+    if(!record&&enabled.length&&seenAt>=entry.acceptedAt){
+      var deadline=entry.acceptedAt+s.decision*60000;
+      if(seenAt<=deadline){
+        var available=dataMetrics(c,seenAt);
+        var matches=[];
+        for(var m of enabled){
+          if(m.phase!==entry.phase)continue;
+          var f=s.filters.find(function(x){return x.id===m.filterId&&x.level===m.level});
+          if(f&&ruleMatch(available,f))matches.push({
+            id:f.id,name:f.name,level:f.level,version:f.version,
+            key:f.key,op:f.op,value:f.value
+          });
+        }
+        if(matches.length){
+          // Freeze match criteria, decision deadline and pre-decision features.
+          record={mint:key,phase:entry.phase,acceptedAt:entry.acceptedAt,
+            firstSeenAt:seenAt,deadline:deadline,name:c.n||c.s||key,
+            features:available,matches:matches};
+          signalLog.push(record);previous.set(key,record);dirty=true;
+        }
+      }
     }
-    if(matches.length)out.push({coin:c,deadline:deadline,matches:matches,features:available});
+    if(record)out.push({coin:c,deadline:record.deadline,
+      matches:record.matches,features:record.features,firstSeenAt:record.firstSeenAt});
   }
+  if(dirty){signalLog=signalLog.slice(-2000);saveSignals()}
   return out.sort(function(a,b){return b.coin._entry.acceptedAt-a.coin._entry.acceptedAt});
 }
 function storeBank(level,rows){
@@ -249,11 +276,19 @@ function showPicker(phase,lev){
 function renderPassed(){
   var list=lastPassed.filter(function(x){return x.deadline>now()});
   $('passedTab').textContent=list.length?' '+fmt(list.length):'';
-  $('passedStats').textContent='Всего найдено по текущим фильтрам: '+fmt(lastPassed.length)+' · время решения не истекло: '+fmt(list.length)+'.';
+  $('passedStats').textContent='Сохранено проверенных сигналов из текущей выгрузки: '+fmt(lastPassed.length)+' · время решения не истекло: '+fmt(list.length)+'.';
   $('passedList').innerHTML=list.length?list.map(function(q){
     var left=Math.max(0,q.deadline-now()),sec=Math.ceil(left/1000),mins=Math.floor(sec/60);
-    return '<div class="card"><div class="row"><b>'+esc(q.coin.n||q.coin.s||'Токен')+'</b><span class="badge warn mono">⏳ '+mins+':'+String(sec%60).padStart(2,'0')+'</span></div><p class="muted">Прошли: '+q.matches.map(function(f){return esc(f.name)}).join(', ')+'</p>'+coinHtml(q.coin)+'</div>';
-  }).join(''):'<div class="empty-state">Пока нет монет, прошедших включённые модули с действующим таймером. Создай фильтр в библиотеке и включи его в «Мои фильтры».</div>';
+    return '<div class="card"><div class="row"><b>'+esc(q.coin.n||q.coin.s||'Токен')+'</b><span class="badge warn mono">⏳ '+mins+':'+String(sec%60).padStart(2,'0')+'</span></div><p class="muted">Прошли: '+q.matches.map(function(f){return esc(f.name)+' · v'+esc(f.version)}).join(', ')+'</p>'+coinHtml(q.coin)+'</div>';
+  }).join(''):'<div class="empty-state">Нет активных сигналов. Старые монеты не проходят новые фильтры задним числом.</div>';
+  var history=signalLog.slice(-40).reverse();
+  $('passedArchiveCount').textContent=fmt(signalLog.length);
+  $('passedArchiveList').innerHTML=history.length?history.map(function(x){
+    var stamp=new Date(x.firstSeenAt).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    return '<div class="vrow"><div class="row"><b>'+esc(x.name||x.mint)+'</b><span class="badge">'+esc(stamp)+'</span></div>'+
+      '<p class="muted">'+esc(x.phase==='before'?'🌱 До':'🎓 После')+' · '+esc(x.mint.slice(0,12))+'… · срок '+time(x.deadline)+'</p>'+
+      '<p class="muted">'+x.matches.map(function(f){return esc(f.name)+' · v'+esc(f.version)+' ('+esc(f.key)+' '+esc(f.op)+' '+fmt(f.value)+')'}).join(', ')+'</p></div>';
+  }).join(''):'<p class="muted">Журнал на этом телефоне пуст. Закрытый сайт не записывает новые сигналы.</p>';
 }
 function renderR1(){
   if(researchMeta){
