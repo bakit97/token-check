@@ -1,0 +1,19 @@
+name: source-data-validation
+on:
+  push:
+    branches: ['feature/live-source-audit-*']
+    paths: ['tests/live-source-audit.mjs', '.github/workflows/source-data-validation.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Validate published source records
+        run: node tests/live-source-audit.mjs
