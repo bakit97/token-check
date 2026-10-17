@@ -831,8 +831,51 @@ async function publishServerConfig(){
   }
 }
 
+async function loadPassedArchiveDay(){
+  const selected=$('passedDay').value;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(selected)){
+    note('Неверная дата архива');return;
+  }
+  if(!serverPassActive){
+    $('passedDayStatus').textContent='Архив сервера недоступен. Локальную историю можно посмотреть выше.';
+    return;
+  }
+  const button=$('loadPassedDay');
+  button.disabled=true;
+  $('passedDayStatus').textContent='Получение проверенного журнала за '+selected+'…';
+  $('passedDayList').innerHTML='';
+  try{
+    const data=await getJSON('passed-v2/day/'+selected+'.json');
+    if(!data||data.day!==selected||data.origin!=='server-journal'||
+       !Array.isArray(data.coins)){
+      $('passedDayStatus').textContent='Файл за этот день не опубликован или недоступен. Это не означает ноль монет.';
+      return;
+    }
+    const records=data.coins.filter(function(p){
+      return p&&typeof p.mint==='string'&&['before','after'].includes(p.phase)&&
+        Number.isSafeInteger(p.firstSeenAt)&&Number.isSafeInteger(p.zeroAt)&&
+        Array.isArray(p.matches);
+    });
+    $('passedDayStatus').textContent='Серверная история за '+selected+': '+fmt(records.length)+
+      ' записей. Показаны последние '+fmt(Math.min(150,records.length))+'.';
+    $('passedDayList').innerHTML=records.slice(0,150).map(function(p){
+      return '<div class="filter-row"><div class="row"><b>'+esc(p.name||p.mint.slice(0,14))+
+        '</b><span class="badge mono">'+time(p.firstSeenAt)+'</span></div>'+
+        '<p class="muted">'+esc(p.phase==='before'?'🌱 До миграции':'🎓 После миграции')+
+        ' · '+esc(p.mint)+' · точка 0 '+time(p.zeroAt)+'</p>'+
+        '<p class="muted">'+p.matches.map(function(f){
+          return esc(f.name)+' · v'+esc(f.version)+' ('+esc(f.key)+' '+esc(f.op)+' '+fmt(f.value)+')';
+        }).join(' · ')+'</p></div>';
+    }).join('')||'<p class="muted">В опубликованном серверном журнале за этот день записей нет.</p>';
+  }catch(e){
+    $('passedDayStatus').textContent='Не удалось получить архив: '+String(e.message||e);
+  }finally{
+    button.disabled=false;
+  }
+}
 function bind(){
   $('exportServerConfig').addEventListener('click',exportServerConfig);
+  $('loadPassedDay').addEventListener('click',loadPassedArchiveDay);
   $('publishServerConfig').addEventListener('click',publishServerConfig);
   $('publishSourceAge').addEventListener('click',publishSourceAge);
   $('publishResearchOne').addEventListener('click',function(){publishResearchLevel('1')});
@@ -1129,6 +1172,10 @@ function init(){
   $('decisionValue').textContent=s.decision+' мин';$('decisionCurrent').textContent=s.decision+' мин';$('r1HoursValue').textContent=s.r1Hours+' часов';
   $('r1ActivityValue').textContent=s.r1Activity+'%';$('r1IdleValue').textContent=s.r1Idle+' минут';
   $('r2StrongValue').textContent=s.r2Strong+'%';$('r2Step').value=s.r2Step;
+  $('passedDay').innerHTML=Array.from({length:14},function(_,i){
+    const d=day(now()-i*864e5);
+    return '<option value="'+d+'">'+d+'</option>';
+  }).join('');
   document.querySelectorAll('#tabs [data-page]').forEach(function(x){x.classList.toggle('active',x.dataset.page===s.tab)});
   document.querySelectorAll('.page').forEach(function(x){x.hidden=x.id!=='p-'+s.tab});
   document.querySelectorAll('#allStreams [data-stream]').forEach(function(x){x.classList.toggle('active',x.dataset.stream===s.stream)});
