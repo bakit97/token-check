@@ -16,6 +16,11 @@ must not be confused with completed proof coverage. Per-source pending/skipped
 counters and pre pause gaps are in status. Historical missing raw windows stay
 missing, with no invented timestamps. Legacy day/obs/raw remain enabled.
 
+Final live generation is in the manifest. Legacy scheduled research is disabled
+(owner declared its results invalid); day/obs/raw and new v2 processing remain
+enabled. A 636 MB RSS spike was observed before disabling that timer, so do not
+claim a proven hard RSS ceiling. Linux 114/114 passed for `5a5358f`.
+
 Final fixes also retain deferred hourly-reconciliation batches, clear old process
 locks on restart, and prioritize continuation of partially paid migration proofs.
 Recovery-focused regression: 27 passed / 1 intentional multipart-GCS skip.

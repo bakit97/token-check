@@ -131,3 +131,19 @@ Recovery regression suite: 27 passed, 1 intentional GCS-only skip on Windows.
 Tests cover 6,001 migration messages with an exhausted pre quota, bounded batches,
 missing vaults, partial read deferral, restart locks, and retained reconciliation.
 No legacy UI, observations, owner settings or machine/disk sizes were removed.
+
+### Legacy research CPU/RAM isolation
+
+At 2026-10-17T19:36:08.794Z the preceding generation had 967/967 current pools,
+no overdue balance snapshots, both migration subscriptions acknowledged and
+15.6384 estimated credits/minute. Its RSS snapshot rose to 636 decimal MB around
+the legacy research timer. The owner had already declared old research results
+invalid; disable only that legacy scheduled computation, rather than reducing
+migration subscriptions or observation coverage. Preserve legacy source code,
+UI, old data and all observation exports pending the approved contract cutover.
+New v2 processing remains active. Status exposes `legacyResearch.enabled=false`.
+This does not establish a hard RSS bound for export/startup peaks.
+
+Linux verification for `5a5358f`:
+https://github.com/bakit97/token-check/actions/runs/39063098846 — 114/114 tests
+passed, plus reproducible recovery hashes and 27 passed / 1 intentional skip.

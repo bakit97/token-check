@@ -1015,7 +1015,7 @@ async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayK
       summary:PASS_V2?.summary(now)||null},
     researchTwo:{active:!!RESEARCH_TWO,error:TWO_ERR,summary:RESEARCH_TWO?.summary()||null},
     coins:C.size,today:[...C.values()].filter(c=>dayKey(c.t)===today).length,okToday:[...C.values()].filter(c=>dayKey(c.t)===today&&isOk(c)).length,
-    gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),creditsBy:crLog.reduce((o,x)=>(o[x[2]]=(o[x[2]]||0)+x[1],o),{}),rpcCtx:RPCCTX,poolObservations:poolCoverage(now),budgetEvents:budgetEventSummary(now),helius:!!HKEY,recon:RC.log.slice(-12),research:RSTAT,ws:{...WS,preGapEventsUnknown:true,preGapCurrentMs:WS.prePausedAt?Date.now()-WS.prePausedAt:0,since:WS.since,kb:Math.round(WS.bytes/1024),credits:+(WS.bytes/1e6*20).toFixed(1),msgs:WS.msgs,cand:WS.cand,err:WS.err},mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})}
+    gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),creditsBy:crLog.reduce((o,x)=>(o[x[2]]=(o[x[2]]||0)+x[1],o),{}),rpcCtx:RPCCTX,poolObservations:poolCoverage(now),budgetEvents:budgetEventSummary(now),helius:!!HKEY,recon:RC.log.slice(-12),research:RSTAT,legacyResearch:{enabled:false,reason:'old-results-invalid'},ws:{...WS,preGapEventsUnknown:true,preGapCurrentMs:WS.prePausedAt?Date.now()-WS.prePausedAt:0,since:WS.since,kb:Math.round(WS.bytes/1024),credits:+(WS.bytes/1e6*20).toFixed(1),msgs:WS.msgs,cand:WS.cand,err:WS.err},mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})}
 // живая лента для «Прошли»: монеты витрины младше 40 минут, раз в 30 секунд
 async function exportLive(){const now=Date.now();const list=[...C.values()].filter(c=>observedEligible(c)&&now-c.t<40*60e3);
   await upload('live.json',{updated:now,coins:list.map(c=>rec(c,true))})}
@@ -1108,7 +1108,7 @@ const STARTED=Date.now();
   setInterval(()=>{try{candleTasks()}catch(e){err('candles '+e.message)}},15000);
   chainLoop();chainObsLoop();setInterval(diagCheck,60000);diagCheck();
   setTimeout(()=>{reconcile();setInterval(reconcile,60*60e3)},60000);
-  setTimeout(()=>{let running=false;const go=async()=>{if(running)return;running=true;try{await researchRun()}catch(e){err('research '+e.message)}finally{running=false}};go();setInterval(go,60*60e3)},180000);
+  // Legacy research results are invalid; keep observation exports, run only v2 research.
   setInterval(()=>{prune();save()},120000);
   fastPassedLoop().catch(e=>err('fast pass loop '+e.message));
   (async()=>{for(;;){await sleep(120000);try{await exportDays()}catch(e){err('export '+e.message)}}})();
