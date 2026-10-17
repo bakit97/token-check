@@ -8,36 +8,42 @@ test('archival and program scans cost ten; normal account reads cost one',()=>{
   for(const m of ['getTransaction','getSignaturesForAddress','getProgramAccounts','getBlock'])assert.equal(rpcCost(m),10);
   assert.equal(rpcCost('getMultipleAccounts'),1);
 });
-test('RPC attempts, retries and received WS share persistent ceiling; minute boundary cannot reset it',t=>{
-  const f=fixture(t),b=new ResourceBudget(f);assert.equal(b.stream(1000),true);
-  b.reserveRPC('getTransaction',0);for(let i=0;i<7;i++)b.reserveRPC('getAccountInfo',0);
-  assert.throws(()=>b.reserveRPC('getAccountInfo',0),{code:'BUDGET_DEFERRED'});
+test('rolling minute releases credits after sixty seconds, not two minutes; restart retains charges',t=>{
+  const f=fixture(t),b=new ResourceBudget(f);b.stream(1000,'migrations');b.reserveRPC('getTransaction','migration');
+  assert.throws(()=>b.reserveRPC('getTransaction','migration'),{code:'BUDGET_DEFERRED'});
+  for(let i=0;i<6;i++)b.reserveRPC('getMultipleAccounts','pools');
   const before=b.state.used,fresh=new ResourceBudget(f);assert.equal(fresh.state.used,before);
-  assert.throws(()=>fresh.reserveRPC('getTransaction',0),{code:'BUDGET_DEFERRED'});
-  f.advance(60000);assert.throws(()=>fresh.reserveRPC('getTransaction',0),{code:'BUDGET_DEFERRED'});
-  f.advance(60000);fresh.reserveRPC('getTransaction',0);
-  assert.ok(fresh.summary().usedEstimated>174302);
+  f.advance(59999);assert.throws(()=>fresh.reserveRPC('getTransaction','migration'),{code:'BUDGET_DEFERRED'});
+  f.advance(1);fresh.reserveRPC('getTransaction','migration');
 });
-test('high projected spend blocks background first; fresh proofs retain room',t=>{
-  const f=fixture(t),b=new ResourceBudget(f);b.charge(500,'rpc');
-  f.advance(2*60000);assert.equal(b.summary().overForecast,true);
-  assert.equal(b.allow(1,2),false);assert.equal(b.allow(1,0),true);
+
+test('proof traffic leaves pool capacity, while holder and pre quotas cannot consume it',t=>{
+  const f=fixture(t),b=new ResourceBudget(f);b.reserveRPC('getTransaction','migration');
+  for(let i=0;i<3;i++)b.reserveRPC('getMultipleAccounts','holders');
+  assert.throws(()=>b.reserveRPC('getAccountInfo','pre'),{code:'BUDGET_DEFERRED'});
+  for(let i=0;i<4;i++)b.reserveRPC('getMultipleAccounts','pools');
+  assert.throws(()=>b.reserveRPC('getMultipleAccounts','pools'),{code:'BUDGET_DEFERRED'});
+  assert.equal(b.summary().creditsMinute,17);
 });
-test('metadata cannot consume the reserved proof allowance; WS closes with headroom',t=>{
-  const f=fixture(t),b=new ResourceBudget(f);b.stream(100);
-  b.reserveRPC('getAccountInfo',1);b.reserveRPC('getAccountInfo',1);
-  assert.throws(()=>b.reserveRPC('getAccountInfo',1),{code:'BUDGET_DEFERRED'});
-  b.reserveRPC('getTransaction',0);b.reserveRPC('getAccountInfo',0);
-  while(b.stream(1000)){}
-  assert.ok(b.summary().creditsMinute<20);
+
+test('migration WS stays enabled at exhausted RPC/pre budgets; only own pre stream share pauses pre',t=>{
+  const f=fixture(t),b=new ResourceBudget(f);b.reserveRPC('getTransaction','migration');
+  assert.equal(b.streamAllowed('pre'),true);
+  assert.equal(b.stream(80000,'pre'),false);
+  assert.equal(b.streamAllowed('migrations'),true);assert.equal(b.stream(1000,'migrations'),true);
+  assert.ok(b.summary().sources.pre.wsCredits>1.5);
+  assert.ok(b.summary().sources.migrations.wsCredits>0);
+  f.advance(60001);assert.equal(b.streamAllowed('pre'),true);
 });
-test('hourly reconciliation can pay for 10-credit windows but cannot exceed its 50-credit share',t=>{
+
+test('hourly reconciliation can complete five scans plus slot and account batches',t=>{
   const f=fixture(t),b=new ResourceBudget(f);
-  for(let i=0;i<5;i++){b.reserveRPC('getProgramAccounts',3);f.advance(120001)}
-  assert.throws(()=>b.reserveRPC('getProgramAccounts',3),{code:'BUDGET_DEFERRED'});
-  const restored=new ResourceBudget(f);assert.equal(restored.state.reconcileSpent,50);
-  f.advance(3600001);restored.reserveRPC('getProgramAccounts',3);
+  for(let i=0;i<5;i++){b.reserveRPC('getProgramAccounts','reconcile');f.advance(60001)}
+  b.reserveRPC('getSlot','reconcile');b.reserveRPC('getMultipleAccounts','reconcile');
+  assert.equal(b.laneTotal('reconcile'),52);
+  assert.equal(new ResourceBudget(f).laneTotal('reconcile'),52);
 });
+
 test('expired credit period stops spending instead of inventing a renewal',t=>{
   const f=fixture(t),b=new ResourceBudget(f);f.advance(29*86400000);
   assert.equal(b.allow(1,0),false);assert.equal(b.streamAllowed(),false);assert.equal(b.summary().resetRequired,true);

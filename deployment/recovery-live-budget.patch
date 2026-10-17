@@ -1,0 +1,172 @@
+--- a/server/collector.js
++++ b/server/collector.js
+@@ -83,16 +83,15 @@
+ const RPC_CACHE=new Map();
+ async function rpc(method,params,options={}){
+   if(!RESOURCE)throw Object.assign(new Error('Helius accounting unavailable'),{code:'BUDGET_DEFERRED'});
+-  const context=options.context||CTX,priority=options.priority??(context==='сверка'?3:2);
+-  if(priority>0&&resourcePressure())throw Object.assign(new Error('resource pressure: background deferred'),{code:'BUDGET_DEFERRED'});
++  const context=options.context||CTX,priority=options.priority??({'миграция':'migration','кривые':'migration','сверка':'reconcile','пулы':'pools','держатели':'holders','контракт':'metadata','новые до миграции':'pre'}[context]||'background'),source=options.source||context;
+   const cacheable=['getTransaction','getSignaturesForAddress','getProgramAccounts','getSlot'].includes(method);
+   const cacheKey=cacheable?method+JSON.stringify(params):null,cached=RPC_CACHE.get(cacheKey);
+   if(cached&&cached.until>Date.now())return cached.value;
+   const key=await heliusKey();if(!key)throw new Error('нет ключа Helius');
+   // No FIFO of sleeping calls: old background jobs cannot delay fresh proofs.
+-  if(!RESOURCE.allow(require(DIR+'/resource-budget.js').rpcCost(method),priority))throw Object.assign(new Error('Helius budget: observation deferred'),{code:'BUDGET_DEFERRED'});
++  if(!RESOURCE.allow(require(DIR+'/resource-budget.js').rpcCost(method),priority)){RESOURCE.deferred(source);throw Object.assign(new Error('Helius budget: observation deferred'),{code:'BUDGET_DEFERRED'})}
+   const go=async()=>{for(let t=0;t<3;t++){
+-      const cr=RESOURCE.reserveRPC(method,priority); // charge BEFORE fetch, including failures/retries
++      const cr=RESOURCE.reserveRPC(method,priority,source); // charge BEFORE fetch, including failures/retries
+       rpcN++;rpcCredits+=cr;crLog.push([Date.now(),cr,method]);RPCCTX[context]=(RPCCTX[context]||0)+cr;
+       while(crLog.length&&crLog[0][0]<Date.now()-3600e3)crLog.shift();
+       const r=await fetch('https://mainnet.helius-rpc.com/?api-key='+key,{signal:AbortSignal.timeout(30000),method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
+@@ -101,7 +100,9 @@
+       return d.result}
+     throw new Error('rpc 429')};
+   const p=rpcBusy.then(go,go);rpcBusy=p.then(()=>sleep(150),()=>sleep(150));return p}
+-function rpcFor(c,context){return (method,params)=>rpc(method,params,{priority:rpcPriority(c),context})}
++const globalRPC=rpc;
++function budgetSource(c){return c?.discoverySource||(c?.d?.includes('dbc')||c?.d?.includes('meteora')?'dbc':c?.d?.includes('launch')?'ll':'pump')}
++function rpcFor(c,context){return (method,params)=>rpc(method,params,{context,source:context==='миграция'?budgetSource(c):context})}
+ const b64=s=>Uint8Array.from(Buffer.from(s||'','base64'));
+ const pk=(u,o)=>b58enc(u.slice(o,o+32));
+ // метаданные Metaplex: можно ли менять название/картинку
+@@ -239,10 +240,10 @@
+   const BACK=[2,5,10,20,40];const n=c.mg.n||1;return c.mg.st==='unk'&&!c.mg.final&&n<=BACK.length&&now-c.mg.lastAt>=BACK[n-1]*60e3&&now-c.t<6*3600e3}
+ async function chainLoop(){let lastSweep=0;for(;;){const now=Date.now();
+   if(now-lastSweep>120e3){lastSweep=now;CTX='кривые';await curveSweep()}
+-  const c=[...C.values()].filter(c=>!c.chTry&&((!c.ct&&isOk(c)&&now-c.t<6*3600e3)||needMig(c,now))).sort((a,b)=>b.t-a.t)[0];
+-  if(!c){await sleep(2000);continue}c.chTry=1;
+-  try{CTX='контракт';if(!c.ct&&isOk(c))await ctCheck(c);CTX='миграция';if(needMig(c,Date.now())){if(c.mg&&c.mg.v!==MGV&&!c.mg0)c.mg0=c.mg;await migCheck(c)}}
+-  catch(e){if(e.code==='BUDGET_DEFERRED'){await sleep(3000);continue}rpcFail++;err('chain '+e.message);if(/ключа/.test(e.message))await sleep(60000);
++  const c=[...C.values()].filter(c=>!c.chTry&&(!c.proofRetryAt||now>=c.proofRetryAt)&&((!c.ct&&isOk(c)&&now-c.t<6*3600e3)||needMig(c,now))).sort((a,b)=>(a.proofAttemptAt||0)-(b.proofAttemptAt||0)||b.t-a.t)[0];
++  if(!c){await sleep(2000);continue}c.chTry=1;c.proofAttemptAt=now;
++  try{CTX='миграция';if(needMig(c,Date.now())){if(c.mg&&c.mg.v!==MGV&&!c.mg0)c.mg0=c.mg;await migCheck(c);delete c.proofBudgetDeferredAt}CTX='контракт';if(!c.ct&&isOk(c))await ctCheck(c)}
++  catch(e){if(e.code==='BUDGET_DEFERRED'){if(needMig(c,Date.now()))c.proofBudgetDeferredAt=c.proofBudgetDeferredAt||Date.now();c.proofRetryAt=Date.now()+60000;await sleep(3000);continue}rpcFail++;err('chain '+e.message);if(/ключа/.test(e.message))await sleep(60000);
+     else if((c.mgErr=(c.mgErr||0)+1)>=3){c.mgErr=0;setMg(c,'unk','unk-err','ошибка проверки: '+e.message.slice(0,80))}}
+   finally{setTimeout(()=>{c.chTry=0},30000)}}}
+ 
+@@ -296,7 +297,7 @@
+   // чем повторно занести монеты после рестарта.
+   SOURCE=new (require(DIR+'/source-runtime.js').SourceRuntime)({dir:DIR});
+   const PumpPreWatcher=require(DIR+'/pre-watcher.js').PumpPreWatcher;
+-  PRE=new PumpPreWatcher({rpc:(method,params)=>rpc(method,params,{priority:0,context:'новые до миграции'}),decode58:b58dec,deriveCurve:bondingCurveOf,source:SOURCE,
++  PRE=new PumpPreWatcher({rpc:(method,params)=>rpc(method,params,{priority:'pre',context:'новые до миграции',source:'pre'}),decode58:b58dec,deriveCurve:bondingCurveOf,source:SOURCE,
+     onAdmitted:admitVerifiedPublicLaunch,log:msg=>err(msg)});
+   // Journal is durable even if the VM was restarted before candidate-state save.
+   for(const item of SOURCE.records.values())if(item.phase==='before'&&!C.has(item.mint)&&item.proof?.curve) {
+@@ -684,7 +685,7 @@
+    Новые «вышедшие» кривые = кандидаты; миграция всё равно доказывается транзакцией, время — из блока. ---------- */
+ let RC={ll:null,dbc:null,log:[]};
+ function hiWin(hi){const b=Buffer.alloc(6);b.writeUInt16LE(hi&0xffff,0);return b58enc(b)}
+-async function snapshotSet(key){
++async function snapshotSet(key){const rpc=(method,params)=>globalRPC(method,params,{priority:'reconcile',context:'сверка',source:key});
+   if(key==='ll'){const r=await rpc('getProgramAccounts',[LAUNCH,{encoding:'base64',dataSlice:{offset:0,length:0},filters:[{memcmp:{offset:17,bytes:'3'}}],withContext:true}]);return (r?.value||[]).map(x=>x.pubkey)}
+   // DBC: все пулы слишком велики для одного запроса — берём только кривые с точкой активации (слот или unix-время, u64 @296) в двух последних окнах по 65536
+   const slot=await rpc('getSlot',[]),nowS=Math.floor(Date.now()/1000),out=new Set();
+@@ -693,7 +694,7 @@
+   return [...out]}
+ let RECON_BUSY=false,RECON_RETRY=null;
+ async function reconcile(){if(RECON_BUSY)return;RECON_BUSY=true;try{await reconcileBody()}finally{RECON_BUSY=false}}
+-async function reconcileBody(){const now=Date.now();CTX='сверка';
++async function reconcileBody(){const now=Date.now();const rpc=(method,params)=>globalRPC(method,params,{priority:'reconcile',context:'сверка'});CTX='сверка';
+   for(const [key,mOff,qOff] of [['ll',205,237],['dbc',136,null]]){
+     try{const cur=await snapshotSet(key);const prev=RC[key]?new Set(RC[key]):null;RC[key]=cur;
+       if(!prev){RC.log.push([now,key,'база',cur.length]);continue}
+@@ -709,7 +710,7 @@
+ /* ---------- 5б. подписки на блокчейн: миграции видны сразу, без GeckoTerminal ----------
+    Meteora DBC: кривые с флагом «мигрировала»; LaunchLab: кривые со статусом 2; PumpSwap: аккаунты пулов с index = 0 (создаются один раз).
+    Это только кандидаты — миграция всё равно доказывается транзакцией. */
+-const WS={on:false,bytes:0,msgs:{},cand:{},err:0,since:0};const wsSeen=new Map();
++const WS={on:false,preOn:false,preSub:false,connected:{dbc:false,ll:false},preBudgetPauses:0,prePausedAt:0,preGapMs:0,bytes:0,msgs:{},cand:{},err:0,since:0};const wsSeen=new Map();
+ function wsCandidate(kind,acc,u){const now=Date.now();if(wsSeen.has(acc)&&now-wsSeen.get(acc)<6*3600e3)return;wsSeen.set(acc,now);
+   if(wsSeen.size>20000)for(const [k,t] of wsSeen)if(now-t>6*3600e3)wsSeen.delete(k);
+   let mint=null,quote=null,pool=acc;
+@@ -717,36 +718,39 @@
+   else if(kind==='ll'){mint=pk(u,205);quote=pk(u,237)}
+   else if(kind==='pump'){const b=pk(u,43),q=pk(u,75);if(SKIP.has(b)){mint=q;quote=b}else{mint=b;quote=q}if(SKIP.has(mint))return}
+   if(!mint)return;WS.cand[kind]=(WS.cand[kind]||0)+1;const c=C.get(mint);
+-  if(c){if(!isOk(c)&&c.mg)c.mg.force=1;c.wsSeen=c.wsSeen||now;c.firstPostSeenAt=c.firstPostSeenAt||now;return}
+-  C.set(mint,{a:mint,n:'',s:'',i:'',p:pool,d:kind==='pump'?'pumpswap':kind==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'ws',seen:now,disc:'ws',wsSeen:now,firstPostSeenAt:now,pools:[pool],fv:FV})}
+-function chainWatch(){let ws,ping;const subs={};
+-  const start=async()=>{const key=await heliusKey();if(!key||!RESOURCE?.streamAllowed()){setTimeout(start,60000);return}
+-    for(const k of Object.keys(subs))delete subs[k];
+-    ws=new WebSocket('wss://mainnet.helius-rpc.com/?api-key='+key);
+-    ws.onopen=()=>{WS.on=true;WS.since=Date.now();
+-      [['dbc',DBC,[{dataSize:424},{memcmp:{offset:305,bytes:'2'}}]],['ll',LAUNCH,[{memcmp:{offset:17,bytes:'3'}}]]]
+-        .forEach(([n,prog,f],i)=>{subs[100+i]=n;ws.send(JSON.stringify({jsonrpc:'2.0',id:100+i,method:'programSubscribe',params:[prog,{encoding:'base64',commitment:'confirmed',filters:f}]}))});
+-      // Public trading begins when the on-chain Pump create instruction
+-      // initializes its curve, not when a random SPL token mint appears.
+-      if(PRE) {subs[150]='pre';ws.send(JSON.stringify({jsonrpc:'2.0',id:150,
+-        method:'logsSubscribe',params:[{mentions:[PUMP_MINT_AUTH]},{commitment:'confirmed'}]}))}
+-      ping=setInterval(()=>{if(!RESOURCE.streamAllowed())try{ws.close()}catch{}},30000)};
+-    ws.onmessage=e=>{const txt=typeof e.data==='string'?e.data:'';const bytes=Buffer.byteLength(txt);WS.bytes+=bytes;if(!RESOURCE.stream(bytes)){try{ws.close()}catch{}return}
+-      // дешёвый отсев: лог pump без create не разбираем (на e2-micro разбор каждой сделки забивал CPU)
+-      if(txt.length>200&&txt.includes('"logsNotification"')&&!txt.includes('Instruction: Create')){WS.preDrop=(WS.preDrop||0)+1;return}
+-      let m;try{m=JSON.parse(txt)}catch{return}
+-      if(m.id&&subs[m.id]){subs['s'+m.result]=subs[m.id];if(subs[m.id]==='pre')WS.preSub=true;return}
+-      const n=subs['s'+m.params?.subscription];const v=m.params?.result?.value;if(!n||!v)return;WS.msgs[n]=(WS.msgs[n]||0)+1;
+-      if(n==='pre'){
+-        // Only candidate create logs trigger RPC proof, not each buy/sell.
+-        PRE?.onLog(v,Date.now());
+-        return;
+-      }
+-      if(WS.msgs[n]>5000&&Date.now()-WS.since<3600e3){err('подписка '+n+' слишком шумная — закрыта');try{ws.close()}catch{}WS.stop=1;return}
+-      try{wsCandidate(n,v.pubkey,b64(v.account?.data?.[0]))}catch(x){err('ws '+x.message)}};
+-    ws.onerror=()=>{WS.err++};
+-    ws.onclose=()=>{WS.on=false;WS.preSub=false;clearInterval(ping);if(WS.stop)return;err('ws закрыт — переподключение');setTimeout(()=>{start();reconcile().catch(()=>{})},5000)}};
+-  start()}
++  if(c){c.discoverySource=kind;if(!isOk(c)&&c.mg)c.mg.force=1;c.wsSeen=c.wsSeen||now;c.firstPostSeenAt=c.firstPostSeenAt||now;return}
++  C.set(mint,{a:mint,n:'',s:'',i:'',p:pool,d:kind==='pump'?'pumpswap':kind==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'ws',seen:now,disc:'ws',discoverySource:kind,wsSeen:now,firstPostSeenAt:now,pools:[pool],fv:FV})}
++function chainWatch(){
++  const connect=async(channel)=>{const key=await heliusKey();if(!key||(channel==='pre'&&(!PRE||!RESOURCE?.streamAllowed('pre')))){setTimeout(()=>connect(channel),10000);return}
++    const pre=channel==='pre',subs={},ws=new WebSocket('wss://mainnet.helius-rpc.com/?api-key='+key);let timer;
++    ws.onopen=()=>{
++      if(pre){WS.preOn=true;WS.preGapMs+=WS.prePausedAt?Date.now()-WS.prePausedAt:0;WS.prePausedAt=0}
++      else{WS.on=true;WS.since=Date.now();WS.connected={dbc:false,ll:false}}
++      const requests=pre?[[150,'pre','logsSubscribe',[{mentions:[PUMP_MINT_AUTH]},{commitment:'confirmed'}]]]:
++        [[100,'dbc','programSubscribe',[DBC,{encoding:'base64',commitment:'confirmed',filters:[{dataSize:424},{memcmp:{offset:305,bytes:'2'}}]}]],
++         [101,'ll','programSubscribe',[LAUNCH,{encoding:'base64',commitment:'confirmed',filters:[{memcmp:{offset:17,bytes:'3'}}]}]]];
++      for(const [id,name,method,params] of requests){subs[id]=name;ws.send(JSON.stringify({jsonrpc:'2.0',id,method,params}))}
++      if(pre)timer=setInterval(()=>{if(!RESOURCE.streamAllowed('pre')){WS.preBudgetPauses++;try{ws.close()}catch{}}},10000);
++    };
++    ws.onmessage=e=>{const txt=typeof e.data==='string'?e.data:'',bytes=Buffer.byteLength(txt);WS.bytes+=bytes;
++      RESOURCE.stream(bytes,pre?'pre':'migrations');
++      // Never discard the last already-received create event when its byte quota fills.
++      if(pre&&txt.length>200&&txt.includes('"logsNotification"')&&!txt.includes('Instruction: Create')){WS.preDrop=(WS.preDrop||0)+1;return}
++      let m;try{m=JSON.parse(txt)}catch{WS.invalid=(WS.invalid||0)+1;return}
++      if(m.id&&subs[m.id]){if(m.error){WS.err++;err('ws subscription '+subs[m.id]+' rejected');try{ws.close()}catch{}return}
++        subs['s'+m.result]=subs[m.id];if(pre)WS.preSub=true;else WS.connected[subs[m.id]]=true;return}
++      const n=subs['s'+m.params?.subscription],v=m.params?.result?.value;if(!n||!v)return;
++      WS.msgs[n]=(WS.msgs[n]||0)+1;
++      if(pre){PRE?.onLog(v,Date.now());if(!RESOURCE.streamAllowed('pre')){WS.preBudgetPauses++;try{ws.close()}catch{}}return}
++      try{wsCandidate(n,v.pubkey,b64(v.account?.data?.[0]))}catch(x){WS.err++;err('ws '+x.message)}
++    };
++    ws.onerror=()=>{WS.err++;try{ws.close()}catch{}};
++    ws.onclose=()=>{clearInterval(timer);if(pre){WS.preOn=false;WS.preSub=false;WS.prePausedAt=WS.prePausedAt||Date.now()}
++      else{WS.on=false;WS.connected={dbc:false,ll:false};WS.disconnects=(WS.disconnects||0)+1}
++      setTimeout(()=>connect(channel),pre?10000:5000)};
++  };
++  connect('migrations');connect('pre');
++}
+ 
+ /* ---------- 6. выгрузка ---------- */
+ const dayKey=t=>new Date(t+TZ).toISOString().slice(0,10);
+@@ -792,7 +796,7 @@
+   const today=SOURCE.day(d).map(enrich);
+   // Нет задним числом добавленных кандидатов из обычной ленты.
+   // Предмиграционный адаптер пока не активен: не выдавать пустоту за готовность.
+-  await upload('source/status.json',{...summary,mode:'verified-pre-post',preConnected:!!PRE&&WS.on&&WS.preSub,pre:PRE?.summary()||null});
++  await upload('source/status.json',{...summary,mode:'verified-pre-post',preConnected:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null});
+   await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});
+   await upload('source/live.json',{updated:now,count:today.length,coins:SOURCE.latest(200).map(enrich)});
+ }
+@@ -939,7 +943,7 @@
+       summary:PASS_V2?.summary(now)||null},
+     researchTwo:{active:!!RESEARCH_TWO,error:TWO_ERR,summary:RESEARCH_TWO?.summary()||null},
+     coins:C.size,today:[...C.values()].filter(c=>dayKey(c.t)===today).length,okToday:[...C.values()].filter(c=>dayKey(c.t)===today&&isOk(c)).length,
+-    gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),creditsBy:crLog.reduce((o,x)=>(o[x[2]]=(o[x[2]]||0)+x[1],o),{}),rpcCtx:RPCCTX,helius:!!HKEY,recon:RC.log.slice(-12),research:RSTAT,ws:{on:WS.on,since:WS.since,kb:Math.round(WS.bytes/1024),credits:+(WS.bytes/1e6*20).toFixed(1),msgs:WS.msgs,cand:WS.cand,err:WS.err},mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})}
++    gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),creditsBy:crLog.reduce((o,x)=>(o[x[2]]=(o[x[2]]||0)+x[1],o),{}),rpcCtx:RPCCTX,budgetEvents:{since:STARTED,sources:Object.fromEntries(['dbc','ll','pump'].map(source=>[source,{skipped:0,deferredPending:[...C.values()].filter(c=>budgetSource(c)===source&&c.proofBudgetDeferredAt).length}])),pre:{skippedBudget:PRE?.summary().budgetDeferred||0,skippedCapacity:PRE?.summary().dropped||0,pausedMs:WS.preGapMs+(WS.prePausedAt?Date.now()-WS.prePausedAt:0),unreceivedEvents:null}},helius:!!HKEY,recon:RC.log.slice(-12),research:RSTAT,ws:{...WS,preGapEventsUnknown:true,preGapCurrentMs:WS.prePausedAt?Date.now()-WS.prePausedAt:0,since:WS.since,kb:Math.round(WS.bytes/1024),credits:+(WS.bytes/1e6*20).toFixed(1),msgs:WS.msgs,cand:WS.cand,err:WS.err},mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})}
+ // живая лента для «Прошли»: монеты витрины младше 40 минут, раз в 30 секунд
+ async function exportLive(){const now=Date.now();const list=[...C.values()].filter(c=>observedEligible(c)&&now-c.t<40*60e3);
+   await upload('live.json',{updated:now,coins:list.map(c=>rec(c,true))})}

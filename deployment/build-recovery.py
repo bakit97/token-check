@@ -30,6 +30,8 @@ def main():
     patch = (ROOT / 'deployment/recovery-48cb0f8-helius.patch').read_bytes().replace(b'\r\n', b'\n')
     subprocess.run(['git', 'apply', '--directory=work/recovery-build', '-'],
                    input=patch, cwd=ROOT, check=True)
+    overlay = (ROOT / 'deployment/recovery-live-budget.patch').read_bytes().replace(b'\r\n', b'\n')
+    subprocess.run(['git', 'apply', '--directory=work/recovery-build', '-'], input=overlay, cwd=ROOT, check=True)
     collector = target / 'collector.js'
     collector.write_bytes(collector.read_bytes().replace(b'\r\n', b'\n'))
     manifest = json.loads((ROOT / 'deployment/recovery-manifest.json').read_text())
