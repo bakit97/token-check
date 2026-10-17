@@ -56,14 +56,14 @@ function eachMinutePoint(row,visit){
       visit(point[0],point[1]);
 }
 class ResearchTwoRuntime {
-  constructor({dir,config,bankName='research-v2-bank-two.json',cohortStart=0}={}){
+  constructor({dir,config,bankName='research-v2-bank-two.json',cohortStart=0,cohortEnd=Infinity}={}){
     if(!dir)throw TypeError('Research-two directory required');
     fs.mkdirSync(dir,{recursive:true});
     this.file=path.join(dir,bankName);
     this.journalFile=this.file+'.journal';
     this.journalCount=0;
     this.compactedAt=Date.now();
-    this.cohortStart=cohortStart;
+    this.cohortStart=cohortStart;this.cohortEnd=cohortEnd;
     this.config=configOf(config);
     this.rows=[];
     this.processed=new Map();
@@ -153,7 +153,7 @@ class ResearchTwoRuntime {
     let added=0,attempted=0,considered=0;
     const pending={},newRows=[];
     for(const pass of passes.records.values()){
-      if(!pass||pass.firstSeenAt<this.cohortStart||this.processed.has(pass.mint)||now-pass.zeroAt>FRESH||
+      if(!pass||pass.firstSeenAt<this.cohortStart||pass.firstSeenAt>=this.cohortEnd||this.processed.has(pass.mint)||now-pass.zeroAt>FRESH||
          now<pass.zeroAt)continue;
       considered++;
       if(now<pass.zeroAt+5*HOUR+MIN){
