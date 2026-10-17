@@ -11,9 +11,21 @@ function discover(rows,{level='1',minTrainPositive,minTrainNegative,minValidatio
   const bad=minTrainNegative??40;
   const clean=rows.filter(r=>r&&r.mint&&r.features&&[pos,neg].includes(r.label)&&
       Number.isSafeInteger(r.time)).sort((a,b)=>a.time-b.time);
-  const enough=clean.length>=good+bad+minValidation;
-  const train=enough?clean.slice(0,-minValidation):clean;
-  const validation=enough?clean.slice(-minValidation):[];
+  // Keep complete Kazakhstan-calendar days together: newer validation
+  // rows must come from dates absent from the training cohort.
+  const kzDay=t=>new Date(t+5*3600000).toISOString().slice(0,10);
+  let split=-1;
+  for(let i=1;i<clean.length;i++){
+    if(kzDay(clean[i-1].time)===kzDay(clean[i].time))continue;
+    const early=clean.slice(0,i),late=clean.slice(i);
+    const earlyPos=early.filter(r=>r.label===pos).length;
+    const earlyNeg=early.length-earlyPos;
+    if(earlyPos>=good&&earlyNeg>=bad&&late.length>=minValidation&&
+       late.some(r=>r.label===pos)&&late.some(r=>r.label===neg))split=i;
+  }
+  const enough=split>=0;
+  const train=enough?clean.slice(0,split):clean;
+  const validation=enough?clean.slice(split):[];
   const counts=(r)=>({positive:r.filter(x=>x.label===pos).length,
     negative:r.filter(x=>x.label===neg).length,total:r.length});
   const training=counts(train),holdout=counts(validation);
@@ -32,10 +44,13 @@ function discover(rows,{level='1',minTrainPositive,minTrainNegative,minValidatio
     !enough?'training-only':!holdout.positive||!holdout.negative?'waiting-both-holdout-classes':
     'rolling-holdout-ready',
     population:clean.length,classes:{positive:pos,negative:neg},
-    training,validation:holdout,required:{
+    training,validation:holdout,
+    validationDays:[...new Set(validation.map(r=>kzDay(r.time)))],
+    trainingDays:[...new Set(train.map(r=>kzDay(r.time)))],
+    required:{
       trainingPositive:good,trainingNegative:bad,
       validation:minValidation,minPositiveRecall,minNegativeRejection
-    },rules,method:'chronological-holdout-no-future-features',
+    },rules,method:'later-complete-calendar-days-no-future-features',
     caution:'Provisional observational diagnostics; later holdout is not proof of future performance'};
 }
 module.exports={discover};
