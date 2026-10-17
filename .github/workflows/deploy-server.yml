@@ -2,7 +2,7 @@ name: deploy-server
 on:
   push:
     branches: [main]
-    paths: ['server/collector.js', 'lab-core.js', 'server/source-runtime.js', 'server/admission.js', 'server/pump-pre.js', 'server/pre-watcher.js']
+    paths: ['server/collector.js', 'lab-core.js', 'server/source-runtime.js', 'server/admission.js', 'server/pump-pre.js', 'server/pre-watcher.js', 'server/research-v2.js', 'server/research-runtime.js']
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,7 +16,7 @@ jobs:
         with:
           node-version: 20
       - name: check syntax
-        run: node --check server/collector.js && node --check lab-core.js && node --check server/source-runtime.js && node --check server/admission.js && node --check server/pump-pre.js && node --check server/pre-watcher.js && node --test server/admission.test.js server/source-runtime.test.js server/pump-pre.test.js server/pre-watcher.test.js
+        run: node --check server/collector.js && node --check lab-core.js && node --check server/source-runtime.js && node --check server/admission.js && node --check server/pump-pre.js && node --check server/pre-watcher.js && node --check server/research-v2.js && node --check server/research-runtime.js && node --test server/admission.test.js server/source-runtime.test.js server/pump-pre.test.js server/pre-watcher.test.js server/research-v2.test.js server/research-runtime.test.js tests/research-collector-smoke.cjs
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: projects/421351476653/locations/global/workloadIdentityPools/github/providers/github
@@ -28,6 +28,8 @@ jobs:
           gcloud storage cp server/source-runtime.js gs://sol-scan-511718-data/code/source-runtime.js
           gcloud storage cp server/pump-pre.js gs://sol-scan-511718-data/code/pump-pre.js
           gcloud storage cp server/pre-watcher.js gs://sol-scan-511718-data/code/pre-watcher.js
+          gcloud storage cp server/research-v2.js gs://sol-scan-511718-data/code/research-v2.js
+          gcloud storage cp server/research-runtime.js gs://sol-scan-511718-data/code/research-runtime.js
           gcloud storage cp lab-core.js gs://sol-scan-511718-data/code/lab-core.js
           gcloud storage cp server/collector.js gs://sol-scan-511718-data/code/collector.js
       - name: verify running collector
@@ -48,7 +50,13 @@ jobs:
               if [[ -n "$src" ]] && jq -e --argjson now "$(date +%s%3N)" \
                 '(.mode == "verified-pre-post") and (.preConnected == true) and (.updated | type == "number" and . > $now - 180000) and (.settings.beforeMinutes >= 1) and (.settings.afterMinutes >= 1)' <<< "$src" >/dev/null; then
                 echo "Authoritative source feed is fresh and running."
-                exit 0
+                research=$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' "https://storage.googleapis.com/sol-scan-511718-data/research-v2/status.json?verify=$(date +%s%N)" || true)
+                if [[ -n "$research" ]] && jq -e --argjson now "$(date +%s%3N)" \
+                  '(.status == "observational") and (.updated | type == "number" and . > $now - 180000) and (.settings.hours >= 1) and (.settings.hours <= 24) and (.bankCapacityPerClass == 5000)' <<< "$research" >/dev/null; then
+                  echo "Research v2 observational engine is fresh and active."
+                  exit 0
+                fi
+                echo "Source fresh, research v2 not yet ready."
               fi
               echo "Collector heartbeat valid, source feed not ready yet."
             fi
