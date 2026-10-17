@@ -406,7 +406,7 @@ function admitVerifiedMigration(c){
   }catch(e){SOURCE_ERR='ошибка записи источника: '+e.message;err('source '+e.message)}
 }
 
-const OBS_KEYS=['ds','k10','path','hold','bx','lq','gx','vaults','vmint','vdec','legacy'],OBS_TMP=['tr','raw','dsAt','tokAt','gxAt','lastTrade','kTry','pTry','trTry','trDone','lqAt','rawUp','vTry'];
+const OBS_KEYS=['ds','k10','path','hold','bx','lq','gx','vaults','vmint','vdec','legacy'],OBS_TMP=['tr','raw','dsAt','dsTryAt','tokAt','gxAt','lastTrade','kTry','pTry','trTry','trDone','lqAt','rawUp','vTry'];
 function takeObs(c){const o={};for(const k of OBS_KEYS){if(c[k]!=null)o[k]=c[k];delete c[k]}for(const k of OBS_TMP)delete c[k];return o}
 function load(){try{const a=JSON.parse(fs.readFileSync(DIR+'/state.json','utf8'));a.forEach(c=>{
     if(c.fv!==FV){c.legacy={snap:c.snap,act:c.act,k:c.k};for(const k of ['snap','act','k','o','cur','cn','orig'])delete c[k];c.fv=FV}
@@ -440,8 +440,16 @@ async function pollNew(){if(gtPending('new'))return;try{const n=await addFromGT(
 
 /* ---------- 2. DEX Screener: ряд снимков [время получения (с), цена, ликв.$, mc, покупки 5м, продажи 5м, объём 5м, покупки 1ч, продажи 1ч, объём 1ч]
    Витрина: каждую минуту первые 15 минут, потом каждые 5 минут до 24 ч. Остальные пулы: раз в 15 минут первые 6 ч (только «торгуется ли»). ---------- */
-function dsDue(c,now){const a=ageMin(c,now);if(observedEligible(c)){if(a<-1||a>24*60+10)return false;return now-(c.dsAt||0)>=(a<120?55e3:5*60e3-15e3)}
-  return a<6*60&&now-(c.dsAt||0)>=15*60e3}
+const {chooseDue}=require('./ds-scheduler');
+function dsDue(c,now){
+  const a=ageMin(c,now),last=Math.max(c.dsAt||0,c.dsTryAt||0);
+  if(observedEligible(c)){
+    if(a<-1||a>24*60+10)return false;
+    // Failed polls must not monopolize the queue; never pretend a failure was data.
+    return now-last>=(a<120?55e3:5*60e3-15e3);
+  }
+  return a<6*60&&now-last>=15*60e3;
+}
 function dsEntry(p,at){return[Math.round(at/1000),+(+p.priceUsd||0).toPrecision(6),p.liquidity?.usd!=null?Math.round(p.liquidity.usd):null,p.marketCap||p.fdv||null,
   p.txns?.m5?.buys??null,p.txns?.m5?.sells??null,p.volume?.m5!=null?Math.round(p.volume.m5):null,p.txns?.h1?.buys??null,p.txns?.h1?.sells??null,p.volume?.h1!=null?Math.round(p.volume.h1):null]}
 function dsApply(c,p,at){const e=dsEntry(p,at);
@@ -453,14 +461,21 @@ function dsTokenInfo(c,arr,at){if(!arr.length)return;
   const cv=arr.filter(p=>isCurve(p.dexId)||/dbc|launch/i.test(p.dexId||'')).map(p=>p.pairCreatedAt).filter(Boolean);
   const all=arr.map(p=>p.pairCreatedAt).filter(Boolean);const born=Math.min(...(cv.length?cv:all));if(isFinite(born)&&born<c.t-60e3){const nt=Math.min(c.tk||Infinity,born);if(nt!==c.tk){c.tk=nt;c.tkAt=at}}
   c.soc=Math.max(c.soc||0,(arr[0].info?.socials||[]).length+(arr[0].info?.websites||[]).length);if(!c.i&&arr[0].info?.imageUrl)c.i=arr[0].info.imageUrl}
-async function pollDS(){const now=Date.now();const need=[...C.values()].filter(c=>dsDue(c,now)).sort((a,b)=>isOk(b)-isOk(a)||b.t-a.t);
-  // витрина: точный пул по адресу (запрос по монете у Meteora отдаёт пару кривой, а не пул миграции)
-  const ok=need.filter(observedEligible),rest=need.filter(c=>!observedEligible(c)),tokFirst=ok.filter(c=>!c.tokAt);
-  for(let i=0;i<ok.length&&i<1200;i+=30){const part=ok.slice(i,i+30);
+async function pollDS(){const now=Date.now();
+  const need=[...C.values()].filter(c=>dsDue(c,now));
+  // A newest-first truncation permanently starved older, admitted cohorts:
+  // reserve a fixed share of each pass for the first 12 minutes and rotate
+  // everyone else by last actual attempt, independent of migration phase.
+  const ok=chooseDue(need.filter(observedEligible),{now,limit:1200,earlyShare:.3});
+  const rest=chooseDue(need.filter(c=>!observedEligible(c)),{now,limit:600,earlyShare:.3});
+  const tokFirst=ok.filter(c=>!c.tokAt).slice(0,300);
+  for(let i=0;i<ok.length;i+=30){const part=ok.slice(i,i+30);
+    const attempted=Date.now();for(const c of part)c.dsTryAt=attempted;
     try{const j=await getJSON(`${DS}/latest/dex/pairs/solana/${part.map(c=>c.p).join(',')}`);const at=Date.now(),by={};(j.pairs||[]).forEach(p=>by[p.pairAddress]=p);
       for(const c of part){c.dsAt=at;const p=by[c.p];if(p)dsApply(c,p,at)}}catch(e){err('ds '+e.message);await sleep(5000)}
     await sleep(300)}
-  for(const [list,isTok] of [[tokFirst,1],[rest,0]])for(let i=0;i<list.length&&i<600;i+=30){const part=list.slice(i,i+30);
+  for(const [list,isTok] of [[tokFirst,1],[rest,0]])for(let i=0;i<list.length;i+=30){const part=list.slice(i,i+30);
+    if(!isTok){const attempted=Date.now();for(const c of part)c.dsTryAt=attempted}
     try{const ps=await getJSON(`${DS}/tokens/v1/solana/${part.map(c=>c.a).join(',')}`);const at=Date.now(),by={};
       ps.forEach(p=>{const a=p.baseToken?.address;if(a)(by[a]=by[a]||[]).push(p)});
       for(const c of part){const arr=by[c.a]||[];dsTokenInfo(c,arr,at);if(isTok){c.tokAt=at;continue}c.dsAt=at;const p=arr.find(x=>x.pairAddress===c.p);if(p)dsApply(c,p,at)}
