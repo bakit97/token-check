@@ -56,6 +56,7 @@ class ResearchRuntime {
     this.config=settings(config);
     this.rows=[];
     this.lookup=new Set();
+    this.processed=new Map();
     this.lastAt=null;
     this.pending={};
     if(fs.existsSync(this.file)){
@@ -69,6 +70,12 @@ class ResearchRuntime {
       }
       this.rows=capBank(state.rows,r=>classOf(r,this.config),'live','dead',MAX_BANK_PER_CLASS);
       this.lookup=new Set(this.rows.map(r=>r.mint));
+      for(const pair of state.processed||[]) {
+        if(Array.isArray(pair)&&typeof pair[0]==='string'&&Number.isSafeInteger(pair[1]))
+          this.processed.set(pair[0],pair[1]);
+      }
+      // Compatible with older snapshots that did not store the processed index.
+      for(const r of this.rows)this.processed.set(r.mint,r.acceptedAt);
     }
   }
   update({source,coins,now=Date.now()}={}) {
@@ -78,7 +85,7 @@ class ResearchRuntime {
     // Newest first, avoid scanning the entire multi-month ledger.
     for(const row of source.records.values()){
       const age=now-row.acceptedAt;
-      if(age<0||age>FRESH_WINDOW||this.lookup.has(row.mint))continue;
+      if(age<0||age>FRESH_WINDOW||this.processed.has(row.mint))continue;
       considered++;
       if(age<this.config.hours*HOURS+3*MIN){
         pending['not-yet-finished']=(pending['not-yet-finished']||0)+1;
@@ -107,12 +114,17 @@ class ResearchRuntime {
         time:row.acceptedAt // rolling bank ordered by admission, not reprocessing time
       });
       this.lookup.add(row.mint);
+      this.processed.set(row.mint,row.acceptedAt);
       added++;
+    }
+    for(const [mint,acceptedAt] of this.processed){
+      if(now-acceptedAt>FRESH_WINDOW)this.processed.delete(mint);
     }
     if(added){
       this.rows=capBank(this.rows,r=>classOf(r,this.config),'live','dead',MAX_BANK_PER_CLASS);
       this.lookup=new Set(this.rows.map(r=>r.mint));
-      atomicJSON(this.file,{schema:1,rows:this.rows,savedAt:now});
+      atomicJSON(this.file,{schema:1,rows:this.rows,
+        processed:[...this.processed],savedAt:now});
     }
     for(const row of this.rows){
       const name=classOf(row,this.config);
