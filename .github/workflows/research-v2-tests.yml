@@ -1,0 +1,28 @@
+name: research-v2-tests
+on:
+  push:
+    branches:
+      - 'feature/verified-research-v2-*'
+    paths:
+      - 'server/research-v2.js'
+      - 'server/research-v2.test.js'
+      - '.github/workflows/research-v2-tests.yml'
+  pull_request:
+    paths:
+      - 'server/research-v2.js'
+      - 'server/research-v2.test.js'
+      - '.github/workflows/research-v2-tests.yml'
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax
+        run: node --check server/research-v2.js && node --check server/research-v2.test.js
+      - name: Research integrity tests
+        run: node --test server/research-v2.test.js
