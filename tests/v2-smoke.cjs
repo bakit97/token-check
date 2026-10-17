@@ -57,7 +57,7 @@ test('JS синтаксис и загрузка настоящего режим�
   // Deferred loading completes while the VM is still alive.
   vm.runInNewContext(js,sandbox,{timeout:2000});
   await new Promise(resolve=>setTimeout(resolve,40));
-  assert.match(fakeNode('dataState').textContent,/загружено: 1/);
+  assert.match(fakeNode('dataState').textContent,/устаревший поток 1 записей/);
   assert.match(fakeNode('coinList').innerHTML,/Тестовая монета/);
   assert.equal(fakeNode('admitCount').textContent,'1');
   assert.equal(fakeNode('visibleCount').textContent,'1');
