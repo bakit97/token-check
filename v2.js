@@ -44,7 +44,7 @@ function safeImg(src){try{var u=new URL(src);return u.protocol==='https:'?u.href
 function dataMetrics(c,cutoff){
   var data=(c.ds||[]).filter(function(d){return Number(d[0])*1000<=cutoff}).sort(function(a,b){return a[0]-b[0]});
   var d=data.length&&cutoff-Number(data[data.length-1][0])*1000<=7*60000?data[data.length-1]:null;
-  var bx=c.bx&&c.bx.cov&&c.bx.at<=cutoff?c.bx:null;
+  var bx=c.bx&&c.bx.cov&&c.bx.at<=cutoff&&cutoff-c.bx.at<=7*60000?c.bx:null;
   var gx=(c.gx||[]).filter(function(x){var t=Number(x[0])*1000;return Number.isFinite(t)&&t<=cutoff&&cutoff-t<=7*60000}).sort(function(a,b){return a[0]-b[0]}).at(-1);
   function num(v){return v==null?null:Number.isFinite(+v)?+v:null}
   return {buyers:num(gx&&gx[3]!=null?gx[3]:bx?bx.payers:null),
