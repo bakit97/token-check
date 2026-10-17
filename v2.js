@@ -444,7 +444,7 @@ function renderR1(){
       '% · простой ≤'+cfg.maxIdle+' мин. Размечено живых: '+a+
       '/100. Ожидают окончания наблюдения: '+(p['not-yet-finished']||0)+
       ', недостаточно данных: '+(p['insufficient-activity-coverage']||0)+
-      '. Автоподбор правил пока не запущен.';
+      '. Автоподбор: требуется не меньше 100 живых и 40 мёртвых в обучении, затем отдельные 100 на поздней проверке.';
     if(autoOne){
       const text=autoOne.status==='rolling-holdout-ready'?
         'Есть отдельная проверочная выборка '+fmt(autoOne.validation.total)+' монет.':
