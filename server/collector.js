@@ -501,9 +501,24 @@ function dsDue(c,now){
 }
 function dsEntry(p,at){return[Math.round(at/1000),+(+p.priceUsd||0).toPrecision(6),p.liquidity?.usd!=null?Math.round(p.liquidity.usd):null,p.marketCap||p.fdv||null,
   p.txns?.m5?.buys??null,p.txns?.m5?.sells??null,p.volume?.m5!=null?Math.round(p.volume.m5):null,p.txns?.h1?.buys??null,p.txns?.h1?.sells??null,p.volume?.h1!=null?Math.round(p.volume.h1):null]}
+// First-level decisions have a 1–30 minute deadline. The regular
+// two-minute export is too slow for short windows. Evaluate promptly after
+// fresh market snapshots and publish on the next normal upload cycle.
+let passObservationTimer=null,lastPassObservationAt=0;
+function schedulePassOnObservation(){
+  if(!PASS_V2||!SOURCE||!PASS_V2.config.enabled||passObservationTimer)return;
+  const delay=Math.max(80,8000-(Date.now()-lastPassObservationAt));
+  passObservationTimer=setTimeout(()=>{
+    passObservationTimer=null;lastPassObservationAt=Date.now();
+    try{PASS_V2.update({source:SOURCE,coins:C,now:lastPassObservationAt})}
+    catch(e){PASS_ERR=e.message;err('pass observation '+e.message)}
+  },delay);
+}
 function dsApply(c,p,at){const e=dsEntry(p,at);
   if(observedEligible(c)){(c.ds=c.ds||[]).push(e);if(c.ds.length>520)c.ds.splice(130,1)}else c.ds=[e];
-  if((e[4]||0)+(e[5]||0)>0)c.lastTrade=at;else if((e[7]||0)+(e[8]||0)>0&&!c.lastTrade)c.lastTrade=at-30*60e3}
+  if((e[4]||0)+(e[5]||0)>0)c.lastTrade=at;else if((e[7]||0)+(e[8]||0)>0&&!c.lastTrade)c.lastTrade=at-30*60e3;
+  if(observedEligible(c))schedulePassOnObservation();
+}
 // сведения о монете (имя, соцсети, когда родилась на кривой) — по адресу монеты
 function dsTokenInfo(c,arr,at){if(!arr.length)return;
   if(!c.n&&arr[0].baseToken){c.n=(arr[0].baseToken.name||'').slice(0,40);c.s=(arr[0].baseToken.symbol||'').slice(0,16)}
