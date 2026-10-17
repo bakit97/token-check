@@ -60,6 +60,9 @@ class ResearchTwoRuntime {
     if(!dir)throw TypeError('Research-two directory required');
     fs.mkdirSync(dir,{recursive:true});
     this.file=path.join(dir,bankName);
+    this.journalFile=this.file+'.journal';
+    this.journalCount=0;
+    this.compactedAt=Date.now();
     this.cohortStart=cohortStart;
     this.config=configOf(config);
     this.rows=[];
@@ -84,11 +87,71 @@ class ResearchTwoRuntime {
           this.processed.set(pair[0],pair[1]);
       for(const row of this.rows)this.processed.set(row.mint,row.zeroAt);
     }
+    this._replayJournal();
+  }
+  _replayJournal(){
+    if(!fs.existsSync(this.journalFile))return;
+    const buf=fs.readFileSync(this.journalFile);
+    if(!buf.length)return;
+    const last=buf.lastIndexOf(10),complete=last<0?Buffer.alloc(0):buf.subarray(0,last+1);
+    if(last<buf.length-1){
+      // A torn final record is not committed. Keep a forensic backup.
+      const fragment=buf.subarray(last+1),backup=this.journalFile+'.partial-'+Date.now();
+      const backupFd=fs.openSync(backup,'wx',0o600);
+      try{fs.writeSync(backupFd,fragment);fs.fsyncSync(backupFd)}
+      finally{fs.closeSync(backupFd)}
+      const fd=fs.openSync(this.journalFile,'r+');
+      try{fs.ftruncateSync(fd,complete.length);fs.fsyncSync(fd)}
+      finally{fs.closeSync(fd)}
+      const dirFd=fs.openSync(path.dirname(this.journalFile),'r');
+      try{fs.fsyncSync(dirFd)}finally{fs.closeSync(dirFd)}
+    }
+    const additions=[];
+    for(const line of complete.toString('utf8').split('\n')){
+      if(!line)continue;
+      let row;
+      try{row=JSON.parse(line)}catch{throw Error('Invalid committed second-level journal JSON')}
+      if(!row||typeof row.mint!=='string'||!Number.isSafeInteger(row.zeroAt)||
+         !['strong','weak'].includes(row.label)||!Number.isFinite(row.pctAbove)||
+         !row.features||typeof row.features!=='object')
+        throw Error('Malformed committed second-level journal row');
+      if(this.processed.has(row.mint)){
+        if(this.processed.get(row.mint)!==row.zeroAt)
+          throw Error('Conflicting duplicate second-level mint');
+        continue;
+      }
+      this.processed.set(row.mint,row.zeroAt);
+      additions.push(row);
+    }
+    if(additions.length)
+      this.rows=capBank(this.rows.concat(additions),r=>r.label,'strong','weak',MAX_PER_CLASS);
+    this.journalCount=complete.toString('utf8').split('\n').length-1;
+  }
+  _appendJournal(rows){
+    if(!rows.length)return;
+    const buf=Buffer.from(rows.map(row=>JSON.stringify(row)+'\n').join(''));
+    const fd=fs.openSync(this.journalFile,'a',0o600);
+    try{
+      let offset=0;
+      while(offset<buf.length)offset+=fs.writeSync(fd,buf,offset,buf.length-offset);
+      fs.fsyncSync(fd);
+    }finally{fs.closeSync(fd)}
+  }
+  _compact(now){
+    durableJSON(this.file,{
+      schema:1,rows:this.rows,processed:[...this.processed],updated:now
+    });
+    // Snapshot contains the entire durable journal. A crash between rename
+    // and truncate is safe: replay skips rows already in processed.
+    const fd=fs.openSync(this.journalFile,'a+');
+    try{fs.ftruncateSync(fd,0);fs.fsyncSync(fd)}
+    finally{fs.closeSync(fd)}
+    this.journalCount=0;this.compactedAt=now;
   }
   update({passes,coins,now=Date.now()}={}){
     if(!passes?.records||!coins?.get)throw TypeError('Need verified pass journal and candidate map');
     let added=0,attempted=0,considered=0;
-    const pending={};
+    const pending={},newRows=[];
     for(const pass of passes.records.values()){
       if(!pass||pass.firstSeenAt<this.cohortStart||this.processed.has(pass.mint)||now-pass.zeroAt>FRESH||
          now<pass.zeroAt)continue;
@@ -125,7 +188,7 @@ class ResearchTwoRuntime {
       const F=featuresAt(coin,pass.zeroAt);
       const secondLevelMatches=(pass.secondLevelRules||[])
         .filter(f=>evaluation(F,f)==='pass').map(f=>({...f}));
-      this.rows.push({
+      newRows.push({
         mint:pass.mint,phase:pass.phase,acceptedAt:pass.acceptedAt,
         firstSeenAt:pass.firstSeenAt,zeroAt:pass.zeroAt,
         configHash:pass.configHash,sourceFilterVersions:pass.matches.map(f=>({
@@ -138,7 +201,7 @@ class ResearchTwoRuntime {
         threshold:this.config.minAbove,coverageThreshold:this.config.minCoverage,
         time:pass.zeroAt
       });
-      this.processed.set(pass.mint,pass.zeroAt);
+      // Processed is updated only after the complete batch is fsynced.
       added++;
     }
     for(const [mint,zeroAt] of this.processed)
@@ -146,8 +209,14 @@ class ResearchTwoRuntime {
     for(const [mint,last] of this.retry)
       if(now-last.zeroAt>FRESH)this.retry.delete(mint);
     if(added){
-      this.rows=capBank(this.rows,r=>r.label,'strong','weak',MAX_PER_CLASS);
-      durableJSON(this.file,{schema:1,rows:this.rows,processed:[...this.processed],updated:now});
+      this._appendJournal(newRows);
+      for(const row of newRows)this.processed.set(row.mint,row.zeroAt);
+      this.rows=capBank(this.rows.concat(newRows),r=>r.label,'strong','weak',MAX_PER_CLASS);
+      this.journalCount+=newRows.length;
+      // Persist expensive full snapshots rarely instead of writing several
+      // megabytes every two-minute heartbeat.
+      if(this.journalCount>=250||now-this.compactedAt>=6*HOUR)
+        this._compact(now);
     }
     this.pending=pending;this.lastAt=now;
     return {added,considered,attempted,maxChecksPerRun:MAX_CHECKS,...this.summary()};
