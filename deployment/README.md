@@ -44,7 +44,7 @@ Actual steps performed, in order:
 The ledger starts conservatively at **185,000 estimated used credits**: owner's
 174,302 checkpoint plus allowance for measured recovery traffic. This is not a
 fresh Helius invoice reading. Existing ledger survives every code restart.
-WS intentionally pauses when the shared budget is unavailable. Deferrals remain
+The old shared-socket pause was removed by the October 18 correction below. DBC/LaunchLab are never disconnected by budgeting; only the independent Pump pre socket can pause on its own stream quota. Deferrals remain
 unknown observations, never fabricated successful proof or zero activity.
 At twenty credits/minute, every launch cannot be proved. In-flight WS traffic
 can still have a bounded metering lag; inspect actual counters after changes.
@@ -56,7 +56,7 @@ legacy exports still prevent a claim that the complete service is free-only.
 Next is a complete observation contract and controlled cutover, not deletion
 of the old feeds while their observations are still needed.
 
-## Live verification checkpoint
+## Earlier recovery verification checkpoint
 
 Final collector generation: `1792263193310124`.
 At **2026-10-17 19:00:18 UTC / 2026-10-18 00:00:18 UTC+5**, status was three
@@ -76,3 +76,58 @@ below 400 MB. The 311 MB sample is observed behavior, not a hard RSS guarantee.
 GCS write/read totals, Billing and 24-hour stability remain unverified. No
 legacy observation feed is disabled, no old result is imported into new work,
 and migration/deletion remains gated by the observation contract audit.
+
+## October 18: restore migration coverage and pool observations
+
+The owner reported that the earlier governor was over-restrictive. Applied and
+verified incrementally (modules first, collector last, generation leases):
+
+1. `1792264882753488`: independent migration/pre sockets; DBC and LaunchLab
+   subscription acknowledgements both true while pre paused; 13.6384 estimated
+   credits in the observed minute. Removed the 5,000-message migration kill switch.
+2. `1792265164974018`: batched pool/vault reads, real balance success timestamps,
+   retained raw state on second-batch deferral, fair observation rotation and
+   per-source skipped/deferred counters. Live: 978/978 current pools, none due,
+   15.80224 credits/minute. Linux CI passed for `bb880eb`.
+3. `1792265389636327`: reserves account for credits already spent by each lane,
+   preventing a pool/proof scheduling deadlock. Live: 970/970 current pools,
+   17.6384 estimated credits/minute; 15 migration RPC credits and 1 pool RPC credit
+   in that minute, both migration subscriptions acknowledged.
+4. Final generation is in the manifest. Retain hourly reconciliation batches
+   until processed, clear abandoned in-flight locks on load, and continue a
+   partial proof before its five-minute cached responses expire.
+
+The target is 18 combined estimated credits/minute, still reduced by remaining
+monthly allowance. Migration proof and hourly reconciliation retain priority,
+with four credits/minute reserved for due pool work. Pools reserve eleven
+credits for pending proofs; unused reservations are borrowable once queues are
+empty. Holder and pre RPC each have a 60-credit hourly cap. Pre stream has its
+own 1.5-credit rolling-minute / 60-credit rolling-hour allowance. DBC/LaunchLab
+stream metering never closes their connection. No PumpSwap stream was added.
+
+Pool/vault observations: five-minute cadence before age two hours, then thirty
+minutes through the 24-hour observation horizon. Up to 33 pools per batch (99
+keys when vaults are known); unknown vaults are discovered in one extra batch,
+not separate RPCs per coin. Validate token mints before committing balances.
+`raw[minute].at/slot` describe the pool read; `vaultAt/vaultSlot` describe the
+possibly later vault read. `lqAt` advances only after two actual vault balances.
+
+`status.json` exposes:
+- `ws.connected.dbc/ll`, `ws.preOn/preBudgetPauses/preGapCurrentMs`;
+- `resources.helius.lanes` minute/hour costs and `sources` deferred RPC attempts;
+- `budgetEvents.sources`: unique pending/expired migrations, retained hourly
+  reconciliation work, missed budget-limited raw/holder observation windows;
+- `budgetEvents.pre`: known discarded creates and pause duration. Unreceived
+  events during a disconnected pre interval are unknown (`null`), never zero;
+- `poolObservations`: eligible/current/overdue pools and historical raw misses.
+
+Full live candidate detection is distinct from completing all archival proofs.
+A retained proof backlog remains and is visible. The 5,000+ historical missed
+raw windows cannot be reconstructed as contemporaneous observations. Current
+coverage is a point-in-time measurement, not proof of uninterrupted 24-hour
+coverage. Ledger accounting remains an estimate, not a Helius invoice.
+
+Recovery regression suite: 27 passed, 1 intentional GCS-only skip on Windows.
+Tests cover 6,001 migration messages with an exhausted pre quota, bounded batches,
+missing vaults, partial read deferral, restart locks, and retained reconciliation.
+No legacy UI, observations, owner settings or machine/disk sizes were removed.

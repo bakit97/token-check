@@ -1,3 +1,26 @@
+# Latest correction — 2026-10-18 (UTC+5)
+
+Owner requested migration coverage and meaningful pool observations over the
+previous overly restrictive shared governor. DBC/LaunchLab now have a dedicated
+always-reconnecting socket; budgeting never closes it. Only the separate Pump
+pre channel pauses on its own stream share. No PumpSwap subscription was added.
+Proof/reconciliation and pool work have non-starving reserved capacity, with
+holders/pre last. Target 18 estimated combined credits/minute. See
+`deployment/README.md` and the manifest for exact staged code and generations.
+
+Live intermediate verification: 978/978 then 970/970 current pool/vault snapshots,
+no overdue pools; 15.80224 then 17.6384 estimated credits/minute; both DBC and
+LaunchLab subscriptions acknowledged. These counts naturally change with the
+24-hour observation window. Pending migration proofs remain; detection coverage
+must not be confused with completed proof coverage. Per-source pending/skipped
+counters and pre pause gaps are in status. Historical missing raw windows stay
+missing, with no invented timestamps. Legacy day/obs/raw remain enabled.
+
+Final fixes also retain deferred hourly-reconciliation batches, clear old process
+locks on restart, and prioritize continuation of partially paid migration proofs.
+Recovery-focused regression: 27 passed / 1 intentional multipart-GCS skip.
+The earlier recovery record below is historical and is superseded by this section.
+
 # UPDATE — owner-approved staged production recovery, 2026-10-18 (UTC+5)
 
 This update supersedes the older statement below that production was untouched.

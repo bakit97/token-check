@@ -30,15 +30,20 @@ new dashboard checkpoint (preserving other fields), then restart. Do not delete
 the ledger: that would forget reservations and GCS operations.
 
 `HELIUS_CREDITS_PER_MINUTE` can lower, never raise, the 20-credit ceiling.
-Current and previous minute bins conservatively enforce a sliding limit;
-an hourly allowance and 3% monthly headroom also apply. Future allowable rate
-depends on the estimated remaining credits and time to reset. Background work
-receives at most 30% of the available minute allowance and stops when the
-observed forecast exceeds the monthly limit. Recent candidate proofs retain
-priority. Background liquidity polling runs at most every five minutes;
-curve sweeps run every ten minutes. Immutable proof responses are cached for
-five minutes with a 128-entry cap so partially completed migration checks can
-progress without paying for the same archival response again.
+The combined operational target is 18 credits/minute, capped by the remaining
+monthly allowance. Second-resolution rolling accounting expires a charge after
+60 seconds; it no longer counts both a current and a previous whole-minute bin.
+Migration proofs/reconciliation and due pool batches have reserved capacity that
+accounts for each lane's already-spent credits. Holders and pre use spare capacity
+with independent hourly caps. Pool/vault cadence is 5 minutes during the first
+2 hours, then 30 minutes through the observation horizon.
+
+DBC/LaunchLab run on a dedicated socket with no budget disconnection. Pump pre
+uses a separate socket and only its own stream quota pauses it. RPC shortage is
+reported and leaves migration candidates/reconciliation batches pending. The
+status separates deferred RPC attempts, pending unique events, known pre losses
+and unknown events during pre disconnection. See the recovery record for exact
+lane caps, actual deployed generations and live coverage measurements.
 
 At this budget, proving every new Pump launch is **not possible**: one
 transaction proof alone costs 10 credits. Budget deferrals and capacity drops

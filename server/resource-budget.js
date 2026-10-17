@@ -11,7 +11,7 @@ class ResourceBudget{
   constructor({dir,now=Date.now,env=process.env}={}){
     this.now=now;this.file=path.join(dir,'resource-budget.json');
     this.limit=1000000;this.perMinute=Math.min(20,Number(env.HELIUS_CREDITS_PER_MINUTE||20));
-    this.wsPerMB=20;this.wsAllowance={};this.target=Math.min(18,this.perMinute);
+    this.wsPerMB=20;this.wsAllowance={};this.target=Math.min(18,this.perMinute);this.migrationPending=true;this.poolsPending=true;
     const at=now();this.state={schema:1,used:Number(env.HELIUS_USED_CREDITS||174302),
       resetAt:Date.parse(env.HELIUS_RESET_AT||'2026-11-14T00:00:00Z'),
       baselineCredits:Number(env.HELIUS_USED_CREDITS||174302),since:at,buckets:[],gcsMonth:new Date(at).toISOString().slice(0,7),
@@ -42,7 +42,7 @@ class ResourceBudget{
       allocation:{migration:'first; 4 credits/min reserved for pools',pools:'batched, 5 min before 2h / 30 min thereafter',holdersCreditsHour:60,preCreditsHour:60,preWSCreditsHour:60},
       projectedAtReset:Math.ceil(this.state.used+observed*remainingMinutes),
       overForecast:this.state.used+observed*remainingMinutes>this.limit,
-      reconcileCreditsHour:this.state.reconcileSpent,resetRequired:this.now()>=this.state.resetAt,deferred:this.state.deferred};}
+      lanes:Object.fromEntries(['migration','reconcile','pools','holders','metadata','pre'].map(lane=>[lane,{creditsMinute:this.laneTotal(lane,MIN),creditsHour:this.laneTotal(lane)}])),pending:{migration:this.migrationPending,pools:this.poolsPending},reconcileCreditsHour:this.laneTotal('reconcile'),resetRequired:this.now()>=this.state.resetAt,deferred:this.state.deferred};}
   lane(priority){return typeof priority==='string'?priority:priority===0?'migration':priority===1?'metadata':priority===3?'reconcile':'background'}
   source(name){return this.state.sources[name]||(this.state.sources[name]={rpcCredits:0,wsCredits:0,budgetDeferredAttempts:0})}
   deferred(source){this.state.deferred++;this.source(source).budgetDeferredAttempts++}
@@ -50,7 +50,9 @@ class ResourceBudget{
   allow(cost,priority=0){const lane=this.lane(priority),m=this.totals(MIN),h=this.totals(60*MIN),rate=Math.min(this.target,this.rate());
     // Migration stream never disconnects. Leave metering headroom and a pool reserve.
     const ceiling=Math.max(0,rate-.75),total=m.rpc+m.ws;
-    const cap=lane==='pools'?ceiling:Math.max(0,ceiling-4);
+    const proofReserve=this.migrationPending?Math.max(0,11-this.laneTotal('migration',MIN)-this.laneTotal('reconcile',MIN)):0;
+    const poolReserve=this.poolsPending?Math.max(0,4-this.laneTotal('pools',MIN)):0;
+    const cap=Math.max(0,ceiling-(lane==='migration'||lane==='reconcile'?poolReserve:lane==='pools'?proofReserve:proofReserve+poolReserve));
     const hourly={metadata:60,holders:60,pre:60,background:30,reconcile:65}[lane]??Infinity;
     return this.state.used+cost<=this.limit&&rate>0&&total+cost<=cap&&h.rpc+h.ws+cost<=rate*60&&this.laneTotal(lane)+cost<=hourly;
   }

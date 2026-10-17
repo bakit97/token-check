@@ -19,11 +19,23 @@ test('rolling minute releases credits after sixty seconds, not two minutes; rest
 
 test('proof traffic leaves pool capacity, while holder and pre quotas cannot consume it',t=>{
   const f=fixture(t),b=new ResourceBudget(f);b.reserveRPC('getTransaction','migration');
-  for(let i=0;i<3;i++)b.reserveRPC('getMultipleAccounts','holders');
+  for(let i=0;i<2;i++)b.reserveRPC('getMultipleAccounts','holders');
   assert.throws(()=>b.reserveRPC('getAccountInfo','pre'),{code:'BUDGET_DEFERRED'});
   for(let i=0;i<4;i++)b.reserveRPC('getMultipleAccounts','pools');
+  b.reserveRPC('getAccountInfo','migration');
   assert.throws(()=>b.reserveRPC('getMultipleAccounts','pools'),{code:'BUDGET_DEFERRED'});
   assert.equal(b.summary().creditsMinute,17);
+});
+
+test('pools already consuming their reserve do not block the next ten-credit migration proof',t=>{
+ const f=fixture(t),b=new ResourceBudget(f);
+ for(let i=0;i<5;i++)b.reserveRPC('getMultipleAccounts','pools');
+ b.reserveRPC('getAccountInfo','migration');b.reserveRPC('getTransaction','migration');
+ b.reserveRPC('getMultipleAccounts','pools');assert.equal(b.summary().creditsMinute,17);
+});
+test('unused migration and pool reserves become available to pre when their queues are empty',t=>{
+ const f=fixture(t),b=new ResourceBudget(f);b.migrationPending=false;b.poolsPending=false;
+ b.reserveRPC('getTransaction','pre');assert.equal(b.summary().sources.pre.rpcCredits,10);
 });
 
 test('migration WS stays enabled at exhausted RPC/pre budgets; only own pre stream share pauses pre',t=>{
