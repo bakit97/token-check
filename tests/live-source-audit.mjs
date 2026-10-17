@@ -34,6 +34,7 @@ for(const coin of today.coins||[]){
   if(sample.length<6&&coin.phase==='before')sample.push({
     mint:coin.a,minutes:+minutes.toFixed(2),family:coin.family,tx:coin.proofSig});
 }
+check(st.day===today.day,'daily source day mismatch');
 check(st.today===today.count,'daily main source count != archive count');
 check(today.coins?.length===today.count,'archive count mismatch');
 check(counts.before===st.todayBefore,'daily before count mismatch');
@@ -42,7 +43,7 @@ if(live.coins){check(live.coins.length<=200,'latest feed too large');}
 if(st.mode==='verified-pre-post') {
   check(Number.isFinite(pre.logs),'pre raw logs metrics unavailable');
   check(Number.isFinite(pre.createLogs),'pre create metrics unavailable');
-  check(pre.accepted===0||counts.before>0,'pre accepted >0 but daily source has none (check midnight boundary)');
+  // Counters cover the process lifespan and may span midnight; do not compare to today's totals.
 }
 console.log(JSON.stringify({runAt:new Date().toISOString(),day,
   mode:st.mode,preConnected:st.preConnected,
