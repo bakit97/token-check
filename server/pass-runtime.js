@@ -7,7 +7,8 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const {featuresAt,evaluation}=require('./research-v2');
 
-const MIN=60000,WINDOW=72*60*MIN;
+const MIN=60000,WINDOW=72*60*MIN,TZ=5*3600000;
+function kzDay(at){return new Date(at+TZ).toISOString().slice(0,10)}
 const KEYS=new Set(['buyers','trades','volume','liq','mc','buys','sells','buySellRatio']);
 const PHASES=new Set(['before','after']);
 
@@ -58,7 +59,11 @@ class PassRuntime {
   constructor({dir,config}={}){
     if(!dir)throw new TypeError('Pass journal directory required');
     fs.mkdirSync(dir,{recursive:true});
-    this.file=path.join(dir,'pass-v2.journal');
+    // One append-only file per Kazakhstan day: bounded startup replay while
+    // retaining historical journals independently of the in-memory 72h view.
+    this.file=path.join(dir,'pass-v2.journal'); // legacy single-file format
+    this.journalDir=path.join(dir,'pass-v2-journal');
+    fs.mkdirSync(this.journalDir,{recursive:true});
     this.activationFile=path.join(dir,'pass-v2-activation.json');
     this.records=new Map();
     this.config=null;this.configHash='';
@@ -67,16 +72,46 @@ class PassRuntime {
     });
     this.updated=null;
     this.appended=0;
-    if(fs.existsSync(this.file)){
-      const bytes=fs.readFileSync(this.file,'utf8');
-      // Torn journal writes are considered an error; never guess the tail.
-      if(bytes&&!bytes.endsWith('\n'))throw Error('Truncated pass journal');
-      for(const line of bytes.split('\n')){
-        if(!line)continue;
-        const row=JSON.parse(line);
-        if(!isEvent(row))throw Error('Malformed pass journal row');
-        if(row.acceptedAt>=Date.now()-WINDOW)this.records.set(row.mint,row);
-      }
+    // Always replay and recover the single old-format file if present.
+    // Recent daily shards are replayed chronologically; older files persist
+    // on disk without consuming memory or startup time.
+    if(fs.existsSync(this.file))this._replayFile(this.file);
+    const dayLimit=kzDay(Date.now()-WINDOW-40*MIN);
+    for(const name of fs.readdirSync(this.journalDir).sort()){
+      if(!/^pass-[0-9]{4}-[0-9]{2}-[0-9]{2}\.jsonl$/.test(name)||
+         name.slice(5,15)<dayLimit)continue;
+      this._replayFile(path.join(this.journalDir,name));
+    }
+  }
+  _replayFile(file){
+    const buf=fs.readFileSync(file);
+    if(!buf.length)return;
+    const last=buf.lastIndexOf(10); // full JSONL records end with LF
+    const complete=last<0?Buffer.alloc(0):buf.subarray(0,last+1);
+    if(last<buf.length-1){
+      // Only a partial tail from a crash may be discarded. Preserve bytes
+      // separately for diagnosis; never fabricate or accept that record.
+      const partial=buf.subarray(last+1);
+      const backup=file+'.partial-'+Date.now();
+      const fd=fs.openSync(backup,'wx',0o600);
+      try{fs.writeSync(fd,partial);fs.fsyncSync(fd)}
+      finally{fs.closeSync(fd)}
+      const journal=fs.openSync(file,'r+');
+      try{fs.ftruncateSync(journal,complete.length);fs.fsyncSync(journal)}
+      finally{fs.closeSync(journal)}
+      const dir=fs.openSync(path.dirname(file),'r');
+      try{fs.fsyncSync(dir)}finally{fs.closeSync(dir)}
+    }
+    for(const line of complete.toString('utf8').split('\n')){
+      if(!line)continue;
+      let item;
+      try{item=JSON.parse(line)}
+      catch{throw Error('Malformed committed pass journal JSON: '+path.basename(file))}
+      if(!isEvent(item))throw Error('Malformed committed pass journal row: '+path.basename(file));
+      const old=this.records.get(item.mint);
+      if(old&&(old.acceptedAt!==item.acceptedAt||old.firstSeenAt!==item.firstSeenAt))
+        throw Error('Conflicting duplicate mint in pass journal: '+item.mint);
+      if(item.acceptedAt>=Date.now()-WINDOW)this.records.set(item.mint,Object.freeze(item));
     }
   }
   applyConfig(raw){
@@ -117,7 +152,8 @@ class PassRuntime {
   }
   _append(item){
     // A signal is visible in RAM only after it is committed to stable storage.
-    const fd=fs.openSync(this.file,'a',0o600);
+    const file=path.join(this.journalDir,'pass-'+kzDay(item.firstSeenAt)+'.jsonl');
+    const fd=fs.openSync(file,'a',0o600);
     try {
       const buf=Buffer.from(JSON.stringify(item)+'\n');
       let offset=0;
@@ -189,8 +225,7 @@ class PassRuntime {
   latest(limit=200){return [...this.records.values()].sort((a,b)=>b.firstSeenAt-a.firstSeenAt).slice(0,limit)}
   day(dayKey){
     if(!/^\d{4}-\d{2}-\d{2}$/.test(dayKey))throw TypeError('Invalid day');
-    const tz=5*3600000;
-    return [...this.records.values()].filter(x=>new Date(x.firstSeenAt+tz).toISOString().slice(0,10)===dayKey)
+    return [...this.records.values()].filter(x=>kzDay(x.firstSeenAt)===dayKey)
       .sort((a,b)=>b.firstSeenAt-a.firstSeenAt);
   }
 }
