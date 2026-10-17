@@ -32,8 +32,7 @@ async function audit(){
  const [root,source,one,pass,two,polygon,auto1,auto2]=await Promise.all([
    'status.json','source/status.json','research-v2/status.json','passed-v2/status.json',
    'research-v2/status-two.json','research-v2/polygon-2.json',
-   'research-v2/auto-1.json','research-v2/auto-2.json'].map(read)
- ]);
+   'research-v2/auto-1.json','research-v2/auto-2.json'].map(read));
  // A disabled owner configuration is a healthy engine, not a trading signal.
  // But the observational paths must still be available and consistent.
  if(one.counts.live+one.counts.dead<0||
