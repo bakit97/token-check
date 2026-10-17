@@ -25,7 +25,7 @@ var bank=Object.assign({'1':[],'2':[]},loadLocal(BANK,{'1':[],'2':[]}));
 for(var lv of ['1','2'])if(!Array.isArray(bank[lv]))bank[lv]=[];
 var dataset=[],status=null,dataErr='',loadedAt=0,picker=null,editorId=null,lastPassed=[],lastR1=[],lastR2=[],lastAccepted=[],lastVisible=[],testHtml='',lastBankWrite=0,lastResearchBankRead=0,researchMeta=null,researchServerBank=false,fetching=false,sourceActive=false,sourceMeta=null,sourceRecords=[];
 var serverPassActive=false,serverPassRows=[],passMeta=null,serverR2Active=false,serverR2Rows=[],twoMeta=null,autoOne=null,autoTwo=null,lastSecondBankRead=0;
-var controlEndpoint=null,serverR2Curve=null;
+var controlEndpoint=null,serverR2Curve=null,filterAuditMeta=null;
 var moduleDraft=new Map();
 function draftModuleKey(m){return m.phase+':'+m.level+':'+m.filterId}
 var phaseNames={before:'🌱 До миграции',after:'🎓 После миграции'};
@@ -586,18 +586,23 @@ function refresh(){
   renderAll();renderServerModules();renderModules();renderPassed();renderR1();renderR2();renderLibrary();
 }
 function preparedServerConfig(){
-  const enabled=s.modules.filter(function(m){return m.enabled});
-  const usedIds=new Set(enabled.map(function(m){return m.filterId}));
-  const filters=s.filters.filter(function(f){return usedIds.has(f.id)}).map(function(f){
+  // Include all library definitions so the server can evaluate background
+  // performance of disabled but configured modules. Only enabled level-1
+  // modules are permitted to add new first-level Passed records.
+  if(s.filters.length>200||s.modules.length>200){
+    note('Слишком много модулей/фильтров: максимум 200 в серверной версии');
+    return null;
+  }
+  const filters=s.filters.map(function(f){
     return {id:String(f.id),name:String(f.name),level:String(f.level),
       key:f.key,op:f.op,value:Number(f.value),version:Number(f.version)};
   });
-  const enabledIds=new Set(filters.map(function(f){return f.id}));
-  const modules=enabled.filter(function(m){return enabledIds.has(m.filterId)})
+  const ids=new Set(filters.map(function(f){return f.id}));
+  const modules=s.modules.filter(function(m){return ids.has(m.filterId)})
     .map(function(m){return {
-      filterId:m.filterId,phase:m.phase,level:m.level,enabled:true
+      filterId:m.filterId,phase:m.phase,level:m.level,enabled:!!m.enabled
     }});
-  if(!modules.some(function(m){return m.level==='1'})){
+  if(!modules.some(function(m){return m.level==='1'&&m.enabled})){
     note('Нужен хотя бы один подтверждённый активный модуль 1-го уровня');
     return null;
   }
@@ -875,7 +880,7 @@ async function load(){
     'passed-v2/day/'+today+'.json','passed-v2/day/'+yesterday+'.json',
     'research-v2/status-two.json','research-v2/polygon-2.json',
     'research-v2/auto-1.json','research-v2/auto-2.json','control/endpoint.json',
-    'research-v2/curve-two.json'];
+    'research-v2/curve-two.json','research-v2/filter-audit.json'];
   var fetched=await Promise.allSettled(names.map(function(name,i){
     if(i===11&&lastResearchBankRead&&now()-lastResearchBankRead<300000)return Promise.resolve(null);
     if(i===17&&lastSecondBankRead&&now()-lastSecondBankRead<300000)return Promise.resolve(null);
@@ -889,7 +894,7 @@ async function load(){
     sourceActive=false;sourceMeta=null;sourceRecords=[];
     researchMeta=null;researchServerBank=false;bank['1']=[];
     serverPassActive=false;serverPassRows=[];passMeta=null;
-    serverR2Active=false;serverR2Rows=[];serverR2Curve=null;twoMeta=null;autoOne=null;autoTwo=null;bank['2']=[];
+    serverR2Active=false;serverR2Rows=[];serverR2Curve=null;twoMeta=null;autoOne=null;filterAuditMeta=null;bank['2']=[];
     lastAccepted=[];lastVisible=[];lastPassed=[];
     renderAll();renderPassed();renderR1();renderLibrary();
     dataErr=errors.length?String(errors[0].reason):'Сервер пока не опубликовал данные';
@@ -989,6 +994,8 @@ async function load(){
     now()-vals[18].updated<40*60000?vals[18]:null;
   autoTwo=vals[19]&&Number.isFinite(vals[19].updated)&&
     now()-vals[19].updated<40*60000?vals[19]:null;
+  filterAuditMeta=vals[22]&&vals[22].origin==='server-observational-analytics'&&
+    Number.isFinite(vals[22].updated)&&now()-vals[22].updated<40*60000?vals[22]:null;
   sourceActive=false;sourceMeta=null;sourceRecords=[];
   $('ageBefore').disabled=true;$('ageAfter').disabled=true;
   $('publishSourceAge').disabled=true;
