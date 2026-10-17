@@ -66,6 +66,7 @@
 <section class="page" id="p-r2" hidden>
 <h1>Исследование 2-го уровня</h1><p class="muted">Источник: «Прошли». Одна общая кривая, точка 0 — окончание таймера решения, следующие 300 минут — только для оценки результата.</p>
 <div class="chips" id="r2Streams"><button class="active" data-stream="after">🎓 После</button><button data-stream="before">🌱 До</button></div>
+<div class="card"><div class="row"><h2>Фильтры второго уровня</h2><span class="badge">После «Прошли»</span></div><div id="r2Matched" class="muted">Ожидание размеченных монет серверного второго уровня.</div><p class="hint">Условия фиксируются при появлении монеты в «Прошли» и считаются по данным не позже точки 0. Они не добавляют новых монет в главный источник и не меняют старые сигналы.</p></div>
 <div class="card"><h2>Среднее изменение цены</h2><div id="r2Graph" class="graph"><div class="empty-state">Ожидание полной пятчасовой истории после точки 0</div></div>
 <div class="row" style="margin-top:12px"><span class="muted">Шаг таблицы</span><select id="r2Step" class="input" style="width:135px"><option value="5">5 минут</option><option value="1">1 минута</option><option value="10">10 минут</option><option value="15">15 минут</option><option value="30">30 минут</option><option value="60">60 минут</option></select></div>
 <div class="tablewrap"><table><thead><tr><th>Мин от 0</th><th>Средняя цена</th><th>Монет с данными</th></tr></thead><tbody id="r2Table"></tbody></table></div>
@@ -98,5 +99,5 @@
 <p id="toast" role="status" aria-live="polite"></p>
 <footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — разделены серверные записи и локальные черновики; неполные наблюдения не выдаются за результат. <a href="./classic.html">Открыть прежний сайт</a></footer>
 </main>
-<script src="./v2.js?v=20261017-13" defer></script>
+<script src="./v2.js?v=20261017-14" defer></script>
 </body></html>
