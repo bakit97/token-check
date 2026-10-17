@@ -1,7 +1,5 @@
 {
   "baseCommit": "48cb0f8621e3a822cc65e0a7c23ba485ad3a574e",
-  "stage": "completed-observation-compaction",
-  "generation": "1792280521161570",
   "files": {
     "collector.js": "b7c1a3a41c1651225e146dfb9ef429bc848a5727806d2de4f7c3a7703f252a67",
     "resource-budget.js": "9cac006866b307f0c6c19915afadba1ac7e6957eab7b78ea11d97271ae9fdd6f",
@@ -9,15 +7,6 @@
     "runtime-health.js": "001b44ef3198e679008fd58aa3e9f90f7843303775cbc74b3a21eda745a9ba84",
     "stream-json.js": "867b248d3e5779b177a1560a9c8f7103f18162309476faa443aa6572dc2a736b",
     "observation-contract.js": "a7e76dfaf54463c5723801b32c29d7d4489c41ab1378958536a284f2edcb411e",
-    "packed-observations.js": "2053e16fd59218b100097d9cb599992cc5601abb6eb0240dc180d6ac14ceb588"
-  },
-  "legacyExportsRetained": [
-    "day/",
-    "obs/",
-    "raw/"
-  ],
-  "gcsGovernorActive": false,
-  "checkpointEstimatedCredits": 185000,
-  "checkpointReason": "owner 174302 plus conservative allowance for measured recovery traffic; not invoice reconciliation",
-  "supportRevision": "pre-watcher from 8df8c12d47ed6334333088a8680c8998f9306bcc; resource-budget from this checkout, validated by SHA256"
+    "packed-observations.js": "6e2622a57f6d8939411b9884ec1f9c80bd8e091b8d734c8276465789128204e4"
+  }
 }
