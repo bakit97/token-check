@@ -102,3 +102,60 @@ test('главный источник authoritative: только принято
   assert.equal(el('ageAfter').disabled,true,'браузер не должен притворяться серверной настройкой');
   assert.match(el('sourceNote').textContent,/Источник до миграции|журнал сервера/);
 });
+
+
+test('полигон сервера: неопределённые показатели не считаются отклонёнными мёртвыми',async()=>{
+  const nodes=new Map(),listeners=new Map();
+  function el(id){
+    if(nodes.has(id))return nodes.get(id);
+    const value={id,innerHTML:'',textContent:'',value:'',hidden:false,disabled:false,dataset:{},style:{},
+      classList:{toggle(){},add(){},remove(){}},
+      addEventListener(type,fn){listeners.set(id+':'+type,fn)},
+      querySelectorAll(){return[]},insertAdjacentHTML(){},scrollIntoView(){},remove(){}};
+    nodes.set(id,value);return value;
+  }
+  const document={readyState:'complete',getElementById:el,querySelectorAll(){return[]},addEventListener(){}};
+  const now=Date.now(),address='So11111111111111111111111111111111111111112';
+  const source={mode:'verified-pre-post',settings:{beforeMinutes:2,afterMinutes:2},
+    today:1,todayBefore:1,todayAfter:0,updated:now};
+  const token={a:address,n:'Тестовая монета',s:'TEST',
+    ds:[[Math.floor(now/1000),1,2000,5000,10,3,500]]};
+  const entry={a:address,phase:'before',eventAt:now-1000,acceptedAt:now-700};
+  const bankRows=Array.from({length:1000},(_,i)=>({
+    mint:'mon'+String(i).padStart(35,'1'),
+    acceptedAt:now-6*3600e3-i*1000,
+    activePct:i<500?100:0,maxIdleObserved:i<500?0:70,
+    features:{buyers:i<500?30:i<750?5:null}
+  }));
+  const stats={status:'observational',updated:now,counts:{live:500,dead:500},
+    settings:{hours:5,minActive:70,maxIdle:60,decisionMinutes:10},
+    pending:{'not-yet-finished':0}};
+  const fakeFetch=async url=>({ok:true,status:200,json:async()=>{
+    if(url.includes('research-v2/status.json'))return stats;
+    if(url.includes('research-v2/polygon-1.json'))return {counts:stats.counts,coins:bankRows};
+    if(url.includes('source/status.json'))return source;
+    if(url.includes('source/live.json')||url.includes('source/day/'))return {coins:[entry]};
+    if(url.includes('status.json'))return {updated:now};
+    if(url.includes('obs/'))return {coins:[]};
+    return {coins:[token]};
+  }});
+  const prefs={level:'1',poly:{'1':[500,500],'2':[2000,2000]},
+    filters:[{id:'001',level:'1',name:'Покупатели',key:'buyers',op:'>=',value:20,version:1}],
+    modules:[]};
+  const localStorage={getItem:k=>k==='solscan_v2_state_20261017'?JSON.stringify(prefs):null,setItem(){}};
+  const ctx={window:{addEventListener(){}},document,localStorage,fetch:fakeFetch,
+    AbortController,URL,console,Date,Intl,Math,Number,Map,Set,Array,String,Object,JSON,Error,
+    setInterval:()=>0,setTimeout:()=>0,clearTimeout:()=>{}};
+  vm.runInNewContext(js,ctx,{timeout:4000});
+  await new Promise(resolve=>setTimeout(resolve,100));
+  assert.equal(el('r1Live').textContent,'500');
+  assert.equal(el('r1Dead').textContent,'500');
+  assert.equal(el('r1Activity').disabled,true);
+  assert.equal(el('testAll').disabled,false);
+  const event=listeners.get('testAll:click');
+  assert.equal(typeof event,'function');
+  event();
+  assert.match(el('testResults').innerHTML,/250\/500/);
+  assert.match(el('testResults').innerHTML,/Нет показателя: живые 0, мёртвые 250/);
+  assert.doesNotMatch(el('testResults').innerHTML,/100\.0% \(500\/500\)/);
+});
