@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
-const code=fs.readFileSync(path.join(__dirname,'../server/collector.js'),'utf8');
+const code=fs.readFileSync(process.env.SOLSCAN_TEST_COLLECTOR||path.join(__dirname,'../server/collector.js'),'utf8');
 const {ResourceBudget}=require('../server/resource-budget');
 function setup(t){const dir=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'collector-budget-'));
   t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
@@ -26,7 +26,7 @@ test('failed fetch is still accounted, while a deferred request does not touch n
   await assert.rejects(ctx.call('getTransaction',['other'],{priority:0}),{code:'BUDGET_DEFERRED'});
   assert.equal(requests.length,0);
 });
-test('GCS multipart sender sets metadata in the same counted request',async()=>{
+test('GCS multipart sender sets metadata in the same counted request',{skip:!!process.env.SOLSCAN_TEST_COLLECTOR},async()=>{
   const calls=[],ctx={require,Buffer,JSON,AbortSignal,BUCKET:'fake',token:async()=>'<mock-token>',fetch:async(...a)=>{calls.push(a);return {ok:true}}};
   vm.createContext(ctx);vm.runInContext(code.slice(code.indexOf('async function sendPublication('),code.indexOf('async function upload(name,obj)'))+'\nthis.send=sendPublication;',ctx);
   await ctx.send('live.json',Buffer.from('compressed'),'application/json');

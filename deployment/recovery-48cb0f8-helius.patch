@@ -1,0 +1,230 @@
+--- a/server/collector.js
++++ b/server/collector.js
+@@ -6,6 +6,9 @@
+    активность каждые 5 минут в течение 5 часов, свечи первых 10 минут и итог за 5 часов.
+    Каждые 2 минуты выгружает перепись дня (по Алматы, с 00:00) в Cloud Storage. */
+ const fs=require('fs'),zlib=require('zlib');
++let RESOURCE=null;
++const resourcePressure=()=>process.memoryUsage().rss>=360*1024*1024;
++const rpcPriority=(c,now=Date.now())=>c&&now-(c.acceptedAt||c.firstPostSeenAt||c.t)<12*60e3?1:2;
+ const BUCKET='sol-scan-511718-data',DIR=process.env.SOLSCAN_DIR||'/var/solscan',TZ=5*3600e3;
+ const GT='https://api.geckoterminal.com/api/v2/networks/solana',DS='https://api.dexscreener.com';
+ const VERSION=(process.env.CODE_GEN||'dev').replace(/[^0-9a-z]/g,'')||'dev';
+@@ -77,11 +80,28 @@
+ /* ---------- Solana RPC (Helius). Ключ лежит в метаданных сервера, не в коде ---------- */
+ let HKEY='';async function heliusKey(){if(HKEY)return HKEY;try{const r=await fetch('http://metadata.google.internal/computeMetadata/v1/instance/attributes/helius-key',{headers:{'Metadata-Flavor':'Google'}});if(r.ok)HKEY=(await r.text()).trim()}catch{}return HKEY}
+ let rpcN=0,rpcFail=0,rpcCredits=0,rpcBusy=Promise.resolve();const crLog=[];const RPCCTX={};let CTX='?';
+-async function rpc(method,params){const key=await heliusKey();if(!key)throw new Error('нет ключа Helius');
+-  const go=async()=>{for(let t=0;t<3;t++){const r=await fetch('https://mainnet.helius-rpc.com/?api-key='+key,{signal:AbortSignal.timeout(60000),method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
+-      rpcN++;{const cr=method==='getProgramAccounts'?10:1;rpcCredits+=cr;crLog.push([Date.now(),cr,method]);RPCCTX[CTX]=(RPCCTX[CTX]||0)+cr;while(crLog.length&&crLog[0][0]<Date.now()-3600e3)crLog.shift()}if(r.status===429){await sleep(1500*(t+1));continue}if(!r.ok)throw new Error('rpc HTTP '+r.status);const d=await r.json();if(d.error)throw new Error('rpc '+d.error.message);return d.result}
++const RPC_CACHE=new Map();
++async function rpc(method,params,options={}){
++  if(!RESOURCE)throw Object.assign(new Error('Helius accounting unavailable'),{code:'BUDGET_DEFERRED'});
++  const context=options.context||CTX,priority=options.priority??(context==='сверка'?3:2);
++  if(priority>0&&resourcePressure())throw Object.assign(new Error('resource pressure: background deferred'),{code:'BUDGET_DEFERRED'});
++  const cacheable=['getTransaction','getSignaturesForAddress','getProgramAccounts','getSlot'].includes(method);
++  const cacheKey=cacheable?method+JSON.stringify(params):null,cached=RPC_CACHE.get(cacheKey);
++  if(cached&&cached.until>Date.now())return cached.value;
++  const key=await heliusKey();if(!key)throw new Error('нет ключа Helius');
++  // No FIFO of sleeping calls: old background jobs cannot delay fresh proofs.
++  if(!RESOURCE.allow(require(DIR+'/resource-budget.js').rpcCost(method),priority))throw Object.assign(new Error('Helius budget: observation deferred'),{code:'BUDGET_DEFERRED'});
++  const go=async()=>{for(let t=0;t<3;t++){
++      const cr=RESOURCE.reserveRPC(method,priority); // charge BEFORE fetch, including failures/retries
++      rpcN++;rpcCredits+=cr;crLog.push([Date.now(),cr,method]);RPCCTX[context]=(RPCCTX[context]||0)+cr;
++      while(crLog.length&&crLog[0][0]<Date.now()-3600e3)crLog.shift();
++      const r=await fetch('https://mainnet.helius-rpc.com/?api-key='+key,{signal:AbortSignal.timeout(30000),method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
++      if(r.status===429){await sleep(1500*(t+1));continue}if(!r.ok)throw new Error('rpc HTTP '+r.status);const d=await r.json();if(d.error)throw new Error('rpc '+d.error.message);
++      if(cacheKey&&d.result){RPC_CACHE.delete(cacheKey);RPC_CACHE.set(cacheKey,{value:d.result,until:Date.now()+5*60e3});while(RPC_CACHE.size>128)RPC_CACHE.delete(RPC_CACHE.keys().next().value)}
++      return d.result}
+     throw new Error('rpc 429')};
+   const p=rpcBusy.then(go,go);rpcBusy=p.then(()=>sleep(150),()=>sleep(150));return p}
++function rpcFor(c,context){return (method,params)=>rpc(method,params,{priority:rpcPriority(c),context})}
+ const b64=s=>Uint8Array.from(Buffer.from(s||'','base64'));
+ const pk=(u,o)=>b58enc(u.slice(o,o+32));
+ // метаданные Metaplex: можно ли менять название/картинку
+@@ -90,6 +110,7 @@
+ 
+ /* ---------- контракт токена: 2 запроса на монету, один раз ---------- */
+ async function ctCheck(c){
++  const rpc=rpcFor(c,'контракт');
+   const mi=await rpc('getAccountInfo',[c.a,{encoding:'jsonParsed'}]);const v=mi?.value;if(!v)throw new Error('токен не найден');
+   const info=v.data?.parsed?.info||{},ct={prog:v.owner===T22?'token2022':'token',mint:!!info.mintAuthority,freeze:!!info.freezeAuthority,dec:+info.decimals,
+     supply:(+info.supply||0)/10**(+info.decimals||0),fee:0,hook:false,deleg:false,nontr:false,defFrozen:false,pause:false,metaMut:null};
+@@ -121,10 +142,10 @@
+   return out}
+ const MIG_PROG={pump:PUMP,launch:LAUNCH,'launch-v4':LAUNCH,dbc:DBC};
+ // первая успешная транзакция пула (листаем подписи до самой старой, максимум 60 страниц)
+-async function firstOkSig(pool){let before,pages=[];for(let n=0;n<10;n++){const sg=await rpc('getSignaturesForAddress',[pool,before?{limit:1000,before}:{limit:1000}]);
++async function firstOkSig(pool,rpc){let before,pages=[];for(let n=0;n<10;n++){const sg=await rpc('getSignaturesForAddress',[pool,before?{limit:1000,before}:{limit:1000}]);
+     if(!sg?.length){before=null;break}pages.push(sg);if(pages.length>2)pages.shift();before=sg[sg.length-1].signature;if(sg.length<1000){before=null;break}}
+   if(before)return{tooLong:1};const all=pages.flat().reverse();return all.find(x=>!x.err)||null}
+-async function proveMig(pool,fam,curve){const f=await firstOkSig(pool);if(!f)return{why:'у пула нет успешных транзакций'};if(f.tooLong)return{why:'история пула длиннее 10 000 транзакций',tooLong:1};
++async function proveMig(pool,fam,curve,rpc){const f=await firstOkSig(pool,rpc);if(!f)return{why:'у пула нет успешных транзакций'};if(f.tooLong)return{why:'история пула длиннее 10 000 транзакций',tooLong:1};
+   const t=await rpc('getTransaction',[f.signature,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}]);if(!t||t.meta?.err)return{why:'транзакция создания недоступна'};
+   const keys=[...t.transaction.message.accountKeys,...(t.meta.loadedAddresses?.writable||[]),...(t.meta.loadedAddresses?.readonly||[])];
+   const pi=keys.indexOf(pool);const created=pi>=0&&t.meta.preBalances[pi]===0&&t.meta.postBalances[pi]>0;
+@@ -136,7 +157,7 @@
+   if(!hit)return{why:'в транзакции создания пула нет инструкции миграции, ссылающейся на этот пул'};
+   return{ok:1,sig:f.signature,slot:t.slot,t:(t.blockTime||f.blockTime)*1000,ix:hit}}
+ function pair2(u,o1,o2,mint){const x=pk(u,o1),y=pk(u,o2);return x===mint?y:y===mint?x:null}
+-async function exists(list){if(!list.length)return[];const v=(await rpc('getMultipleAccounts',[list,{encoding:'base64',dataSlice:{offset:0,length:0}}]))?.value||[];return list.filter((x,i)=>v[i])}
++async function exists(list,rpc){if(!list.length)return[];const v=(await rpc('getMultipleAccounts',[list,{encoding:'base64',dataSlice:{offset:0,length:0}}]))?.value||[];return list.filter((x,i)=>v[i])}
+ const MIG_OK={pump:'pump',launch:'launch','launch-v4':'launch-v4',dbc:'dbc'};
+ const MIG_UNK={pump:'unk-pump',launch:'unk-launch','launch-v4':'unk-launch',dbc:'unk-dbc'};
+ const DEXOF={pump:'pumpswap',launch:'raydium-cpmm','launch-v4':'raydium',dbc:'meteora-damm-v2'};
+@@ -147,11 +168,11 @@
+ // витрина монеты = официальный пул миграции; при переезде старые данные сохраняются в orig
+ function moveTo(c,pool,fam,r){if(c.p===pool)return;c.origs=c.origs||[];c.origs.push({p:c.p,t:c.t,d:c.d,movedAt:Date.now(),...takeObs(c)});if(c.origs.length>3)c.origs.shift();
+   c.p=pool;c.d=DEXOF[fam]||c.d;c.t0=c.t0||c.t;c.t=r.t;c.movedAt=Date.now()}
+-async function migCheck(c){
++async function migCheck(c){const rpc=rpcFor(c,'миграция');
+   if(c.preCurve&&c.d==='pump-fun'){
+     const poolList=await officialPools('pump',c.a,c.q||WSOL);
+-    for(const p of await exists(poolList)){
+-      const proof=await proveMig(p,'pump',await bondingCurveOf(c.a));
++    for(const p of await exists(poolList,rpc)){
++      const proof=await proveMig(p,'pump',await bondingCurveOf(c.a),rpc);
+       if(proof.ok){
+         moveTo(c,p,'pump',proof);
+         setMg(c,'ok','pump','',{pool:p,sig:proof.sig,mT:proof.t,ix:proof.ix});
+@@ -187,7 +208,7 @@
+   else if(owner===DBC){fam='dbc';curve=c.p;
+     if(!u[305]){base='curve';baseK='curve-dbc';why='торгуется на кривой DBC';watch=c.p}
+     else{base='unk';baseK='unk-dbc';why='DBC завершила кривую, пул миграции ещё не найден';
+-      let cq=null;try{const cf=(await rpc('getAccountInfo',[pk(u,72),{encoding:'base64',dataSlice:{offset:8,length:32}}]))?.value;if(cf)cq=b58enc(b64(cf.data?.[0]))}catch{}
++      let cq=null;try{const cf=(await rpc('getAccountInfo',[pk(u,72),{encoding:'base64',dataSlice:{offset:8,length:32}}]))?.value;if(cf)cq=b58enc(b64(cf.data?.[0]))}catch(e){if(e.code==='BUDGET_DEFERRED')throw e}
+       if(cq&&!c.q)c.q=cq;for(const q of [...new Set([cq,c.q,WSOL,USDC].filter(Boolean))])cands.push(...await officialPools('dbc',mint,q))}}
+   else if(owner===LAUNCH){fam='launch';curve=c.p;const st=u[17],mt=u[20];quote=pk(u,237);
+     if(st===0){base='curve';baseK='curve-launch';why='торгуется на кривой LaunchLab';watch=c.p}
+@@ -197,11 +218,11 @@
+   else{setMg(c,'other','other:'+owner.slice(0,6),'',{owner});return}
+   const x={owner,creator,watch};
+   // 1) этот пул — официальный?
+-  if(cands.includes(c.p)){const r=await proveMig(c.p,fam,curve);
++  if(cands.includes(c.p)){const r=await proveMig(c.p,fam,curve,rpc);
+     if(r.ok){setMg(c,'ok',MIG_OK[fam],'',{...x,pool:c.p,sig:r.sig,mT:r.t,ix:r.ix});if(c.t!==r.t){c.t0=c.t0||c.t;c.t=r.t}admitVerifiedMigration(c);return}
+     setMg(c,'unk',MIG_UNK[fam],r.why,{...x,final:r.tooLong?1:0});return}
+   // 2) у монеты есть официальный пул в другом месте — витрина переезжает туда
+-  let fail=null;for(const P of await exists(cands.filter(p=>p!==c.p))){const r=await proveMig(P,fam,curve);
++  let fail=null;for(const P of await exists(cands.filter(p=>p!==c.p),rpc)){const r=await proveMig(P,fam,curve,rpc);
+     if(r.ok){moveTo(c,P,fam,r);setMg(c,'ok',MIG_OK[fam],'',{owner:'',pool:P,sig:r.sig,mT:r.t,ix:r.ix});admitVerifiedMigration(c);return}fail=fail||r}
+   if(fail){setMg(c,'unk',MIG_UNK[fam],'официальный пул есть, но миграция не доказана: '+fail.why,{...x,final:fail.tooLong?1:0});return}
+   setMg(c,base,baseK,why,x)}
+@@ -221,7 +242,7 @@
+   const c=[...C.values()].filter(c=>!c.chTry&&((!c.ct&&isOk(c)&&now-c.t<6*3600e3)||needMig(c,now))).sort((a,b)=>b.t-a.t)[0];
+   if(!c){await sleep(2000);continue}c.chTry=1;
+   try{CTX='контракт';if(!c.ct&&isOk(c))await ctCheck(c);CTX='миграция';if(needMig(c,Date.now())){if(c.mg&&c.mg.v!==MGV&&!c.mg0)c.mg0=c.mg;await migCheck(c)}}
+-  catch(e){rpcFail++;err('chain '+e.message);if(/ключа/.test(e.message))await sleep(60000);
++  catch(e){if(e.code==='BUDGET_DEFERRED'){await sleep(3000);continue}rpcFail++;err('chain '+e.message);if(/ключа/.test(e.message))await sleep(60000);
+     else if((c.mgErr=(c.mgErr||0)+1)>=3){c.mgErr=0;setMg(c,'unk','unk-err','ошибка проверки: '+e.message.slice(0,80))}}
+   finally{setTimeout(()=>{c.chTry=0},30000)}}}
+ 
+@@ -251,7 +272,7 @@
+ // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
+ // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
+ const MODULES=['admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
+-  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js'];
++  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js'];
+ let MODULES_OK=null;
+ function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
+   for(const name of MODULES){const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
+@@ -275,7 +296,7 @@
+   // чем повторно занести монеты после рестарта.
+   SOURCE=new (require(DIR+'/source-runtime.js').SourceRuntime)({dir:DIR});
+   const PumpPreWatcher=require(DIR+'/pre-watcher.js').PumpPreWatcher;
+-  PRE=new PumpPreWatcher({rpc,decode58:b58dec,deriveCurve:bondingCurveOf,source:SOURCE,
++  PRE=new PumpPreWatcher({rpc:(method,params)=>rpc(method,params,{priority:0,context:'новые до миграции'}),decode58:b58dec,deriveCurve:bondingCurveOf,source:SOURCE,
+     onAdmitted:admitVerifiedPublicLaunch,log:msg=>err(msg)});
+   // Journal is durable even if the VM was restarted before candidate-state save.
+   for(const item of SOURCE.records.values())if(item.phase==='before'&&!C.has(item.mint)&&item.proof?.curve) {
+@@ -622,10 +643,10 @@
+ const qDec=new Map([[WSOL,9],[USDC,6],[USDT,6]]);
+ const HOLD_M=[10],RAW_M=[1,3,5,10,15,30,60,120,240,480,720,1440];
+ const u64=(u,o)=>{let x=0n;for(let i=7;i>=0;i--)x=(x<<8n)+BigInt(u[o+i]);return Number(x)};
+-async function ensureVaults(c,pv){if(c.vaults||c.vTry>=3)return;c.vTry=(c.vTry||0)+1;pv=pv||(await rpc('getAccountInfo',[c.p,{encoding:'base64'}]))?.value;if(!pv)return;
++async function ensureVaults(c,pv){const rpc=rpcFor(c,'пулы');if(c.vaults||c.vTry>=3)return;c.vTry=(c.vTry||0)+1;pv=pv||(await rpc('getAccountInfo',[c.p,{encoding:'base64'}]))?.value;if(!pv)return;
+   const v=parseVaults(c,pv.owner,b64(pv.data?.[0]));if(!v)return;const ch=(await rpc('getMultipleAccounts',[v,{encoding:'base64'}]))?.value||[];
+   const mints=ch.map(x=>x?pk(b64(x.data?.[0]),0):null);if(mints.includes(c.a)&&ch.every(Boolean)){c.vaults=v;c.vmint=mints}}
+-async function holdersSnap(c,m){const sup=c.ct?.supply;await ensureVaults(c);const r=await rpc('getTokenLargestAccounts',[c.a,{commitment:'confirmed'}]);const at=Date.now();
++async function holdersSnap(c,m){const rpc=rpcFor(c,'держатели');const sup=c.ct?.supply;await ensureVaults(c);const r=await rpc('getTokenLargestAccounts',[c.a,{commitment:'confirmed'}]);const at=Date.now();
+   const L=r?.value||[];if(!L.length||!sup){c.hold[m]={at,miss:'нет данных'};return}
+   const own=await rpc('getMultipleAccounts',[L.map(x=>x.address),{encoding:'jsonParsed'}]);const V=new Set(c.vaults||[]);const by={};let ex=0,pda=0;
+   L.forEach((x,i)=>{if(V.has(x.address)){ex++;return}const o=own?.value?.[i]?.data?.parsed?.info?.owner||x.address;const amt=+x.uiAmount||0;by[o]=(by[o]||0)+amt});
+@@ -670,7 +691,9 @@
+   for(const v of [slot,nowS])for(const d of [0,1]){const r=await rpc('getProgramAccounts',[DBC,{encoding:'base64',dataSlice:{offset:0,length:0},
+       filters:[{dataSize:424},{memcmp:{offset:305,bytes:'2'}},{memcmp:{offset:298,bytes:hiWin((v>>>16)-d)}}],withContext:true}]);(r?.value||[]).forEach(x=>out.add(x.pubkey))}
+   return [...out]}
+-async function reconcile(){const now=Date.now();CTX='сверка';
++let RECON_BUSY=false,RECON_RETRY=null;
++async function reconcile(){if(RECON_BUSY)return;RECON_BUSY=true;try{await reconcileBody()}finally{RECON_BUSY=false}}
++async function reconcileBody(){const now=Date.now();CTX='сверка';
+   for(const [key,mOff,qOff] of [['ll',205,237],['dbc',136,null]]){
+     try{const cur=await snapshotSet(key);const prev=RC[key]?new Set(RC[key]):null;RC[key]=cur;
+       if(!prev){RC.log.push([now,key,'база',cur.length]);continue}
+@@ -680,7 +703,7 @@
+           if(c&&isOk(c)){known++;c.rcSeen=c.rcSeen||now;return}
+           if(c){if(c.mg)c.mg.force=1;c.rcSeen=now;c.firstPostSeenAt=c.firstPostSeenAt||now;forced++;return}
+           C.set(mint,{a:mint,n:'',s:'',i:'',p:nw[i+j],d:key==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'recon',seen:now,disc:'chain',rcSeen:now,firstPostSeenAt:now,pools:[nw[i+j]],fv:FV});added++})}
+-      RC.log.push([now,key,'новых',nw.length,known,forced,added])}catch(e){err('recon '+key+' '+e.message)}}
++      RC.log.push([now,key,'новых',nw.length,known,forced,added])}catch(e){if(e.code==='BUDGET_DEFERRED'){if(!RECON_RETRY)RECON_RETRY=setTimeout(()=>{RECON_RETRY=null;reconcile().catch(e=>err('recon retry '+e.message))},65000)}else err('recon '+key+' '+e.message)}}
+   while(RC.log.length>200)RC.log.shift()}
+ 
+ /* ---------- 5б. подписки на блокчейн: миграции видны сразу, без GeckoTerminal ----------
+@@ -697,7 +720,8 @@
+   if(c){if(!isOk(c)&&c.mg)c.mg.force=1;c.wsSeen=c.wsSeen||now;c.firstPostSeenAt=c.firstPostSeenAt||now;return}
+   C.set(mint,{a:mint,n:'',s:'',i:'',p:pool,d:kind==='pump'?'pumpswap':kind==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'ws',seen:now,disc:'ws',wsSeen:now,firstPostSeenAt:now,pools:[pool],fv:FV})}
+ function chainWatch(){let ws,ping;const subs={};
+-  const start=async()=>{const key=await heliusKey();if(!key){setTimeout(start,60e3);return}
++  const start=async()=>{const key=await heliusKey();if(!key||!RESOURCE?.streamAllowed()){setTimeout(start,60000);return}
++    for(const k of Object.keys(subs))delete subs[k];
+     ws=new WebSocket('wss://mainnet.helius-rpc.com/?api-key='+key);
+     ws.onopen=()=>{WS.on=true;WS.since=Date.now();
+       [['dbc',DBC,[{dataSize:424},{memcmp:{offset:305,bytes:'2'}}]],['ll',LAUNCH,[{memcmp:{offset:17,bytes:'3'}}]]]
+@@ -706,8 +730,8 @@
+       // initializes its curve, not when a random SPL token mint appears.
+       if(PRE) {subs[150]='pre';ws.send(JSON.stringify({jsonrpc:'2.0',id:150,
+         method:'logsSubscribe',params:[{mentions:[PUMP_MINT_AUTH]},{commitment:'confirmed'}]}))}
+-      ping=setInterval(()=>{try{ws.send(JSON.stringify({jsonrpc:'2.0',id:1,method:'getHealth'}))}catch{}},30e3)};
+-    ws.onmessage=e=>{const txt=typeof e.data==='string'?e.data:'';WS.bytes+=txt.length;
++      ping=setInterval(()=>{if(!RESOURCE.streamAllowed())try{ws.close()}catch{}},30000)};
++    ws.onmessage=e=>{const txt=typeof e.data==='string'?e.data:'';const bytes=Buffer.byteLength(txt);WS.bytes+=bytes;if(!RESOURCE.stream(bytes)){try{ws.close()}catch{}return}
+       // дешёвый отсев: лог pump без create не разбираем (на e2-micro разбор каждой сделки забивал CPU)
+       if(txt.length>200&&txt.includes('"logsNotification"')&&!txt.includes('Instruction: Create')){WS.preDrop=(WS.preDrop||0)+1;return}
+       let m;try{m=JSON.parse(txt)}catch{return}
+@@ -727,7 +751,15 @@
+ /* ---------- 6. выгрузка ---------- */
+ const dayKey=t=>new Date(t+TZ).toISOString().slice(0,10);
+ const UPQ=[];function uploadLater(name,obj){UPQ.push([name,obj])}
+-async function flushUploads(){while(UPQ.length){const [n,o]=UPQ.shift();try{await upload(n,o)}catch(e){err('up '+e.message);UPQ.push([n,o]);break}}}
++async function flushUploads(){
++  // A restored raw backlog must not hold source/status/heartbeat publication hostage.
++  // Keep the unsent tail intact; never drain a producer-fed queue without a bound.
++  const limit=Math.min(4,UPQ.length),started=Date.now();
++  for(let i=0;i<limit&&UPQ.length&&Date.now()-started<10000;i++){
++    const [n,o]=UPQ.shift();
++    try{await upload(n,o)}catch(e){err('up '+e.message);UPQ.push([n,o]);break}
++  }
++}
+ function rec(c,full){const mg=c.mg||{};
+   const r={a:c.a,n:c.n,s:c.s,i:c.i,p:c.p,d:c.d,q:c.q,t:c.t,tSrc:c.tSrc||'gt',t0:c.t0||null,seen:c.seen,disc:c.disc||null,rcSeen:c.rcSeen||null,wsSeen:c.wsSeen||null,firstPostSeenAt:c.firstPostSeenAt||null,preCurve:!!c.preCurve,preTradingAt:c.preTradingAt||null,ty:launchType(c),
+     mk:mg.k||null,mst:mg.st||null,mw:mg.why||'',mT:mg.mT||null,mSig:mg.sig||null,mSeen:mg.seenAt||null,mCr:mg.creator??null,mH:c.mgH||[],mk0:c.mg0?.k||null,
+@@ -900,7 +932,7 @@
+   try{await exportSource(now)}catch(e){SOURCE_ERR='выгрузка источника: '+e.message;err('source export '+e.message)}
+   try{await exportResearchV2(now)}catch(e){RESEARCH_V2_ERR=e.message;err('research-v2 export '+e.message)}
+   try{await exportPathsV2(now)}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('pass/r2 export '+e.message)}
+-  await upload('status.json',{updated:now,version:VERSION,source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
++  await upload('status.json',{updated:now,version:VERSION,resources:{stage:'recovery-helius-budget',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
+     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
+       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,publishedAt:FAST_PASS_PUBLISH_AT},
+@@ -983,7 +1015,9 @@
+ 
+ /* ---------- старт ---------- */
+ const STARTED=Date.now();
+-(async()=>{fs.mkdirSync(DIR,{recursive:true});load();log('старт, версия',VERSION);
++(async()=>{fs.mkdirSync(DIR,{recursive:true});await ensureModules();
++  RESOURCE=new (require(DIR+'/resource-budget.js').ResourceBudget)({dir:DIR,env:{...process.env,HELIUS_USED_CREDITS:process.env.HELIUS_USED_CREDITS||'185000'}});
++  load();log('старт, версия',VERSION);
+   try{await initSource();await reloadSourceAgeConfig()}catch(e){SOURCE_ERR=e.message;err('главный источник не запустился: '+e.message)}
+   try{await initResearchV2()}catch(e){RESEARCH_V2_ERR=e.message;err('исследование v2 не запустилось: '+e.message)}
+   try{await initPathsV2()}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('серверные пути не запустились: '+e.message)}

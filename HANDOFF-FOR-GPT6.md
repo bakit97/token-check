@@ -1,3 +1,68 @@
+# UPDATE — owner-approved staged production recovery, 2026-10-18 (UTC+5)
+
+This update supersedes the older statement below that production was untouched.
+The owner explicitly authorized restoring 48cb0f8 first, then separately checking
+each deployment before further migration. **Do not deploy the whole feature
+collector**: use the reproducible pinned recovery build while cutover is pending.
+
+Actual steps: restored the four changed files from exact 48cb0f8, preserved a
+local backup, reset stuck VM once; verified live startup. Then deployed a bounded
+archive-flush repair and checked heartbeat. Then deployed Helius-only accounting
+and corrected headroom/priority based on live counters. `main`, VM/disk type,
+owner configs and the Helius metadata key were not changed. Legacy day/obs/raw
+exports remain active; no old UI/data was deleted or archived.
+
+Active collector generation: **1792263193310124**.
+Recovery base: **48cb0f8621e3a822cc65e0a7c23ba485ad3a574e**.
+First separate queue repair in GitHub: **bfe1be1c5489257b7186c43df7aead4a3698fe47**.
+See `deployment/recovery-manifest.json` for exact deployed SHA-256 hashes and
+`deployment/build-recovery.py` to reproduce them from pinned Git history plus
+`deployment/recovery-48cb0f8-helius.patch`. This temporary patch captures the
+actual deployed build; it is not a second deployed server or second UI.
+
+Latest verified status at 2026-10-18 00:00:18 UTC+5: heartbeat 3 seconds old,
+WS connected, RSS 311 MB, minute-window estimated WS+RPC 16.5536 credits.
+Monthly forecast 581,649 was based on a short sample, not provider billing.
+Accounting checkpoint 185,000 conservatively covers owner-reported 174,302
+plus measured recovery traffic. Existing resource ledger persists on VM.
+
+Important limitation: 1 of 142 prelaunch create events in the observed interval
+was admitted; 141 were budget-deferred. Source is sampling, not covering every
+launch. Preserve unknown/missing status. Startup/export memory earlier exceeded
+400 MB, so a hard bound and long-duration behavior have not been proven. GCS
+Class A/B and Billing remain unverified; legacy frequent exports still run.
+
+Tests: queue repair 3/3 local PASS; final recovery-focused suite 18 PASS,
+1 deliberate SKIP (multipart GCS path is not installed in recovery build).
+Reconstruction verifies exact artifact hashes. Updated Linux workflow now checks
+both feature source and the reproduced production recovery build; inspect its
+run results for the commit containing this update.
+
+**Next required work — single-version migration is NOT complete:**
+1. Complete `docs/OBSERVATION-MIGRATION.md` contract gate. New source files have
+   admission identity only; no replacement yet for full DS, vault balances,
+   first-ten-minute trade candles, holders-at-ten and raw states. Keep day/obs.
+2. Preserve raw snapshots on pool migration (`takeObs` currently deletes raw),
+   transfer chain quote-vault <5% drain logic, and keep no-lookahead timestamps.
+3. Respect the eight proven mechanisms listed by the owner; do not substitute
+   DS zero liquidity, synthetic prices or new unverified migration assumptions.
+4. Resolve coverage versus twenty-credit budget honestly. Investigate efficient
+   proof/batching approaches before promising complete capture; do not increase
+   the limit or expose the key. Then complete the observation cutover, deploy
+   and verify it before deleting any legacy interface/writer.
+5. Only after equivalent observations exist: one new root index, remove old UI
+   and duplicate lab collector logic; start clean research epochs without old
+   results; copy/verify/archive day/obs/research before removing source paths.
+6. GCS free-operation budget and full LIVE freshness still conflict under the
+   existing many-object publication scheme. Keep this visible; do not silently
+   deploy the slow strict governor or claim Billing is verified.
+
+Full audit/results: `deployment/README.md`, `docs/OBSERVATION-MIGRATION.md`.
+Recovery scratch/backups: `work/recovery-48cb0f8/` (local, not committed).
+The older Claude/GPT notes below are retained as historical context.
+
+---
+
 # HANDOFF — Codex resource controls, 2026-10-17
 
 Branch: `feature/serverside-passed-r2-20261017`; existing draft PR: https://github.com/bakit97/token-check/pull/15

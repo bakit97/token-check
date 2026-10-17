@@ -15,9 +15,9 @@ class ResourceBudget{
     const at=now();this.state={schema:1,used:Number(env.HELIUS_USED_CREDITS||174302),
       resetAt:Date.parse(env.HELIUS_RESET_AT||'2026-11-14T00:00:00Z'),
       baselineCredits:Number(env.HELIUS_USED_CREDITS||174302),since:at,buckets:[],gcsMonth:new Date(at).toISOString().slice(0,7),
-      gcsUsed:Number(env.GCS_CLASS_A_USED||0),gcsNext:at,gcsHour:[],gcsSuccessHour:[],deferred:0};
+      gcsUsed:Number(env.GCS_CLASS_A_USED||0),gcsNext:at,gcsHour:[],gcsSuccessHour:[],reconcileAt:at,reconcileSpent:0,deferred:0};
     if(fs.existsSync(this.file)){this.state=JSON.parse(fs.readFileSync(this.file,'utf8'));}
-    const s=this.state;s.gcsSuccessHour=s.gcsSuccessHour||[];
+    const s=this.state;s.gcsSuccessHour=s.gcsSuccessHour||[];s.reconcileAt=s.reconcileAt??at;s.reconcileSpent=s.reconcileSpent??0;
     if(s.schema!==1||!Number.isFinite(s.used)||s.used<0||!Number.isFinite(s.resetAt)||
        !Array.isArray(s.buckets)||!Array.isArray(s.gcsHour)||!Number.isFinite(s.gcsUsed)||
        !Number.isFinite(s.gcsNext)||!Number.isFinite(s.since)||!Number.isFinite(this.perMinute)||this.perMinute<=0||
@@ -41,11 +41,11 @@ class ResourceBudget{
       rpcCreditsHour:h.rpc,wsCreditsHour:h.ws,targetCreditsMinute:this.rate(),
       projectedAtReset:Math.ceil(this.state.used+observed*remainingMinutes),
       overForecast:this.state.used+observed*remainingMinutes>this.limit,
-      resetRequired:this.now()>=this.state.resetAt,deferred:this.state.deferred};}
+      reconcileCreditsHour:this.state.reconcileSpent,resetRequired:this.now()>=this.state.resetAt,deferred:this.state.deferred};}
   allow(cost,priority=0){const m=this.totals(MIN),h=this.totals(59*MIN),rate=this.rate();
     // Preserve room for stream delivery and new proofs; background is shed first.
-    const ceiling=Math.min(this.perMinute,rate),rpcCeiling=Math.max(0,ceiling-1);
-    const s=this.summary(),share=priority===0?1:priority===1?.65:.3;
+    const ceiling=Math.min(this.perMinute,rate),rpcCeiling=Math.max(0,ceiling-2);
+    const s=this.summary(),share=priority===0||priority===3?1:priority===1?.2:.1;
     if(this.state.used+cost>this.limit||rate===0||m.rpc+m.ws+cost>rpcCeiling||
        h.rpc+h.ws+cost>rate*60||
        (priority>0&&(m.rpc+m.ws+cost>rpcCeiling*share||s.overForecast))){this.state.deferred++;return false}
@@ -53,11 +53,17 @@ class ResourceBudget{
   }
   charge(cost,type){this.trim();const at=Math.floor(this.now()/MIN)*MIN;let b=this.state.buckets.find(b=>b.at===at);
     if(!b)this.state.buckets.push(b={at,rpc:0,ws:0});b[type]+=cost;this.state.used+=cost;this.persist();}
-  reserveRPC(method,priority){const cost=rpcCost(method);if(!this.allow(cost,priority))throw new BudgetDeferred();this.charge(cost,'rpc');return cost;}
+  reserveRPC(method,priority){const cost=rpcCost(method);
+    if(this.now()-this.state.reconcileAt>=3600000){this.state.reconcileAt=this.now();this.state.reconcileSpent=0}
+    if(priority===3&&this.state.reconcileSpent+cost>50)throw new BudgetDeferred();
+    if(!this.allow(cost,priority))throw new BudgetDeferred();
+    if(priority===3)this.state.reconcileSpent+=cost;
+    this.charge(cost,'rpc');return cost;
+  }
   stream(bytes){
     this.wsAllowance-=bytes;
     if(this.wsAllowance<0){const reserve=Math.ceil(-this.wsAllowance/32768)*32768;this.wsAllowance+=reserve;this.charge(reserve/1e6*this.wsPerMB,'ws');}
-    const m=this.totals(MIN);return this.rate()>0&&this.state.used<this.limit&&m.rpc+m.ws<this.perMinute;
+    const m=this.totals(MIN);return this.rate()>0&&this.state.used<this.limit&&m.rpc+m.ws<Math.max(0,this.perMinute-1);
   }
   streamAllowed(){const m=this.totals(MIN);return this.rate()>0&&this.state.used<this.limit&&m.rpc+m.ws<this.rate()-1;}
   reserveWrite(){this.trim();const t=this.now(),d=new Date(t),end=Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,1);

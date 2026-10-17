@@ -10,7 +10,7 @@ test('archival and program scans cost ten; normal account reads cost one',()=>{
 });
 test('RPC attempts, retries and received WS share persistent ceiling; minute boundary cannot reset it',t=>{
   const f=fixture(t),b=new ResourceBudget(f);assert.equal(b.stream(1000),true);
-  b.reserveRPC('getTransaction',0);for(let i=0;i<8;i++)b.reserveRPC('getAccountInfo',0);
+  b.reserveRPC('getTransaction',0);for(let i=0;i<7;i++)b.reserveRPC('getAccountInfo',0);
   assert.throws(()=>b.reserveRPC('getAccountInfo',0),{code:'BUDGET_DEFERRED'});
   const before=b.state.used,fresh=new ResourceBudget(f);assert.equal(fresh.state.used,before);
   assert.throws(()=>fresh.reserveRPC('getTransaction',0),{code:'BUDGET_DEFERRED'});
@@ -22,6 +22,21 @@ test('high projected spend blocks background first; fresh proofs retain room',t=
   const f=fixture(t),b=new ResourceBudget(f);b.charge(500,'rpc');
   f.advance(2*60000);assert.equal(b.summary().overForecast,true);
   assert.equal(b.allow(1,2),false);assert.equal(b.allow(1,0),true);
+});
+test('metadata cannot consume the reserved proof allowance; WS closes with headroom',t=>{
+  const f=fixture(t),b=new ResourceBudget(f);b.stream(100);
+  b.reserveRPC('getAccountInfo',1);b.reserveRPC('getAccountInfo',1);
+  assert.throws(()=>b.reserveRPC('getAccountInfo',1),{code:'BUDGET_DEFERRED'});
+  b.reserveRPC('getTransaction',0);b.reserveRPC('getAccountInfo',0);
+  while(b.stream(1000)){}
+  assert.ok(b.summary().creditsMinute<20);
+});
+test('hourly reconciliation can pay for 10-credit windows but cannot exceed its 50-credit share',t=>{
+  const f=fixture(t),b=new ResourceBudget(f);
+  for(let i=0;i<5;i++){b.reserveRPC('getProgramAccounts',3);f.advance(120001)}
+  assert.throws(()=>b.reserveRPC('getProgramAccounts',3),{code:'BUDGET_DEFERRED'});
+  const restored=new ResourceBudget(f);assert.equal(restored.state.reconcileSpent,50);
+  f.advance(3600001);restored.reserveRPC('getProgramAccounts',3);
 });
 test('expired credit period stops spending instead of inventing a renewal',t=>{
   const f=fixture(t),b=new ResourceBudget(f);f.advance(29*86400000);
