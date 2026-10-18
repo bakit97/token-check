@@ -21,3 +21,12 @@ test('drain is below five percent of observed quote-vault maximum; Meteora USD z
  assert.equal(chainDrain(row,1002500),null);c.lq=[[1001,1,9,5],[1002,2,9,10000]];assert.equal(chainDrain(project(c),1001500),null);
  c.lq=[[1001,1,9,100],[1002,2,9,5]];assert.equal(chainDrain(project(c)),null);c.lq=[];assert.equal(chainDrain(project(c)),null);
 });
+
+
+test('phone projection retains identity, receipt times and last values while full archives remain intact',()=>{
+ const {projectSummary}=require('./observation-contract'),c=coin();c.ds.push([1004,3],[1005,4]);
+ const before=JSON.stringify(c),summary=projectSummary(c,{metadata:{n:'Name'}}),full=project(c);
+ assert.equal(JSON.stringify(c),before);assert.equal(summary.observations.readScope,'latest-observations-only');
+ assert.equal(summary.n,'Name');assert.equal(summary.observations.pools[0].ds.length,2);assert.equal(full.observations.pools[0].ds.length,3);
+ assert.equal(toLegacy(summary).ds.at(-1)[1],4);assert.deepEqual(summary.observations.pools[0].rawStates,{});assert.equal(summary.observations.pools[0].tradeRows,null);
+});

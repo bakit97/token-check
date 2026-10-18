@@ -19,6 +19,12 @@ function project(c,{metadata={},admission=null}={}){
    family:c.mg.k||null,programOwner:c.mg.owner||null,watchCurve:c.mg.watch||null,verificationVersion:c.mg.v||null,stateObservedAt:c.mg.lastAt||c.mg.seenAt||null,sourceState:{...c.mg},previousState:c.mg0?{...c.mg0}:null}:null,
   pools:[poolRecord(c,c.a),...(c.origs||[]).map(o=>poolRecord(o,c.a))]};return out;
 }
+// Phone projection; complete histories remain in the daily schema-2 archive.
+function projectSummary(c,options={}){
+ const thin=p=>({...p,ds:(p.ds||[]).slice(-2),lq:(p.lq||[]).slice(-2),gx:(p.gx||[]).slice(-2),raw:{},tr:null,k10:null,path:null,origs:[]});
+ const input={...thin(c),origs:(c.origs||[]).map(thin)},row=project(input,options);
+ row.observations.readScope='latest-observations-only';return row;
+}
 function restorePool(p,cutoff){const valid=x=>Number.isFinite(x?.at)&&x.at<=cutoff;
  return {p:p.address,t:p.marketAt,d:p.kind,q:p.quoteMint,movedAt:p.movedAt,
   ds:(p.ds||[]).filter(valid).map(x=>[x.at/1000,...x.values]),lq:(p.vaults?.samples||[]).filter(valid).map(x=>[x.at/1000,x.slot,...x.balances]),
@@ -39,5 +45,5 @@ function chainDrain(row,cutoff=Infinity){
   if(q>max)max=q;else if(max>0&&q<max*.05)return {at,slot:l[1],quoteMint:c.vmint[qi],maximumObserved:max,remaining:q,ratio:q/max,source:'vault-balances'};
  }return null;
 }
-const api={project,toLegacy,chainDrain};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.SolObservations=api;
+const api={project,projectSummary,toLegacy,chainDrain};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.SolObservations=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

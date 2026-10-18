@@ -680,7 +680,7 @@ function schedulePassOnObservation(){
   const delay=Math.max(80,8000-(Date.now()-lastPassObservationAt));
   passObservationTimer=setTimeout(()=>{
     passObservationTimer=null;lastPassObservationAt=Date.now();
-    try{PASS_V2.update({source:SOURCE,coins:C,now:lastPassObservationAt})}
+    try{PASS_V2.update({source:SOURCE,coins:researchCoins(),now:lastPassObservationAt})}
     catch(e){PASS_ERR=e.message;err('pass observation '+e.message)}
   },delay);
 }
@@ -993,7 +993,7 @@ async function exportSource(now) {
   await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});
   await upload('source/live.json',{updated:now,count:today.length,coins:SOURCE.latest(200).map(enrich)});
 }
-function researchCoins(){return typeof COMPLETED!=='undefined'&&COMPLETED?{get:mint=>C.get(mint)||COMPLETED.readCoin(mint)}:C}
+function researchCoins(){const contract=require(DIR+'/observation-contract.js');return {get:mint=>{const c=C.get(mint)||(typeof COMPLETED!=='undefined'&&COMPLETED?COMPLETED.readCoin(mint):null);return c?contract.toLegacy(contract.project(c,{metadata:c,admission:SOURCE?.get(mint)||null})):null}}}
 async function exportResearchV2(now) {
   if(!RESEARCH_V2||!SOURCE)return;
   // All read-only observations originate from the accepted main source.
@@ -1018,7 +1018,7 @@ async function exportPathsV2(now){
   await reloadPassConfig();
   const p=PASS_CFG_ERR
     ?{added:0,...PASS_V2.summary(now),status:'paused-control-unavailable'}
-    :PASS_V2.update({source:SOURCE,coins:C,now});
+    :PASS_V2.update({source:SOURCE,coins:researchCoins(),now});
   PASS_ERR='';
   await upload('passed-v2/status.json',{...p,
     controlError:PASS_CFG_ERR||null,
@@ -1102,7 +1102,7 @@ async function fastPassedLoop(){
           await reloadPassConfig();
         }
         if(!PASS_CFG_ERR){
-          const outcome=PASS_V2.update({source:SOURCE,coins:C,now:Date.now()});
+          const outcome=PASS_V2.update({source:SOURCE,coins:researchCoins(),now:Date.now()});
           FAST_PASS_ATTEMPTS++;
           FAST_PASS_LAST_ADDED=outcome.added;
           if(outcome.added||now-FAST_PASS_PUBLISH_AT>=30000){
@@ -1163,6 +1163,10 @@ async function retireConfirmed(day,list,now){
   if(removed){RETENTION.removed+=removed;COMPLETED.removed+=removed;COMPLETED.lastRemovedAt=Date.now();}
   return removed;
 }
+async function exportObservationSummary(name,list,now){
+  const contract=require(DIR+'/observation-contract.js'),{rowStream}=require(DIR+'/stream-json.js');
+  await upload(name,{schema:2,updated:now,scope:'admitted-latest-observations-only',coins:rowStream(function*(){for(const c of list){const admission=SOURCE?.get(c.a);if(admission)yield contract.projectSummary(c,{metadata:rec(c,false),admission});}})});
+}
 const LAST_DAY_EXPORT=new Map();
 let DAY_EXPORT_BUSY=false;
 async function exportDays(){if(DAY_EXPORT_BUSY)return;DAY_EXPORT_BUSY=true;try{await exportDaysBody()}finally{DAY_EXPORT_BUSY=false}}
@@ -1177,6 +1181,7 @@ async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayK
     let obsWritten=false;
     if(force||d!==today||now-lastObs>=10*60e3){await upload(`obs/${d}.json`,{day:d,updated:now,coins:rowStream(function*(){for(const c of list)if(observedEligible(c))yield {a:c.a,t:c.t,ds:c.ds||[],lq:c.lq||[],path:c.path||null,preObs:c.preCurve?((c.origs||[]).find(o=>o.d==='pump-fun')||null):null}})});obsWritten=true;if(d===today)lastObs=now}
     OBS_CONTRACT.days[d]=await exportObservationContract('observations-v2/'+d+'.json',list,now);
+    await exportObservationSummary('observations-v2/summary/day/'+d+'.json',list,now);
     if(obsWritten&&COMPLETED){COMPLETED.confirm(d,list);await retireConfirmed(d,live,Date.now());completedDays.push(d)}
     LAST_DAY_EXPORT.set(d,now);while(LAST_DAY_EXPORT.size>4)LAST_DAY_EXPORT.delete(LAST_DAY_EXPORT.keys().next().value);if(d===yest)lastYest=now;
   }
@@ -1202,7 +1207,8 @@ async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const n
 
 // живая лента для «Прошли»: монеты витрины младше 40 минут, раз в 30 секунд
 async function exportLive(){const now=Date.now();const list=[...C.values()].filter(c=>observedEligible(c)&&now-c.t<40*60e3);
-  await upload('live.json',{updated:now,coins:list.map(c=>rec(c,true))})}
+  await upload('live.json',{updated:now,coins:list.map(c=>rec(c,true))});
+  await exportObservationSummary('observations-v2/summary/live.json',list,now)}
 function prune(){const now=Date.now();const {compactCoin}=require(DIR+'/packed-observations.js');for(const c of C.values())compactCoin(c,now)}
 
 /* ---------- 7. автоисследование: сервер сам считает живых/мёртвых, ищет признаки и проверяет их на следующих днях ----------

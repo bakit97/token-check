@@ -56,3 +56,34 @@ deploy that step, then check fresh status and the combined Helius budget.
 Only afterwards switch UI readers / disable old writers / archive legacy data.
 Archival must copy, verify object checksums/counts, then remove original paths;
 keep research results excluded from all new calculations.
+
+
+## October 18 archive and reader transition
+
+Read-only reconciliation checked 4,443 distinct referenced archives across 12,902
+contract coins. 4,301 available files passed mint, pool, market-time and recorded
+receipt/observation identity checks: 27,371 raw samples (25,705,036 decoded bytes),
+333,352 trade rows and 1,938 fetch receipts. There were no identity or observation
+conflicts among the available files. Another 142 references were already missing
+(77 raw-state and 65 trade archives); neither the mirror nor the old exports
+contain their missing bytes/trade rows. These remain explicit historical gaps.
+They must never be reconstructed using a later receipt time or counted as data.
+
+`server/observation-archives.js` provides an immutable, identity-checked archive
+reader. `hydrateArchives` preserves actual fetch `at`; `toLegacy(row, cutoff)`
+still excludes later receipts, including a trade tape downloaded after a decision.
+The offline CLI `deployment/audit-observation-archives.cjs` inventories and checks
+local copies without RPC or publication. A successful available-file comparison
+is not a certificate of complete historical coverage.
+
+Full histories remain at `observations-v2/YYYY-MM-DD.json`. The new phone
+projection is `observations-v2/summary/day/YYYY-MM-DD.json` and
+`observations-v2/summary/live.json`: admitted coins, last two DS/vault/activity
+samples per pool, metadata and original receipt times. Its explicit
+`latest-observations-only` scope must not be used to train or relabel research.
+Server research and Passed read the canonical full observation contract one coin
+at a time, including cold lookup; old research labels are not transferred.
+
+Legacy writers and the phone cutover remain gated on a fresh comparison and
+successful deployment checks. Archive movement must preserve verified copies and
+resolve old raw references at their archived location before original deletion.
