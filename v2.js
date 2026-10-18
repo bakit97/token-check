@@ -642,7 +642,7 @@ function renderPassed(){
       '<p class="muted">'+x.matches.map(function(f){return esc(f.name)+' · v'+esc(f.version)+' ('+esc(f.key)+' '+esc(f.op)+' '+fmt(f.value)+')'}).join(', ')+'</p></div>';
   }).join(''):'<p class="muted">Журнал пуст. Источником являются только признанные главным сервером монеты.</p>';
 }
-var MGRP=[['Спрос',['buyers10','buyers','trades','buys','sells','buySellRatio','volume']],['Пул',['quoteSol','liq','mc']],['Держатели',['top1','top10']],['Контракт',['safeContract']]];
+var MGRP=[['Спрос',['buyers10','buyers','trades','buys','sells','buySellRatio','volume']],['Пул',['quoteSol','mc']],['Держатели',['top1','top10']],['Контракт',['safeContract']]];
 var MLAB={safeContract:'Безопасный контракт (1 = да)',buyers10:'Покупатели 10 мин',quoteSol:'SOL в пуле',top1:'Топ-1 держатель %',top10:'Топ-10 держателей %',buyers:'Покупатели',trades:'Сделки',volume:'Объём $',liq:'Ликвидность $',mc:'Капитализация $',buys:'Покупки',sells:'Продажи',buySellRatio:'Покупки/продажи'};
 var MODS={};
 var MSHORT={buyers10:'Спрос',buyers:'Покупатели',quoteSol:'SOL',top1:'Топ1',top10:'Топ10',trades:'Сделки',volume:'Объём',liq:'Ликв',mc:'Кап',buys:'Покупки',sells:'Продажи',buySellRatio:'Пок/прод'};
