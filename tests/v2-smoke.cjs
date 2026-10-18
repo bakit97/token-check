@@ -48,7 +48,7 @@ test('все шесть разделов имеют правильные ID',()=
 test('все статические ID, используемые JS, существуют в HTML',()=>{
   const ids = new Set([...html.matchAll(/id="([^"]+)"/g)].map(m=>m[1]));
   for(const m of js.matchAll(/\$\('([^']+)'\)/g)){
-    if(['openCoinDetail','closeCoin'].includes(m[1]))continue;
+    if(['openCoinDetail','closeCoin','copyMint'].includes(m[1]))continue;
     assert.ok(ids.has(m[1]),'missing HTML id: '+m[1]);
   }
 });
@@ -356,8 +356,8 @@ test('Expired historical coins never create fresh Passed signals on a late visit
 });
 
 test('Unknown or zero placeholder volume is a dash in cards and detail; positive observed volume is shown',()=>{
- const scope={Number,fmt:String,safeImg:()=>'',ageM:()=>'',esc:String,mint:c=>c.a,spark:()=>'',price:()=>'',time:()=>''};
- const start=js.indexOf('function observedMoney('),end=js.indexOf('function showCoinDetail(',start);
+ const scope={Number,Math,String,Date,fmt:String,safeImg:()=>'',ageM:()=>'',esc:String,mint:c=>c.a,price:()=>'',time:()=>'',now:()=>Date.now(),document:{querySelectorAll:()=>[],getElementById:()=>null}};
+ const start=js.indexOf('// ---- Живые рыночные данные'),end=js.indexOf('function showCoinDetail(',start);
  vm.runInNewContext(js.slice(start,end),scope);
  for(const value of [null,undefined,0,NaN,'0']){
   const c={a:'mint',_entry:{eventAt:1,phase:'after'},ds:[[1,1,null,1,1,1,value]]};

@@ -7,12 +7,13 @@ test('DBC and LaunchLab survive exhausted pre quota and more than 5000 migration
  let preAllowed=true;
  const WS={msgs:{},cand:{},bytes:0,err:0,preGapMs:0,prePausedAt:0,preBudgetPauses:0};
  const ctx={EVENT_CLOCK:null,WS,WebSocket:Socket,heliusKey:async()=>'<mock>',RESOURCE:{streamAllowed:()=>preAllowed,stream:(n,source)=>{metered.push(source);return false}},PRE:{onLog:()=>{}},
-  PUMP_MINT_AUTH:'mint-auth',DBC:'dbc-program',LAUNCH:'ll-program',Buffer,Date,JSON,err:()=>{},b64:x=>x,wsCandidate:(...x)=>received.push(x),
+  PUMP_MINT_AUTH:'mint-auth',PUMP:'pump-program',DBC:'dbc-program',LAUNCH:'ll-program',Buffer,Date,JSON,err:()=>{},b64:x=>x,wsCandidate:(...x)=>received.push(x),
   setTimeout:f=>timers.push(f),setInterval:f=>{timers.push(f);return f},clearInterval:()=>{}};
  vm.createContext(ctx);vm.runInContext(code.slice(code.indexOf('function chainWatch()'),code.indexOf('/* ---------- 6.'))+'\nchainWatch();',ctx);
  await new Promise(r=>setImmediate(r));assert.equal(sockets.length,2);
  const [migration,pre]=sockets;migration.onopen();pre.onopen();
- assert.deepEqual(migration.sent.map(x=>x.method),['programSubscribe','programSubscribe']);
+ assert.deepEqual(migration.sent.map(x=>x.method),['programSubscribe','programSubscribe','programSubscribe']);
+ assert.equal(migration.sent[2].params[0],'pump-program');assert.equal(migration.sent[2].params[1].filters[0].memcmp.offset,48);
  assert.equal(migration.sent[0].params[1].filters[1].memcmp.offset,305);
  assert.equal(migration.sent[1].params[1].filters[0].memcmp.offset,17);
  migration.onmessage({data:JSON.stringify({id:100,result:1})});migration.onmessage({data:JSON.stringify({id:101,result:2})});
