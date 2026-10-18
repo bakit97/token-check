@@ -982,6 +982,45 @@ async function upload(name,obj){
 }
 
 let lastYest=0,lastObs=0;
+/* ---------- сводка для ИИ: простой текст + JSON по постоянной ссылке, раз в 5 мин. Без ключей и секретов. ---------- */
+const AI_SNAP={};let AI_LAST=0;
+async function uploadText(name,text,contentType){const tk=await token(),boundary='solscan-ai-'+Date.now();
+  const meta=JSON.stringify({name,contentType,cacheControl:'no-cache, max-age=0'});
+  const body=Buffer.concat([Buffer.from('--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+meta+'\r\n--'+boundary+'\r\nContent-Type: '+contentType+'\r\n\r\n'),Buffer.from(text,'utf8'),Buffer.from('\r\n--'+boundary+'--\r\n')]);
+  const r=await fetch(`https://storage.googleapis.com/upload/storage/v1/b/${BUCKET}/o?uploadType=multipart`,{method:'POST',signal:AbortSignal.timeout(30000),headers:{Authorization:'Bearer '+tk,'Content-Type':'multipart/related; boundary='+boundary},body});
+  if(!r.ok)throw new Error('ai upload '+r.status);await r.arrayBuffer()}
+function aiCoin(mint,extra={}){const c=C.get(mint)||{},d=(c.ds||[]).at(-1),cs=(c.curveSol||[]).at(-1);
+  return {mint,name:c.n||'',symbol:c.s||'',...extra,priceUsd:d?.[1]??null,liqUsd:d?.[2]??null,mcUsd:d?.[3]??null,buys5m:d?.[4]??null,sells5m:d?.[5]??null,vol5mUsd:d?.[6]??null,
+    marketAt:d?new Date(d[0]*1000).toISOString():null,curveSol:cs?+(cs[1]/1e9).toFixed(2):null,safeContract:c.ct?!(c.ct.mint||c.ct.freeze||c.ct.fee>0||c.ct.hook||c.ct.deleg||c.ct.pause||c.ct.nontr||c.ct.defFrozen):null}}
+async function exportAiSummary(now){if(now-AI_LAST<5*60e3||!SOURCE)return;AI_LAST=now;
+  const t=x=>x?new Date(x+TZ).toISOString().slice(11,19):'—',ago=x=>x?Math.round((now-x)/60000)+' мин':'—',n=v=>v==null||!Number.isFinite(+v)?'—':(+v>=1e6?(+v/1e6).toFixed(2)+'M':+v>=1e3?(+v/1e3).toFixed(1)+'K':(+v).toFixed(+v<1?6:0));
+  const daily=AI_SNAP.source?.daily||{},hel=RESOURCE?.summary?.()||{};
+  const recent=SOURCE.latest(30).map(x=>aiCoin(x.mint,{phase:x.phase,eventAt:new Date(x.eventAt).toISOString(),ageMin:Math.round((now-x.eventAt)/60000)}));
+  const passed=(PASS_V2?.day(dayKey(now))||[]).slice(-40).map(x=>aiCoin(x.mint,{phase:x.phase,ageMin:Math.round((now-x.eventAt)/60000),acceptedAt:new Date(x.acceptedAt).toISOString(),zeroAt:new Date(x.zeroAt).toISOString(),
+    filters:(x.matches||[]).map(m=>m.name),buyers10:x.features?.buyers10??null,quoteSolAtDecision:x.features?.quoteSol??null}));
+  const json={updated:new Date(now).toISOString(),timezone:'UTC+5 (Алматы) для суток; времена ISO в UTC',
+    server:{memMB:Math.round(process.memoryUsage().rss/1048576),heliusCreditsPerMin:hel.creditsMinute??null,ws:WS.connected,errors:ERR.slice(-5)},
+    daily:{before:daily.before||null,after:daily.after||null,partialDay:!!daily.partialDay},
+    passedConfig:PASS_V2?.config?{enabled:PASS_V2.config.enabled,decisionMinutes:PASS_V2.config.decisionMinutes,filters:(PASS_V2.config.filters||[]).map(f=>({name:f.name,level:f.level,rule:[f,...(f.conditions||[])].map(r=>r.key+' '+r.op+' '+r.value).join(' & ')}))}:null,
+    research1:AI_SNAP.r1?{settings:AI_SNAP.r1.settings,counts:AI_SNAP.r1.counts,pending:AI_SNAP.r1.pending}:null,
+    research2:AI_SNAP.r2?{settings:AI_SNAP.r2.settings,counts:AI_SNAP.r2.counts,pending:AI_SNAP.r2.pending}:null,
+    recentAll:recent,passedToday:passed,
+    links:{site:'https://bakit97.github.io/token-check/',data:'https://storage.googleapis.com/'+BUCKET+'/',code:'https://github.com/bakit97/token-check'}};
+  const row=c=>'| '+(c.name||'?').replace(/\|/g,'/')+' | '+c.mint+' | '+(c.phase==='before'?'до':'после')+' | '+(c.ageMin??'')+' | '+n(c.priceUsd)+' | '+n(c.mcUsd)+' | '+n(c.liqUsd)+' | '+n(c.vol5mUsd)+' | '+(c.curveSol??'—')+' | '+(c.safeContract==null?'—':c.safeContract?'да':'НЕТ')+' |';
+  const dl=(k,x)=>x?k+': увидели '+x.seen+' · прошли '+x.accepted+' · опоздали '+x.tooOld+' · не подтв. '+x.unverified:k+': нет данных';
+  const md=['# SOL·СКАН — сводка для ИИ','Обновлено: '+t(now)+' (UTC+5). Обновляется раз в 5 минут. Машиночитаемо: ai/summary.json рядом.','',
+    'Проект: сканер новых мемкоинов Solana (pump.fun, Meteora DBC, Raydium LaunchLab). «Все» — монеты, допущенные по возрасту (до или после миграции, один mint — один вход). «Прошли» — монеты из «Все», прошедшие фильтры сервера на момент решения. Исследование 1 — живые/мёртвые по торговой активности за 5 ч. Исследование 2 — сильные/слабые по цене 300 мин после «Прошли». Это исследование, не торговые сигналы.','',
+    '## Сервер','Память '+json.server.memMB+' МБ · Helius '+(hel.creditsMinute?.toFixed?.(1)??'—')+' кредитов/мин · WS '+JSON.stringify(WS.connected)+' · ошибок за последнее время: '+json.server.errors.length,'',
+    '## Сутки',dl('До миграции',daily.before),dl('После миграции',daily.after),daily.partialDay?'(день неполный — учёт начат позже 00:00)':'','',
+    '## Фильтры «Прошли»',...(json.passedConfig?['Включено: '+json.passedConfig.enabled+' · таймер решения '+json.passedConfig.decisionMinutes+' мин',...json.passedConfig.filters.map(f=>'- '+f.name+': '+f.rule)]:['нет данных']),'',
+    '## Исследования','Уровень 1: '+JSON.stringify(json.research1?.counts||null)+' · ожидают: '+JSON.stringify(json.research1?.pending||null),'Уровень 2: '+JSON.stringify(json.research2?.counts||null)+' · ожидают: '+JSON.stringify(json.research2?.pending||null),'',
+    '## «Прошли» сегодня ('+passed.length+')','| Имя | Mint | Поток | Возраст, мин | Цена $ | MC $ | Ликв. $ | Объём 5м $ | SOL в кривой | Контракт чистый |','|---|---|---|---|---|---|---|---|---|---|',...passed.map(row),'',
+    '## Последние 30 в «Все»','| Имя | Mint | Поток | Возраст, мин | Цена $ | MC $ | Ликв. $ | Объём 5м $ | SOL в кривой | Контракт чистый |','|---|---|---|---|---|---|---|---|---|---|',...recent.map(row),'',
+    '«—» = данных нет (не ноль). Рыночные данные — последний снимок сервера; у свежих монет до миграции их может ещё не быть.',
+    'Сайт: '+json.links.site+' · Код: '+json.links.code].join('\n');
+  await uploadText('ai/summary.md',md,'text/markdown; charset=utf-8');
+  await uploadText('ai/summary.json',JSON.stringify(json,null,1),'application/json; charset=utf-8');
+}
 async function exportSource(now) {
   if(!SOURCE)return;
   const d=dayKey(now);
@@ -995,6 +1034,7 @@ async function exportSource(now) {
   const today=SOURCE.day(d).map(enrich);
   // Нет задним числом добавленных кандидатов из обычной ленты.
   // Предмиграционный адаптер пока не активен: не выдавать пустоту за готовность.
+  AI_SNAP.source=summary;
   await upload('source/status.json',{...summary,mode:'verified-pre-post',preConnected:preFlowing(),preLive:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:preFlowing()&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
   await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});
   await upload('source/live.json',{updated:now,count:today.length,coins:SOURCE.latest(200).map(enrich)});
@@ -1009,6 +1049,7 @@ async function exportResearchV2(now) {
     try{item.runtime.update({source:SOURCE,coins:researchCoins(),now})}
     catch(e){err('research old 1 '+item.epoch.hash+' '+e.message)}
   }
+  AI_SNAP.r1=result;
   await upload('research-v2/status.json',result);
   if(result.added>0||now-RESEARCH_BANK_UPLOADED>20*60e3){
     await upload('research-v2/polygon-1.json',{
@@ -1026,6 +1067,7 @@ async function exportPathsV2(now){
     ?{added:0,...PASS_V2.summary(now),status:'paused-control-unavailable'}
     :PASS_V2.update({source:SOURCE,coins:researchCoins(),now});
   PASS_ERR='';
+  AI_SNAP.pass=p;
   await upload('passed-v2/status.json',{...p,
     controlError:PASS_CFG_ERR||null,
     serverConfig:PASS_V2.config,
@@ -1046,6 +1088,7 @@ async function exportPathsV2(now){
     catch(e){err('research old 2 '+item.epoch.hash+' '+e.message)}
   }
   TWO_ERR='';
+  AI_SNAP.r2=result;
   await upload('research-v2/status-two.json',result);
   if(result.added>0||now-TWO_BANK_UPLOADED>20*60e3){
     // Don't transfer a 300-minute price array for every bank sample to a phone.
@@ -1195,6 +1238,7 @@ async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayK
   try{await exportSource(now)}catch(e){SOURCE_ERR='выгрузка источника: '+e.message;err('source export '+e.message)}
   try{await exportResearchV2(now)}catch(e){RESEARCH_V2_ERR=e.message;err('research-v2 export '+e.message)}
   try{await exportPathsV2(now)}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('pass/r2 export '+e.message)}
+  try{await exportAiSummary(now)}catch(e){err('ai summary '+e.message)}
   if(stateCommitted){const activeDays=new Set([...C.values()].map(c=>dayKey(c.t)));for(const d of completedDays)if(!activeDays.has(d)&&COMPLETED.index.has(d))COMPLETED.seal(d,now)}
 }
 let STATUS_BUSY=false;
