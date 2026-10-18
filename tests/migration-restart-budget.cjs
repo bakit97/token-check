@@ -16,10 +16,11 @@ test('successful migration RPC records partial progress for cache-preserving con
 });
 
 test('hourly reconciliation retains unprocessed migration events when budget defers an account batch',async()=>{
- let fail=true;const ctx={Date,Set,RC:{ll:['old'],dbc:['old'],log:[]},RECON_RETRY:null,CTX:'',C:new Map([['mint',{mg:{st:'ok'}}]]),FV:2,
+ let fail=true;const observed=[];const ctx={Date,Set,SOURCE:{observe:x=>observed.push(x)},RC:{ll:['old'],dbc:['old'],log:[]},RECON_RETRY:null,CTX:'',C:new Map([['mint',{mg:{st:'ok'}}]]),FV:2,
   snapshotSet:async key=>[key+'_new'],globalRPC:async()=>{if(fail)throw Object.assign(Error('quota'),{code:'BUDGET_DEFERRED'});return {value:[{data:['state']}]};},
   b64:x=>x,pk:()=> 'mint',isOk:()=>true,setTimeout:()=>1,err:()=>{}};
  vm.createContext(ctx);vm.runInContext(code.slice(code.indexOf('async function reconcileBody()'),code.indexOf('/* ---------- 5б.'))+'\nthis.run=reconcileBody;',ctx);
  await ctx.run();assert.deepEqual(Array.from(ctx.RC.pend.ll),['ll_new']);assert.deepEqual(Array.from(ctx.RC.pend.dbc),['dbc_new']);
  fail=false;await ctx.run();assert.equal(ctx.RC.pend.ll.length,0);assert.equal(ctx.RC.pend.dbc.length,0);
+ assert.equal(observed.length,2);assert.equal(observed[0].phase,'after');
 });
