@@ -2,7 +2,12 @@ const { test, expect } = require('@playwright/test');
 const TOKEN='So11111111111111111111111111111111111111112';
 test.use({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:2});
 test('Six panels, age admission, safe settings and local filter management work on a phone',async({page},testInfo)=>{
-  const errors=[],now=Date.now();
+  const errors=[],now=Date.now();let modulesState={schema:1,modules:[],deleted:[]};
+  page.on('dialog',dialog=>dialog.accept('synthetic-test-owner-key-1234567890123456'));
+  await page.route('https://solscan-test.run.app/**',async route=>{
+    if(route.request().method()==='OPTIONS')return route.fulfill({status:204,headers:{'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'*'}});
+    const action=route.request().postDataJSON(),out=require('../server/module-library').edit(modulesState,action,modulesState.modules,Date.now());modulesState=out.config;return route.fulfill({status:200,contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:JSON.stringify({accepted:true,module:out.module})});
+  });
   page.on('pageerror',error=>errors.push(String(error)));
   const c={a:TOKEN,n:'Проверочная монета',s:'CHECK',p:TOKEN,d:'pumpswap',
     t:now-20*60_000,mst:'ok',mk:'pump',mT:now-20*60_000,
@@ -24,7 +29,9 @@ test('Six panels, age admission, safe settings and local filter management work 
   await page.route('https://storage.googleapis.com/sol-scan-511718-data/**',route=>{
     const pathname=new URL(route.request().url()).pathname;
     let response={coins:[]};
-    if(pathname.endsWith('/source/status.json'))response=source;
+    if(pathname.endsWith('/control/endpoint.json'))response={enabled:true,url:'https://solscan-test.run.app'};
+    else if(pathname.endsWith('/research-v2/modules.json'))response={schema:1,origin:'server-module-library',updated:now,modules:modulesState.modules};
+    else if(pathname.endsWith('/source/status.json'))response=source;
     else if(pathname.includes('/source/day/')||pathname.endsWith('/source/live.json'))response={coins:[admitted]};
     else if(pathname.endsWith('/research-v2/status.json'))response=research;
     else if(pathname.endsWith('/research-v2/polygon-1.json'))response={counts:research.counts,coins:[]};
@@ -51,7 +58,7 @@ test('Six panels, age admission, safe settings and local filter management work 
   await expect(page.locator('#coinList')).not.toContainText('Проверочная монета');
   await page.locator('#allStreams [data-stream="all"]').click();
   await page.locator('#p-all details summary').click();
-  await expect(page.locator('#ageBefore')).toBeDisabled();
+  await expect(page.locator('#ageBefore')).toBeEnabled();
   await page.locator('#cardLimit').selectOption('10');
   await page.locator('#applySource').click();
   await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('solscan_v2_state_20261017')).limit)).toBe(10);
@@ -78,7 +85,14 @@ test('Six panels, age admission, safe settings and local filter management work 
   await page.locator('#libNew').click();
   await expect(page.locator('#modSheet')).toBeVisible();
   await page.locator('#modSheet [data-mf="name"]').fill('Исследовательская проверка');
+  await page.locator('#modSheet .mgrp summary').first().click();
+  await page.locator('#modSheet [data-madd]').first().click();
+  await page.locator('#modSheet [data-mf="value"]').fill('1');
   await page.locator('#modSheet [data-msave]').click();
+  await expect(page.locator('#libMods')).toContainText('Исследовательская проверка');
+  await page.reload({waitUntil:'domcontentloaded'});
+  await expect(page.locator('#net')).toHaveText('● LIVE');
+  await page.locator('#tabs [data-page="library"]').click();
   await expect(page.locator('#libMods')).toContainText('Исследовательская проверка');
   await page.locator('#tabs [data-page="all"]').click();
   await page.screenshot({path:testInfo.outputPath('solscan-phone.png'),fullPage:true});

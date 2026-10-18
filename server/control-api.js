@@ -14,6 +14,7 @@ const AGE_OBJECT='config/source-age.json';
 const ONE_OBJECT='config/research-one.json';
 const TWO_OBJECT='config/research-two.json';
 const STORAGE_OBJECT='config/research-storage.json';
+const MODULE_OBJECT='config/modules.json';
 const ORIGIN=process.env.SOLSCAN_CONTROL_ORIGIN||'https://bakit97.github.io';
 const SHA256=process.env.SOLSCAN_CONTROL_SHA256||'';
 const MAX_BYTES=48*1024;
@@ -61,7 +62,7 @@ async function readBody(req,which){
   catch{throw Object.assign(Error('Invalid JSON'),{http:400})}
   try{return which===AGE_OBJECT?validAges(data):
     which===ONE_OBJECT?settingsOne(data):
-    which===TWO_OBJECT?settingsTwo(data):which===STORAGE_OBJECT?require('./research-banks').storageConfig(data):configOf(data)}
+    which===TWO_OBJECT?settingsTwo(data):which===STORAGE_OBJECT?require('./research-banks').storageConfig(data):which===MODULE_OBJECT?data:configOf(data)}
   catch{throw Object.assign(Error('Invalid or unsafe owner settings'),{http:422})}
 }
 async function cloudToken(){
@@ -71,11 +72,12 @@ async function cloudToken(){
   if(!r.ok)throw Error('Metadata token inaccessible');
   return (await r.json()).access_token;
 }
-async function storageGet(token,objectName){
-  const r=await fetch(storageRead(objectName)+'?alt=media',{
+async function storageGet(token,objectName,generation){
+  const r=await fetch(storageRead(objectName)+'?alt=media'+(generation?'&ifGenerationMatch='+encodeURIComponent(generation):''),{
     headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(10000)
   });
   if(r.status===404)return null;
+  if(r.status===412)throw Object.assign(Error('Concurrent change; reload'),{http:409});
   if(!r.ok)throw Error('Reading GCS config failed: '+r.status);
   return r.json();
 }
@@ -89,8 +91,8 @@ async function storageGeneration(token,objectName){
   if(!/^\d+$/.test(String(meta.generation)))throw Error('Invalid GCS generation');
   return String(meta.generation);
 }
-async function storagePut(token,config,objectName){
-  const generation=await storageGeneration(token,objectName);
+async function storagePut(token,config,objectName,expectedGeneration){
+  const generation=expectedGeneration??await storageGeneration(token,objectName);
   const r=await fetch(storageWrite(objectName)+'&ifGenerationMatch='+encodeURIComponent(generation),{
     method:'POST',
     headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
@@ -119,7 +121,7 @@ function handler(req,res){
   const objectName=req.url==='/api/filter-config'?OBJECT:
     req.url==='/api/source-age'?AGE_OBJECT:
     req.url==='/api/research-one'?ONE_OBJECT:
-    req.url==='/api/research-two'?TWO_OBJECT:req.url==='/api/research-storage'?STORAGE_OBJECT:null;
+    req.url==='/api/research-two'?TWO_OBJECT:req.url==='/api/research-storage'?STORAGE_OBJECT:['/api/modules','/api/module-test'].includes(req.url)?MODULE_OBJECT:null;
   if(!objectName||!['GET','POST'].includes(req.method))
     return reply(res,404,{error:'not-found'});
   // This endpoint changes the background server's behavior. Only an
@@ -134,6 +136,20 @@ function handler(req,res){
       return reply(res,200,{config:value});
     }
     const proposed=await readBody(req,objectName);
+    if(objectName===MODULE_OBJECT){
+      const token=await cloudToken(),generation=await storageGeneration(token,MODULE_OBJECT),current=generation==='0'?{schema:1,modules:[],deleted:[]}:await storageGet(token,MODULE_OBJECT,generation);
+      const snapshot=(await storageGet(token,'research-v2/modules.json'))?.modules||[],lib=require('./module-library');let config,module,results,deleted;
+      try{
+        if(req.url==='/api/module-test'){
+          const modules=lib.combine({owner:current,auto:snapshot}),bank=await storageGet(token,proposed.level==='1'?'research-v2/polygon-1.json':'research-v2/polygon-2.json');
+          results=lib.manualTest(modules,bank?.coins||[],proposed);config=lib.catalog(current);
+          for(const result of results){const m=modules.find(m=>m.id===result.id);config.modules=config.modules.filter(x=>x.id!==m.id).concat({...m,eval:{...m.eval,test:result}})}
+        }else{const out=lib.edit(current,proposed,snapshot);config=out.config;module=out.module;deleted=out.deleted}
+      }catch(e){if(!e.http)e.http=422;throw e}
+      const stored=await storagePut(token,config,MODULE_OBJECT,generation);if(stored.conflict)return reply(res,409,{error:'concurrent-update-retry'});
+      if(deleted){const gen=await storageGeneration(token,OBJECT),pass=gen==='0'?null:await storageGet(token,OBJECT,gen);if(pass){const next=lib.windowConfig(pass,[],config.deleted),saved=await storagePut(token,next,OBJECT,gen);if(saved.conflict)return reply(res,409,{error:'module-deleted-window-reload-pending'})}}
+      return reply(res,200,{accepted:true,module:module||null,results:results||null,deleted:deleted||null,generation:stored.generation});
+    }
     // Server receipt controls first activation; no client can backdate rules.
     if(objectName===OBJECT)proposed.activatedAt=0;
     const token=await cloudToken();

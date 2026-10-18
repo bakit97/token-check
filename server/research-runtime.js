@@ -163,7 +163,7 @@ class ResearchRuntime {
       if(!gate.ok){this.processed.set(row.mint,row.acceptedAt);this.intakeRejected[gate.why]=(this.intakeRejected[gate.why]||0)+1;continue}
       this.intakeAccepted[gate.via]=(this.intakeAccepted[gate.via]||0)+1;
       this.rows.push({via:gate.via,
-        mint:row.mint,phase:row.phase,featureAnchor:'acceptedAt',curve:observationCurve(coin,row.acceptedAt,cfg.hours),curveUnit:'price-usd',
+        mint:row.mint,phase:row.phase,featureAnchor:'acceptedAt',featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,row.acceptedAt,'1',row.phase),curve:observationCurve(coin,row.acceptedAt,cfg.hours),curveUnit:'price-usd',
         acceptedAt:row.acceptedAt,decisionAt,
         hours:cfg.hours,label:result.label,
         activePct:result.activePct,

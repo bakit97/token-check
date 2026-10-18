@@ -398,7 +398,7 @@ let RESEARCH_V2=null, RESEARCH_V2_ERR='', RESEARCH_BANK_UPLOADED=0;
 let PASS_V2=null, RESEARCH_TWO=null, AUTO_V2=null, FILTER_AUDIT=null;
 let RESEARCH_ONE_EPOCH=null, RESEARCH_TWO_EPOCH=null, RESEARCH_CONFIG_ERR='';
 let OLD_RESEARCH_ONE=[], OLD_RESEARCH_TWO=[];
-let AUTO_STUDIES=null,RESEARCH_BANKS=null;
+let AUTO_STUDIES=null,RESEARCH_BANKS=null,LIBRARY_CONFIG={schema:1,modules:[],deleted:[]},LIBRARY_ROWS=[],LIBRARY_SCORES={},LIBRARY_SCORE_AT=0,LIBRARY_PUBLISH_SIG='';
 let PASS_ERR='', TWO_ERR='', PASS_CFG_ERR='', TWO_BANK_UPLOADED=0, AUTO_UPLOADED=0;
 async function admitVerifiedPublicLaunch(launch,record) {
   const existing=C.get(record.mint);
@@ -415,7 +415,7 @@ async function admitVerifiedPublicLaunch(launch,record) {
 // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
 // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
 const MODULES=['event-clock.js','admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
-  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js'];
+  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js','module-library.js'];
 let MODULES_OK=null;
 function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
   for(const name of MODULES){const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
@@ -523,7 +523,8 @@ async function initPathsV2(){
   // localStorage setting as permission to create an authoritative alert.
   const config=await getObj('config/pass-filters.json');
   if(!config)throw Error('Missing server filter configuration');
-  PASS_V2=new (require(DIR+'/pass-runtime.js').PassRuntime)({dir:DIR,config:require(DIR+'/pass-runtime.js').verdictConfig(config)});
+  await refreshLibrary(config);
+  PASS_V2=new (require(DIR+'/pass-runtime.js').PassRuntime)({dir:DIR,config:require(DIR+'/pass-runtime.js').verdictConfig(require(DIR+'/module-library.js').windowConfig(config,LIBRARY_ROWS,LIBRARY_CONFIG.deleted))});
   const {ResearchTwoRuntime,configOf}=require(DIR+'/research-two-runtime.js');
   const {ResearchEpoch}=require(DIR+'/research-config.js');
   const requested=await getObj('config/research-two.json')||configOf();
@@ -537,6 +538,8 @@ async function initPathsV2(){
   recoverSupersededStudies();
   AUTO_V2=require(DIR+'/auto-research-v2.js');
   AUTO_STUDIES=new AUTO_V2.AutoStudies({dir:DIR});
+  try{LIBRARY_SCORES=JSON.parse(fs.readFileSync(DIR+'/module-live-evaluations.json','utf8'))}catch(e){if(e.code!=='ENOENT')err('library live scores unavailable')}
+  await refreshLibrary(PASS_V2.config);
   RESEARCH_BANKS=new (require(DIR+'/research-banks.js').ResearchBanks)({dir:DIR,config:await getObj('config/research-storage.json')||{},one:RESEARCH_V2?.config||{},two:RESEARCH_TWO.config});
   FILTER_AUDIT=new (require(DIR+'/filter-audit.js').FilterAudit)({dir:DIR});
   PASS_ERR='';TWO_ERR='';PASS_CFG_ERR='';
@@ -578,12 +581,31 @@ async function reloadResearchConfig(){
     err('research config '+e.message);
   }
 }
+async function refreshLibrary(raw){
+ const lib=require(DIR+'/module-library.js');LIBRARY_CONFIG=lib.catalog(await getObj('config/modules.json')||{schema:1,modules:[],deleted:[]});
+ const old=new Map(LIBRARY_ROWS.map(m=>[m.id,m])),configured=[];
+ for(const m of raw.modules||[]){const f=(raw.filters||[]).find(f=>f.id===m.filterId);if(!f)continue;configured.push({...f,phase:m.phase,verdictMinutes:f.verdictMinutes||raw.decisionMinutes,conds:f.conds||[f].concat(f.conditions||[]),createdAt:old.get(f.id)?.createdAt||raw.activatedAt||PASS_V2?.config?.activatedAt||Date.now()})}
+ LIBRARY_ROWS=lib.combine({owner:LIBRARY_CONFIG,auto:AUTO_STUDIES?[...AUTO_STUDIES.modules.values()]:[],configured});
+ for(const m of LIBRARY_ROWS){const score=LIBRARY_SCORES[m.id];if(score?.evalSig===m.evalSig)m.eval={...m.eval,live:score.live}}
+}
+async function publishLibrary(now){
+ if(!AUTO_STUDIES||!PASS_V2)return;
+ await refreshLibrary(PASS_V2.config);
+ if(RESEARCH_BANKS&&now-LIBRARY_SCORE_AT>=60*60e3){const scores=await require(DIR+'/module-library.js').liveStats(LIBRARY_ROWS,RESEARCH_BANKS.rows());
+  for(const m of LIBRARY_ROWS){const live=scores.get(m.id);if(live&&(live.totalPositive||live.totalNegative)){m.eval={...m.eval,live};LIBRARY_SCORES[m.id]={evalSig:m.evalSig,live}}}
+  const ids=new Set(LIBRARY_ROWS.map(m=>m.id));for(const id of Object.keys(LIBRARY_SCORES))if(!ids.has(id))delete LIBRARY_SCORES[id];
+  const file=DIR+'/module-live-evaluations.json',tmp=file+'.tmp',fd=fs.openSync(tmp,'w',0o600);try{fs.writeFileSync(fd,JSON.stringify(LIBRARY_SCORES));fs.fsyncSync(fd)}finally{fs.closeSync(fd)}fs.renameSync(tmp,file);require(DIR+'/durable-json.js').syncDirectory(DIR);LIBRARY_SCORE_AT=now;
+ }
+ const content=JSON.stringify(LIBRARY_ROWS),sig=require('node:crypto').createHash('sha256').update(content).digest('hex');
+ if(sig!==LIBRARY_PUBLISH_SIG){await upload('research-v2/modules.json',{schema:1,origin:'server-module-library',updated:now,modules:LIBRARY_ROWS});LIBRARY_PUBLISH_SIG=sig}
+}
 async function reloadPassConfig(){
   if(!PASS_V2)return;
   try{
     const config=await getObj('config/pass-filters.json');
     if(!config)throw Error('No pass configuration');
-    if(PASS_V2.applyConfig(require(DIR+'/pass-runtime.js').verdictConfig(config)))
+    await refreshLibrary(config);
+    if(PASS_V2.applyConfig(require(DIR+'/pass-runtime.js').verdictConfig(require(DIR+'/module-library.js').windowConfig(config,LIBRARY_ROWS,LIBRARY_CONFIG.deleted))))
       log('применена новая серверная версия фильтров',PASS_V2.configHash);
     PASS_CFG_ERR='';
   }catch(e){
@@ -1088,6 +1110,7 @@ async function exportResearchV2(now) {
 async function exportPathsV2(now){
   if(!PASS_V2||!RESEARCH_TWO||!SOURCE)return;
   await reloadPassConfig();
+  await publishLibrary(now);
   const p=PASS_CFG_ERR
     ?{added:0,...PASS_V2.summary(now),status:'paused-control-unavailable'}
     :PASS_V2.update({source:SOURCE,coins:researchCoins(),now});
@@ -1139,8 +1162,10 @@ async function exportPathsV2(now){
     const levelTwo=RESEARCH_BANKS?RESEARCH_BANKS.select({level:'2'}):RESEARCH_TWO.select({limit:20000});
     const one=AUTO_STUDIES.report(levelOne,{level:'1',settings:RESEARCH_V2.config,now});
     const two=AUTO_STUDIES.reportParents(levelTwo,{settings:RESEARCH_TWO.config,now});
-    await upload('research-v2/auto-1.json',{updated:now,epochStart:RESEARCH_V2.cohortStart,...one});
-    await upload('research-v2/auto-2.json',{updated:now,epochStart:RESEARCH_TWO.cohortStart,...two});
+    await refreshLibrary(PASS_V2.config);
+    const visible=report=>({...report,rules:report.rules.map(r=>LIBRARY_ROWS.find(m=>m.id===r.id&&m.level===report.level)).filter(Boolean).map(m=>({...m,rule:{...m.conds[0],conditions:m.conds.slice(1),conds:m.conds,phase:m.phase,verdictMinutes:m.verdictMinutes},train:m.eval.train,holdout:m.eval.holdout,live:m.eval.live}))});
+    await upload('research-v2/auto-1.json',{updated:now,epochStart:RESEARCH_V2.cohortStart,...visible(one)});
+    await upload('research-v2/auto-2.json',{updated:now,epochStart:RESEARCH_TWO.cohortStart,...visible(two)});
     if(FILTER_AUDIT){
       const audit=FILTER_AUDIT.report({
         config:PASS_V2.config,one:levelOne,two:levelTwo,
@@ -1158,7 +1183,7 @@ async function exportPathsV2(now){
           to:x.epoch.endedAt,counts:x.runtime.summary().counts}))},
       note:'Older cohorts continue their original observation settings and are never relabeled'
     });
-    AUTO_UPLOADED=now;
+    AUTO_UPLOADED=now;await publishLibrary(now);
   }
 }
 // Critical path: durable first-level matches must not wait for the 120s

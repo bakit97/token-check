@@ -9,8 +9,7 @@ function atomic(file,value){
   try{let i=0;while(i<b.length)i+=fs.writeSync(fd,b,i,b.length-i);fs.fsyncSync(fd)}
   finally{fs.closeSync(fd)}
   fs.renameSync(tmp,file);
-  const d=fs.openSync(path.dirname(file),'r');
-  try{fs.fsyncSync(d)}finally{fs.closeSync(d)}
+  require('./durable-json').syncDirectory(path.dirname(file));
 }
 function metrics(rows,f,positive,negative){
   const st=ruleStats(rows,f,positive,negative);

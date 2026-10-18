@@ -59,7 +59,7 @@ function configOf(raw={}){
   cfg.modules=cfg.modules.map(m=>({filterId:m.filterId,phase:m.phase,level:m.level,enabled:m.enabled,...(m.toR1===true?{toR1:true}:{})}));
   return cfg;
 }
-function digest(cfg){return crypto.createHash('sha256').update(JSON.stringify(cfg)).digest('hex').slice(0,20)}
+function digest(cfg){return crypto.createHash('sha256').update(JSON.stringify({...cfg,filters:cfg.filters.map(({name,...f})=>f)})).digest('hex').slice(0,20)}
 function isEvent(x){
   return x&&[1,2].includes(x.schema)&&typeof x.mint==='string'&&x.mint.length>=32&&
     PHASES.has(x.phase)&&Number.isSafeInteger(x.acceptedAt)&&
@@ -128,7 +128,7 @@ class PassRuntime {
   }
   applyConfig(raw){
     const cfg=configOf(raw),h=digest(cfg);
-    if(h===this.configHash)return false;
+    if(h===this.configHash){this.config={...cfg,activatedAt:this.config.activatedAt};return false;}
     if(cfg.enabled){
       let old=null;
       try{old=JSON.parse(fs.readFileSync(this.activationFile,'utf8'))}
