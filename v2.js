@@ -908,7 +908,7 @@ function libRender(){var lvl=+s.level||1,rep=lvl===1?autoOne:autoTwo,h=renderAut
 function modScore(m){var e=m.eval||{},t=e.poly||e.train;return t&&t.positiveRecall!=null?Math.round((t.positiveRecall-(1-t.negativeRejection))*100):null}
 function renderLibrary(){
   renderServerRuleHistory();
-  $('storeBox').classList.toggle('hide',!LIB_STORE);var lpa=document.querySelector('#libPh [data-lp="all"]');if(lpa)lpa.classList.toggle('hide',LIB_STORE);$('libLevelBox').classList.toggle('hide',LIB_STORE);if(LIB_STORE){renderStore();return}
+  $('storeBox').classList.toggle('hide',!LIB_STORE);var lpa=document.querySelector&&document.querySelector('#libPh [data-lp="all"]');if(lpa)lpa.classList.toggle('hide',LIB_STORE);$('libLevelBox').classList.toggle('hide',LIB_STORE);if(LIB_STORE){renderStore();return}
   var names=s.level==='1'?['Живые','Мёртвые']:['Сильные','Слабые'],target=s.poly[s.level],groups=classified(s.level),lenA=groups[0].length,lenB=groups[1].length;
   $('polyTitle').textContent='🟢 '+fmt(lenA)+'/'+fmt(target[0])+' · 🔴 '+fmt(lenB)+'/'+fmt(target[1]);
   libRender();
