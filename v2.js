@@ -510,17 +510,18 @@ var TAGK={buyers10:'пок.10м',quoteSol:'SOL',top10:'топ-10%',top1:'топ-
 function ruleTags(f){return [f].concat(f.conditions||[]).map(function(r){if(r.key==='safeContract')return '<span class="tag">контракт ✓</span>';
   return '<span class="tag">'+esc(TAGK[r.key]||r.key)+' '+(r.op==='>='?'≥':'≤')+' '+esc(fmt(r.value))+'</span>'}).join('')}
 function serverCfg(){return serverPassActive&&passMeta&&passMeta.serverConfig||null}
-function draft(){if(!MOD_DIRTY||!MOD_DRAFT){var c=serverCfg();MOD_DRAFT=c?JSON.parse(JSON.stringify({schema:1,enabled:c.enabled,activatedAt:c.activatedAt||0,decisionMinutes:c.decisionMinutes,filters:c.filters||[],modules:c.modules||[]})):null}return MOD_DRAFT}
+function draft(){if(!MOD_DIRTY||!MOD_DRAFT){var c=serverCfg();MOD_DRAFT=c?JSON.parse(JSON.stringify({schema:1,enabled:c.enabled,activatedAt:c.activatedAt||0,decisionMinutes:c.decisionMinutes,filters:c.filters||[],modules:c.modules||[],r1:{before:!!(c.r1&&c.r1.before),after:!!(c.r1&&c.r1.after)}})):null}return MOD_DRAFT}
 function modRow(m,i,byId,today){var f=byId[m.filterId];if(!f)return '';
   var n=serverPassRows.filter(function(r){return r.phase===m.phase&&day(r.acceptedAt)===today&&(r.matches||[]).some(function(x){return x.id===f.id})}).length;
   return '<details class="frow"><summary><span class="fname">'+esc(f.name)+'</span><span class="fcnt">'+n+'</span>'+
-    (m.level==='1'?'<span class="r1b'+(m.toR1?' on':'')+'" data-r1="'+i+'" title="в Исследование 1">→И1</span>':'')+
+
     '<span class="tg'+(m.enabled?' on':'')+'" data-tg="'+i+'"></span></summary><div class="tags">'+ruleTags(f)+'</div>'+
     '<div class="row" style="margin-top:6px"><span class="hint">v'+esc(f.version)+' · сегодня '+n+'</span><button type="button" class="pbtn del" data-del="'+i+'">убрать</button></div></details>'}
 function renderServerModules(){var d=draft();if(!$('mods1'))return;
   if(!d){$('mods1').innerHTML=$('mods2').innerHTML='<p class="hint">нет данных сервера</p>';return}
   var byId={};d.filters.forEach(function(f){byId[f.id]=f});var today=day(now());
   ['1','2'].forEach(function(l){var h='';d.modules.forEach(function(m,i){if(m.level===l&&m.phase===MINE_STREAM)h+=modRow(m,i,byId,today)});$('mods'+l).innerHTML=h||'<p class="hint">пусто</p>'});
+  var on=!!(d.r1&&d.r1[MINE_STREAM]);$('winR1').classList.toggle('on',on);$('winR1').querySelector('.tg').classList.toggle('on',on);
   $('modApplyRow').hidden=!MOD_DIRTY}
 function showModPicker(level){PICK_LEVEL=level;var d=draft();if(!d)return;var have={};d.modules.forEach(function(m){if(m.phase===MINE_STREAM&&m.level===level)have[m.filterId]=1});
   var pool={};d.filters.concat(s.filters||[]).forEach(function(f){if(String(f.level)===level&&!have[f.id])pool[f.id]=f});
@@ -558,15 +559,14 @@ function renderIntake(){if(!$('intakeBox'))return;var st=researchMeta&&researchM
   $('inManualBox').classList.toggle('dim',!$('inManual').checked);
   var parts=[];if($('inPhaseOn').checked)parts.push({before:'до',after:'после',both:'оба'}[$('inPhase').value]);if($('inBuyOn').checked)parts.push('пок. ≥ '+$('inBuy').value);if($('inSolOn').checked)parts.push('SOL ≥ '+$('inSol').value);if($('inSampleOn').checked)parts.push($('inSample').value+'%');
   $('inManualSum').textContent=$('inManual').checked?(parts.join(' · ')||'без условий'):'выкл.';
-  var c=serverCfg(),byId={};(c&&c.filters||[]).forEach(function(f){byId[f.id]=f});var marked=(c&&c.modules||[]).filter(function(m){return m.toR1&&m.level==='1'});
-  $('inModSum').textContent=marked.length?marked.map(function(m){return (m.phase==='before'?'🌱 ':'🎓 ')+(byId[m.filterId]?byId[m.filterId].name:m.filterId)}).join(' · '):'нет';
+  var c=serverCfg(),r=c&&c.r1||{};$('inModSum').textContent='🌱 До: '+(r.before?'вкл':'выкл')+' · 🎓 После: '+(r.after?'вкл':'выкл');
   var acc=researchMeta&&researchMeta.intakeAccepted||{},rej=researchMeta&&researchMeta.intakeRejected||{};
   var a=Object.values(acc).reduce(function(p,v){return p+v},0),r=Object.values(rej).reduce(function(p,v){return p+v},0);
   $('intakeStats').textContent=x?'вошло '+a+' · не вошло '+r+(r?' ('+Object.keys(rej).map(function(k){return ({phase:'поток','no-buyers10':'нет данных о покупателях',buyers10:'мало покупателей','no-quoteSol':'нет данных SOL',quoteSol:'мало SOL',sample:'жребий','not-matched':'не прошли','modules-only-not-passed':'не в «Прошли»'})[k]+' '+rej[k]}).join(', ')+')':''):''}
 async function applyIntake(){var key=keyFrom('intakeKey'),msg=$('intakeMsg');
   if(!controlEndpoint){msg.textContent='Сервер управления недоступен';return}if(!researchMeta){msg.textContent='Сервер ещё загружается, попробуй через минуту';return}
   if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){msg.textContent='Нажми 🔒 вверху и введи пароль';return}
-  var it=intakeFromUI(),anyMarked=((serverCfg()||{}).modules||[]).some(function(m){return m.toR1});if(!it.manual.enabled&&!anyMarked&&!window.confirm('Оба входа выключены — исследование перестанет набирать монеты. Продолжить?'))return;
+  var it=intakeFromUI(),anyMarked=!!((serverCfg()||{}).r1&&((serverCfg().r1.before)||(serverCfg().r1.after)));if(!it.manual.enabled&&!anyMarked&&!window.confirm('Оба входа выключены — исследование перестанет набирать монеты. Продолжить?'))return;
   var st=researchMeta.settings,cfg={hours:st.hours,decisionMinutes:st.decisionMinutes,minActive:st.minActive,maxIdle:st.maxIdle,minCoverage:st.minCoverage,intake:it};
   $('intakeApply').disabled=true;msg.textContent='Отправка…';
   try{var r=await ownerFetch(controlEndpoint+'/api/research-one',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(cfg)});
@@ -1172,6 +1172,7 @@ function bind(){
   document.querySelectorAll('[data-addlev]').forEach(function(b){b.addEventListener('click',function(){showModPicker(b.dataset.addlev)})});
   $('modPickerX').addEventListener('click',function(){$('modPicker').hidden=true});
   $('modPickerList').addEventListener('click',function(e){var b=e.target.closest('[data-pick]');if(b)pickFilter(b.dataset.pick)});
+  $('winR1').addEventListener('click',function(){var d=draft();if(!d)return;d.r1=d.r1||{before:false,after:false};d.r1[MINE_STREAM]=!d.r1[MINE_STREAM];MOD_DIRTY=true;renderServerModules()});
   $('mods1').addEventListener('click',modClick);$('mods2').addEventListener('click',modClick);$('modApply').addEventListener('click',applyModules);
   ['inManual','inModules','inPhaseOn','inPhase','inBuyOn','inBuy','inSolOn','inSol','inSampleOn','inSample'].forEach(function(id){$(id).addEventListener('input',function(){INTAKE_DIRTY=true;renderIntake()})});
   $('intakeApply').addEventListener('click',applyIntake);

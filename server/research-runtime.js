@@ -42,8 +42,8 @@ function intakeDecision(intake,row,features,passes){
     if(ok)via.push('manual');else if(!intake.modules.enabled)return {ok:false,why};
   }
   if(intake.modules.enabled){const rec=passes?.records?.get?.(row.mint);
-    if(rec){const ids=new Set((passes.config?.modules||[]).filter(x=>x.toR1&&x.level==='1'&&x.phase===row.phase).map(x=>x.filterId));
-      if((rec.matches||[]).some(x=>ids.has(x.id)))via.push('modules')}}
+    if(rec){const all=passes.config?.r1?.[row.phase]===true,ids=new Set((passes.config?.modules||[]).filter(x=>x.toR1&&x.level==='1'&&x.phase===row.phase).map(x=>x.filterId));
+      if(all||(rec.matches||[]).some(x=>ids.has(x.id)))via.push('modules')}}
   return via.length?{ok:true,via:via.join('+')}:{ok:false,why:m.enabled?'not-matched':'modules-only-not-passed'};
 }
 function settings(cfg={}) {

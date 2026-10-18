@@ -18,7 +18,9 @@ function configOf(raw={}){
   const cfg={
     schema:1,enabled:raw.enabled,activatedAt:raw.activatedAt,
     decisionMinutes:raw.decisionMinutes,
-    filters:raw.filters,modules:raw.modules
+    filters:raw.filters,modules:raw.modules,
+    // Переключатель окна «→ И1» по потокам; отсутствует → прежний хеш.
+    ...(raw.r1&&typeof raw.r1==='object'?{r1:{before:raw.r1.before===true,after:raw.r1.after===true}}:{})
   };
   if(!Number.isSafeInteger(cfg.activatedAt)||cfg.activatedAt<0||
      !Number.isInteger(cfg.decisionMinutes)||cfg.decisionMinutes<1||cfg.decisionMinutes>30||
