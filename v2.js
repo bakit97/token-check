@@ -25,7 +25,7 @@ var bank=Object.assign({'1':[],'2':[]},loadLocal(BANK,{'1':[],'2':[]}));
 for(var lv of ['1','2'])if(!Array.isArray(bank[lv]))bank[lv]=[];
 var dataset=[],status=null,dataErr='',loadedAt=0,picker=null,editorId=null,lastPassed=[],lastR1=[],lastR2=[],lastAccepted=[],lastVisible=[],testHtml='',lastBankWrite=0,lastResearchBankRead=0,researchMeta=null,researchServerBank=false,fetching=false,sourceActive=false,sourceMeta=null,sourceRecords=[];
 var serverPassActive=false,serverPassRows=[],passMeta=null,serverR2Active=false,serverR2Rows=[],twoMeta=null,autoOne=null,autoTwo=null,lastSecondBankRead=0;
-var controlEndpoint=null,serverR2Curve=null,filterAuditMeta=null;
+var controlEndpoint=null,serverR2Curve=null,filterAuditMeta=null,storageMeta=null;
 var moduleDraft=new Map();
 function draftModuleKey(m){return m.phase+':'+m.level+':'+m.filterId}
 var phaseNames={before:'🌱 До миграции',after:'🎓 После миграции'};
@@ -927,13 +927,13 @@ var LIB_STORE=false,STORE_N={};
 function coinOf(x){var m=x.mint||x;var c=lastAccepted.find(function(d){return mint(d)===m});if(c)return c;
   return {a:m,n:x.name||'',s:'',ds:[],i:'',_entry:{phase:x.phase||'after',acceptedAt:x.acceptedAt||x.firstSeenAt||0,eventAt:x.eventAt||x.acceptedAt||x.firstSeenAt||0}}}
 var STORE_KINDS=[['live','🟢 Живые','1',0],['dead','🔴 Мёртвые','1',1],['strong','💪 Сильные','2',0],['weak','🪫 Слабые','2',1]];
-function storeCfg(){try{return JSON.parse(localStorage.getItem('storeCfg')||'{}')}catch(e){return {}}}
+function storeCfg(){return storageMeta&&storageMeta.settings||{}}
 function storeTarget(ph,k){var c=storeCfg();return (c[ph]&&c[ph][k])||2000}
 var STORE_K='live',STORE_GEAR=false;
 function renderStore(){var box=$('storeBox');if(!box)return;if(LP==='all'){LP='before';document.querySelectorAll('#libPh [data-lp]').forEach(function(x){x.classList.toggle('active',x.dataset.lp==='before')})}var phs=LP==='all'?['before','after']:[LP];
   var info=STORE_KINDS.map(function(K){var g=classified(K[2])[K[3]].filter(function(x){return LP==='all'||r1Phase(x)===LP}),tg=phs.reduce(function(a,ph){return a+storeTarget(ph,K[0])},0);return {K:K,g:g,tg:tg}});
   var cur=info.find(function(i){return i.K[0]===STORE_K}),n=STORE_N[STORE_K]||20;
-  var tabs='<div class="row" style="gap:5px;align-items:center"><div class="chips seg" style="margin:0;flex:1">'+info.map(function(i){return '<button type="button" data-sk="'+i.K[0]+'"'+(i.K[0]===STORE_K?' class="active"':'')+'>'+i.K[1].split(' ')[0]+' <span class="cnt">'+fmt(i.g.length)+'/'+fmt(i.tg)+'</span></button>'}).join('')+'</div><button type="button" class="add1" data-stgear="1" title="Настройка">⚙</button></div>';
+  var tabs='<div class="row" style="gap:5px;align-items:center"><div class="chips seg" style="margin:0;flex:1">'+info.map(function(i){return '<button type="button" data-sk="'+i.K[0]+'"'+(i.K[0]===STORE_K?' class="active"':'')+'>'+i.K[1].split(' ')[0]+' <span class="cnt">'+(storageMeta&&storageMeta.counts&&storageMeta.counts[LP]?fmt(storageMeta.counts[LP][i.K[0]]):'—')+'/'+fmt(i.tg)+'</span></button>'}).join('')+'</div><button type="button" class="add1" data-stgear="1" title="Настройка">⚙</button></div>';
   var gear=!STORE_GEAR?'':(LP==='all'?'<p class="hint">Цель задаётся отдельно в 🌱 До и 🎓 После</p>':'<div class="frow" style="margin-top:6px"><div class="prow"><label>'+cur.K[1]+': хранить <b class="stv">'+storeTarget(LP,STORE_K)+'</b> монет</label><input type="range" min="50" max="5000" step="50" value="'+storeTarget(LP,STORE_K)+'" data-st="'+STORE_K+'"></div><div class="row applyrow"><button type="button" class="primary pbtn" data-stapply="'+STORE_K+'" style="margin-left:auto">Применить</button></div></div>');
   var rows=cur.g.slice(-n).reverse().map(function(x){return coinHtml(coinOf(x))}).join('');
   box.innerHTML=tabs+gear+'<div class="meter" style="margin:8px 0"><div style="width:'+Math.min(100,100*cur.g.length/cur.tg)+'%"></div></div><div class="list">'+(rows||'<div class="empty-state">Пока нет</div>')+'</div>'+(cur.g.length>n?'<button type="button" class="add1" data-stmore="'+STORE_K+'">Показать ещё</button>':'')}
@@ -1324,8 +1324,8 @@ function bind(){
   $('pwApply').addEventListener('click',async function(){try{localStorage.setItem('passWin',$('pwMin').value)}catch(e){}if(PM_DRAFT){var d=draft();if(!d){note('Нет данных сервера');return}var ph=PF==='before'?'before':PF==='after'?'after':MINE_STREAM;d.passMode=d.passMode||{before:'1',after:'1'};d.passMode[ph]=PM_DRAFT;MOD_DIRTY=true;await applyModules();if(MOD_DIRTY)return}PM_DRAFT=null;$('pwApplyRow').classList.add('hide');renderPassed();note('Применено')});
   $('libPh').addEventListener('click',function(e){var b=e.target.closest('[data-lp]');if(!b)return;LP=b.dataset.lp;document.querySelectorAll('#libPh [data-lp]').forEach(function(x){x.classList.toggle('active',x===b)});LIB_STORE?renderStore():libRender()});
   $('storeBox').addEventListener('input',function(e){var t=e.target;if(!t.dataset.st)return;$('storeBox').querySelector('.stv').textContent=t.value});
-  $('storeBox').addEventListener('click',function(e){var t=e.target,k;var sk=t.closest('[data-sk]');if(sk){STORE_K=sk.dataset.sk;renderStore();return}if(t.dataset.stgear){STORE_GEAR=!STORE_GEAR;renderStore();return}
-    if((k=t.dataset.stapply)){var c=storeCfg();c[LP]=c[LP]||{};c[LP][k]=+$('storeBox').querySelector('[data-st]').value;try{localStorage.setItem('storeCfg',JSON.stringify(c))}catch(x){}STORE_GEAR=false;renderStore();note('Применено');return}
+  $('storeBox').addEventListener('click',async function(e){var t=e.target,k;var sk=t.closest('[data-sk]');if(sk){STORE_K=sk.dataset.sk;renderStore();return}if(t.dataset.stgear){STORE_GEAR=!STORE_GEAR;renderStore();return}
+    if((k=t.dataset.stapply)){if(!storageMeta||!controlEndpoint){note('Нет данных сервера');return}var key=keyFrom('modKey');if(!key)return;var c=JSON.parse(JSON.stringify(storeCfg()));c[LP]=c[LP]||{};c[LP][k]=+$('storeBox').querySelector('[data-st]').value;try{var r=await ownerFetch(controlEndpoint+'/api/research-storage',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(c)});if(!r.ok){note('Сервер отклонил: '+r.status);return}STORE_GEAR=false;note('Принято сервером; минимум ограничен целью исследования');load()}catch(x){note('Ошибка связи')}return}
     if((k=t.dataset.stmore)){STORE_N[k]=(STORE_N[k]||20)+20;renderStore();return}var b=t.closest('[data-coin]');if(b){showCoinDetail(coinOf(bank['1'].concat(bank['2']||[]).find(function(x){return x.mint===b.dataset.coin})||b.dataset.coin),'storeBox')}});
   $('libNew').addEventListener('click',function(){var id='u'+Date.now(),m={id:id,level:String(s.level||'1'),phase:LP==='all'?'before':LP,name:'Мой модуль',dm:5,conds:[],eval:{},createdAt:Date.now(),liveFrom:Date.now()};m.evalSig=modSig(m);MODS[id]=m;MOD_AUTO[id]='';openModSheet(id)});
   $('libSelect').addEventListener('click',function(){LIB_SEL=!LIB_SEL;LIBSET={};this.textContent=LIB_SEL?'Отмена':'Тест';$('libBar').classList.toggle('hide',!LIB_SEL);$('libMsg').textContent=LIB_SEL?'Выбери модули для теста':'';libRender()});
@@ -1460,7 +1460,7 @@ async function loadInternal(){
     'passed-v2/day/'+today+'.json','passed-v2/day/'+yesterday+'.json',
     'research-v2/status-two.json','research-v2/polygon-2.json',
     'research-v2/auto-1.json','research-v2/auto-2.json','control/endpoint.json',
-    'research-v2/curve-two.json','research-v2/filter-audit.json'];
+    'research-v2/curve-two.json','research-v2/filter-audit.json','research-v2/storage.json'];
   var fetched=await Promise.allSettled(names.map(function(name,i){
     if(!name)return Promise.resolve(null);
     if(i===11&&lastResearchBankRead&&now()-lastResearchBankRead<300000)return Promise.resolve(null);
@@ -1485,6 +1485,7 @@ async function loadInternal(){
   }
   status=vals[0]||status;
   controlEndpoint=validControlEndpoint(vals[20]);
+  storageMeta=vals[23]&&vals[23].banks===8&&Number.isFinite(vals[23].updated)&&now()-vals[23].updated<7*60000?vals[23]:null;
   // Управление с телефона: поля пароля и выбор возраста видны только когда защищённый сервис работает.
   (function(){var on=!!controlEndpoint;if($('ageOwnerBlock'))$('ageOwnerBlock').classList.toggle('hide',!on);
     ['ageBefore','ageAfter'].forEach(function(id){if($(id))$(id).disabled=!on});

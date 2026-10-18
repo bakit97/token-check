@@ -1,17 +1,17 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "2d9764b1cf847d3c54c3234d30dbe0ecbb2047ea2102cc9260bd3d2a008a943a",
+    "collector.js": "adf8d4905d9d06b5b4ea62237ac360c739277452d3e784c241727b1a814855bb",
     "event-clock.js": "ae835ddd6a280ae888d1b264a4e2acf665bdd62d895a3ea42c255339e793e2ad",
     "admission.js": "99feba0f235ce8e262f01b1e517a9373c906fb6c51353a2951a184ef5bfacde8",
     "source-runtime.js": "089dc694373e09fea9cd0598d9697c4f441b04c374006f677caab0502cde4e21",
     "pump-pre.js": "c3a05cd8b79e807409b7f5b86d320205835db468c068839b82668606e004bbd8",
     "pre-watcher.js": "079b33d70d39bfd25364763db0559c3d20f5ab3d130668a20c78d4a3203cfb1b",
     "research-v2.js": "65592255850c8a520b8e02e59f9076200591e48f57933b5b328019a4785896f0",
-    "research-runtime.js": "a19a42b0a9416c6e4f626b0730b0b3990326c012ecb4a0572154756fe016407b",
+    "research-runtime.js": "11ca2c789be5f9fd50640683ff4b50f92a6d3e9e76b024eb561cf4e4014ced9b",
     "research-config.js": "7ac9ef909365fe8d2fe06814456459433c43b359347564cd7d8a0cf8c2e44011",
     "pass-runtime.js": "d5e7a226b19ed27875e03eeef937298d98a86f1df5c8b8f06a267605e136f360",
-    "research-two-runtime.js": "44ccacbf6a320659aa44de3bbdafa98f1d7f27548a9b17146f1f1ee365ace68d",
+    "research-two-runtime.js": "f256177ff76ae084b0bf0e1d1fa06fbb8b3db758e9a6f6a0231346c064ea3b7e",
     "auto-research-v2.js": "c08999b7679eb151e7e6f9b5082746c81b5637ce410be84e4243c91b0384cdf4",
     "filter-audit.js": "035d44e9d6a527fc349dbcca2d45c5a7b6dbcfa48924281e619c80ac30ce27ae",
     "resource-budget.js": "6e2c7994f86e7cc7ce9c3ce281446e3476c12bcaafc112a7ffc723a06c955660",
@@ -22,6 +22,7 @@
     "completed-coins.js": "d8280dbc9a3336e57ac880f33e4b552d7f3a64dd38460a7b364dbd2f0cb0e3c5",
     "seed-completed.js": "01522182858aba7faab6cd85a5badd7552795cecbac2c12f00755a8ce985e1a4",
     "coin-profile.js": "f45624c791212e38192c157fa116d5a29f1980b92ac64328fe8eb365aac7c71a",
-    "durable-json.js": "a042526c285613abc0935b43db8dffb98502054b1b9d43a8355438620dc8f192"
+    "durable-json.js": "a042526c285613abc0935b43db8dffb98502054b1b9d43a8355438620dc8f192",
+    "research-banks.js": "e0ea6324a5ae1ca69cf9e99cba1e78cfaf7ed3d47ec37cb7e1d8bef62d91a122"
   }
 }

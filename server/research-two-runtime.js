@@ -83,7 +83,7 @@ class ResearchTwoRuntime {
              (typeof row.minuteCurvePacked!=='string'||Buffer.from(row.minuteCurvePacked,'base64').length!==1200)))
           throw Error('Corrupted second-level research row');
       }
-      this.rows=capBank(data.rows,r=>r.label,'strong','weak',MAX_PER_CLASS);
+      this.rows=capPhases(data.rows);
       for(const pair of data.processed||[])
         if(Array.isArray(pair)&&typeof pair[0]==='string'&&Number.isSafeInteger(pair[1]))
           this.processed.set(pair[0],pair[1]);
@@ -125,7 +125,7 @@ class ResearchTwoRuntime {
       additions.push(row);
     }
     if(additions.length)
-      this.rows=capBank(this.rows.concat(additions),r=>r.label,'strong','weak',MAX_PER_CLASS);
+      this.rows=capPhases(this.rows.concat(additions));
     this.journalCount=complete.toString('utf8').split('\n').length-1;
   }
   _appendJournal(rows){
@@ -214,7 +214,7 @@ class ResearchTwoRuntime {
     if(added){
       this._appendJournal(newRows);
       for(const row of newRows)this.processed.set(row.mint,row.zeroAt);
-      this.rows=capBank(this.rows.concat(newRows),r=>r.label,'strong','weak',MAX_PER_CLASS);
+      this.rows=capPhases(this.rows.concat(newRows));
       this.journalCount+=newRows.length;
       // Persist expensive full snapshots rarely instead of writing several
       // megabytes every two-minute heartbeat.
@@ -257,9 +257,10 @@ class ResearchTwoRuntime {
   select({phase,label,limit=10000}={}){
     if(phase&&!['before','after'].includes(phase))throw TypeError('bad phase');
     if(label&&!['strong','weak'].includes(label))throw TypeError('bad label');
-    if(!Number.isInteger(limit)||limit<1||limit>10000)throw RangeError('bad limit');
+    if(!Number.isInteger(limit)||limit<1||limit>20000)throw RangeError('bad limit');
     return this.rows.filter(x=>(!phase||x.phase===phase)&&(!label||x.label===label))
       .sort((a,b)=>b.zeroAt-a.zeroAt).slice(0,limit);
   }
 }
+function capPhases(rows){return ['before','after'].flatMap(phase=>capBank(rows.filter(r=>r.phase===phase),r=>r.label,'strong','weak',MAX_PER_CLASS))}
 module.exports={ResearchTwoRuntime,configOf};

@@ -4,7 +4,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const {
-  featuresAt, activityOutcome, capBank
+  featuresAt, activityOutcome, capBank, candles
 } = require('./research-v2');
 
 const MIN=60_000;
@@ -163,7 +163,7 @@ class ResearchRuntime {
       if(!gate.ok){this.processed.set(row.mint,row.acceptedAt);this.intakeRejected[gate.why]=(this.intakeRejected[gate.why]||0)+1;continue}
       this.intakeAccepted[gate.via]=(this.intakeAccepted[gate.via]||0)+1;
       this.rows.push({via:gate.via,
-        mint:row.mint,phase:row.phase,
+        mint:row.mint,phase:row.phase,featureAnchor:'acceptedAt',curve:observationCurve(coin,row.acceptedAt,cfg.hours),curveUnit:'price-usd',
         acceptedAt:row.acceptedAt,decisionAt,
         hours:cfg.hours,label:result.label,
         activePct:result.activePct,
@@ -212,11 +212,12 @@ class ResearchRuntime {
   select({phase,label,limit=100}={}) {
     if(phase&&!['before','after'].includes(phase))throw TypeError('bad phase');
     if(label&&!['live','dead'].includes(label))throw TypeError('bad label');
-    if(!Number.isInteger(limit)||limit<1||limit>10000)throw RangeError('bad limit');
+    if(!Number.isInteger(limit)||limit<1||limit>20000)throw RangeError('bad limit');
     return this.rows.filter(r=>(!phase||r.phase===phase) && (!label||classOf(r,this.config)===label))
       .sort((a,b)=>b.acceptedAt-a.acceptedAt).slice(0,limit)
       .map(r=>({...r,label:classOf(r,this.config)}));
   }
 }
+function observationCurve(coin,at,hours){const points=candles(coin);let j=-1;const curve=[];for(let m=0;m<=hours*60;m+=5){const t=at+m*MIN;while(j+1<points.length&&points[j+1][0]<=t)j++;curve.push([m,j>=0&&t-points[j][0]<=7*MIN?points[j][1]:null])}return curve}
 function capPhases(rows,cfg){return ['before','after'].flatMap(phase=>capBank(rows.filter(r=>r.phase===phase),r=>classOf(r,cfg),'live','dead',MAX_BANK_PER_CLASS)).sort((a,b)=>a.time-b.time)}
 module.exports={phaseSettings,intakeDecision,intakeSettings,ResearchRuntime,settings,classOf};

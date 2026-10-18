@@ -13,6 +13,7 @@ const OBJECT='config/pass-filters.json';
 const AGE_OBJECT='config/source-age.json';
 const ONE_OBJECT='config/research-one.json';
 const TWO_OBJECT='config/research-two.json';
+const STORAGE_OBJECT='config/research-storage.json';
 const ORIGIN=process.env.SOLSCAN_CONTROL_ORIGIN||'https://bakit97.github.io';
 const SHA256=process.env.SOLSCAN_CONTROL_SHA256||'';
 const MAX_BYTES=48*1024;
@@ -60,7 +61,7 @@ async function readBody(req,which){
   catch{throw Object.assign(Error('Invalid JSON'),{http:400})}
   try{return which===AGE_OBJECT?validAges(data):
     which===ONE_OBJECT?settingsOne(data):
-    which===TWO_OBJECT?settingsTwo(data):configOf(data)}
+    which===TWO_OBJECT?settingsTwo(data):which===STORAGE_OBJECT?require('./research-banks').storageConfig(data):configOf(data)}
   catch{throw Object.assign(Error('Invalid or unsafe owner settings'),{http:422})}
 }
 async function cloudToken(){
@@ -118,7 +119,7 @@ function handler(req,res){
   const objectName=req.url==='/api/filter-config'?OBJECT:
     req.url==='/api/source-age'?AGE_OBJECT:
     req.url==='/api/research-one'?ONE_OBJECT:
-    req.url==='/api/research-two'?TWO_OBJECT:null;
+    req.url==='/api/research-two'?TWO_OBJECT:req.url==='/api/research-storage'?STORAGE_OBJECT:null;
   if(!objectName||!['GET','POST'].includes(req.method))
     return reply(res,404,{error:'not-found'});
   // This endpoint changes the background server's behavior. Only an
@@ -135,7 +136,9 @@ function handler(req,res){
     const proposed=await readBody(req,objectName);
     // Server receipt controls first activation; no client can backdate rules.
     if(objectName===OBJECT)proposed.activatedAt=0;
-    const stored=await storagePut(await cloudToken(),proposed,objectName);
+    const token=await cloudToken();
+    if(objectName===STORAGE_OBJECT){const one=await storageGet(token,ONE_OBJECT)||{},two=await storageGet(token,TWO_OBJECT)||{};Object.assign(proposed,require('./research-banks').storageConfig(proposed,one,two))}
+    const stored=await storagePut(token,proposed,objectName);
     if(stored.conflict)return reply(res,409,{error:'concurrent-update-retry'});
     return reply(res,200,{accepted:true,
       sha256:hash(JSON.stringify(proposed)).toString('hex').slice(0,20),

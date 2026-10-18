@@ -398,7 +398,7 @@ let RESEARCH_V2=null, RESEARCH_V2_ERR='', RESEARCH_BANK_UPLOADED=0;
 let PASS_V2=null, RESEARCH_TWO=null, AUTO_V2=null, FILTER_AUDIT=null;
 let RESEARCH_ONE_EPOCH=null, RESEARCH_TWO_EPOCH=null, RESEARCH_CONFIG_ERR='';
 let OLD_RESEARCH_ONE=[], OLD_RESEARCH_TWO=[];
-let AUTO_STUDIES=null;
+let AUTO_STUDIES=null,RESEARCH_BANKS=null;
 let PASS_ERR='', TWO_ERR='', PASS_CFG_ERR='', TWO_BANK_UPLOADED=0, AUTO_UPLOADED=0;
 async function admitVerifiedPublicLaunch(launch,record) {
   const existing=C.get(record.mint);
@@ -415,7 +415,7 @@ async function admitVerifiedPublicLaunch(launch,record) {
 // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
 // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
 const MODULES=['event-clock.js','admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
-  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js'];
+  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js'];
 let MODULES_OK=null;
 function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
   for(const name of MODULES){const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
@@ -537,6 +537,7 @@ async function initPathsV2(){
   recoverSupersededStudies();
   AUTO_V2=require(DIR+'/auto-research-v2.js');
   AUTO_STUDIES=new AUTO_V2.AutoStudies({dir:DIR});
+  RESEARCH_BANKS=new (require(DIR+'/research-banks.js').ResearchBanks)({dir:DIR,config:await getObj('config/research-storage.json')||{},one:RESEARCH_V2?.config||{},two:RESEARCH_TWO.config});
   FILTER_AUDIT=new (require(DIR+'/filter-audit.js').FilterAudit)({dir:DIR});
   PASS_ERR='';TWO_ERR='';PASS_CFG_ERR='';
   log('серверные пути готовы: Прошли',PASS_V2.records.size,
@@ -570,6 +571,7 @@ async function reloadResearchConfig(){
         log('второй исследовательский полигон переключён на новую эпоху',x.hash);
       }else RESEARCH_TWO.config=RESEARCH_TWO_EPOCH.current.config;
     }
+    if(RESEARCH_BANKS){RESEARCH_BANKS.applyConfig(await getObj('config/research-storage.json')||{},RESEARCH_V2?.config||{},RESEARCH_TWO?.config||{});RESEARCH_BANKS.upsert([])}
     RESEARCH_CONFIG_ERR='';
   }catch(e){
     RESEARCH_CONFIG_ERR=e.message;
@@ -1071,12 +1073,13 @@ async function exportResearchV2(now) {
     try{item.runtime.update({source:SOURCE,coins:researchCoins(),passes:PASS_V2,now})}
     catch(e){err('research old 1 '+item.epoch.hash+' '+e.message)}
   }
+  RESEARCH_BANKS?.upsert(RESEARCH_V2.select({limit:20000}));
   AI_SNAP.r1=result;
   await upload('research-v2/status.json',result);
   if(result.added>0||now-RESEARCH_BANK_UPLOADED>20*60e3){
     await upload('research-v2/polygon-1.json',{
       updated:now,epochStart:result.cohortStart,settings:result.settings,counts:result.counts,
-      coins:RESEARCH_V2.select({limit:10000}),
+      coins:RESEARCH_BANKS?require(DIR+'/stream-json.js').rowStream(()=>RESEARCH_BANKS.rows({level:'1',curves:true})):RESEARCH_V2.select({limit:20000}),
       note:'Observed classifications only; no buy/sell signals'
     });
     RESEARCH_BANK_UPLOADED=now;
@@ -1110,15 +1113,17 @@ async function exportPathsV2(now){
     catch(e){err('research old 2 '+item.epoch.hash+' '+e.message)}
   }
   TWO_ERR='';
+  RESEARCH_BANKS?.upsert(RESEARCH_TWO.select({limit:20000}));
+  if(RESEARCH_BANKS)await upload('research-v2/storage.json',{...RESEARCH_BANKS.summary(),updated:now});
   AI_SNAP.r2=result;
   await upload('research-v2/status-two.json',result);
   if(result.added>0||now-TWO_BANK_UPLOADED>20*60e3){
     // Don't transfer a 300-minute price array for every bank sample to a phone.
     // Publish frozen feature rows and a tiny server-aggregated curve separately.
-    const levelTwoRows=RESEARCH_TWO.select({limit:10000});
+    const levelTwoRows=RESEARCH_BANKS?RESEARCH_BANKS.rows({level:'2',curves:true}):RESEARCH_TWO.select({limit:20000});
     await upload('research-v2/polygon-2.json',{
       updated:now,epochStart:result.cohortStart,settings:result.settings,counts:result.counts,
-      coins:levelTwoRows.map(({minuteCurve,minuteCurvePacked,...row})=>row),
+      coins:require(DIR+'/stream-json.js').rowStream(function*(){for(const {minuteCurve,minuteCurvePacked,...row} of levelTwoRows)yield row}),
       note:'Only fully observed server Passed stream; no orders'
     });
     await upload('research-v2/curve-two.json',{
@@ -1128,10 +1133,10 @@ async function exportPathsV2(now){
     TWO_BANK_UPLOADED=now;
   }
   if(AUTO_V2&&RESEARCH_V2&&(now-AUTO_UPLOADED>60*60e3)){
-    const levelOne=RESEARCH_V2.select({limit:10000}).map(x=>({
+    const levelOne=(RESEARCH_BANKS?RESEARCH_BANKS.select({level:'1'}):RESEARCH_V2.select({limit:20000})).map(x=>({
       ...x,time:x.acceptedAt
     }));
-    const levelTwo=RESEARCH_TWO.select({limit:10000});
+    const levelTwo=RESEARCH_BANKS?RESEARCH_BANKS.select({level:'2'}):RESEARCH_TWO.select({limit:20000});
     const one=AUTO_STUDIES.report(levelOne,{level:'1',settings:RESEARCH_V2.config,now});
     const two=AUTO_STUDIES.reportParents(levelTwo,{settings:RESEARCH_TWO.config,now});
     await upload('research-v2/auto-1.json',{updated:now,epochStart:RESEARCH_V2.cohortStart,...one});
