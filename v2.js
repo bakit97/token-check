@@ -640,11 +640,13 @@ function renderAutoSuggestions(report){
   if(!report||!Array.isArray(report.rules)||!report.rules.length){var T=r1T();return '<p class="hint">Модули появятся, когда наберётся 🟢 '+T.l+' и 🔴 '+T.d+'.</p>'}
   const labels={buyers:'Покупатели',buyers10:'Покупатели 10 мин',trades:'Сделки',volume:'Объём $',liq:'Ликвидность $',mc:'Капитализация $',buys:'Покупки',sells:'Продажи',buySellRatio:'Покупки/продажи',quoteSol:'SOL в пуле',top1:'Топ-1 держатель %',top10:'Топ-10 держателей %'};
   const pc=function(v){return v==null?'—':Math.round(v*100)+'%'};
-  return report.rules.slice(0,8).map(function(x,i){var h=x.holdout,ok=h&&h.positiveRecall!=null;
-    return '<div class="frow" style="margin-top:6px"><div class="row"><b style="font-size:13px">'+esc(labels[x.rule.key]||x.rule.key)+' '+esc(x.rule.op)+' '+fmt(x.rule.value)+'</b>'+
+  const dm=(report.decisionMinutes||(researchMeta&&researchMeta.settings&&researchMeta.settings.decisionMinutes)||'—');
+  const ev=function(t){if(!t||t.positiveRecall==null)return '—';var n=(t.totalPositive!=null?' на 🟢'+t.totalPositive+' 🔴'+t.totalNegative:'');return '🟢 '+pc(t.positiveRecall)+' · 🔴 '+pc(1-t.negativeRejection)+n};
+  return report.rules.slice(0,8).map(function(x,i){
+    return '<div class="frow" style="margin-top:6px"><div class="row"><b style="font-size:13px">М'+(report.level||1)+'-'+(i+1)+' · ⏱ '+dm+' мин</b>'+
       '<button type="button" class="add1" data-stage-auto="'+esc(report.level)+':'+i+'">+ в окно</button></div>'+
-      '<div class="hint" style="margin:2px 0 0">обуч. 🟢 '+pc(x.train.positiveRecall)+' · 🔴 '+pc(1-x.train.negativeRejection)+
-      ' &nbsp;|&nbsp; пров. '+(ok?'🟢 '+pc(h.positiveRecall)+' · 🔴 '+pc(1-h.negativeRejection):'—')+'</div></div>'}).join('');
+      '<div style="font-size:12.5px;margin-top:2px">'+esc(labels[x.rule.key]||x.rule.key)+' '+esc(x.rule.op)+' '+fmt(x.rule.value)+'</div>'+
+      '<div class="hint" style="margin:2px 0 0">тест '+ev(x.train)+'<br>проверка '+ev(x.holdout)+'</div></div>'}).join('');
 }
 var R1F='all',R1N=10,R1DEC=0;
 function r1T(){try{var t=JSON.parse(localStorage.getItem('r1targets')||'{}');return {l:t.l||100,d:t.d||40}}catch(e){return {l:100,d:40}}}
