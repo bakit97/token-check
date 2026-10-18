@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b0d14">
 <title>SOL·СКАН · v2</title>
-<link rel="stylesheet" href="./v2.css?v=20261019-age-1">
+<link rel="stylesheet" href="./v2.css?v=20261019-lib-1">
 </head>
 <body>
 <header><div class="app">
@@ -163,22 +163,25 @@
 </div>
 </section>
 <section class="page" id="p-library" hidden>
-<h1>Библиотека фильтров</h1><p class="muted">Сохраняй правила, изменяй версии и проверяй каждый уровень на своём полигоне. Локальные редакции правил сохраняются в браузере; серверный журнал работает только с отдельно опубликованной серверной конфигурацией.</p>
-<div class="chips" id="levels"><button class="active" data-level="1">Первый уровень</button><button data-level="2">Второй уровень</button></div>
-<div class="card"><div class="row"><h2>🧪 Полигон <span id="polyTitle">Живые / мёртвые</span></h2><span class="badge">до 5 000 каждой</span></div>
-<div class="row"><label id="polyNameA" for="polyA">Живые</label><b id="polyAValue">2 000</b></div><input type="range" min="500" max="5000" value="2000" step="100" id="polyA">
-<div class="row"><label id="polyNameB" for="polyB">Мёртвые</label><b id="polyBValue">2 000</b></div><input type="range" min="500" max="5000" value="2000" step="100" id="polyB">
-<button class="primary" id="polyApply">Применить</button>
-<div id="polyProgress" style="margin-top:12px"></div>
-<button id="testAll" class="primary" style="width:100%;margin-top:12px">Проверить все фильтры</button>
+<div class="chips seg" id="levels"><button class="active" data-level="1">Уровень 1</button><button data-level="2">Уровень 2</button></div>
+<div class="chips seg" id="libPh"><button class="active" data-lp="all">Все</button><button data-lp="before">🌱 До</button><button data-lp="after">🎓 После</button></div>
+<details class="frow" id="polyFold"><summary><span class="fname">Полигон <span class="hint" id="polyTitle">Живые / мёртвые</span></span></summary>
+<div class="prow"><label id="polyNameA" for="polyA">Живые</label><b id="polyAValue">2 000</b><input type="range" min="500" max="5000" value="2000" step="100" id="polyA"></div>
+<div class="prow"><label id="polyNameB" for="polyB">Мёртвые</label><b id="polyBValue">2 000</b><input type="range" min="500" max="5000" value="2000" step="100" id="polyB"></div>
+<div id="polyProgress"></div>
+<div class="row applyrow"><button class="primary pbtn" id="polyApply" style="margin-left:auto">Применить</button></div></details>
+<div class="row" style="margin:12px 0 4px"><b style="font-size:14px">Модули <span class="hint" id="libCount"></span></b><button type="button" class="add1" id="libSelect">Выбрать</button></div>
+<div class="row hide" id="libBar" style="gap:6px;flex-wrap:wrap"><button type="button" class="pbtn" id="libTest">Тест выбранных</button><select class="input sm inl" id="libKeep" style="margin:0"><option value="1">оставить 1</option><option value="3" selected>оставить 3</option><option value="5">оставить 5</option></select><button type="button" class="pbtn dangerbtn" id="libKeepBtn">Оставить лучшие</button></div>
+<p class="hint" id="libMsg" style="margin:4px 0"></p>
+<div id="libMods"></div>
+<div hidden><button id="testAll" class="primary" style="width:100%;margin-top:12px">Проверить все фильтры</button>
 <div class="hint">Полигон 1 заполняется серверной классификацией активности, полигон 2 — серверной классификацией после «Прошли», когда эти журналы активны. Локальные черновики не меняют серверные сигналы.</div>
-<div id="testResults"></div></div>
-<div class="row" style="margin:20px 0 8px"><h2>Сохранённые фильтры</h2><button id="createFilter" class="primary">+ Создать</button></div>
+<div id="testResults"></div><div class="row" style="margin:20px 0 8px"><h2>Сохранённые фильтры</h2><button id="createFilter" class="primary">+ Создать</button></div>
 <div id="libraryList"></div>
 <details class="card" id="serverRuleHistory"><summary>Архив версий фильтров на сервере · <span id="serverRuleHistoryCount">0</span></summary>
 <p class="hint">Первый результат каждой версии не изменяется после редактирования фильтра. Фоновая статистика хранится отдельно; недостающие данные не считаются успешной проверкой.</p>
 <div id="serverRuleHistoryRows" class="list"><p class="muted">Пока нет сохранённых серверных версий.</p></div>
-</details>
+</details></div>
 <form id="editor" class="card" hidden>
 <div class="row"><h2 id="editorTitle">Новый фильтр</h2><button type="button" id="closeEditor">Закрыть</button></div>
 <label class="control" style="margin-top:10px"><span>Название</span><input type="text" class="input" id="filterName" maxlength="64" required></label>
@@ -191,6 +194,6 @@
 <footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — разделены серверные записи и локальные черновики; неполные наблюдения не выдаются за результат.</footer>
 </main>
 <script src="./server/observation-contract.js?v=20261018-admission-3" defer></script>
-<script src="./v2.js?v=20261019-age-1" defer></script>
+<script src="./v2.js?v=20261019-lib-1" defer></script>
 <noscript>Текстовая сводка для ИИ: https://storage.googleapis.com/sol-scan-511718-data/ai/summary.md (JSON: ai/summary.json)</noscript>
 </body></html>

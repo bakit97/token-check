@@ -672,7 +672,7 @@ function openModSheet(id){var openG={},m=JSON.parse(JSON.stringify(MODS[id])),ol
     '<div class="prow"><label>Время вердикта <b class="mdmv">'+m.dm+'</b> мин от обнаружения</label><input type="range" min="2" max="15" step="1" value="'+m.dm+'" data-mf="dm"></div>'+
     '<div class="prow" style="margin-bottom:0"><label>Условия</label></div>'+modConds(m,openG)+
     '<div class="subcard mev" style="margin-top:8px;font-size:12.5px">'+modEvalHtml(m)+'</div>'+
-    '<div class="row applyrow"><button type="button" class="pbtn" data-mclose="1">Закрыть</button><button type="button" class="primary pbtn" data-msave="1">Сохранить</button></div>'+
+    '<div class="row applyrow"><button type="button" class="pbtn" data-mclose="1">Закрыть</button><button type="button" class="pbtn" data-mtest="1">Тест</button><button type="button" class="primary pbtn" data-msave="1">Сохранить</button></div>'+
     '<div class="row" style="justify-content:space-between;margin-top:12px"><button type="button" class="linkbtn" style="margin:0" data-mwin="1" data-stage-auto="'+esc(MOD_AUTO[id]||'')+'">Добавить в окно</button><button type="button" class="linkbtn" style="margin:0;color:var(--bad)" data-mrm="1">Удалить модуль</button></div></div>'};
   draw();document.body.appendChild(el);
   el.addEventListener('toggle',function(e){var d=e.target;if(d.dataset&&d.dataset.g)openG[d.dataset.g]=d.open},true);
@@ -681,8 +681,9 @@ function openModSheet(id){var openG={},m=JSON.parse(JSON.stringify(MODS[id])),ol
     if(t.dataset.mdel!=null){m.conds.splice(+t.dataset.mdel,1);draw()}else if(t.dataset.madd){m.conds.push({key:t.dataset.madd,op:'>=',value:0});draw()}
     else if(t.dataset.msave){modSave(m);MODS[id]=m;el.remove();renderR1();renderR2();note('Сохранено')}
     else if(t.dataset.mwin){if(!window.confirm('Точно добавить «'+m.name+'» в окно возможностей?'))return;if(!t.dataset.stageAuto){window.alert('Это демо — в окно не добавляется');return}el.remove();stageAutoRule({target:t})}
+    else if(t.dataset.mtest){var lv=String(id).indexOf('a2-')===0?'2':'1',g=classified(lv);if(!g[0].length||!g[1].length){window.alert('Полигон уровня '+lv+' пуст: 🟢 '+g[0].length+' · 🔴 '+g[1].length+'. Тест станет доступен, когда наберутся монеты.');return}window.alert('Тест на полигоне: 🟢 '+g[0].length+' · 🔴 '+g[1].length+' монет. Подсчёт по модулю — после правки сервера.')}
     else if(t.dataset.mrm){if(!window.confirm('Точно удалить «'+m.name+'»?'))return;var all=modLoad();all[id]={id:id,deleted:true};try{localStorage.setItem('r1mods',JSON.stringify(all))}catch(e){}el.remove();renderR1();renderR2();note('Удалено')}})}
-function renderAutoSuggestions(report,lvl){
+function renderAutoSuggestions(report,lvl,ph){
   lvl=lvl||1;var saved=modLoad(),list=[];
   var demo={id:'demo',phase:'before',name:'ДЕМО · Ранний спрос',dm:12,conds:[{key:'buyers10',op:'>=',value:8},{key:'quoteSol',op:'>=',value:2},{key:'top10',op:'<=',value:35}],
     createdAt:Date.now()-3*864e5,eval:{train:{positiveRecall:.7,negativeRejection:.9,totalPositive:60,totalNegative:250},holdout:{positiveRecall:.65,negativeRejection:.88,totalPositive:40,totalNegative:100},live:{positiveRecall:.62,negativeRejection:.86,totalPositive:34,totalNegative:51}}};
@@ -690,7 +691,7 @@ function renderAutoSuggestions(report,lvl){
   var dm=(report&&report.decisionMinutes)||(researchMeta&&researchMeta.settings&&researchMeta.settings.decisionMinutes)||15;
   ((report&&report.rules)||[]).slice(0,8).forEach(function(x,i){var id='a'+(report.level||1)+'-'+i,m={id:id,name:modAutoName([{key:x.rule.key,op:x.rule.op,value:x.rule.value}]),dm:dm,createdAt:Date.parse(report.generatedAt||report.updatedAt||'')||null,conds:[{key:x.rule.key,op:x.rule.op,value:x.rule.value}],eval:{train:x.train,holdout:x.holdout}};m.evalSig=modSig(m);if(!(saved[id]&&saved[id].deleted))list.push([saved[id]||m,report.level+':'+i])});
   list.forEach(function(p){MODS[p[0].id]=JSON.parse(JSON.stringify(p[0]));MOD_AUTO[p[0].id]=p[1]});
-  var PH=lvl===1?R1P:s.r2Stream;list=list.filter(function(p){return PH==='all'||!p[0].phase||p[0].phase===PH});
+  var PH=ph||(lvl===1?R1P:s.r2Stream);list=list.filter(function(p){return PH==='all'||!p[0].phase||p[0].phase===PH});
   var T=lvl===1?r1T():r2T();return '<div class="modgrid">'+list.map(function(p){return modTile(MODS[p[0].id])}).join('')+'</div>'+(!(report&&report.rules&&report.rules.length)?'<p class="hint">Модули появятся, когда наберётся 🟢 '+T.l+' и 🔴 '+T.d+'.</p>':'');
 }
 var R1F='all',R1N=10,R1DEC=0,R1P='all';
@@ -885,10 +886,17 @@ function renderServerRuleHistory(){
       '<p class="muted">Новые данные: '+stats(x.background)+'</p></div>';
   }).join(''):'<p class="muted">Нет архивных версий для выбранного уровня.</p>';
 }
+var LP='all',LIB_SEL=false,LIBSET={},LIB_RANK=[];
+function libRender(){var lvl=+s.level||1,rep=lvl===1?autoOne:autoTwo,h=renderAutoSuggestions(rep,lvl,LP);
+  var box=$('libMods');if(!box)return;box.innerHTML=h;box.classList.toggle('libsel',LIB_SEL);
+  if(box.querySelectorAll)box.querySelectorAll('[data-mopen]').forEach(function(t){t.classList.toggle('picked',!!LIBSET[t.dataset.mopen])});
+  var n=(h.match(/data-mopen=/g)||[]).length;$('libCount').textContent='· '+n}
+function modScore(m){var e=m.eval||{},t=e.poly||e.train;return t&&t.positiveRecall!=null?Math.round((t.positiveRecall-(1-t.negativeRejection))*100):null}
 function renderLibrary(){
   renderServerRuleHistory();
   var names=s.level==='1'?['Живые','Мёртвые']:['Сильные','Слабые'],target=s.poly[s.level],groups=classified(s.level),lenA=groups[0].length,lenB=groups[1].length;
-  $('polyTitle').textContent=names.join(' / ');
+  $('polyTitle').textContent='🟢 '+fmt(lenA)+'/'+fmt(target[0])+' · 🔴 '+fmt(lenB)+'/'+fmt(target[1]);
+  libRender();
   $('polyNameA').textContent=names[0];$('polyNameB').textContent=names[1];
   $('polyA').value=target[0];$('polyB').value=target[1];
   $('polyAValue').textContent=fmt(target[0]);$('polyBValue').textContent=fmt(target[1]);
@@ -1278,6 +1286,16 @@ function bind(){
   $('pSeg').addEventListener('click',function(e){var b=e.target.closest('[data-pf]');if(!b)return;PF=b.dataset.pf;document.querySelectorAll('#pSeg [data-pf]').forEach(function(x){x.classList.toggle('active',x===b)});renderPassed()});
   $('pwMin').addEventListener('input',function(){$('pwV').textContent=$('pwMin').value;$('pwApplyRow').classList.remove('hide')});
   $('pwApply').addEventListener('click',function(){try{localStorage.setItem('passWin',$('pwMin').value)}catch(e){}$('pwApplyRow').classList.add('hide');renderPassed();note('Применено')});
+  $('libPh').addEventListener('click',function(e){var b=e.target.closest('[data-lp]');if(!b)return;LP=b.dataset.lp;document.querySelectorAll('#libPh [data-lp]').forEach(function(x){x.classList.toggle('active',x===b)});libRender()});
+  $('libSelect').addEventListener('click',function(){LIB_SEL=!LIB_SEL;LIBSET={};this.textContent=LIB_SEL?'Отмена':'Выбрать';$('libBar').classList.toggle('hide',!LIB_SEL);$('libMsg').textContent=LIB_SEL?'Нажимай на модули, чтобы отметить':'';libRender()});
+  $('libMods').addEventListener('click',function(e){var t=e.target.closest('[data-mopen]');if(!t)return;var id=t.dataset.mopen;if(LIB_SEL){LIBSET[id]=!LIBSET[id];t.classList.toggle('picked',!!LIBSET[id]);$('libMsg').textContent='Отмечено: '+Object.keys(LIBSET).filter(function(k){return LIBSET[k]}).length}else openModSheet(id)});
+  $('libTest').addEventListener('click',function(){var ids=Object.keys(LIBSET).filter(function(k){return LIBSET[k]});if(ids.length<2){$('libMsg').textContent='Отметь хотя бы 2 модуля';return}
+    var g=classified(s.level),ready=g[0].length>=s.poly[s.level][0]&&g[1].length>=s.poly[s.level][1];
+    var rk=ids.map(function(id){return [id,modScore(MODS[id])]}).sort(function(a,b){return (b[1]??-999)-(a[1]??-999)});LIB_RANK=rk;
+    $('libMsg').innerHTML=(ready?'':'⚠ Полигон ещё не набран — сравнение по оценке при создании.<br>')+rk.map(function(r,i){return (i+1)+'. '+esc(MODS[r[0]].name)+' · '+(r[1]==null?'—':(r[1]>0?'+':'')+r[1])}).join('<br>')});
+  $('libKeepBtn').addEventListener('click',function(){if(!LIB_RANK.length){$('libMsg').textContent='Сначала «Тест выбранных»';return}var k=+$('libKeep').value,drop=LIB_RANK.slice(k);if(!drop.length){$('libMsg').textContent='Удалять нечего';return}
+    if(!window.confirm('Оставить лучшие '+k+' и удалить '+drop.length+' модулей везде?'))return;var all=modLoad();drop.forEach(function(r){all[r[0]]={id:r[0],deleted:true}});try{localStorage.setItem('r1mods',JSON.stringify(all))}catch(e){}
+    LIB_RANK=[];LIBSET={};$('libMsg').textContent='Удалено: '+drop.length;libRender();renderR1();renderR2()});
   $('r2Seg').addEventListener('click',function(e){var b=e.target.closest('[data-r2f]');if(!b)return;R2F=b.dataset.r2f;document.querySelectorAll('#r2Seg [data-r2f]').forEach(function(x){x.classList.toggle('active',x===b)});renderR2()});
   $('r2N').addEventListener('click',function(e){var b=e.target.closest('[data-r2n]');if(!b)return;R2N=+b.dataset.r2n;document.querySelectorAll('#r2N [data-r2n]').forEach(function(x){x.classList.toggle('active',x===b)});renderR2()});
   $('r2Strong').addEventListener('input',function(){$('r2StrongValue').textContent=$('r2Strong').value+'%';$('r2ApplyRow').classList.remove('hide')});
