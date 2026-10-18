@@ -521,7 +521,7 @@ function renderServerModules(){var d=draft();if(!$('mods1'))return;
   if(!d){$('mods1').innerHTML=$('mods2').innerHTML='<p class="hint">нет данных сервера</p>';return}
   var byId={};d.filters.forEach(function(f){byId[f.id]=f});var today=day(now());
   ['1','2'].forEach(function(l){var h='';d.modules.forEach(function(m,i){if(m.level===l&&m.phase===MINE_STREAM)h+=modRow(m,i,byId,today)});$('mods'+l).innerHTML=h||'<p class="hint">пусто</p>'});
-  var on=!!(d.r1&&(d.r1.before||d.r1.after));$('winR1').classList.toggle('on',on);$('winR1').querySelector('.tg').classList.toggle('on',on);
+  var on=!!(d.r1&&(d.r1.before||d.r1.after));$('winR1').classList.toggle('on',on);var t3=$('winR1').querySelector&&$('winR1').querySelector('.tg');if(t3)t3.classList.toggle('on',on);
   $('modApplyRow').hidden=!MOD_DIRTY}
 function showModPicker(level){PICK_LEVEL=level;var d=draft();if(!d)return;var have={};d.modules.forEach(function(m){if(m.phase===MINE_STREAM&&m.level===level)have[m.filterId]=1});
   var pool={};d.filters.concat(s.filters||[]).forEach(function(f){if(String(f.level)===level&&!have[f.id])pool[f.id]=f});
@@ -557,6 +557,8 @@ function renderIntake(){if(!$('intakeBox'))return;var st=researchMeta&&researchM
     $('inSampleOn').checked=m.sample.on;$('inSample').value=m.sample.pct}
   $('inBuyV').textContent=$('inBuy').value;$('inSolV').textContent=$('inSol').value;$('inSampleV').textContent=$('inSample').value;
   $('inManualBox').classList.toggle('dim',!$('inManual').checked);
+  var ms=$('inManualSw');if(ms){var on=$('inManual').checked;ms.classList.toggle('on',on);var t1=ms.querySelector&&ms.querySelector('.tg');if(t1)t1.classList.toggle('on',on)}
+  var dw=draft(),won=!!(dw&&dw.r1&&(dw.r1.before||dw.r1.after)),ws=$('inWinSw');if(ws){ws.classList.toggle('on',won);var t2=ws.querySelector&&ws.querySelector('.tg');if(t2)t2.classList.toggle('on',won)}
   var parts=[];if($('inPhaseOn').checked)parts.push({before:'до',after:'после',both:'оба'}[$('inPhase').value]);if($('inBuyOn').checked)parts.push('пок. ≥ '+$('inBuy').value);if($('inSolOn').checked)parts.push('SOL ≥ '+$('inSol').value);if($('inSampleOn').checked)parts.push($('inSample').value+'%');
   $('inManualSum').textContent=$('inManual').checked?(parts.join(' · ')||'без условий'):'выкл.';
   var c=serverCfg(),r=c&&c.r1||{};$('inModSum').textContent=(r.before||r.after)?'вкл':'выкл';
@@ -568,6 +570,7 @@ async function applyIntake(){var key=keyFrom('intakeKey'),msg=$('intakeMsg');
   if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){msg.textContent='Нажми 🔒 вверху и введи пароль';return}
   var it=intakeFromUI(),anyMarked=!!((serverCfg()||{}).r1&&((serverCfg().r1.before)||(serverCfg().r1.after)));if(!it.manual.enabled&&!anyMarked&&!window.confirm('Оба входа выключены — исследование перестанет набирать монеты. Продолжить?'))return;
   var st=researchMeta.settings,cfg={hours:st.hours,decisionMinutes:st.decisionMinutes,minActive:st.minActive,maxIdle:st.maxIdle,minCoverage:st.minCoverage,intake:it};
+  if(MOD_DIRTY)applyModules();
   $('intakeApply').disabled=true;msg.textContent='Отправка…';
   try{var r=await ownerFetch(controlEndpoint+'/api/research-one',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(cfg)});
     $('intakeKey').value='';rememberIfOk(r,key);msg.textContent=r.ok?'✓ Принято':'Сервер отклонил: HTTP '+r.status+(r.status===401?' (неверный пароль)':'');if(r.ok)INTAKE_DIRTY=false}
@@ -1172,10 +1175,12 @@ function bind(){
   document.querySelectorAll('[data-addlev]').forEach(function(b){b.addEventListener('click',function(){showModPicker(b.dataset.addlev)})});
   $('modPickerX').addEventListener('click',function(){$('modPicker').hidden=true});
   $('modPickerList').addEventListener('click',function(e){var b=e.target.closest('[data-pick]');if(b)pickFilter(b.dataset.pick)});
-  $('winR1').addEventListener('click',function(){var d=draft();if(!d)return;var v=!(d.r1&&(d.r1.before||d.r1.after));d.r1={before:v,after:v};MOD_DIRTY=true;renderServerModules()});
+  $('winR1').addEventListener('click',function(){var d=draft();if(!d)return;var v=!(d.r1&&(d.r1.before||d.r1.after));d.r1={before:v,after:v};MOD_DIRTY=true;renderServerModules();renderIntake()});
   $('mods1').addEventListener('click',modClick);$('mods2').addEventListener('click',modClick);$('modApply').addEventListener('click',applyModules);
   ['inManual','inModules','inPhaseOn','inPhase','inBuyOn','inBuy','inSolOn','inSol','inSampleOn','inSample'].forEach(function(id){$(id).addEventListener('input',function(){INTAKE_DIRTY=true;renderIntake()})});
   $('intakeApply').addEventListener('click',applyIntake);
+  $('inManualSw').addEventListener('click',function(e){e.preventDefault();e.stopPropagation();$('inManual').checked=!$('inManual').checked;INTAKE_DIRTY=true;renderIntake()});
+  $('inWinSw').addEventListener('click',function(){var d=draft();if(!d)return;var v=!(d.r1&&(d.r1.before||d.r1.after));d.r1={before:v,after:v};MOD_DIRTY=true;renderIntake();renderServerModules()});
   $('keyBtn').addEventListener('click',function(){if(ownerKey()){if(window.confirm('Забыть пароль на этом телефоне?'))setOwnerKey('')}else{var k=window.prompt('Пароль владельца');if(k&&/^[a-zA-Z0-9_-]{32,256}$/.test(k.trim())){setOwnerKey(k.trim());note('Пароль сохранён. Проверится при первом «Применить».')}else if(k)note('Неверный формат пароля')}});
   renderKeyUI();
 
