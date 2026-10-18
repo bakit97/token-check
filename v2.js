@@ -636,7 +636,8 @@ function renderPassed(){
       '<p class="muted">'+x.matches.map(function(f){return esc(f.name)+' · v'+esc(f.version)+' ('+esc(f.key)+' '+esc(f.op)+' '+fmt(f.value)+')'}).join(', ')+'</p></div>';
   }).join(''):'<p class="muted">Журнал пуст. Источником являются только признанные главным сервером монеты.</p>';
 }
-var MLAB={buyers10:'Покупатели 10 мин',quoteSol:'SOL в пуле',top1:'Топ-1 держатель %',top10:'Топ-10 держателей %',buyers:'Покупатели',trades:'Сделки',volume:'Объём $',liq:'Ликвидность $',mc:'Капитализация $',buys:'Покупки',sells:'Продажи',buySellRatio:'Покупки/продажи'};
+var MGRP=[['Спрос',['buyers10','buyers','trades','buys','sells','buySellRatio','volume']],['Пул',['quoteSol','liq','mc']],['Держатели',['top1','top10']],['Контракт',['safeContract']]];
+var MLAB={safeContract:'Безопасный контракт (1 = да)',buyers10:'Покупатели 10 мин',quoteSol:'SOL в пуле',top1:'Топ-1 держатель %',top10:'Топ-10 держателей %',buyers:'Покупатели',trades:'Сделки',volume:'Объём $',liq:'Ликвидность $',mc:'Капитализация $',buys:'Покупки',sells:'Продажи',buySellRatio:'Покупки/продажи'};
 var MODS={};
 var MSHORT={buyers10:'Спрос',buyers:'Покупатели',quoteSol:'SOL',top1:'Топ1',top10:'Топ10',trades:'Сделки',volume:'Объём',liq:'Ликв',mc:'Кап',buys:'Покупки',sells:'Продажи',buySellRatio:'Пок/прод'};
 function modAutoName(c){return c.map(function(x){return (MSHORT[x.key]||x.key)+' '+(x.op==='<='?'≤':'≥')+fmt(x.value)}).join(' · ')}
@@ -646,9 +647,12 @@ function modSave(m){var all=modLoad();all[m.id]=m;try{localStorage.setItem('r1mo
 function modPc(v){return v==null?'—':Math.round(v*100)+'%'}
 function modEv(t){if(!t||t.positiveRecall==null)return '—';return '🟢 '+modPc(t.positiveRecall)+' · 🔴 '+modPc(1-t.negativeRejection)+(t.totalPositive!=null?' <span class="hint">на 🟢'+t.totalPositive+' 🔴'+t.totalNegative+'</span>':'')}
 var MOD_AUTO={};
-function modConds(m){return m.conds.map(function(c,j){return '<div class="row" style="gap:5px;margin-top:5px"><select class="input sm inl" style="margin:0;flex:1;min-width:0" data-mf="key" data-j="'+j+'">'+Object.keys(MLAB).map(function(k){return '<option value="'+k+'"'+(k===c.key?' selected':'')+'>'+MLAB[k]+'</option>'}).join('')+'</select>'+
+function modConds(m,openG){return MGRP.map(function(g){var keys=g[1],rows=[];m.conds.forEach(function(c,j){if(keys.indexOf(c.key)<0&&!(g[0]==='Спрос'&&!MGRP.some(function(x){return x[1].indexOf(c.key)>=0})))return;
+    rows.push('<div class="row" style="gap:5px;margin-top:5px"><select class="input sm inl" style="margin:0;flex:1;min-width:0" data-mf="key" data-j="'+j+'">'+keys.map(function(k){return '<option value="'+k+'"'+(k===c.key?' selected':'')+'>'+MLAB[k]+'</option>'}).join('')+'</select>'+
     '<select class="input sm inl" style="margin:0;width:54px" data-mf="op" data-j="'+j+'"><option'+(c.op==='>='?' selected':'')+'>&gt;=</option><option'+(c.op==='<='?' selected':'')+'>&lt;=</option></select>'+
-    '<input class="input sm" style="width:70px;min-height:28px;padding:2px 6px" type="number" step="any" value="'+esc(c.value)+'" data-mf="value" data-j="'+j+'"><button type="button" class="del" data-mdel="'+j+'">✕</button></div>'}).join('')}
+    '<input class="input sm" style="width:70px;min-height:28px;padding:2px 6px" type="number" step="any" value="'+esc(c.value)+'" data-mf="value" data-j="'+j+'"><button type="button" class="del" data-mdel="'+j+'">✕</button></div>')});
+  return '<details class="frow mgrp" data-g="'+g[0]+'" style="margin-top:6px"'+(openG[g[0]]?' open':'')+'><summary><span class="fname">'+g[0]+' <span class="hint">· '+rows.length+'</span></span></summary>'+rows.join('')+
+    '<button type="button" class="add1" style="margin-top:6px" data-madd="'+keys[0]+'">+ условие</button></details>'}).join('')}
 function modEvalHtml(m){var stale=modSig(m)!==m.evalSig,ev=m.eval||{};return (stale?'<div class="warn">⚠ Условия изменены — оценка устарела, нужен перетест</div>':'')+'<div style="'+(stale?'opacity:.45':'')+'">тест '+modEv(ev.train)+'<br>проверка '+modEv(ev.holdout)+'<br>сейчас '+modEv(ev.live)+'</div>'}
 function modBlk(t,cls,title){var l='—',d='';if(t&&t.positiveRecall!=null){var tp=t.totalPositive,tn=t.totalNegative,pp=tp!=null?Math.round(t.positiveRecall*tp):null,pn=tn!=null?Math.round((1-t.negativeRejection)*tn):null;
     l='🟢 '+modPc(t.positiveRecall)+(tp!=null?' <span>'+pp+' из '+tp+'</span>':'');d='<br>🔴 '+modPc(1-t.negativeRejection)+(tn!=null?' <span>'+pn+' из '+tn+'</span>':'')}
@@ -656,18 +660,19 @@ function modBlk(t,cls,title){var l='—',d='';if(t&&t.positiveRecall!=null){var 
 function modTile(m){var stale=modSig(m)!==m.evalSig,ev=m.eval||{},age=m.createdAt?Math.max(0,Math.floor((Date.now()-m.createdAt)/864e5)):null;
   return '<button type="button" class="modtile" data-mopen="'+esc(m.id)+'">'+(age!=null?'<span class="mage">'+age+' дн</span>':'')+'<b>'+esc(m.name)+'</b><span class="hint">вердикт '+m.dm+' мин</span>'+
     (stale?'<div class="mblk"><i>⚠ нужен перетест</i></div>':modBlk(ev.train,'mold','при создании')+modBlk(ev.live,'mnow','сейчас'))+'</button>'}
-function openModSheet(id){var m=JSON.parse(JSON.stringify(MODS[id])),old=document.getElementById('modSheet');if(old)old.remove();
+function openModSheet(id){var openG={},m=JSON.parse(JSON.stringify(MODS[id])),old=document.getElementById('modSheet');if(old)old.remove();
   var el=document.createElement('div');el.id='modSheet';el.className='sheet';
   var draw=function(){el.innerHTML='<div class="sheetbox"><div class="prow"><label>Имя</label><input class="input sm" data-mf="name" value="'+esc(m.name)+'"></div>'+
     '<div class="prow"><label>Время вердикта <b class="mdmv">'+m.dm+'</b> мин от обнаружения</label><input type="range" min="2" max="15" step="1" value="'+m.dm+'" data-mf="dm"></div>'+
-    '<div class="prow" style="margin-bottom:0"><label>Условия</label></div>'+modConds(m)+'<button type="button" class="add1" style="margin-top:6px" data-madd="1">+ условие</button>'+
+    '<div class="prow" style="margin-bottom:0"><label>Условия</label></div>'+modConds(m,openG)+
     '<div class="subcard mev" style="margin-top:8px;font-size:12.5px">'+modEvalHtml(m)+'</div>'+
     '<div class="row applyrow"><button type="button" class="pbtn" data-mclose="1">Закрыть</button><button type="button" class="primary pbtn" data-msave="1">Сохранить</button></div>'+
     '<button type="button" class="linkbtn" data-mwin="1" data-stage-auto="'+esc(MOD_AUTO[id]||'')+'">Добавить в окно возможностей</button></div>'};
   draw();document.body.appendChild(el);
+  el.addEventListener('toggle',function(e){var d=e.target;if(d.dataset&&d.dataset.g)openG[d.dataset.g]=d.open},true);
   el.addEventListener('input',function(e){var t=e.target,f=t.dataset.mf;if(!f)return;if(f==='name')m.name=t.value;else if(f==='dm'){m.dm=+t.value;el.querySelector('.mdmv').textContent=t.value}else{m.conds[+t.dataset.j][f]=f==='value'?Number(t.value):t.value}el.querySelector('.mev').innerHTML=modEvalHtml(m)});
   el.addEventListener('click',function(e){var t=e.target;if(t===el||t.dataset.mclose){el.remove();return}
-    if(t.dataset.mdel!=null){m.conds.splice(+t.dataset.mdel,1);draw()}else if(t.dataset.madd){m.conds.push({key:'buyers10',op:'>=',value:0});draw()}
+    if(t.dataset.mdel!=null){m.conds.splice(+t.dataset.mdel,1);draw()}else if(t.dataset.madd){m.conds.push({key:t.dataset.madd,op:'>=',value:0});draw()}
     else if(t.dataset.msave){modSave(m);MODS[id]=m;el.remove();$('r1Suggestions').innerHTML=renderAutoSuggestions(autoOne);note('Сохранено')}
     else if(t.dataset.mwin){if(!t.dataset.stageAuto){note('Это демо — в окно не добавляется');return}if(window.confirm('Точно добавить «'+m.name+'» в окно возможностей?')){el.remove();stageAutoRule({target:t})}}})}
 function renderAutoSuggestions(report){
