@@ -342,7 +342,7 @@ function coinHtml(c,extra){
   var name=esc(c.n||c.s||'Токен'),symbol=esc(c.s||'');
   return '<button type="button" class="coin '+(e.phase==='before'?'pre':'post')+'" data-coin="'+esc(mint(c))+'">'+
     (img?'<img class="avatar" src="'+esc(img)+'" alt="" loading="lazy">':'<span class="avatar empty"'+(c._uri?' data-uri="'+esc(c._uri)+'"':'')+'>'+esc((c.s||'?').slice(0,2))+'</span>')+
-    '<span class="body"><span class="name">'+name+' <small>'+symbol+'</small></span><span class="detail"><b class="ago" data-t="'+(+e.eventAt||0)+'">'+agoText(e.eventAt)+'</b> · '+(e.phase==='before'?'🌱 до миграции':'🎓 после миграции')+'</span><span class="detail mline">'+esc(marketLine(c))+'</span>'+
+    '<span class="body"><span class="name">'+name+' <small>'+symbol+'</small></span><span class="detail">'+(e.phase==='before'?'🌱 создана ':'🎓 миграция ')+'<b class="ago" data-t="'+(+e.eventAt||0)+'">'+agoText(e.eventAt)+'</b></span><span class="detail mline">'+esc(marketLine(c))+'</span>'+
     (extra?'<span class="detail">'+(extra.charAt(0)==='<'?extra:esc(extra))+'</span>':'')+'</span><span class="right"><span class="price">'+price(L&&L.price||p&&p[1])+'</span><span class="growbox">'+growthHtml(c)+'</span><span class="sparkbox">'+spark(c)+'</span></span></button>';
 }
 function pc(v){return v==null||!Number.isFinite(+v)?'—':(v>0?'+':'')+Number(v).toFixed(Math.abs(v)>=10?0:1)+'%'}
@@ -403,7 +403,7 @@ function detail(c){
   var e=c._entry,m=mint(c),L=LIVE[m]||{};DETAIL_COIN=c;
   return '<div id="openCoinDetail" class="sheet" data-mint="'+esc(m)+'"><div class="sheetbox">'+
     '<div class="row"><h2>'+esc(c.n||c.s||'Монета')+' <small class="muted">'+esc(c.s||'')+'</small></h2><button id="closeCoin">✕</button></div>'+
-    '<div class="muted small"><b class="ago" data-t="'+(+e.eventAt||0)+'">'+agoText(e.eventAt)+'</b> · '+(e.phase==='before'?'🌱 до миграции':'🎓 после миграции')+' · вход '+time(e.acceptedAt)+'</div>'+
+    '<div class="muted small">'+(e.phase==='before'?'🌱 создана ':'🎓 миграция ')+'<b class="ago" data-t="'+(+e.eventAt||0)+'">'+agoText(e.eventAt)+'</b> · вход '+time(e.acceptedAt)+'</div>'+
     '<div class="chartbox"><iframe id="coinChart" src="'+esc(chartSrc(m))+'" loading="lazy" title="График"></iframe></div>'+
     '<div class="minigrid" id="coinStats">'+detailStats(m)+'</div>'+
     '<div class="sec">Сделки</div><div id="coinTrades" class="trades"><p class="hint">загрузка…</p></div>'+
