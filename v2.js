@@ -620,6 +620,7 @@ function showPicker(phase,lev){
   $('filterPicker').hidden=false;
 }
 var PF='all';
+var PM_DRAFT=null;function pwMode(){try{return localStorage.getItem('passMode')||'1'}catch(e){return '1'}}
 function pwMin(){try{return +localStorage.getItem('passWin')||3}catch(e){return 3}}
 function renderPassed(){
   var list=lastPassed.filter(function(x){return x.deadline>now()});
@@ -630,7 +631,7 @@ function renderPassed(){
     '⚠ Предварительный режим на телефоне: '+fmt(lastPassed.length)+' сигналов. '+
     'Правила этого устройства пока НЕ отправляются на сервер; при закрытом сайте новые сигналы не фиксируются.';
   var W=pwMin(),win=lastPassed.filter(function(q){return (q.firstSeenAt||q.deadline)+W*60000>now()}),ph=function(q){return (q.coin._entry||{}).phase};
-  $('pwSum').textContent=W+' мин';if($('pwApplyRow').classList.contains&&$('pwApplyRow').classList.contains('hide')){$('pwV').textContent=W;$('pwMin').value=W}
+  var PMm=PM_DRAFT||pwMode();document.querySelectorAll&&document.querySelectorAll('#pwMode [data-pm]').forEach(function(x){x.classList.toggle('active',x.dataset.pm===PMm)});$('pwSum').textContent=(pwMode()==='12'?'ур.1+2':'ур.1')+' · '+W+' мин';if($('pwApplyRow').classList.contains&&$('pwApplyRow').classList.contains('hide')){$('pwV').textContent=W;$('pwMin').value=W}
   var d0=new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Almaty'}));d0.setHours(0,0,0,0);var t0=Date.now()-(new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Almaty'}))-d0),td=lastPassed.filter(function(q){return (q.firstSeenAt||0)>=t0});
   $('pToday').textContent='Сегодня сигналов: '+td.length+' · 🌱 '+td.filter(function(q){return ph(q)==='before'}).length+' · 🎓 '+td.filter(function(q){return ph(q)==='after'}).length;
   $('pAllN').textContent=win.length;$('pBefN').textContent=win.filter(function(q){return ph(q)==='before'}).length;$('pAftN').textContent=win.filter(function(q){return ph(q)==='after'}).length;
@@ -1325,7 +1326,8 @@ function bind(){
   $('r1Suggestions').addEventListener('click',function(e){var t=e.target.closest('[data-mopen]');if(t)openModSheet(t.dataset.mopen)});
   $('pSeg').addEventListener('click',function(e){var b=e.target.closest('[data-pf]');if(!b)return;PF=b.dataset.pf;document.querySelectorAll('#pSeg [data-pf]').forEach(function(x){x.classList.toggle('active',x===b)});renderPassed()});
   $('pwMin').addEventListener('input',function(){$('pwV').textContent=$('pwMin').value;$('pwApplyRow').classList.remove('hide')});
-  $('pwApply').addEventListener('click',function(){try{localStorage.setItem('passWin',$('pwMin').value)}catch(e){}$('pwApplyRow').classList.add('hide');renderPassed();note('Применено')});
+  $('pwMode').addEventListener('click',function(e){var b=e.target.closest('[data-pm]');if(!b)return;PM_DRAFT=b.dataset.pm;$('pwApplyRow').classList.remove('hide');renderPassed()});
+  $('pwApply').addEventListener('click',function(){try{localStorage.setItem('passWin',$('pwMin').value);if(PM_DRAFT)localStorage.setItem('passMode',PM_DRAFT)}catch(e){}PM_DRAFT=null;$('pwApplyRow').classList.add('hide');renderPassed();note('Применено')});
   $('libPh').addEventListener('click',function(e){var b=e.target.closest('[data-lp]');if(!b)return;LP=b.dataset.lp;document.querySelectorAll('#libPh [data-lp]').forEach(function(x){x.classList.toggle('active',x===b)});LIB_STORE?renderStore():libRender()});
   $('storeBox').addEventListener('input',function(e){var t=e.target;if(!t.dataset.st)return;$('storeBox').querySelector('.stv').textContent=t.value});
   $('storeBox').addEventListener('click',function(e){var t=e.target,k;var sk=t.closest('[data-sk]');if(sk){STORE_K=sk.dataset.sk;renderStore();return}if(t.dataset.stgear){STORE_GEAR=!STORE_GEAR;renderStore();return}
