@@ -34,3 +34,8 @@ test('buyer evidence excludes future receipts and buyers of a later migrated poo
  assert.equal(starterFeaturesAt(c,T,{eventAt:c.t-60*M,phase:'before'}).buyers10,null);
  const prior={t:c.t-60*M,gx:[[(c.t-55*M)/1000,11,0,11,0,11,0,11,0]]};c.origs=[prior];assert.equal(starterFeaturesAt(c,T,{eventAt:prior.t,phase:'before'}).buyers10,11);
 });
+test('an early migration can prove a buyer subset only inside the original mint window',()=>{
+ const c=coin(),eventAt=c.t-4*M;delete c.bx;c.gx=[[(eventAt+6*M)/1000,12,1,12,1,18,1,18,1]];c.origs=[{p:'curve',t:eventAt,gx:[[(eventAt+3*M)/1000,14,0,14,0,14,0,14,0]]}];
+ const f=starterFeaturesAt(c,T,{eventAt,phase:'before'});assert.equal(f.buyers10,18);assert.equal(f.buyers10LowerBound,true,'18 and 14 must not be summed');
+ c.gx=[[(eventAt+11*M)/1000,99,0,99,0,99,0,99,0]];assert.equal(starterFeaturesAt(c,T,{eventAt}).buyers10,14,'late migration buyers cannot leak into the original ten minutes');
+});

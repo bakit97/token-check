@@ -125,18 +125,21 @@ function starterFeaturesAt(coin,decisionAt,context={}){
   const flags=['mint','freeze','hook','deleg','nontr','defFrozen','pause','feeAuthority'];
   if(flags.every(k=>typeof ct[k]==='boolean')&&Number.isFinite(ct.fee))safeContract=flags.some(k=>ct[k])||ct.fee>0||ct.unknownExtensions.length>0?0:1;
  }
- const eventAt=Number.isFinite(context.eventAt)?context.eventAt:coin.t;
- // Never let buyers of a later migrated pool stand in for the original admission.
- const pools=[coin,...(coin.origs||[]),coin.preObs].filter(Boolean);
- const pool=pools.find(p=>Number.isFinite(p.t)&&Math.abs(p.t-eventAt)<=30000);
+ const eventAt=Number.isFinite(context.eventAt)?context.eventAt:coin.t,endAt=eventAt+10*MIN;
+ // Every observation must belong to the mint's original ten-minute window.
+ // Early migration may add a new pool inside that window; overlapping pools
+ // yield a MAXIMUM lower bound, never a sum of potentially identical buyers.
+ const pools=[coin,...(coin.origs||[]),coin.preObs].filter((p,i,all)=>p&&Number.isFinite(p.t)&&p.t>=eventAt&&p.t<=endAt&&all.findIndex(x=>x&&x.p===p.p&&x.t===p.t)===i);
+ const pool=pools.find(p=>p.t===eventAt),bx=pool?.bx;
  let lower=false,buyerAt=null,buyerSource=null;
- const bx=pool?.bx;
- if(pool?.t===eventAt&&bx?.cov===true&&Number.isFinite(bx.at)&&bx.at<=decisionAt&&bx.at>=pool.t+10*MIN+5000&&Number.isFinite(bx.payers)&&decisionAt-bx.at<=7*MIN)buyers10=bx.payers;
- if(buyers10==null&&pool&&pool.t>=eventAt){
+ if(pools.length===1&&bx?.cov===true&&Number.isFinite(bx.at)&&bx.at<=decisionAt&&bx.at>=pool.t+10*MIN+5000&&Number.isFinite(bx.payers)&&decisionAt-bx.at<=7*MIN)buyers10=bx.payers;
+ if(buyers10==null){
   const proofs=[];
-  for(const g of pool.gx||[]){const at=g[0]*1000;if(at<pool.t||at>pool.t+10*MIN||at>eventAt+10*MIN||at>decisionAt)continue;
-   const n=Number.isFinite(g[7])?g[7]:g[3];if(Number.isInteger(n)&&n>=0)proofs.push({n,at,source:'gt-unique-buyers-prefix'});}
-  if(pool.t===eventAt&&bx&&Number.isFinite(bx.at)&&bx.at<=decisionAt&&bx.at>=pool.t+10*MIN&&Number.isInteger(bx.payers)&&bx.payers>=0&&bx.n>=bx.payers&&bx.buys>=bx.payers)proofs.push({n:bx.payers,at:bx.at,source:'recorded-first-ten-minute-trades'});
+  for(const p of pools){
+   for(const g of p.gx||[]){const at=g[0]*1000;if(at<p.t||at>endAt||at>decisionAt)continue;
+    const n=Number.isFinite(g[7])?g[7]:g[3];if(Number.isInteger(n)&&n>=0)proofs.push({n,at,source:'gt-unique-buyers-prefix'});}
+   const b=p.bx;if(p.t===eventAt&&b&&Number.isFinite(b.at)&&b.at<=decisionAt&&b.at>=endAt&&Number.isInteger(b.payers)&&b.payers>=0&&b.n>=b.payers&&b.buys>=b.payers)proofs.push({n:b.payers,at:b.at,source:'recorded-first-ten-minute-trades'});
+  }
   const best=proofs.sort((a,b)=>b.n-a.n||a.at-b.at)[0];if(best){buyers10=best.n;lower=true;buyerAt=best.at;buyerSource=best.source;}
  }
  const qi=coin?.vmint?.indexOf(WSOL);
