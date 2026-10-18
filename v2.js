@@ -348,28 +348,35 @@ function chartSrc(m){var L=LIVE[m]||{};return 'https://dexscreener.com/solana/'+
 // ---- Путь монеты по нашей системе: базовый фильтр → 1 уровень → исследование 1 → 2 уровень → исследование 2 ----
 function stepRow(icon,title,text){return '<div class="step"><span class="si">'+icon+'</span><span class="st"><b>'+title+'</b> '+text+'</span></div>'}
 function left(ms){if(ms<=0)return 'сейчас';var m=Math.round(ms/60000);return m<60?m+' мин':Math.floor(m/60)+' ч '+(m%60)+' мин'}
-function pathHtml(c){var e=c._entry||{},m=mint(c),out=[],t=now();
+function pathHtml(c){var e=c._entry||{},m=mint(c),t=now(),chain=[],det=[];
   var lim=sourceMeta&&sourceMeta.settings?(e.phase==='before'?sourceMeta.settings.beforeMinutes:sourceMeta.settings.afterMinutes):null;
   var age=e.acceptedAt&&e.eventAt?(e.acceptedAt-e.eventAt)/1000:null;
-  out.push(stepRow('✅','Время:',(e.phase==='before'?'до миграции':'после миграции')+' · вошла '+(age==null?'—':age<1?'сразу':age<60?'через '+Math.round(age)+' с':'через '+(age/60).toFixed(1)+' мин')+(lim?' (лимит '+lim+' мин)':'')));
+  chain.push(['Время','✅']);
+  det.push(stepRow('✅','Время:',(e.phase==='before'?'до миграции':'после миграции')+' · вошла '+(age==null?'—':age<1?'сразу':age<60?'через '+Math.round(age)+' с':'через '+(age/60).toFixed(1)+' мин')+(lim?' (лимит '+lim+' мин)':'')));
   var cfg=passMeta&&passMeta.serverConfig,row=serverPassRows.find(function(r){return r.mint===m});
-  if(!cfg||!cfg.enabled)out.push(stepRow('⚪','Фильтры 1 ур.:','выключены на сервере'));
-  else{var mods=(cfg.modules||[]).filter(function(x){return x.enabled&&x.level==='1'&&x.phase===e.phase}),
-      byId={};(cfg.filters||[]).forEach(function(f){byId[f.id]=f});
-    var dec=(cfg.decisionMinutes||10)*60000,deadline=(e.acceptedAt||0)+dec;
-    if(!mods.length)out.push(stepRow('⚪','Фильтры 1 ур.:','для этого потока не подключены'));
-    else if(e.acceptedAt<(cfg.activatedAt||0))out.push(stepRow('⚪','Фильтры 1 ур.:','не применялись (монета раньше включения фильтров)'));
-    else mods.forEach(function(md){var f=byId[md.filterId];if(!f)return;var hit=row&&(row.matches||[]).some(function(x){return x.id===f.id});
-      out.push(stepRow(hit?'✅':t<deadline?'⏳':'❌',esc(f.name)+':',hit?'прошла':t<deadline?'решение через '+left(deadline-t):'не прошла'))})}
+  var f1=[];if(cfg&&cfg.enabled){var byId={};(cfg.filters||[]).forEach(function(f){byId[f.id]=f});var dec=(cfg.decisionMinutes||10)*60000,deadline=(e.acceptedAt||0)+dec;
+    var early=e.acceptedAt<(cfg.activatedAt||0);
+    (cfg.modules||[]).filter(function(x){return x.enabled&&x.level==='1'&&x.phase===e.phase}).forEach(function(md){var f=byId[md.filterId];if(!f)return;
+      var hit=row&&(row.matches||[]).some(function(x){return x.id===f.id});
+      f1.push({name:f.name,st:early?'skip':hit?'ok':t<deadline?'wait':'no',left:deadline-t})})}
+  var n={ok:0,no:0,wait:0,skip:0};f1.forEach(function(x){n[x.st]++});
+  var icon1=!f1.length?'—':n.ok?'✅':n.wait?'⏳':n.skip===f1.length?'⚪':'❌';
+  chain.push(['Ур.1',icon1+(f1.length&&n.ok?' '+n.ok+'/'+f1.length:'')]);
+  if(!f1.length)det.push(stepRow('⚪','Фильтры 1 ур.:',cfg&&cfg.enabled?'для этого потока не подключены':'выключены'));
+  else{var sum=(n.ok?'✅ '+n.ok+' ':'')+(n.no?'❌ '+n.no+' ':'')+(n.wait?'⏳ '+n.wait+' ':'')+(n.skip?'⚪ '+n.skip:'');
+    var wait=f1.find(function(x){return x.st==='wait'});
+    det.push('<details class="step fold"><summary><span class="si">'+icon1+'</span><b>Фильтры 1 ур.:</b> '+sum+(wait?'· решение через '+left(wait.left):'')+'</summary>'+
+      f1.map(function(x){return '<div class="sub">'+({ok:'✅',no:'❌',wait:'⏳',skip:'⚪'})[x.st]+' '+esc(x.name)+'</div>'}).join('')+'</details>')}
   var hrs=researchMeta&&researchMeta.settings?researchMeta.settings.hours:5,b1=(bank['1']||[]).find(function(x){return x.mint===m});
-  if(b1){var st=researchMeta.settings,live=b1.activity>=st.minActive&&b1.idle<=st.maxIdle;out.push(stepRow(live?'🟢':'🔴','Исследование 1:',(live?'живая':'мёртвая')+' · активность '+b1.activity.toFixed(0)+'%, простой '+b1.idle+' мин'))}
-  else{var end1=(e.acceptedAt||0)+hrs*3600e3;out.push(stepRow('⏳','Исследование 1:',t<end1?'итог через '+left(end1-t):'нет итога (мало данных)'))}
+  if(b1){var st=researchMeta.settings,live=b1.activity>=st.minActive&&b1.idle<=st.maxIdle;chain.push(['Иссл.1',live?'🟢':'🔴']);det.push(stepRow(live?'🟢':'🔴','Исследование 1:',(live?'живая':'мёртвая')+' · активность '+b1.activity.toFixed(0)+'%, простой '+b1.idle+' мин'))}
+  else{var end1=(e.acceptedAt||0)+hrs*3600e3;chain.push(['Иссл.1',t<end1?'⏳':'—']);det.push(stepRow('⏳','Исследование 1:',t<end1?'итог через '+left(end1-t):'нет итога (мало данных)'))}
   if(row){var r2=serverR2Rows.find(function(x){return x.mint===m}),sl=row.secondLevelRules||[];
-    out.push(stepRow(sl.length?'🔹':'⚪','Фильтры 2 ур.:',sl.length?sl.length+' правил записано при входе':'не подключены'));
-    if(r2)out.push(stepRow(r2.label==='strong'?'🟢':'🔴','Исследование 2:',(r2.label==='strong'?'сильная':'слабая')+' · выше точки 0 '+Number(r2.pctAbove||0).toFixed(0)+'% времени'));
-    else{var end2=(row.zeroAt||0)+300*60000;out.push(stepRow('⏳','Исследование 2:',t<end2?'итог через '+left(end2-t):'нет итога (мало данных)'))}}
-  else out.push(stepRow('⚪','Исследование 2:','только для монет из «Прошли»'));
-  return out.join('')}
+    chain.push(['Ур.2',sl.length?'🔹 '+sl.length:'—']);
+    if(sl.length)det.push(stepRow('🔹','Фильтры 2 ур.:',sl.length+' правил записано при входе'));
+    if(r2){chain.push(['Иссл.2',r2.label==='strong'?'🟢':'🔴']);det.push(stepRow(r2.label==='strong'?'🟢':'🔴','Исследование 2:',(r2.label==='strong'?'сильная':'слабая')+' · выше точки 0 '+Number(r2.pctAbove||0).toFixed(0)+'% времени'))}
+    else{var end2=(row.zeroAt||0)+300*60000;chain.push(['Иссл.2',t<end2?'⏳':'—']);det.push(stepRow('⏳','Исследование 2:',t<end2?'итог через '+left(end2-t):'нет итога (мало данных)'))}}
+  else{chain.push(['Ур.2','—']);chain.push(['Иссл.2','—'])}
+  return '<div class="chain">'+chain.map(function(x){return '<span class="ch"><small>'+x[0]+'</small>'+x[1]+'</span>'}).join('<span class="arr">›</span>')+'</div>'+det.join('')}
 // ---- Сделки в реальном времени (GeckoTerminal, только пока окно открыто) ----
 var TRADES_AT=0;
 async function loadTrades(){var d=document.getElementById('openCoinDetail');if(!d)return;var m=d.dataset.mint,L=LIVE[m]||{},box=document.getElementById('coinTrades');if(!box)return;
@@ -398,7 +405,7 @@ function detail(c){
 }
 function updateDetailStats(){var d=document.getElementById('openCoinDetail');if(!d)return;var m=d.dataset.mint;
   var st=document.getElementById('coinStats');if(st)st.innerHTML=detailStats(m);
-  var pt=document.getElementById('coinPath');if(pt&&DETAIL_COIN)pt.innerHTML=pathHtml(DETAIL_COIN);
+  var pt=document.getElementById('coinPath');if(pt&&DETAIL_COIN){var op=pt.querySelector('details.fold[open]');pt.innerHTML=pathHtml(DETAIL_COIN);if(op){var f=pt.querySelector('details.fold');if(f)f.open=true}}
   var fr=document.getElementById('coinChart');if(fr&&LIVE[m]&&LIVE[m].pair&&fr.src.indexOf(LIVE[m].pair)<0)fr.src=chartSrc(m);
   if(now()-TRADES_AT>10000)loadTrades()}
 function showCoinDetail(c,anchorId){
