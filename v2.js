@@ -691,7 +691,7 @@ function openTestSheet(ids){var lv=String(s.level),g=classified(lv),ph=function(
   el.addEventListener('click',function(e){var t=e.target;if(t===el||t.dataset.tclose){el.remove();return}if(t.dataset.trun){var a=+el.querySelector('[data-tv="a"]').value,b=+el.querySelector('[data-tv="b"]').value;el.remove();runLibTest(ids,a,b)}})}
 function modTile(m){var stale=modSig(m)!==m.evalSig,ev=m.eval||{},age=m.createdAt?Math.max(0,Math.floor((Date.now()-m.createdAt)/864e5)):null;
   return '<button type="button" class="modtile" data-mopen="'+esc(m.id)+'">'+(age!=null?'<span class="mage">'+(m.phase==='after'?'🎓 ':m.phase==='before'?'🌱 ':'')+age+' дн</span>':'')+'<b>'+esc(m.name)+'</b><span class="hint">вердикт '+m.dm+' мин</span>'+
-    (stale?'<div class="mblk"><i>⚠ нужен перетест</i></div>':modBlk(ev.train,'mold','при создании')+modBlk(ev.live,'mnow','сейчас'))+modTestBlk(ev.test)+'</button>'}
+    (stale?'<div class="mblk"><i>⚠ нужен перетест</i></div>':(ev.train?modBlk(ev.train,'mold','при создании'):'')+modBlk(ev.live,'mnow','сейчас'+(m.liveFrom&&!ev.live?' · с нуля':'')))+modTestBlk(ev.test)+'</button>'}
 function openModSheet(id){var openG={},m=JSON.parse(JSON.stringify(MODS[id])),old=document.getElementById('modSheet');if(old)old.remove();
   var el=document.createElement('div');el.id='modSheet';el.className='sheet';
   var draw=function(){el.innerHTML='<div class="sheetbox"><div class="prow"><label>Имя</label><input class="input sm" data-mf="name" value="'+esc(m.name)+'"></div>'+
@@ -705,7 +705,7 @@ function openModSheet(id){var openG={},m=JSON.parse(JSON.stringify(MODS[id])),ol
   el.addEventListener('input',function(e){var t=e.target,f=t.dataset.mf;if(!f)return;if(f==='name')m.name=t.value;else if(f==='dm'){m.dm=+t.value;el.querySelector('.mdmv').textContent=t.value}else{m.conds[+t.dataset.j][f]=f==='value'?Number(t.value):t.value}el.querySelector('.mev').innerHTML=modEvalHtml(m)});
   el.addEventListener('click',function(e){var t=e.target;if(t===el||t.dataset.mclose){el.remove();return}
     if(t.dataset.mdel!=null){m.conds.splice(+t.dataset.mdel,1);draw()}else if(t.dataset.madd){m.conds.push({key:t.dataset.madd,op:'>=',value:0});draw()}
-    else if(t.dataset.msave){modSave(m);MODS[id]=m;el.remove();renderR1();renderR2();note('Сохранено')}
+    else if(t.dataset.msave){if(modSig(m)!==m.evalSig){m.eval={};m.evalSig=modSig(m);m.liveFrom=Date.now()}modSave(m);MODS[id]=m;el.remove();renderR1();renderR2();note('Сохранено')}
     else if(t.dataset.mwin){if(!window.confirm('Точно добавить «'+m.name+'» в окно возможностей?'))return;if(!t.dataset.stageAuto){window.alert('Это демо — в окно не добавляется');return}el.remove();stageAutoRule({target:t})}
     else if(t.dataset.mtest){var lv=String(id).indexOf('a2-')===0?'2':'1',g=classified(lv);if(!g[0].length||!g[1].length){window.alert('Полигон уровня '+lv+' пуст: 🟢 '+g[0].length+' · 🔴 '+g[1].length+'. Тест станет доступен, когда наберутся монеты.');return}window.alert('Тест на полигоне: 🟢 '+g[0].length+' · 🔴 '+g[1].length+' монет. Подсчёт по модулю — после правки сервера.')}
     else if(t.dataset.mrm){if(!window.confirm('Точно удалить «'+m.name+'»?'))return;var all=modLoad();all[id]={id:id,deleted:true};try{localStorage.setItem('r1mods',JSON.stringify(all))}catch(e){}el.remove();renderR1();renderR2();note('Удалено')}})}
