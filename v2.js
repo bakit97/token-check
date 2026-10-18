@@ -1195,7 +1195,7 @@ async function loadInternal(){
   // Управление с телефона: поля пароля и выбор возраста видны только когда защищённый сервис работает.
   (function(){var on=!!controlEndpoint;if($('ageOwnerBlock'))$('ageOwnerBlock').classList.toggle('hide',!on);
     ['ageBefore','ageAfter'].forEach(function(id){if($(id))$(id).disabled=!on});
-    var h=document.querySelector('#ageFilterBox .hint');if(h)h.textContent=on?'Выбери возраст, введи пароль, отметь галочку и нажми «Изменить возраст на сервере». Применится к новым монетам.':'Возраст задаёт сервер. Менять его с телефона можно будет после подключения управления.';})();
+    var h=document.querySelector?document.querySelector('#ageFilterBox .hint'):null;if(h)h.textContent=on?'Выбери возраст, введи пароль, отметь галочку и нажми «Изменить возраст на сервере». Применится к новым монетам.':'Возраст задаёт сервер. Менять его с телефона можно будет после подключения управления.';})();
   $('publishServerConfig').disabled=!controlEndpoint;
   $('ownerControlKey').disabled=!controlEndpoint;
   $('ageOwnerKey').disabled=!controlEndpoint;
