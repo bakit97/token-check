@@ -496,7 +496,7 @@ function admitVerifiedMigration(c){
   if(!SOURCE)return;
   try{
     const now=Date.now(),deadline=c.mg?.mT+(SOURCE.settings().afterMinutes||2)*60e3;c.buyDeadlineAt=deadline;
-    if(!SOURCE.has(c.a)&&Number.isFinite(deadline)&&now>deadline){c.buyWindowMissedAt=now;return}
+    if(!SOURCE.has(c.a)&&Number.isFinite(deadline)&&now>deadline){c.buyWindowMissedAt=now;SOURCE.observe({mint:c.a,phase:'after',outcome:'tooOld',lateMs:now-deadline});return}
     const d=SOURCE.afterVerifiedMigration(c);
     if(d.admitted)log('ВСЕ + после',c.a,'возраст секунд',Math.round((d.record.acceptedAt-d.record.eventAt)/1000));
   }catch(e){SOURCE_ERR='ошибка записи источника: '+e.message;err('source '+e.message)}
@@ -524,7 +524,7 @@ async function addFromGT(r){const inc={};(r.included||[]).forEach(x=>inc[x.id]=x
   for(const d of r.data||[]){const a=d.attributes||{},dex=d.relationships?.dex?.data?.id||'';if(isCurve(dex))continue;
     let bid=d.relationships?.base_token?.data?.id||'',addr=bid.replace(/^solana_/,''),q=(d.relationships?.quote_token?.data?.id||'').replace(/^solana_/,'');
     if(SKIP.has(addr)){q=addr;bid=d.relationships?.quote_token?.data?.id||'';addr=bid.replace(/^solana_/,'')}
-    if(!addr||SKIP.has(addr))continue;const t=Date.parse(a.pool_created_at);if(!t||Date.now()-t>3*3600e3)continue;
+    if(!addr||SKIP.has(addr))continue;SOURCE?.observe({mint:addr,phase:'after'});const t=Date.parse(a.pool_created_at);if(!t||Date.now()-t>3*3600e3)continue;
     let ex=C.get(addr);if(!ex&&typeof COMPLETED!=='undefined'&&COMPLETED){const old=COMPLETED.metadata(addr);if(old?.poolKeys.includes(a.address))continue;if(old){ex=COMPLETED.readCoin(addr);C.set(addr,ex)}}
     if(ex){ex.pools=ex.pools||[ex.p];if(!ex.pools.includes(a.address)){queueMigrationSignal(ex,Date.now());if(!ex.firstPostSeenAt)ex.firstPostSeenAt=Date.now();if(ex.pools.length<12)ex.pools.push(a.address);
         if(ex.mg&&ex.mg.st!=='ok'&&ex.mg.st!=='other')ex.mg.force=1} // у монеты новый пул — возможно, это миграция
@@ -772,7 +772,7 @@ async function reconcileBody(){const now=Date.now();const rpc=(method,params)=>g
       if(!prev){RC.log.push([now,key,'база',cur.length]);continue}
       RC.pend=RC.pend||{};const all=[...(RC.pend[key]||[]),...cur.filter(x=>!prev.has(x))];const nw=[...new Set(all)].slice(0,300);RC.pend[key]=[...new Set(all)];let known=0,added=0,forced=0;
       for(let i=0;i<nw.length;i+=100){const v=(await rpc('getMultipleAccounts',[nw.slice(i,i+100),{encoding:'base64'}]))?.value||[];
-        v.forEach((acc,j)=>{if(!acc)return;const u=b64(acc.data?.[0]);const mint=pk(u,mOff),quote=qOff?pk(u,qOff):null;let c=C.get(mint);if(!c&&typeof COMPLETED!=='undefined'&&COMPLETED){const old=COMPLETED.metadata(mint);if(old?.poolKeys.includes(nw[i+j])){known++;return}if(old){c=COMPLETED.readCoin(mint);C.set(mint,c)}}
+        v.forEach((acc,j)=>{if(!acc)return;const u=b64(acc.data?.[0]);const mint=pk(u,mOff),quote=qOff?pk(u,qOff):null;SOURCE?.observe({mint,phase:'after'});let c=C.get(mint);if(!c&&typeof COMPLETED!=='undefined'&&COMPLETED){const old=COMPLETED.metadata(mint);if(old?.poolKeys.includes(nw[i+j])){known++;return}if(old){c=COMPLETED.readCoin(mint);C.set(mint,c)}}
           if(c&&isOk(c)){c.discoverySource=key;known++;c.rcSeen=c.rcSeen||now;return}
           if(c){queueMigrationSignal(c,now);c.discoverySource=key;if(c.mg)c.mg.force=1;c.rcSeen=now;c.firstPostSeenAt=c.firstPostSeenAt||now;forced++;return}
           C.set(mint,{a:mint,n:'',s:'',i:'',p:nw[i+j],d:key==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'recon',seen:now,disc:'chain',discoverySource:key,proofEnqueuedAt:now,rcSeen:now,firstPostSeenAt:now,pools:[nw[i+j]],fv:FV});added++});const done=new Set(nw.slice(i,i+100));RC.pend[key]=RC.pend[key].filter(x=>!done.has(x))}
@@ -790,7 +790,7 @@ function wsCandidate(kind,acc,u){if(resourcePressure())return;const now=Date.now
   if(kind==='dbc'){mint=pk(u,136)}
   else if(kind==='ll'){mint=pk(u,205);quote=pk(u,237)}
   else if(kind==='pump'){const b=pk(u,43),q=pk(u,75);if(SKIP.has(b)){mint=q;quote=b}else{mint=b;quote=q}if(SKIP.has(mint))return}
-  if(!mint)return;WS.cand[kind]=(WS.cand[kind]||0)+1;let c=C.get(mint);if(!c&&typeof COMPLETED!=='undefined'&&COMPLETED){const old=COMPLETED.metadata(mint);if(old?.poolKeys.includes(pool))return;if(old){c=COMPLETED.readCoin(mint);C.set(mint,c)}}
+  if(!mint)return;SOURCE?.observe({mint,phase:'after'});WS.cand[kind]=(WS.cand[kind]||0)+1;let c=C.get(mint);if(!c&&typeof COMPLETED!=='undefined'&&COMPLETED){const old=COMPLETED.metadata(mint);if(old?.poolKeys.includes(pool))return;if(old){c=COMPLETED.readCoin(mint);C.set(mint,c)}}
   if(c){queueMigrationSignal(c,now);c.discoverySource=kind;if(!isOk(c)&&c.mg)c.mg.force=1;c.wsSeen=c.wsSeen||now;c.firstPostSeenAt=c.firstPostSeenAt||now;return}
   if(!canAddCandidate()){WS.capacityDrop=(WS.capacityDrop||0)+1;return}
   C.set(mint,{a:mint,n:'',s:'',i:'',p:pool,d:kind==='pump'?'pumpswap':kind==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'ws',seen:now,disc:'ws',discoverySource:kind,proofEnqueuedAt:now,wsSeen:now,firstPostSeenAt:now,pools:[pool],fv:FV})}
@@ -883,7 +883,7 @@ async function exportSource(now) {
   const today=SOURCE.day(d).map(enrich);
   // Нет задним числом добавленных кандидатов из обычной ленты.
   // Предмиграционный адаптер пока не активен: не выдавать пустоту за готовность.
-  await upload('source/status.json',{...summary,mode:'verified-pre-post',preConnected:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null});
+  await upload('source/status.json',{...summary,mode:'verified-pre-post',preConnected:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:!!PRE&&!!WS.preOn&&!!WS.preSub&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
   await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});
   await upload('source/live.json',{updated:now,count:today.length,coins:SOURCE.latest(200).map(enrich)});
 }

@@ -95,3 +95,40 @@ test('Повреждённая середина журнала — не дела
  fs.appendFileSync(src.logPath,'{bad-json}\n');
  assert.throws(()=>new SourceRuntime({dir}),SyntaxError);
 });
+
+test('Daily unique mints survive restart, update proof outcomes and average only threshold excess',t=>{
+ const dir=ephemeral(t);let now=stamp;const clock=()=>now;
+ let src=new SourceRuntime({dir,clock});
+ src.observe({mint:A,phase:'after'});src.observe({mint:A,phase:'after'});
+ src.afterVerifiedMigration(migrated(A,now-30000,now));
+ src.before({mint:B,publicTradingAt:now-180000,observedAt:now,verified:true});
+ src.before({mint:B,publicTradingAt:now-240000,observedAt:now,verified:true});
+ src.before({mint:C,observedAt:now,verified:false});
+ // Restart without a summary checkpoint: rejected discoveries must survive too.
+ now+=1000;src=new SourceRuntime({dir,clock});
+ let d=src.summary(now).daily;
+ assert.equal(d.startedAt,stamp);assert.equal(d.partialDay,true);
+ assert.deepEqual([d.after.seen,d.after.accepted,d.after.unverified],[1,1,0]);
+ assert.deepEqual([d.before.seen,d.before.tooOld,d.before.unverified,d.before.averageLateMs],[2,1,1,60000]);
+ src=new SourceRuntime({dir,clock});
+ assert.equal(src.summary(now).daily.before.seen,2);
+});
+
+test('Daily counters reset exactly at midnight UTC+5 without losing previous admission dedup',t=>{
+ let now=Date.UTC(2026,9,17,18,59,59,999);const src=new SourceRuntime({dir:ephemeral(t),clock:()=>now});
+ src.before({mint:A,publicTradingAt:now-1000,observedAt:now,verified:true});
+ assert.equal(src.summary(now).daily.before.accepted,1);
+ now++;let d=src.summary(now).daily;
+ assert.equal(d.day,'2026-10-18');assert.equal(d.before.seen,0);assert.equal(d.partialDay,false);
+ src.observe({mint:B,phase:'after'});src.observe({mint:B,phase:'after'});
+ d=src.summary(now).daily;assert.equal(d.after.seen,1);assert.equal(d.after.unverified,1);
+ assert.equal(src.has(A),true);
+});
+
+test('Daily counters expire identity sets and mark overflow incomplete instead of reporting a full zero',t=>{
+ let now=stamp;const src=new SourceRuntime({dir:ephemeral(t),clock:()=>now,maxRecords:1});
+ src.observe({mint:A,phase:'after'});src.observe({mint:B,phase:'after'});src.observe({mint:C,phase:'after'});
+ assert.equal(src.summary(now).daily.complete,false);
+ now+=3*86400000;src.observe({mint:C,phase:'after'});
+ assert.equal(src.dailyRows.size,1);
+});

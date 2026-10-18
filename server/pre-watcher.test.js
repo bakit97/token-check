@@ -48,11 +48,23 @@ test('older than age window is never written',async t=>{
  const x=setup(t);
  const d=await x.worker.examine({signature:'sig-late',observedAt:at+120001});
  assert.equal(d.reason,'too-old');assert.equal(x.source.records.size,0);
+ assert.equal(x.source.dailySummary().before.tooOld,1);
 });
 test('token mint alone or completed curve does not prove public trading',async t=>{
  const x=setup(t,{tradeable:false});
  assert.equal((await x.worker.examine({signature:'sig',observedAt:at+5000})).reason,'curve-not-tradeable');
  assert.equal(x.source.records.size,0);
+ assert.equal(x.source.dailySummary().before.unverified,1);
+});
+
+test('Count unique create-event mint before budget/queue rejection, never admit it from logs',async t=>{
+ const x=setup(t),part=s=>{const b=Buffer.from(s),n=Buffer.alloc(4);n.writeUInt32LE(b.length);return Buffer.concat([n,b])};
+ const data=Buffer.concat([Buffer.from([27,114,169,77,222,235,99,118]),part('Кот'),part('CAT'),part('uri'),Buffer.from(dec(M))]);
+ const log={signature:'create-dropped',err:null,logs:['Program '+PUMP+' invoke [1]','Program log: Instruction: CreateV2','Program data: '+data.toString('base64'),'Program '+PUMP+' success']};
+ x.worker.canObserve=()=>false;
+ x.worker.onLog(log);x.worker.onLog(log);
+ assert.equal(x.source.dailySummary().before.seen,1);assert.equal(x.source.dailySummary().before.unverified,1);
+ assert.equal(x.source.records.size,0);assert.equal(x.proofCalls,0);
 });
 test('websocket only forwards successful create logs, not trades or failed tx',async t=>{
  const x=setup(t);

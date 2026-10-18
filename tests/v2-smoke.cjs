@@ -9,6 +9,28 @@ const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root,'v2.html'),'utf8');
 const js = fs.readFileSync(path.join(root,'v2.js'),'utf8');
 
+test('Server daily counters show zero only for healthy current-day feeds; missing, stale and stopped feeds show no data',()=>{
+ const nodes=new Map(),at=Date.UTC(2026,9,17,18,59,59),date=t=>new Date(t+5*3600000).toISOString().slice(0,10);
+ const row={seen:1240,accepted:312,tooOld:870,unverified:58,averageLateMs:90000};
+ const context={sourceActive:true,sourceMeta:{updated:at,dailyAvailability:{before:false,after:true},daily:{schema:1,day:date(at),complete:true,partialDay:true,startedAt:at,after:row,before:{seen:0,accepted:0,tooOld:0,unverified:0}}},
+   now:()=>at,day:date,fmt:String,time:()=> '23:59',Number,Map,Date,
+   $:id=>{if(!nodes.has(id))nodes.set(id,{textContent:''});return nodes.get(id)}};
+ const code=js.slice(js.indexOf('function dailySourceText('),js.indexOf('function renderLocalPreview('));
+ vm.runInNewContext(code,context);context.renderDailySource();
+ assert.equal(nodes.get('dailyBefore').textContent,'До миграции: нет данных');
+ assert.match(nodes.get('dailyAfter').textContent,/увидели 1240 · прошли 312 · опоздали 870/);
+ assert.match(nodes.get('dailyAfter').textContent,/1,5 мин/);
+ assert.match(nodes.get('dailySourceNote').textContent,/день неполный/);
+ context.sourceMeta.dailyAvailability.before=true;context.renderDailySource();
+ assert.match(nodes.get('dailyBefore').textContent,/увидели 0 · прошли 0/);
+ context.sourceMeta.updated=at-8*60000;context.renderDailySource();
+ assert.equal(nodes.get('dailyAfter').textContent,'После миграции: нет данных');
+ context.sourceMeta.updated=at;context.now=()=>at+1000;context.renderDailySource();
+ assert.equal(nodes.get('dailyAfter').textContent,'После миграции: нет данных','previous-day status must not survive midnight');
+ context.now=()=>at;context.sourceMeta.daily.complete=false;context.renderDailySource();
+ assert.equal(nodes.get('dailyAfter').textContent,'После миграции: нет данных');
+});
+
 test('все шесть разделов имеют правильные ID',()=>{
   for(const id of ['p-all','p-mine','p-passed','p-r1','p-r2','p-library']){
     assert.match(html,new RegExp('id="'+id+'"'));

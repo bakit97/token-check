@@ -23,6 +23,12 @@
 <section class="page" id="p-all">
 <h1>Все</h1><p class="muted">Главный источник. Монета входит один раз: либо до, либо после миграции. Ни один другой раздел не может добавить её сюда.</p>
 <div class="chips" id="allStreams"><button class="active" data-stream="all">Общие</button><button data-stream="before">🌱 До миграции</button><button data-stream="after">🎓 После миграции</button></div>
+<div class="card daily-source" aria-label="Суточные счётчики источника">
+<div class="row"><strong>Потоки за сутки</strong><span class="hint">Сброс в 00:00 UTC+5</span></div>
+<p id="dailyBefore">До миграции: нет данных</p>
+<p id="dailyAfter">После миграции: нет данных</p>
+<p class="hint" id="dailySourceNote">Счётчики рассчитывает сервер.</p>
+</div>
 <details class="card"><summary>⚙ Фильтры возраста и лента</summary>
 <div class="controls" style="margin-top:13px">
 <label class="control"><span>🌱 Возраст до миграции</span><select class="input" id="ageBefore"></select></label>

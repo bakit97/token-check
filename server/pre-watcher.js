@@ -1,6 +1,36 @@
 'use strict';
 const {PUMP,parsePumpLaunch,isTradeableCurve,isPumpCreateLog}=require('./pump-pre');
 
+// Pump's official IDL: CreateEvent = discriminator, name, symbol, uri, mint.
+// Discovery only; this never establishes public trading or admits a coin.
+// https://github.com/pump-fun/pump-public-docs/blob/main/idl/pump.json
+function mintFromCreateLog(value){
+  if(!isPumpCreateLog(value))return null;
+  const discriminator=Buffer.from([27,114,169,77,222,235,99,118]);
+  const stack=[];
+  for(const line of value.logs){
+    const invoke=/^Program (\w+) invoke \[\d+\]$/.exec(line);
+    if(invoke){stack.push(invoke[1]);continue}
+    if(/^Program \w+ (?:success|failed:)/.test(line)){stack.pop();continue}
+    if(stack.at(-1)!==PUMP||!line.startsWith('Program data: ')||line.length>16384)continue;
+    const bytes=Buffer.from(line.slice(14),'base64');
+    if(!bytes.subarray(0,8).equals(discriminator))continue;
+    let offset=8,valid=true;
+    for(let i=0;i<3;i++){
+      if(offset+4>bytes.length){valid=false;break}
+      const n=bytes.readUInt32LE(offset);offset+=4;
+      if(n>4096||offset+n>bytes.length){valid=false;break}offset+=n;
+    }
+    if(!valid||offset+32>bytes.length)continue;
+    const key=bytes.subarray(offset,offset+32),alphabet='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    let n=BigInt('0x'+key.toString('hex')),result='';
+    while(n){result=alphabet[Number(n%58n)]+result;n/=58n}
+    for(const b of key){if(b!==0)break;result='1'+result}
+    return result;
+  }
+  return null;
+}
+
 /**
  * Network-backed, read-only first public trading detector for Pump.fun.
  * The curve is created with liquidity, so public buys are possible immediately.
@@ -15,13 +45,16 @@ class PumpPreWatcher {
     this.queueLimit=queueLimit;this.retryDelays=retryDelays;
     this.queue=[];this.busy=false;this.started=false;this.pending=new Set();
     this.stats={logs:0,createLogs:0,processed:0,accepted:0,late:0,invalid:0,
-      untradeable:0,errors:0,budgetDeferred:0,dropped:0,queuePeak:0,lastAt:0};
+      untradeable:0,errors:0,budgetDeferred:0,dropped:0,unidentifiedMint:0,queuePeak:0,lastAt:0};
     this.seenSignatures=new Map();
   }
   onLog(value,observedAt=Date.now()){
     this.stats.logs++;
     if(!isPumpCreateLog(value))return false;
     this.stats.createLogs++;
+    const mint=mintFromCreateLog(value);
+    if(mint)this.source.observe?.({mint,phase:'before'});
+    else this.stats.unidentifiedMint++;
     if(!this.canObserve()){this.stats.dropped++;return false}
     const signature=value.signature;
     if(this.seenSignatures.has(signature)||this.pending.has(signature))return false;
@@ -61,8 +94,10 @@ class PumpPreWatcher {
         decode58:this.decode58,deriveCurve:this.deriveCurve,signature,observedAt
       });
       if(!launch){this.stats.invalid++;return {admitted:false,reason:'not-public-launch'}}
+      this.source.observe?.({mint:launch.mint,phase:'before'});
       if(this.source.has(launch.mint))return {admitted:false,reason:'already-admitted'};
       if(observedAt-launch.blockAt>this.source.settings().beforeMinutes*60000){
+        this.source.observe?.({mint:launch.mint,phase:'before',outcome:'tooOld',lateMs:observedAt-launch.blockAt-this.source.settings().beforeMinutes*60000});
         this.stats.late++;return {admitted:false,reason:'too-old'}
       }
       // Network proof: curve exists, is owned by Pump, has nonzero reserves

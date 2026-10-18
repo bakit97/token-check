@@ -19,7 +19,8 @@ test('a genuinely new migration signal on an old token starts a fresh proof task
 
 test('an open buying window outranks an older fresh partial proof, without allowing retroactive late admission',()=>{
  const open={t:clock-30000},late={t:clock-180000,proofProgressAt:clock-1},ctx=setup([late,open]);assert.ok(ctx.compare(open,late)<0);const q=ctx.summary(clock);assert.equal(q.buyWindowOpen,1);assert.equal(q.buyWindowMissedPending,1);
- const admitted=[],scope={Date:{now:()=>clock},SOURCE:{settings:()=>({afterMinutes:2}),has:()=>false,afterVerifiedMigration:c=>{admitted.push(c.a);return {admitted:false}}},Number,Math,log:()=>{},err:()=>{},SOURCE_ERR:''};vm.createContext(scope);
+ const admitted=[],observed=[],scope={Date:{now:()=>clock},SOURCE:{settings:()=>({afterMinutes:2}),has:()=>false,observe:x=>observed.push(x),afterVerifiedMigration:c=>{admitted.push(c.a);return {admitted:false}}},Number,Math,log:()=>{},err:()=>{},SOURCE_ERR:''};vm.createContext(scope);
  vm.runInContext(code.slice(code.indexOf('function admitVerifiedMigration(c)'),code.indexOf('const OBS_KEYS='))+'\nthis.admit=admitVerifiedMigration;',scope);
  const tooLate={a:'late',mg:{mT:clock-180000}},timely={a:'fresh',mg:{mT:clock-30000}};scope.admit(tooLate);scope.admit(timely);assert.equal(tooLate.buyWindowMissedAt,clock);assert.deepEqual(admitted,['fresh']);
+ assert.equal(observed[0].outcome,'tooOld');assert.equal(observed[0].lateMs,60000);assert.equal(scope.SOURCE_ERR,'');
 });
