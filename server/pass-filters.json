@@ -1,8 +1,76 @@
 {
   "schema": 1,
-  "enabled": false,
+  "enabled": true,
   "activatedAt": 0,
-  "decisionMinutes": 10,
-  "filters": [],
-  "modules": []
+  "decisionMinutes": 15,
+  "filters": [
+    {
+      "id": "start-basic",
+      "name": "Старт: 10 покупателей / 5 SOL",
+      "level": "1",
+      "key": "buyers10",
+      "op": ">=",
+      "value": 10,
+      "version": 1,
+      "conditions": [
+        {
+          "key": "safeContract",
+          "op": ">=",
+          "value": 1
+        },
+        {
+          "key": "quoteSol",
+          "op": ">=",
+          "value": 5
+        }
+      ]
+    },
+    {
+      "id": "start-strong",
+      "name": "Старт: 25 покупателей / 10 SOL",
+      "level": "1",
+      "key": "buyers10",
+      "op": ">=",
+      "value": 25,
+      "version": 1,
+      "conditions": [
+        {
+          "key": "safeContract",
+          "op": ">=",
+          "value": 1
+        },
+        {
+          "key": "quoteSol",
+          "op": ">=",
+          "value": 10
+        }
+      ]
+    }
+  ],
+  "modules": [
+    {
+      "filterId": "start-basic",
+      "phase": "before",
+      "level": "1",
+      "enabled": true
+    },
+    {
+      "filterId": "start-basic",
+      "phase": "after",
+      "level": "1",
+      "enabled": true
+    },
+    {
+      "filterId": "start-strong",
+      "phase": "before",
+      "level": "1",
+      "enabled": true
+    },
+    {
+      "filterId": "start-strong",
+      "phase": "after",
+      "level": "1",
+      "enabled": true
+    }
+  ]
 }

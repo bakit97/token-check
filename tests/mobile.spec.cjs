@@ -11,8 +11,12 @@ test('Six panels, age admission, safe settings and local filter management work 
   const admitted={a:TOKEN,n:c.n,s:c.s,phase:'after',
     eventAt:now-20*60_000,acceptedAt:now-20*60_000+1200};
   const source={mode:'verified-pre-post',updated:now,
-    today:1,todayBefore:0,todayAfter:1,
+    total:1,today:1,todayBefore:0,todayAfter:1,
     settings:{beforeMinutes:2,afterMinutes:2},preConnected:true};
+  source.dailyAvailability={before:false,after:true};
+  source.daily={schema:1,day:new Date(now+5*3600000).toISOString().slice(0,10),complete:true,
+    before:{seen:0,accepted:0,tooOld:0,unverified:0},
+    after:{seen:1240,accepted:312,tooOld:870,unverified:58,averageLateMs:90000}};
   const research={status:'observational',updated:now,
     counts:{live:0,dead:0,preLive:0,preDead:0,postLive:0,postDead:0},
     settings:{hours:5,minActive:70,maxIdle:60,decisionMinutes:10},
@@ -25,7 +29,8 @@ test('Six panels, age admission, safe settings and local filter management work 
     else if(pathname.endsWith('/research-v2/status.json'))response=research;
     else if(pathname.endsWith('/research-v2/polygon-1.json'))response={counts:research.counts,coins:[]};
     else if(pathname.endsWith('/status.json'))response={updated:now};
-    else if(pathname.includes('/obs/'))response={coins:[]};
+    else if(pathname.includes('/observations-v2/'))response={schema:2,coins:[require('../server/observation-contract').projectSummary(c,{metadata:c})]};
+    else if(pathname.includes('/obs/'))throw Error('Legacy observation request');
     else if(pathname.includes('/day/')||pathname.endsWith('/live.json'))response={coins:[c]};
     return route.fulfill({status:200,contentType:'application/json',
       headers:{'access-control-allow-origin':'*'},body:JSON.stringify(response)});
@@ -33,6 +38,9 @@ test('Six panels, age admission, safe settings and local filter management work 
   await page.goto('http://127.0.0.1:8765/v2.html',{waitUntil:'domcontentloaded'});
   await expect(page.locator('#net')).toHaveText('● LIVE',{timeout:15000});
   await expect(page.locator('#tabs [data-page]')).toHaveCount(6);
+  await expect(page.locator('#dailyBefore')).toHaveText('До миграции: нет данных');
+  await expect(page.locator('#dailyAfter')).toContainText('прошли 312');
+  await expect(page.locator('#dailyAfter')).toContainText('1,5 мин');
   await expect(page.locator('#coinList')).toContainText('Проверочная монета');
   await expect(page.locator('#admitCount')).toHaveText('1');
   await expect(page.locator('#visibleCount')).toHaveText('1');

@@ -2,9 +2,9 @@ name: v2-ui-smoke
 on:
   push:
     branches: [main]
-    paths: ['index.html', 'v2.html', 'v2.css', 'v2.js', 'tests/v2-smoke.cjs', '.github/workflows/v2-ui-smoke.yml']
+    paths: ['index.html', 'v2.html', 'v2.css', 'v2.js', 'tests/v2-smoke.cjs', 'server/observation-contract.js', '.github/workflows/v2-ui-smoke.yml']
   pull_request:
-    paths: ['index.html', 'v2.html', 'v2.css', 'v2.js', 'tests/v2-smoke.cjs', '.github/workflows/v2-ui-smoke.yml']
+    paths: ['index.html', 'v2.html', 'v2.css', 'v2.js', 'tests/v2-smoke.cjs', 'server/observation-contract.js', '.github/workflows/v2-ui-smoke.yml']
 permissions:
   contents: read
 jobs:

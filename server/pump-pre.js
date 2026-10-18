@@ -75,4 +75,45 @@ function isPumpCreateLog(value){
   return !value?.err&&typeof value.signature==='string'&&Array.isArray(value.logs)&&
     value.logs.some(log=>/^Program log: Instruction: Create(?:V2)?\s*$/.test(log));
 }
-module.exports={PUMP,parsePumpLaunch,isTradeableCurve,isPumpCreateLog};
+function encodeKey(bytes){
+ const alphabet='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';let n=BigInt('0x'+bytes.toString('hex')),s='';
+ while(n){s=alphabet[Number(n%58n)]+s;n/=58n}for(const b of bytes){if(b!==0)break;s='1'+s}return s;
+}
+function createEvent(bytes,slot,observedAt){
+ if(!bytes.subarray(0,8).equals(Buffer.from([27,114,169,77,222,235,99,118])))return null;
+ let offset=8;const strings=[];
+ for(let i=0;i<3;i++){if(offset+4>bytes.length)return null;const n=bytes.readUInt32LE(offset);offset+=4;
+  if(n>4096||offset+n>bytes.length)return null;strings.push(bytes.subarray(offset,offset+n).toString('utf8'));offset+=n}
+ if(offset+96>bytes.length)return null;
+ const mint=encodeKey(bytes.subarray(offset,offset+32)),curve=encodeKey(bytes.subarray(offset+32,offset+64));
+ let blockAt=null;
+ // Modern CreateEvent has creator before timestamp; original layout ended
+ // immediately after user/timestamp. Never interpret the creator as a time.
+ const remaining=bytes.length-offset,timeOffset=remaining>=136?offset+128:remaining===104?offset+96:null;
+ if(timeOffset!==null){const seconds=Number(bytes.readBigInt64LE(timeOffset));
+  if(Number.isSafeInteger(seconds)&&seconds>=1577836800&&seconds*1000<=observedAt+30000)blockAt=seconds*1000;
+  else return null;
+ }
+ let quote='So11111111111111111111111111111111111111112';
+ if(remaining>=234&&bytes.subarray(offset+202,offset+234).some(b=>b!==0))quote=encodeKey(bytes.subarray(offset+202,offset+234));
+ return {mint,curve,quote,slot,blockAt,observedAt,name:strings[0].slice(0,40),symbol:strings[1].slice(0,16)};
+}
+function parsePumpCreateEvents(value,{slot,observedAt}={}){
+ if(value?.err!==null||!isPumpCreateLog(value)||!Number.isSafeInteger(slot)||slot<=0||!Number.isSafeInteger(observedAt))return [];
+ const stack=[],events=[];
+ for(const line of value.logs){
+  const invoke=/^Program (\w+) invoke \[\d+\]$/.exec(line);
+  if(invoke){stack.push({program:invoke[1],create:false,events:[]});continue}
+  const done=/^Program (\w+) (success|failed:)/.exec(line);
+  if(done){const frame=stack.pop();if(frame?.program===done[1]&&done[2]==='success'&&frame.program===PUMP&&frame.create)events.push(...frame.events);continue}
+  const frame=stack.at(-1);if(frame?.program!==PUMP)continue;
+  if(/^Program log: Instruction: Create(?:V2)?\s*$/.test(line))frame.create=true;
+  if(frame.create&&line.startsWith('Program data: ')&&line.length<=16384){
+   const payload=line.slice(14);if(!/^[A-Za-z0-9+/]+={0,2}$/.test(payload))continue;
+   const event=createEvent(Buffer.from(payload,'base64'),slot,observedAt);
+   if(event)frame.events.push({...event,signature:value.signature});
+  }
+ }
+ return events;
+}
+module.exports={PUMP,parsePumpLaunch,isTradeableCurve,isPumpCreateLog,parsePumpCreateEvents};

@@ -9,7 +9,7 @@ const {featuresAt,evaluation}=require('./research-v2');
 
 const MIN=60000,WINDOW=72*60*MIN,TZ=5*3600000;
 function kzDay(at){return new Date(at+TZ).toISOString().slice(0,10)}
-const KEYS=new Set(['buyers','trades','volume','liq','mc','buys','sells','buySellRatio']);
+const KEYS=new Set(['buyers','trades','volume','liq','mc','buys','sells','buySellRatio','buyers10','safeContract','quoteSol']);
 const PHASES=new Set(['before','after']);
 
 function configOf(raw={}){
@@ -33,6 +33,7 @@ function configOf(raw={}){
        typeof f.value!=='number'||!Number.isFinite(f.value)||f.value<0||f.value>1e12||
        !Number.isInteger(f.version)||f.version<1)
       throw new TypeError('Invalid filter in pass configuration');
+    if(f.conditions!=null&&(!Array.isArray(f.conditions)||f.conditions.length>8||f.conditions.some(c=>!c||!KEYS.has(c.key)||!['>=','<='].includes(c.op)||!Number.isFinite(c.value)||c.value<0||c.value>1e12||c.conditions!=null)))throw new TypeError('Invalid compound filter');
     ids.add(f.id);
   }
   for(const m of cfg.modules){
@@ -42,7 +43,7 @@ function configOf(raw={}){
       throw new TypeError('Invalid module in pass configuration');
   }
   cfg.filters=cfg.filters.map(f=>({id:f.id,name:f.name.trim(),level:f.level,key:f.key,
-    op:f.op,value:f.value,version:f.version}));
+    op:f.op,value:f.value,version:f.version,...(f.conditions?{conditions:f.conditions.map(c=>({key:c.key,op:c.op,value:c.value}))}:{})}));
   cfg.modules=cfg.modules.map(m=>({filterId:m.filterId,phase:m.phase,level:m.level,enabled:m.enabled}));
   return cfg;
 }
@@ -172,7 +173,10 @@ class PassRuntime {
       const rules=cfg.modules.filter(m=>m.enabled&&m.level==='1').map(m=>({
         phase:m.phase,filter:available.get(m.filterId)
       })).filter(x=>x.filter);
-      for(const row of source.records.values()){
+      const recent=typeof source.recentAdmissions==='function'?
+        source.recentAdmissions(now-cfg.decisionMinutes*MIN,now):
+        source.records.values();
+      for(const row of recent){
         if(!PHASES.has(row.phase)||this.records.has(row.mint)||row.acceptedAt<cfg.activatedAt||
            row.acceptedAt>now||now-row.acceptedAt>cfg.decisionMinutes*MIN)continue;
         considered++;

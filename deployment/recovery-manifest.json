@@ -1,0 +1,25 @@
+{
+  "sourceDirectory": "server",
+  "files": {
+    "collector.js": "3e97997d9946d04390258298ae98db3c62ca37fc73685d54523ecad237c58013",
+    "event-clock.js": "ae835ddd6a280ae888d1b264a4e2acf665bdd62d895a3ea42c255339e793e2ad",
+    "admission.js": "99feba0f235ce8e262f01b1e517a9373c906fb6c51353a2951a184ef5bfacde8",
+    "source-runtime.js": "089dc694373e09fea9cd0598d9697c4f441b04c374006f677caab0502cde4e21",
+    "pump-pre.js": "e53d3be957329ef94e2889e109f5c84ef07ddf2f6ce853ae4d0e4bfe7f9bf27c",
+    "pre-watcher.js": "1ed498a40298e36776f0fc632656a5066f1d05206998736ff4dc90a5dbc46f97",
+    "research-v2.js": "2eabe999de51b5927658b4735f0eec6405031800116b70edb31eb9267ca6543a",
+    "research-runtime.js": "d5f49f45e9381cba5cf00b6972bd029d3c993d6cdf9addd894d80a1edf4bbc70",
+    "research-config.js": "d6d68c1bda8422f3704efe6eee0f9738d8917119f6379bd7d1c02b343c4793c1",
+    "pass-runtime.js": "3db6089a41de2b74ab678552042d2348eb64c30ae8b95253c1be176acc81e511",
+    "research-two-runtime.js": "2e9391884612161b7118ad5b99c3bc2be9096afd5be044e9db07701002a825a0",
+    "auto-research-v2.js": "45f7b06194a7d8f0f061c36d7ca9a49aae6ecff536555adb929b68de6c8f068c",
+    "filter-audit.js": "035d44e9d6a527fc349dbcca2d45c5a7b6dbcfa48924281e619c80ac30ce27ae",
+    "resource-budget.js": "f8fb9ad2134047f19abc4eb9daca0c09be83c3014d0269bba7e0b5dadecc320d",
+    "runtime-health.js": "001b44ef3198e679008fd58aa3e9f90f7843303775cbc74b3a21eda745a9ba84",
+    "stream-json.js": "b212a8cabdb25f9f8ef5fe7e7c081d04dbda3e4218e6c3df6adfb453d6a48461",
+    "observation-contract.js": "5822bacc8be4e9d4e50b81543e02411df646f26fb16076a9f856e817a2b75124",
+    "packed-observations.js": "6e2622a57f6d8939411b9884ec1f9c80bd8e091b8d734c8276465789128204e4",
+    "completed-coins.js": "59cf467ebfa1fa49b722d18444d7c92e87ae57eff78349a84dc8548468c4426f",
+    "seed-completed.js": "01522182858aba7faab6cd85a5badd7552795cecbac2c12f00755a8ce985e1a4"
+  }
+}

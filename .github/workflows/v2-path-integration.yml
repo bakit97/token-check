@@ -1,0 +1,29 @@
+name: v2-path-integration
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: ['feature/serverside-passed-r2-*']
+permissions:
+  contents: read
+jobs:
+  isolated-server-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax for every new runtime
+        run: |
+          node --check server/collector.js
+          node --check v2.js
+          for file in server/{pass-runtime,research-two-runtime,research-v2,research-runtime,research-config,auto-research-v2,filter-audit,control-api,path-runtime.test}.js; do
+            node --check "$file"
+          done
+      - name: Standalone authoritative server data-flow tests
+        run: node --test server/path-runtime.test.js
+      - name: Existing source and research regression suites
+        run: node --test server/admission.test.js server/source-runtime.test.js server/pump-pre.test.js server/pre-watcher.test.js server/research-v2.test.js server/research-runtime.test.js tests/research-collector-smoke.cjs
+      - name: Phone UI DOM smoke
+        run: node --test tests/v2-smoke.cjs

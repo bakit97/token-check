@@ -80,6 +80,7 @@ function dataMetrics(c,cutoff){
     buys,sells,buySellRatio:ratio};
 }
 function ruleStatus(features,f){
+  if(f.conditions){const r=f.conditions.map(function(c){return ruleStatus(features,c)});if(r.includes('reject'))return 'reject';if(r.includes('unknown'))return 'unknown';}
   const v=features?.[f.key];
   if(typeof v!=='number'||!Number.isFinite(v))return 'unknown';
   return f.op==='>='?(v>=f.value?'pass':'reject'):(v<=f.value?'pass':'reject');
@@ -351,6 +352,11 @@ function renderLocalPreview(){
     }).join(''):
     '<p class="muted">Сейчас нет совпадений. Старые монеты не пересчитываются задним числом.</p>';
 }
+function ruleLabel(f){
+  const labels={buyers:'Покупатели 5м',buyers10:'Покупатели за первые 10 мин',safeContract:'Контракт без опасных прав',quoteSol:'Реальные SOL в пуле',trades:'Сделки 5м',volume:'Объём $',liq:'Ликвидность $',mc:'Капитализация $',buys:'Покупки 5м',sells:'Продажи 5м',buySellRatio:'Покупки/продажи'};
+  const one=function(r){return (labels[r.key]||r.key)+' '+r.op+' '+fmt(r.value)};
+  return [one(f)].concat((f.conditions||[]).map(one)).join(' · и ');
+}
 function renderServerModules(){
   const meta=serverPassActive&&passMeta||null;
   const cfg=meta&&meta.serverConfig;
@@ -372,8 +378,7 @@ function renderServerModules(){
     const f=filters.get(m.filterId);
     return '<div class="filter-row"><b>'+esc(m.phase==='before'?'🌱 До':'🎓 После')+
       ' · '+esc(m.level)+'-й уровень · '+esc(f.name)+'</b>'+
-      '<p class="muted">v'+esc(f.version)+' · '+esc(f.key)+' '+
-      esc(f.op)+' '+fmt(f.value)+'</p></div>';
+      '<p class="muted">v'+esc(f.version)+' · '+esc(ruleLabel(f))+'</p></div>';
   }).join(''):'<p class="muted">Серверная версия включена, но активных модулей нет.</p>';
 }
 function renderModules(){
@@ -645,7 +650,7 @@ function renderLibrary(){
         ' · пропуски '+fmt(p.background?.missing||0)+'</p>';
     }).join('');
     return '<div class="filter-row"><div class="row"><b>№'+esc(x.id)+' · '+esc(x.name)+'</b><button type="button" class="pbtn" data-edit="'+esc(x.id)+'">Открыть</button></div>'+
-      '<p class="muted">'+esc(({buyers:'Покупатели',trades:'Сделки',volume:'Объём $',liq:'Ликвидность $',mc:'Капитализация $',buys:'Покупки 5м',sells:'Продажи 5м',buySellRatio:'Покупки/продажи'})[x.key])+' '+esc(x.op)+' '+fmt(x.value)+' · версия '+fmt(x.version)+'</p>'+
+      '<p class="muted">'+esc(ruleLabel(x))+' · версия '+fmt(x.version)+'</p>'+
       (audits?'<p class="hint">Серверная история сравнения по версиям:</p>'+audits:
       '<div class="numbers"><span class="badge">На телефоне: '+orig+'</span>'+
       '<span class="badge">Серверная фоновая проверка: ожидает настройки</span></div>')+'</div>';
@@ -682,13 +687,13 @@ function openEditor(id){
   $('filterKey').value=f?f.key:'buyers';$('filterOp').value=f?f.op:'>=';
   $('filterValue').value=f?f.value:20;
   $('deleteFilter').hidden=!f;
-  $('editorNote').textContent='Сохраняется только в этом браузере. Изменение условия создаёт новую версию.';
+  $('editorNote').textContent='Изменение условия создаёт новую версию. '+(f?.conditions?.length?'Дополнительные условия сохраняются: '+f.conditions.map(ruleLabel).join(' · '):'');
   $('editor').scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 function saveEditor(e){
   e.preventDefault();
   var name=$('filterName').value.trim(),key=$('filterKey').value,op=$('filterOp').value,value=Number($('filterValue').value);
-  if(!name||!['buyers','trades','volume','liq','mc','buys','sells','buySellRatio'].includes(key)||!['>=','<='].includes(op)||!Number.isFinite(value)||value<0||value>1e12){note('Проверь название и значение');return}
+  if(!name||!['buyers','trades','volume','liq','mc','buys','sells','buySellRatio','buyers10','safeContract','quoteSol'].includes(key)||!['>=','<='].includes(op)||!Number.isFinite(value)||value<0||value>1e12){note('Проверь название и значение');return}
   var same=s.filters.find(function(f){return f.id!==editorId&&f.level===s.level&&f.key===key&&f.op===op&&f.value===value});
   if(same){note('Такие же правила уже есть: №'+same.id);return}
   if(editorId){
@@ -724,7 +729,7 @@ function preparedServerConfig(){
   }
   const filters=s.filters.map(function(f){
     return {id:String(f.id),name:String(f.name),level:String(f.level),
-      key:f.key,op:f.op,value:Number(f.value),version:Number(f.version)};
+      key:f.key,op:f.op,value:Number(f.value),version:Number(f.version),...(f.conditions?{conditions:f.conditions.map(function(c){return {key:c.key,op:c.op,value:c.value}})}:{})};
   });
   const ids=new Set(filters.map(function(f){return f.id}));
   const modules=s.modules.filter(function(m){return ids.has(m.filterId)})
@@ -1071,18 +1076,24 @@ function bind(){
   $('deleteFilter').addEventListener('click',removeEditor);
   $('editor').addEventListener('submit',saveEditor);
 }
+const jsonCache=new Map();
 async function getJSON(path){
+  const ttl=path.startsWith('observations-v2/summary/day/')?(path.includes(day(now()))?120000:600000):path.startsWith('source/day/')?300000:0,cached=jsonCache.get(path);
+  if(ttl&&cached&&now()-cached.at<ttl)return cached.data;
   var ctl=new AbortController(),timer=setTimeout(function(){ctl.abort()},20000);
   try{var r=await fetch(BASE+path+'?v='+now(),{signal:ctl.signal,cache:'no-store'});
     if(r.status===404||r.status===403)return null;
     if(!r.ok)throw new Error(path+' HTTP '+r.status);
-    return await r.json();
+    const data=await r.json();if(ttl&&data){jsonCache.set(path,{at:now(),data});while(jsonCache.size>12)jsonCache.delete(jsonCache.keys().next().value);}return data;
   }finally{clearTimeout(timer)}
 }
-async function load(){
-  if(fetching)return;fetching=true;
+function observationCoins(file){
+  if(!file)return [];if(file.schema!==2||!Array.isArray(file.coins))throw Error('Неверный формат наблюдений сервера');
+  return file.coins.map(function(row){return SolObservations.toLegacy(row)});
+}
+async function loadInternal(){
   var today=day(now()),yesterday=day(now()-864e5);
-  var names=['status.json','day/'+today+'.json','day/'+yesterday+'.json','obs/'+today+'.json','obs/'+yesterday+'.json','live.json',
+  var names=['status.json','observations-v2/summary/day/'+today+'.json','observations-v2/summary/day/'+yesterday+'.json',null,null,'observations-v2/summary/live.json',
     'source/status.json','source/day/'+today+'.json','source/day/'+yesterday+'.json','source/live.json',
     'research-v2/status.json','research-v2/polygon-1.json',
     'passed-v2/status.json','passed-v2/live.json',
@@ -1091,6 +1102,7 @@ async function load(){
     'research-v2/auto-1.json','research-v2/auto-2.json','control/endpoint.json',
     'research-v2/curve-two.json','research-v2/filter-audit.json'];
   var fetched=await Promise.allSettled(names.map(function(name,i){
+    if(!name)return Promise.resolve(null);
     if(i===11&&lastResearchBankRead&&now()-lastResearchBankRead<300000)return Promise.resolve(null);
     if(i===17&&lastSecondBankRead&&now()-lastSecondBankRead<300000)return Promise.resolve(null);
     return getJSON(name);
@@ -1109,7 +1121,7 @@ async function load(){
     dataErr=errors.length?String(errors[0].reason):'Сервер пока не опубликовал данные';
     $('dataState').textContent='Не удалось получить главный источник: '+dataErr+'. Повтор через 45 секунд.';
     $('net').textContent='● Источник недоступен';$('net').className='live bad';
-    fetching=false;return;
+    return;
   }
   status=vals[0]||status;
   controlEndpoint=validControlEndpoint(vals[20]);
@@ -1163,6 +1175,7 @@ async function load(){
     ['server-observational','disabled-no-server-rules'].includes(vals[12].status)&&
     vals[12].serverOnly===true?vals[12]:null;
   serverPassActive=!!passMeta;
+  if(passMeta?.serverConfig?.enabled&&!s.filters.length){s.filters=clone(passMeta.serverConfig.filters||[]);s.modules=clone(passMeta.serverConfig.modules||[]);s.decision=passMeta.serverConfig.decisionMinutes;save();}
   if(serverPassActive){
     const verified=new Map();
     for(const source of [vals[15],vals[14],vals[13]]){
@@ -1241,16 +1254,10 @@ async function load(){
   }
   if(!sourceActive){serverPassActive=false;serverPassRows=[];}
   var by=new Map();
-  for(var dayObj of [vals[2],vals[1]])for(var c of dayObj&&dayObj.coins||[]){
+  for(var dayObj of [vals[2],vals[1]])for(var c of observationCoins(dayObj)){
     if(mint(c))by.set(mint(c),Object.assign({},by.get(mint(c))||{},c));
   }
-  for(var o of [vals[4],vals[3]])for(var d of o&&o.coins||[]){
-    var existing=by.get(mint(d));if(!existing)continue;
-    if(Array.isArray(d.ds)&&d.ds.length>=(existing.ds||[]).length)existing.ds=d.ds;
-    if(d.path)existing.path=d.path;
-    if(d.lq)existing.lq=d.lq;
-  }
-  for(var c2 of vals[5]&&vals[5].coins||[]){
+  for(var c2 of observationCoins(vals[5])){
     var prior=by.get(mint(c2));by.set(mint(c2),Object.assign({},prior||{},c2));
   }
   dataset=[...by.values()];
@@ -1261,7 +1268,60 @@ async function load(){
   $('net').textContent=connected?'● LIVE':'● '+(!sourceActive?'Источник недоступен':age==null?'Данные':'Задержка '+Math.max(0,age)+' мин');
   $('net').className='live '+(connected?'good':'warn');
   $('dataState').textContent='Сервер: '+(updated?time(updated):'—')+' (Казахстан) · '+(sourceActive?'главный источник '+fmt(sourceRecords.length)+' записей, сегодня '+fmt(sourceMeta.today)+' (до '+fmt(sourceMeta.todayBefore)+', после '+fmt(sourceMeta.todayAfter)+')':'допуск приостановлен (основной журнал недоступен)')+' · обновление каждые 45 секунд.';
-  refresh();fetching=false;
+  refresh();
+}
+// Lightweight foreground refresh for short Passed windows. Do not poll all
+// research files on a 15-second timer on low-memory Android devices.
+let passPolling=false;
+async function pollPassedLive(){
+  if(passPolling||fetching||!sourceActive||!serverPassActive||document.hidden)return;
+  passPolling=true;
+  try{
+    const payload=await getJSON('passed-v2/live.json');
+    if(!payload||payload.origin!=='server-journal'||!Array.isArray(payload.coins)||
+       !Number.isFinite(payload.updated)||now()-payload.updated>180000)return;
+    const current=new Map(serverPassRows.filter(function(p){
+      return p.firstSeenAt>now()-72*3600000;
+    }).map(function(p){return [p.mint,p]}));
+    for(const row of payload.coins){
+      if(!row||typeof row.mint!=='string'||!Number.isSafeInteger(row.acceptedAt)||
+         !Number.isSafeInteger(row.firstSeenAt)||!Number.isSafeInteger(row.zeroAt)||
+         !['before','after'].includes(row.phase)||!Array.isArray(row.matches)||
+         row.zeroAt<=row.firstSeenAt||row.firstSeenAt>now()+60000)continue;
+      current.set(row.mint,row);
+    }
+    serverPassRows=[...current.values()].sort(function(a,b){
+      return b.firstSeenAt-a.firstSeenAt;
+    });
+    lastPassed=passedCoins(lastAccepted);
+    renderPassed();
+  }catch(e){
+    // The normal 45-second full refresh is responsible for error reporting.
+  }finally{passPolling=false}
+}
+async function load(){
+  if(fetching)return;
+  fetching=true;
+  try{
+    await loadInternal();
+  }catch(e){
+    // A malformed server response or UI rendering error must not deadlock
+    // the refresh loop: the next 45-second cycle can recover automatically.
+    sourceActive=false;sourceMeta=null;sourceRecords=[];
+    serverPassActive=false;serverPassRows=[];passMeta=null;
+    serverR2Active=false;serverR2Rows=[];serverR2Curve=null;twoMeta=null;
+    researchMeta=null;autoOne=null;autoTwo=null;
+    bank['1']=[];bank['2']=[];
+    lastAccepted=[];lastPassed=[];lastVisible=[];
+    const message=String(e&&e.message||e).slice(0,180);
+    $('net').textContent='● Ошибка получения данных';
+    $('net').className='live bad';
+    $('dataState').textContent='Ошибка обновления данных: '+message+
+      '. Следующая попытка через 45 секунд.';
+    try{renderAll();renderPassed();renderR1();renderR2();renderLibrary()}catch(_ignored){}
+  }finally{
+    fetching=false;
+  }
 }
 function init(){
   s.ageBefore=clamp(s.ageBefore,1,10,2);s.ageAfter=clamp(s.ageAfter,1,10,2);
@@ -1292,6 +1352,10 @@ function init(){
   document.querySelectorAll('#levels [data-level]').forEach(function(x){x.classList.toggle('active',x.dataset.level===s.level)});
   bind();refresh();load();
   setInterval(load,45000);
+  setInterval(pollPassedLive,15000);
+  document.addEventListener('visibilitychange',function(){
+    if(!document.hidden){pollPassedLive();if(now()-loadedAt>60000)load()}
+  });
   setInterval(function(){renderDailySource();if(dataset.length){renderAll();renderPassed()}},10000);
 }
 window.addEventListener('error',function(e){if($('dataState'))$('dataState').textContent='Ошибка интерфейса: '+(e.message||'неизвестная')+'. Старый сайт доступен по кнопке сверху.'});
