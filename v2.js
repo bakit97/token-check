@@ -255,8 +255,40 @@ function analyze(){
   // Polygons contain ONLY server-labeled cohorts. Local estimates are never
   // promoted to confirmed research-bank members.
 }
+
+// ---- Живые рыночные данные в браузере (DexScreener, без расхода сервера) ----
+var LIVE={},LIVE_HIST={},liveBusy=false;
+function liveOf(c){return LIVE[mint(c)]||null}
+function agoText(t){if(!t)return '—';var sec=Math.max(0,Math.floor((now()-t)/1000));
+  if(sec<3600)return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')+' назад';
+  var h=Math.floor(sec/3600),m=Math.floor(sec%3600/60);return h+' ч '+m+' мин назад'}
+function tickAges(){document.querySelectorAll('.ago[data-t]').forEach(function(el){el.textContent=agoText(+el.dataset.t)})}
+function usd(v){var n=Number(v);if(!Number.isFinite(n)||n<=0)return '—';if(n>=1e6)return '$'+(n/1e6).toFixed(2)+'M';if(n>=1e3)return '$'+(n/1e3).toFixed(1)+'K';return '$'+n.toFixed(0)}
+function visibleMints(){var out=[];document.querySelectorAll('[data-coin]').forEach(function(b){var m=b.dataset.coin;if(m&&out.indexOf(m)<0)out.push(m)});
+  var d=document.getElementById('openCoinDetail');if(d&&d.dataset.mint&&out.indexOf(d.dataset.mint)<0)out.unshift(d.dataset.mint);return out.slice(0,60)}
+async function pollMarket(){if(liveBusy||document.hidden)return;var mints=visibleMints();if(!mints.length)return;liveBusy=true;
+  try{for(var i=0;i<mints.length;i+=30){var part=mints.slice(i,i+30);
+      var r=await fetch('https://api.dexscreener.com/tokens/v1/solana/'+part.join(','),{cache:'no-store'});if(!r.ok)continue;
+      var arr=await r.json();if(!Array.isArray(arr))continue;var best={};
+      arr.forEach(function(p){var m=p&&p.baseToken&&p.baseToken.address;if(!m||part.indexOf(m)<0)return;var l=(p.liquidity&&p.liquidity.usd)||0;
+        if(!best[m]||l>((best[m].liquidity&&best[m].liquidity.usd)||0))best[m]=p});
+      Object.keys(best).forEach(function(m){var p=best[m],t5=(p.txns&&p.txns.m5)||{};
+        LIVE[m]={price:+p.priceUsd||null,mc:p.marketCap||p.fdv||null,liq:p.liquidity&&p.liquidity.usd,v5:p.volume&&p.volume.m5,
+          b5:t5.buys,s5:t5.sells,ch5:p.priceChange&&p.priceChange.m5,ch1h:p.priceChange&&p.priceChange.h1,pair:p.pairAddress,dex:p.dexId,url:p.url,
+          img:p.info&&p.info.imageUrl,at:now()};
+        var h=LIVE_HIST[m]=LIVE_HIST[m]||[];if(LIVE[m].price)h.push(LIVE[m].price);if(h.length>40)h.shift()})}
+    patchCards();updateDetailStats()}catch(e){}finally{liveBusy=false}}
+function marketLine(c){var L=liveOf(c),p=(c.ds||[]).at(-1);
+  if(L)return 'MC '+usd(L.mc)+' · ликв. '+usd(L.liq)+' · 5м '+usd(L.v5)+' · '+(L.b5==null?'—':L.b5)+'/'+(L.s5==null?'—':L.s5)+' сд.';
+  if(p)return 'L '+observedMoney(p[2])+' · 5м '+observedMoney(p[6]);return 'загрузка данных…'}
+function patchCards(){document.querySelectorAll('[data-coin]').forEach(function(b){var m=b.dataset.coin,L=LIVE[m];if(!L)return;
+  var ml=b.querySelector('.mline');if(ml)ml.textContent=marketLine({a:m});
+  var pr=b.querySelector('.price');if(pr&&L.price)pr.textContent=price(L.price);
+  var sp=b.querySelector('.sparkbox');if(sp)sp.innerHTML=spark({a:m});
+  var av=b.querySelector('.avatar.empty');if(av&&L.img)av.outerHTML='<img class="avatar" src="'+esc(L.img)+'" alt="" loading="lazy">'})}
 function spark(c){
   var points=(c.ds||[]).slice(-12).map(function(x){return Number(x[1])}).filter(function(x){return x>0});
+  if(points.length<2)points=(LIVE_HIST[mint(c)]||[]).slice(-20);
   if(points.length<2)return '';
   var low=Math.min.apply(null,points),high=Math.max.apply(null,points),span=high-low||high*.01||1;
   var d=points.map(function(p,i){return (i===0?'M':'L')+(i/(points.length-1)*59).toFixed(1)+' '+(24-20*(p-low)/span).toFixed(1)}).join(' ');
@@ -265,31 +297,45 @@ function spark(c){
 }
 function observedMoney(value){return typeof value==='number'&&Number.isFinite(value)&&value>0?'$'+fmt(value):'—'}
 function coinHtml(c,extra){
-  var e=c._entry,p=(c.ds||[]).at(-1),img=safeImg(c.i);
-  var age=ageM(e.eventAt),name=esc(c.n||c.s||'Токен'),symbol=esc(c.s||'');
-  var metric=p?'L '+observedMoney(p[2])+' · 5м '+observedMoney(p[6]):'Нет последних снимков';
+  var e=c._entry,p=(c.ds||[]).at(-1),L=liveOf(c),img=safeImg(c.i)||(L&&L.img?safeImg(L.img):'');
+  var name=esc(c.n||c.s||'Токен'),symbol=esc(c.s||'');
   return '<button type="button" class="coin" data-coin="'+esc(mint(c))+'">'+
     (img?'<img class="avatar" src="'+esc(img)+'" alt="" loading="lazy">':'<span class="avatar empty">'+esc((c.s||'?').slice(0,2))+'</span>')+
-    '<span class="body"><span class="name">'+name+' <small>'+symbol+'</small></span><span class="detail">'+age+' · '+(e.phase==='before'?'🌱 до':'🎓 после')+'</span><span class="detail">'+metric+'</span>'+
-    (extra?'<span class="detail">'+esc(extra)+'</span>':'')+'</span><span class="right"><span class="price">'+price(p&&p[1])+'</span>'+spark(c)+'</span></button>';
+    '<span class="body"><span class="name">'+name+' <small>'+symbol+'</small></span><span class="detail"><b class="ago" data-t="'+(+e.eventAt||0)+'">'+agoText(e.eventAt)+'</b> · '+(e.phase==='before'?'🌱 до миграции':'🎓 после миграции')+'</span><span class="detail mline">'+esc(marketLine(c))+'</span>'+
+    (extra?'<span class="detail">'+esc(extra)+'</span>':'')+'</span><span class="right"><span class="price">'+price(L&&L.price||p&&p[1])+'</span><span class="sparkbox">'+spark(c)+'</span></span></button>';
 }
+function detailStats(m){var L=LIVE[m]||{};function pc(v){return v==null?'—':(v>0?'+':'')+Number(v).toFixed(1)+'%'}
+  return [['Цена',price(L.price)],['Капитализация',usd(L.mc)],['Ликвидность',usd(L.liq)],['Объём 5 мин',usd(L.v5)],
+    ['Покупки / продажи 5 мин',(L.b5==null?'—':L.b5)+' / '+(L.s5==null?'—':L.s5)],['Изменение 5 мин / 1 ч',pc(L.ch5)+' / '+pc(L.ch1h)]]
+    .map(function(x){return '<div class="stat"><span>'+x[0]+'</span><strong style="font-size:15px">'+x[1]+'</strong></div>'}).join('')}
+function chartSrc(m){var L=LIVE[m]||{};return 'https://dexscreener.com/solana/'+(L.pair||m)+'?embed=1&loadChartSettings=0&trades=0&tabs=0&info=0&chartLeftToolbar=0&chartTheme=dark&theme=dark&chartStyle=1&chartType=usd&interval=1'}
 function detail(c){
-  var e=c._entry,p=(c.ds||[]).at(-1)||[];
-  return '<div class="card" id="openCoinDetail"><div class="row"><h2>'+esc(c.n||c.s||'Монета')+'</h2><button id="closeCoin">Закрыть</button></div>'+
-    '<div class="label">Адрес mint</div><div class="mono" style="overflow-wrap:anywhere;font-size:12px;margin:6px 0">'+esc(mint(c))+'</div>'+
-    '<div class="statgrid"><div class="stat"><span>Начало потока</span><strong style="font-size:15px">'+time(e.eventAt)+'</strong></div>'+
-    '<div class="stat"><span>Первое подтверждение</span><strong style="font-size:15px">'+time(e.acceptedAt)+'</strong></div>'+
-    '<div class="stat"><span>Цена последняя</span><strong style="font-size:15px">'+price(p[1])+'</strong></div>'+
-    '<div class="stat"><span>Объём 5 мин</span><strong style="font-size:15px">'+observedMoney(p[6])+'</strong></div></div>'+
-    '<p class="hint">Источники проверки: '+esc(c.mk||c.d||'нет данных')+'. Допуск подтверждается главным серверным журналом. Недостающие торговые данные отображаются как неизвестные.</p></div>';
+  var e=c._entry,m=mint(c),L=LIVE[m]||{};
+  return '<div id="openCoinDetail" class="sheet" data-mint="'+esc(m)+'"><div class="sheetbox">'+
+    '<div class="row"><h2>'+esc(c.n||c.s||'Монета')+' <small class="muted">'+esc(c.s||'')+'</small></h2><button id="closeCoin">✕</button></div>'+
+    '<div class="muted"><b class="ago" data-t="'+(+e.eventAt||0)+'">'+agoText(e.eventAt)+'</b> · '+(e.phase==='before'?'🌱 до миграции':'🎓 после миграции')+' · вход '+time(e.acceptedAt)+'</div>'+
+    '<div class="chartbox"><iframe id="coinChart" src="'+esc(chartSrc(m))+'" loading="lazy" title="График"></iframe></div>'+
+    '<div class="statgrid" id="coinStats">'+detailStats(m)+'</div>'+
+    '<div class="action-bar"><a class="btn" target="_blank" rel="noopener" href="https://dexscreener.com/solana/'+esc(L.pair||m)+'">DexScreener</a>'+
+    '<a class="btn" target="_blank" rel="noopener" href="https://www.geckoterminal.com/solana/tokens/'+esc(m)+'">GeckoTerminal</a>'+
+    (e.phase==='before'||/pump$/.test(m)?'<a class="btn" target="_blank" rel="noopener" href="https://pump.fun/coin/'+esc(m)+'">pump.fun</a>':'')+
+    '<a class="btn" target="_blank" rel="noopener" href="https://solscan.io/token/'+esc(m)+'">Solscan</a>'+
+    '<button type="button" id="copyMint">Копировать адрес</button></div>'+
+    '<div class="mono small" style="overflow-wrap:anywhere">'+esc(m)+'</div>'+
+    '<p class="hint">Данные рынка — DexScreener, обновляются каждые 20 с. Допуск подтверждён журналом сервера ('+esc(c.mk||c.d||e.proofKind||'источник')+').</p></div></div>';
 }
+function updateDetailStats(){var d=document.getElementById('openCoinDetail');if(!d)return;var m=d.dataset.mint;
+  var st=document.getElementById('coinStats');if(st)st.innerHTML=detailStats(m);
+  var fr=document.getElementById('coinChart');if(fr&&LIVE[m]&&LIVE[m].pair&&fr.src.indexOf(LIVE[m].pair)<0)fr.src=chartSrc(m)}
 function showCoinDetail(c,anchorId){
   if(!c||!c._entry)return;
   const old=$('openCoinDetail');if(old)old.remove();
-  $(anchorId).insertAdjacentHTML('afterend',detail(c));
-  $('closeCoin').addEventListener('click',function(){
-    const current=$('openCoinDetail');if(current)current.remove();
-  });
+  document.body.insertAdjacentHTML('beforeend',detail(c));document.body.style.overflow='hidden';
+  function close(){const cur=$('openCoinDetail');if(cur)cur.remove();document.body.style.overflow=''}
+  $('closeCoin').addEventListener('click',close);
+  $('openCoinDetail').addEventListener('click',function(ev){if(ev.target.id==='openCoinDetail')close()});
+  $('copyMint').addEventListener('click',function(){try{navigator.clipboard.writeText(mint(c));this.textContent='Скопировано ✓'}catch(e){}});
+  pollMarket();
 }
 function renderAll(){
   var today=day(now());
@@ -1366,6 +1412,7 @@ function init(){
   document.querySelectorAll('#levels [data-level]').forEach(function(x){x.classList.toggle('active',x.dataset.level===s.level)});
   bind();refresh();load();
   setInterval(load,45000);
+  setInterval(tickAges,1000);setInterval(pollMarket,20000);setTimeout(pollMarket,1500);
   setInterval(pollPassedLive,15000);
   document.addEventListener('visibilitychange',function(){
     if(!document.hidden){pollPassedLive();if(now()-loadedAt>60000)load()}

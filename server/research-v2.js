@@ -147,6 +147,11 @@ function starterFeaturesAt(coin,decisionAt,context={}){
   const row=latestBefore([...(coin.lq||[])].sort((a,b)=>a[0]-b[0]),decisionAt,7*MIN,x=>x[0]*1000);
   if(row&&Number.isFinite(row[2+qi])&&row[2+qi]>=0)quoteSol=row[2+qi]/1e9;
  }
+ // До миграции: SOL в кривой pump (real_sol_reserves), замер не старше 7 мин и не позже момента решения.
+ if(quoteSol==null&&Array.isArray(coin?.curveSol)&&(!coin.q||coin.q===WSOL)){
+  let best=null;for(const r of coin.curveSol)if(Array.isArray(r)&&r[0]<=decisionAt&&decisionAt-r[0]<=7*MIN&&Number.isFinite(r[1])&&r[1]>=0&&(!best||r[0]>best[0]))best=r;
+  if(best)quoteSol=best[1]/1e9;
+ }
  return {safeContract,quoteSol,buyers10,...(lower?{buyers10LowerBound:true,buyers10At:buyerAt,buyers10Source:buyerSource}:{})};
 }
 function evaluation(F,rule){

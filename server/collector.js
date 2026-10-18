@@ -115,6 +115,11 @@ function metaMutable(u){try{let o=1+32+32;for(let i=0;i<3;i++){const n=u[o]|(u[o
 async function ctCheck(c){
   const rpc=rpcFor(c,'контракт');
   const mi=await rpc('getAccountInfo',[c.a,{encoding:'jsonParsed'}]);const v=mi?.value;if(!v)throw new Error('токен не найден');
+  const ct=ctFromMint(v);
+  if(ct.metaMut==null){const mv=(await rpc('getAccountInfo',[await metadataOf(c.a),{encoding:'base64'}]))?.value;if(mv)ct.metaMut=metaMutable(b64(mv.data?.[0]))}
+  ct.at=Date.now();c.ct=ct}
+// разбор mint-аккаунта (jsonParsed) без запросов — общий для одиночной и пакетной проверки
+function ctFromMint(v){
   if(![T22,'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'].includes(v.owner)||v.data?.parsed?.type!=='mint')throw Error('Unverified mint account');
   const info=v.data.parsed.info,ct={prog:v.owner===T22?'token2022':'token',mint:!!info.mintAuthority,freeze:!!info.freezeAuthority,dec:+info.decimals,
     supply:(+info.supply||0)/10**(+info.decimals||0),fee:0,hook:false,deleg:false,nontr:false,defFrozen:false,pause:false,metaMut:null};
@@ -123,11 +128,26 @@ async function ctCheck(c){
     if(e.extension==='transferHook'&&s.programId)ct.hook=true;if(e.extension==='permanentDelegate'&&s.delegate)ct.deleg=true;
     if(e.extension==='nonTransferable')ct.nontr=true;if(e.extension==='defaultAccountState'&&/frozen/i.test(s.accountState||''))ct.defFrozen=true;
     if(/pausable/i.test(e.extension))ct.pause=true;if(e.extension==='tokenMetadata')ct.metaMut=!!s.updateAuthority});
-  if(ct.metaMut==null){const mv=(await rpc('getAccountInfo',[await metadataOf(c.a),{encoding:'base64'}]))?.value;if(mv)ct.metaMut=metaMutable(b64(mv.data?.[0]))}
   ct.feeAuthority=(info.extensions||[]).some(e=>e.extension==='transferFeeConfig'&&!!e.state?.transferFeeConfigAuthority);
   const benign=new Set(['transferFeeConfig','transferHook','permanentDelegate','nonTransferable','defaultAccountState','pausableConfig','pausable','tokenMetadata','metadataPointer','groupPointer','groupMemberPointer','tokenGroup','tokenGroupMember']);
   ct.unknownExtensions=(info.extensions||[]).filter(e=>!benign.has(e.extension)).map(e=>e.extension);ct.safetyVersion=1;
-  ct.at=Date.now();c.ct=ct}
+  return ct}
+/* Монеты до миграции (pump): контракт и SOL в кривой берём пачками по 100 аккаунтов за 1 запрос,
+   иначе стартовые фильтры «Прошли» не видят safeContract/quoteSol и монеты до миграции не проходят никогда.
+   Кривая pump: real_sol_reserves = u64 @32, complete = bool @48. Замер — только у монет перед моментом решения. */
+const PRE_STATS={ct:0,curve:0,calls:0,deferred:0,errors:0};
+async function preChainSweep(){const now=Date.now(),dec=(PASS_V2?.config?.decisionMinutes||15)*60e3;
+  const pre=[...C.values()].filter(c=>isRecordedPre(c)&&now-c.t<dec+5*60e3);
+  const needCt=pre.filter(c=>!c.ct&&now-c.t>=30e3).slice(0,200);
+  const needCurve=pre.filter(c=>c.p&&now-c.t>=dec-3*60e3&&now-c.t<=dec+60e3&&!(c.curveSol?.length&&now-c.curveSol.at(-1)[0]<50e3)).slice(0,200);
+  const call=async(list,enc)=>{PRE_STATS.calls++;return (await rpc('getMultipleAccounts',[list,enc],{context:'до миграции',source:'до миграции'}))?.value||[]};
+  try{
+    for(let i=0;i<needCt.length;i+=100){const part=needCt.slice(i,i+100);const v=await call(part.map(c=>c.a),{encoding:'jsonParsed'});const at=Date.now();
+      part.forEach((c,j)=>{if(!v[j])return;try{const ct=ctFromMint(v[j]);ct.at=at;ct.batch=1;c.ct=ct;PRE_STATS.ct++}catch(e){}})}
+    for(let i=0;i<needCurve.length;i+=100){const part=needCurve.slice(i,i+100);const v=await call(part.map(c=>c.p),{encoding:'base64',dataSlice:{offset:0,length:49}});const at=Date.now();
+      part.forEach((c,j)=>{const a=v[j];if(!a||a.owner!==PUMP)return;const u=b64(a.data?.[0]);if(u.length<49)return;
+        const lam=Number(Buffer.from(u).readBigUInt64LE(32));(c.curveSol=c.curveSol||[]).push([at,lam,u[48]?1:0]);if(c.curveSol.length>12)c.curveSol.shift();PRE_STATS.curve++})}
+  }catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else{PRE_STATS.errors++;err('pre sweep '+e.message)}}}
 
 /* ---------- миграция. Доказательство = 2 условия вместе:
    1) пул лежит по официальному адресу миграции (вычисляется из адреса монеты: PDA площадки);
@@ -356,6 +376,7 @@ function needMig(c,now){if(c.proofExpiredAt)return false;if(now-proofQueuedAt(c)
   const BACK=[2,5,10,20,40];const n=c.mg.n||1;return c.mg.st==='unk'&&!c.mg.final&&n<=BACK.length&&now-c.mg.lastAt>=BACK[n-1]*60e3&&now-proofQueuedAt(c)<2*3600e3}
 async function chainLoop(){let lastSweep=0;for(;;){const now=Date.now();expireProofs(now);
   if(now-lastSweep>120e3){lastSweep=now;CTX='кривые';await curveSweep()}
+  if(now-(globalThis.lastPreSweep||0)>60e3){globalThis.lastPreSweep=now;CTX='до миграции';await preChainSweep()}
   for(const c of C.values())rejectOldProof(c,now);
   const candidates=[...C.values()].filter(c=>!c.chTry&&(!c.proofRetryAt||now>=c.proofRetryAt)&&((!c.ct&&isOk(c)&&now-c.t<6*3600e3)||needMig(c,now)));RESOURCE.migrationPending=[...C.values()].some(c=>needMig(c,now));
   const c=candidates.sort((a,b)=>compareProofTasks(a,b,now))[0];
@@ -410,7 +431,7 @@ async function initSource() {
   await EVENT_CLOCK.refresh();
   setInterval(()=>{EVENT_CLOCK.refresh().catch(()=>{})},10000);
   const PumpPreWatcher=require(DIR+'/pre-watcher.js').PumpPreWatcher;
-  PRE=new PumpPreWatcher({canObserve:()=>!resourcePressure()&&C.size<12000,rpc:(method,params)=>rpc(method,params,{priority:'pre',context:'новые до миграции',source:'pre'}),decode58:b58dec,deriveCurve:bondingCurveOf,source:SOURCE,slotClock:EVENT_CLOCK,telemetry:new (require(DIR+'/resource-budget.js').PumpTelemetry)({dir:DIR}),
+  PRE=new PumpPreWatcher({onCreate:rememberCurve,canObserve:()=>!resourcePressure()&&C.size<12000,rpc:(method,params)=>rpc(method,params,{priority:'pre',context:'новые до миграции',source:'pre'}),decode58:b58dec,deriveCurve:bondingCurveOf,source:SOURCE,slotClock:EVENT_CLOCK,telemetry:new (require(DIR+'/resource-budget.js').PumpTelemetry)({dir:DIR}),
     onAdmitted:admitVerifiedPublicLaunch,log:msg=>err(msg)});
   // Journal is durable even if the VM was restarted before candidate-state save.
   for(const item of SOURCE.records.values())if(item.phase==='before'&&!C.has(item.mint)&&item.proof?.curve) {
@@ -867,15 +888,33 @@ function wsCandidate(kind,acc,u,slot,owner){const now=Date.now();if(wsSeen.has(a
   const snapshot=((kind==='dbc'&&owner===DBC&&u.length===424&&u[305]===1)||(kind==='ll'&&owner===LAUNCH&&u.length>268&&u[17]===2))?{address:acc,owner,at:now,slot:slot||null,data:Buffer.from(u).toString('base64')}:null;
   if(c){if(snapshot)c.wsMigrationSnapshot=snapshot;c.migrationSlot=slot||c.migrationSlot;c.migrationSignalAt=now;queueMigrationSignal(c,now);c.discoverySource=kind;if(!isOk(c)&&c.mg)c.mg.force=1;c.wsSeen=c.wsSeen||now;c.firstPostSeenAt=c.firstPostSeenAt||now;return}
   C.set(mint,{a:mint,n:'',s:'',i:'',p:pool,d:kind==='pump'?'pumpswap':kind==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'ws',wsMigrationSnapshot:snapshot,migrationSlot:slot||null,migrationSignalAt:now,seen:now,disc:'ws',discoverySource:kind,proofEnqueuedAt:now,wsSeen:now,firstPostSeenAt:now,pools:[pool],fv:FV})}
+/* Миграция pump.fun в реальном времени: подписка на кривые pump с complete=1 (байт 48).
+   Завершённая кривая больше не торгуется, поэтому сообщений мало: завершение + опустошение при миграции.
+   Монету по адресу кривой знаем из create (карта CURVE2MINT) — без RPC. Неизвестные кривые просто считаем. */
+// Поток «до миграции» считается рабочим, если create приходили последние 10 мин (короткие бюджетные паузы не = «нет данных»)
+function preFlowing(){const at=PRE?.summary?.()?.lastAt;return !!PRE&&Number.isFinite(at)&&Date.now()-at<10*60e3}
+const CURVE2MINT=new Map();
+function rememberCurve(ev){if(!ev||!ev.curve||!ev.mint)return;CURVE2MINT.set(ev.curve,{mint:ev.mint,q:ev.quote||WSOL,n:ev.name||'',s:ev.symbol||'',t:ev.blockAt||ev.observedAt||Date.now()});
+  if(CURVE2MINT.size>80000){const cut=Date.now()-30*3600e3;for(const [k,v] of CURVE2MINT){if(v.t<cut)CURVE2MINT.delete(k);if(CURVE2MINT.size<=70000)break}}}
+function pumpCurveComplete(curve,u,slot){const now=Date.now();if(!u||u.length<49||!u[48])return;
+  const info=CURVE2MINT.get(curve);if(!info){WS.pcUnknown=(WS.pcUnknown||0)+1;return}
+  WS.pcKnown=(WS.pcKnown||0)+1;let c=C.get(info.mint);
+  if(c&&isOk(c))return;
+  if(!c){c={a:info.mint,n:info.n,s:info.s,i:'',p:curve,d:'pump-fun',q:info.q,t:info.t,tSrc:'pre',preTradingAt:info.t,seen:now,disc:'ws-pump-complete',
+      preCurve:1,pools:[curve],fv:FV,mg:{v:MGV,st:'curve',k:'curve-pump',lastAt:now}};C.set(info.mint,c)}
+  if(SOURCE?.has(c.a))return; // уже в «Все» как «до миграции»: второй вход запрещён
+  c.migrationSlot=slot||c.migrationSlot;c.migrationSignalAt=now;c.discoverySource='pump-complete';c.wsSeen=c.wsSeen||now;
+  queueMigrationSignal(c,now);if(c.mg){c.mg.force=1;delete c.mg.final}}
 function chainWatch(){
   const connect=async(channel)=>{const key=await heliusKey();if(!key||(channel==='pre'&&(!PRE||!RESOURCE?.streamAllowed('pre')))){setTimeout(()=>connect(channel),10000);return}
     const pre=channel==='pre',subs={},ws=new WebSocket('wss://mainnet.helius-rpc.com/?api-key='+key);let timer;
     ws.onopen=()=>{
       if(pre){WS.preOn=true;WS.preGapMs+=WS.prePausedAt?Date.now()-WS.prePausedAt:0;WS.prePausedAt=0}
-      else{WS.on=true;WS.since=Date.now();WS.connected={dbc:false,ll:false}}
+      else{WS.on=true;WS.since=Date.now();WS.connected={dbc:false,ll:false,pc:false}}
       const requests=pre?[[150,'pre','logsSubscribe',[{mentions:[PUMP_MINT_AUTH]},{commitment:'confirmed'}]]]:
         [[100,'dbc','programSubscribe',[DBC,{encoding:'base64',commitment:'confirmed',filters:[{dataSize:424},{memcmp:{offset:305,bytes:'2'}}]}]],
-         [101,'ll','programSubscribe',[LAUNCH,{encoding:'base64',commitment:'confirmed',filters:[{memcmp:{offset:17,bytes:'3'}}]}]]];
+         [101,'ll','programSubscribe',[LAUNCH,{encoding:'base64',commitment:'confirmed',filters:[{memcmp:{offset:17,bytes:'3'}}]}]],
+         [102,'pc','programSubscribe',[PUMP,{encoding:'base64',commitment:'confirmed',dataSlice:{offset:0,length:49},filters:[{memcmp:{offset:48,bytes:'2'}}]}]]];
       for(const [id,name,method,params] of requests){subs[id]=name;ws.send(JSON.stringify({jsonrpc:'2.0',id,method,params}))}
       if(pre)timer=setInterval(()=>{if(!RESOURCE.streamAllowed('pre')){WS.preBudgetPauses++;ws.budgetPause=true;try{ws.close()}catch{}}},10000);
     };
@@ -890,11 +929,12 @@ function chainWatch(){
       const slot=m.params?.result?.context?.slot;EVENT_CLOCK?.observe(slot,Date.now());
       WS.msgs[n]=(WS.msgs[n]||0)+1;
       if(pre){PRE?.onLog(v,Date.now(),slot);if(!RESOURCE.streamAllowed('pre')){WS.preBudgetPauses++;ws.budgetPause=true;try{ws.close()}catch{}}return}
+      if(n==='pc'){try{pumpCurveComplete(v.pubkey,b64(v.account?.data?.[0]),slot)}catch(x){WS.err++;err('ws pc '+x.message)}return}
       try{wsCandidate(n,v.pubkey,b64(v.account?.data?.[0]),slot,v.account?.owner)}catch(x){WS.err++;err('ws '+x.message)}
     };
     ws.onerror=()=>{WS.err++;try{ws.close()}catch{}};
     ws.onclose=()=>{clearInterval(timer);if(pre){PRE?.telemetry?.disconnected(ws.budgetPause?'budget':'network',EVENT_CLOCK?.anchor?.slot);WS.preOn=false;WS.preSub=false;WS.prePausedAt=WS.prePausedAt||Date.now()}
-      else{WS.on=false;WS.connected={dbc:false,ll:false};WS.disconnects=(WS.disconnects||0)+1}
+      else{WS.on=false;WS.connected={dbc:false,ll:false,pc:false};WS.disconnects=(WS.disconnects||0)+1}
       setTimeout(()=>connect(channel),pre?10000:5000)};
   };
   connect('migrations');connect('pre');
@@ -918,7 +958,7 @@ function coinMetadata(c){const mg=c.mg||{};
   const r={a:c.a,n:c.n,s:c.s,i:c.i,p:c.p,d:c.d,q:c.q,t:c.t,tSrc:c.tSrc||'gt',t0:c.t0||null,seen:c.seen,disc:c.disc||null,rcSeen:c.rcSeen||null,wsSeen:c.wsSeen||null,firstPostSeenAt:c.firstPostSeenAt||null,preCurve:!!c.preCurve,preTradingAt:c.preTradingAt||null,ty:launchType(c),
     mk:mg.k||null,mst:mg.st||null,mw:mg.why||'',mT:mg.mT||null,mSig:mg.sig||null,mSeen:mg.seenAt||null,mCr:mg.creator??null,mH:c.mgH||[],mk0:c.mg0?.k||null,
     origs:(c.origs||[]).map(o=>({p:o.p,t:o.t,d:o.d,movedAt:o.movedAt})),
-    preObs:c.preCurve?((c.origs||[]).find(o=>o.d==='pump-fun')||null):null,ct:c.ct||null,soc:c.soc||0,tk:c.tk&&isFinite(c.tk)?c.tk:null,tkAt:c.tkAt||null,
+    preObs:c.preCurve?((c.origs||[]).find(o=>o.d==='pump-fun')||null):null,ct:c.ct||null,curveSol:c.preCurve&&c.curveSol?.length?c.curveSol:undefined,soc:c.soc||0,tk:c.tk&&isFinite(c.tk)?c.tk:null,tkAt:c.tkAt||null,
     live:c.lastTrade?Date.now()-c.lastTrade<30*60e3:false,lastTrade:c.lastTrade||null,legacy:c.legacy?1:0};
   return r}
 async function token(){const r=await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',{headers:{'Metadata-Flavor':'Google'}});return (await r.json()).access_token}
@@ -950,7 +990,7 @@ async function exportSource(now) {
   const today=SOURCE.day(d).map(enrich);
   // Нет задним числом добавленных кандидатов из обычной ленты.
   // Предмиграционный адаптер пока не активен: не выдавать пустоту за готовность.
-  await upload('source/status.json',{...summary,mode:'verified-pre-post',preConnected:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:!!PRE&&!!WS.preOn&&!!WS.preSub&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
+  await upload('source/status.json',{...summary,mode:'verified-pre-post',preConnected:preFlowing(),preLive:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:preFlowing()&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
   await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});
   await upload('source/live.json',{updated:now,count:today.length,coins:SOURCE.latest(200).map(enrich)});
 }
@@ -1162,7 +1202,7 @@ async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const n
       summary:PASS_V2?.summary(now)||null},
     researchTwo:{active:!!RESEARCH_TWO,error:TWO_ERR,summary:RESEARCH_TWO?.summary()||null},
     coins:C.size,today:[...C.values()].filter(c=>dayKey(c.t)===today).length,okToday:[...C.values()].filter(c=>dayKey(c.t)===today&&isOk(c)).length,
-    gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),creditsBy:crLog.reduce((o,x)=>(o[x[2]]=(o[x[2]]||0)+x[1],o),{}),rpcCtx:RPCCTX,poolObservations:poolCoverage(now),pumpPre:PRE?.telemetry?.summary(EVENT_CLOCK?.anchor?.slot)||null,budgetEvents:budgetEventSummary(now),helius:!!HKEY,recon:RC.log.slice(-12),legacyResearch:{enabled:false,reason:'old-results-invalid'},ws:{...WS,preGapEventsUnknown:true,preGapCurrentMs:WS.prePausedAt?Date.now()-WS.prePausedAt:0,since:WS.since,kb:Math.round(WS.bytes/1024),credits:+(WS.bytes/1e6*20).toFixed(1),msgs:WS.msgs,cand:WS.cand,err:WS.err},mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})
+    gt:gtStats(),gtOK,gtFail,queue:gtQ.length,preChain:PRE_STATS,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),creditsBy:crLog.reduce((o,x)=>(o[x[2]]=(o[x[2]]||0)+x[1],o),{}),rpcCtx:RPCCTX,poolObservations:poolCoverage(now),pumpPre:PRE?.telemetry?.summary(EVENT_CLOCK?.anchor?.slot)||null,budgetEvents:budgetEventSummary(now),helius:!!HKEY,recon:RC.log.slice(-12),legacyResearch:{enabled:false,reason:'old-results-invalid'},ws:{...WS,preGapEventsUnknown:true,preGapCurrentMs:WS.prePausedAt?Date.now()-WS.prePausedAt:0,since:WS.since,kb:Math.round(WS.bytes/1024),credits:+(WS.bytes/1e6*20).toFixed(1),msgs:WS.msgs,cand:WS.cand,err:WS.err},mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})
 }finally{STATUS_BUSY=false}}
 
 // живая лента для «Прошли»: монеты витрины младше 40 минут, раз в 30 секунд

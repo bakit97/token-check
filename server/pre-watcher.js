@@ -38,11 +38,11 @@ function mintFromCreateLog(value){
  * DO NOT enter the main source retroactively.
  */
 class PumpPreWatcher {
-  constructor({rpc,decode58,deriveCurve,source,onAdmitted,log=()=>{},queueLimit=600,retryDelays=[700,2200,5000],canObserve=()=>true,slotClock=null,telemetry=null,allowRPCFallback=false}){
+  constructor({rpc,decode58,deriveCurve,source,onAdmitted,onCreate,log=()=>{},queueLimit=600,retryDelays=[700,2200,5000],canObserve=()=>true,slotClock=null,telemetry=null,allowRPCFallback=false}){
     if(typeof rpc!=='function'||typeof decode58!=='function'||typeof deriveCurve!=='function'||!source)throw TypeError('Incomplete adapter dependencies');
     this.canObserve=canObserve;this.rpc=rpc;this.decode58=decode58;this.deriveCurve=deriveCurve;
     this.telemetry=telemetry;this.slotClock=slotClock;this.allowRPCFallback=allowRPCFallback;
-    this.source=source;this.onAdmitted=onAdmitted||(()=>{});this.log=log;
+    this.source=source;this.onAdmitted=onAdmitted||(()=>{});this.onCreate=onCreate||(()=>{});this.log=log;
     this.queueLimit=queueLimit;this.retryDelays=retryDelays;
     this.queue=[];this.busy=false;this.started=false;this.pending=new Set();
     this.stats={logs:0,createLogs:0,processed:0,accepted:0,late:0,invalid:0,
@@ -58,6 +58,8 @@ class PumpPreWatcher {
     else this.stats.unidentifiedMint++;
     const events=parsePumpCreateEvents(value,{slot,observedAt});
     for(const event of events)this.telemetry?.event(event.mint,'create',observedAt);
+    // Карта кривая→монета для ВСЕХ create (и опоздавших): по ней миграция pump ловится в момент завершения кривой.
+    for(const event of events){try{this.onCreate(event)}catch(e){}}
     if(!this.canObserve()){this.stats.dropped++;return false}
     if(!events.length&&!this.allowRPCFallback){this.stats.invalid++;return false}
     const signature=value.signature;
