@@ -1,7 +1,7 @@
 {
   "baseCommit": "48cb0f8621e3a822cc65e0a7c23ba485ad3a574e",
   "files": {
-    "collector.js": "ee5948ef451af48b4bc7d094bfb8f9bd82555564257b5cb53cc328f5a62c6e5d",
+    "collector.js": "39b9ec9b0d0bb9c2a44f982bc89c84c07a8cdb8096a1c0bad7fe8d0797412e18",
     "resource-budget.js": "9cac006866b307f0c6c19915afadba1ac7e6957eab7b78ea11d97271ae9fdd6f",
     "pre-watcher.js": "6259b0dbab9a6fe9cb806f58de32aba34ed5f3d020237beb18e24f86507f28ef",
     "runtime-health.js": "001b44ef3198e679008fd58aa3e9f90f7843303775cbc74b3a21eda745a9ba84",
@@ -10,6 +10,7 @@
     "packed-observations.js": "6e2622a57f6d8939411b9884ec1f9c80bd8e091b8d734c8276465789128204e4",
     "completed-coins.js": "3d9a7ae7f1cbdbbaaf306162cb77bfa3b19e12c142e430e1ee86847760980c2f",
     "seed-completed.js": "a15b26a2b38ff3aaba954b28c07c1a1fc69a5e9fb6b474907351d21ecece09f7",
-    "source-runtime.js": "089dc694373e09fea9cd0598d9697c4f441b04c374006f677caab0502cde4e21"
+    "source-runtime.js": "089dc694373e09fea9cd0598d9697c4f441b04c374006f677caab0502cde4e21",
+    "event-clock.js": "ae835ddd6a280ae888d1b264a4e2acf665bdd62d895a3ea42c255339e793e2ad"
   }
 }

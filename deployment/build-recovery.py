@@ -24,7 +24,7 @@ def main():
     for name in names:
         (target / name).write_bytes(blob(BASE, 'server/' + name))
     (target / 'pre-watcher.js').write_bytes(blob(SUPPORT, 'server/pre-watcher.js'))
-    for helper in ['source-runtime.js', 'pre-watcher.js', 'resource-budget.js', 'runtime-health.js', 'stream-json.js', 'observation-contract.js', 'packed-observations.js', 'completed-coins.js', 'seed-completed.js']:
+    for helper in ['event-clock.js', 'source-runtime.js', 'pre-watcher.js', 'resource-budget.js', 'runtime-health.js', 'stream-json.js', 'observation-contract.js', 'packed-observations.js', 'completed-coins.js', 'seed-completed.js']:
         (target / helper).write_bytes((ROOT / 'server' / helper).read_bytes().replace(b'\r\n', b'\n'))
     (OUT / 'lab-core.js').write_bytes(blob(BASE, 'lab-core.js'))
     patch = (ROOT / 'deployment/recovery-48cb0f8-helius.patch').read_bytes().replace(b'\r\n', b'\n')

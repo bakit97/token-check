@@ -6,7 +6,7 @@ test('DBC and LaunchLab survive exhausted pre quota and more than 5000 migration
  class Socket{constructor(){sockets.push(this);this.sent=[]}send(s){this.sent.push(JSON.parse(s))}close(){this.closed=true;this.onclose?.()}}
  let preAllowed=true;
  const WS={msgs:{},cand:{},bytes:0,err:0,preGapMs:0,prePausedAt:0,preBudgetPauses:0};
- const ctx={WS,WebSocket:Socket,heliusKey:async()=>'<mock>',RESOURCE:{streamAllowed:()=>preAllowed,stream:(n,source)=>{metered.push(source);return false}},PRE:{onLog:()=>{}},
+ const ctx={EVENT_CLOCK:null,WS,WebSocket:Socket,heliusKey:async()=>'<mock>',RESOURCE:{streamAllowed:()=>preAllowed,stream:(n,source)=>{metered.push(source);return false}},PRE:{onLog:()=>{}},
   PUMP_MINT_AUTH:'mint-auth',DBC:'dbc-program',LAUNCH:'ll-program',Buffer,Date,JSON,err:()=>{},b64:x=>x,wsCandidate:(...x)=>received.push(x),
   setTimeout:f=>timers.push(f),setInterval:f=>{timers.push(f);return f},clearInterval:()=>{}};
  vm.createContext(ctx);vm.runInContext(code.slice(code.indexOf('function chainWatch()'),code.indexOf('/* ---------- 6.'))+'\nchainWatch();',ctx);
