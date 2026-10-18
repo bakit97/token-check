@@ -8,7 +8,7 @@ if(typeof WebSocket==='undefined'&&!process.env.WSX){const ch=require('child_pro
 const fs=require('fs'),zlib=require('zlib');
 let HEALTH=null;
 let COMPLETED=null;
-const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:30000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0};
+const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:30000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0,pendingWork:0,cancelledGT:0};
 const gzip=require('node:util').promisify(zlib.gzip);
 let RESOURCE=null,PUBLICATIONS=null;
 const RESOURCE_STATS={lagMs:0,maxLagMs:0,memoryPressure:false};
@@ -591,8 +591,8 @@ function dsTokenInfo(c,arr,at){if(!arr.length)return;
   const cv=arr.filter(p=>isCurve(p.dexId)||/dbc|launch/i.test(p.dexId||'')).map(p=>p.pairCreatedAt).filter(Boolean);
   const all=arr.map(p=>p.pairCreatedAt).filter(Boolean);const born=Math.min(...(cv.length?cv:all));if(isFinite(born)&&born<c.t-60e3){const nt=Math.min(c.tk||Infinity,born);if(nt!==c.tk){c.tk=nt;c.tkAt=at}}
   c.soc=Math.max(c.soc||0,(arr[0].info?.socials||[]).length+(arr[0].info?.websites||[]).length);if(!c.i&&arr[0].info?.imageUrl)c.i=arr[0].info.imageUrl}
-async function pollDS(){const now=Date.now();
-  const need=[...C.values()].filter(c=>dsDue(c,now));
+async function pollDS(){const now=Date.now(),pins=collectionPins(now);
+  const need=[...C.values()].filter(c=>collectionActive(c,now,pins)&&dsDue(c,now));
   // A newest-first truncation permanently starved older, admitted cohorts:
   // reserve a fixed share of each pass for the first 12 minutes and rotate
   // everyone else by last actual attempt, independent of migration phase.
@@ -620,17 +620,17 @@ function candleTasks(){if(resourcePressure())return;const now=Date.now();
   for(const c of C.values()){if(!observedEligible(c))continue;const a=ageMin(c,now),pool=c.p,ts=Math.floor;
     // первые 10 минут: запрос на 11-й минуте, чтобы минута с 10-й отметкой была закрыта
     if(!c.k10&&!c.kTry&&c.trDone&&a>=11&&a<6*60){c.kTry=1;gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=15&before_timestamp=${ts((c.t+11*60e3)/1000)}&currency=usd`,2,'k10:'+pool)
-      .then(r=>{if(c.p===pool)c.k10={at:Date.now(),c:kList(r)}}).catch(e=>err('k10 '+e.message)).finally(()=>{c.kTry=0})}
+      .then(r=>{if(c.p===pool)c.k10={at:Date.now(),c:kList(r)}}).catch(e=>{if(e.code!=='OBSERVATION_COMPLETE')err('k10 '+e.message)}).finally(()=>{c.kTry=0})}
     // график: 5 ч (одним запросом) и 24 ч (двумя)
     const upto=c.path?.upto||0;
     if(!c.pTry&&!gtBackgroundBusy()&&upto<5&&a>=5*60+10&&a<24*60){c.pTry=1;gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=330&before_timestamp=${ts((c.t+5*3600e3+10*60e3)/1000)}&currency=usd`,3,'p5:'+pool)
-      .then(r=>{if(c.p===pool)c.path={at:Date.now(),upto:5,c:mergeK(c.path?.c,kList(r))}}).catch(e=>err('path '+e.message)).finally(()=>{c.pTry=0})}
+      .then(r=>{if(c.p===pool)c.path={at:Date.now(),upto:5,c:mergeK(c.path?.c,kList(r))}}).catch(e=>{if(e.code!=='OBSERVATION_COMPLETE')err('path '+e.message)}).finally(()=>{c.pTry=0})}
     if(!c.pTry&&!gtBackgroundBusy()&&upto<24&&a>=24*60+10&&a<30*60){c.pTry=1;const end=ts((c.t+24*3600e3+10*60e3)/1000);
       gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=1000&before_timestamp=${end}&currency=usd`,3,'p24a:'+pool).then(async r=>{const k1=kList(r);
           let k2=[];if(k1.length&&k1[0][0]*1000>c.t)k2=kList(await gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=1000&before_timestamp=${k1[0][0]}&currency=usd`,3,'p24b:'+pool));
           if(c.p===pool)c.path={at:Date.now(),upto:24,c:mergeK(mergeK(c.path?.c,k2),k1)}})
-        .catch(e=>err('path24 '+e.message)).finally(()=>{c.pTry=0})}}
-  tradeTasks(now)}
+        .catch(e=>{if(e.code!=='OBSERVATION_COMPLETE')err('path24 '+e.message)}).finally(()=>{c.pTry=0})}}
+  tradeTasks(now,pins)}
 // сделки: последние 300 сделок пула; чаще, если монета активная. Покрытие проверяется по перекрытию запросов.
 function gxTasks(now){if(gtPending('gx'))return;const list=[...C.values()].filter(c=>observedEligible(c)&&ageMin(c,now)>=2&&ageMin(c,now)<16&&now-(c.gxAt||0)>=55e3).sort((a,b)=>a.t-b.t).slice(0,30);
   if(!list.length)return;const pools=list.map(c=>c.p);
@@ -638,7 +638,7 @@ function gxTasks(now){if(gtPending('gx'))return;const list=[...C.values()].filte
     for(const c of list){if(!pools.includes(c.p))continue;c.gxAt=at;const x=by[c.p];if(!x)continue;const T=x.transactions||{},V=x.volume_usd||{};
       const e=[Math.round(at/1000),T.m5?.buys??null,T.m5?.sells??null,T.m5?.buyers??null,T.m5?.sellers??null,T.m15?.buys??null,T.m15?.sells??null,T.m15?.buyers??null,T.m15?.sellers??null,
         V.m5!=null?Math.round(+V.m5):null,V.m15!=null?Math.round(+V.m15):null];(c.gx=c.gx||[]).push(e)}}).catch(e=>err('gx '+e.message))}
-function tradeTasks(now){gxTasks(now);for(const c of C.values()){if(!observedEligible(c)||c.trDone||c.trTry)continue;const a=ageMin(c,now);if(a<1)continue;
+function tradeTasks(now,pins=collectionPins(now)){gxTasks(now);for(const c of C.values()){if(!observedEligible(c)||!collectionActive(c,now,pins)||c.trDone||c.trTry)continue;const a=ageMin(c,now);if(a<1)continue;
     const tr=c.tr=c.tr||{f:[],x:{}},last=tr.f[tr.f.length-1];
     if(a>40&&!last){finishTrades(c,'не успели (очередь)');continue}
     const busy=last&&last[1]>=250,since=last?(now-last[0])/1000:1e9;
@@ -649,7 +649,7 @@ function tradeTasks(now){gxTasks(now);for(const c of C.values()){if(!observedEli
           const pr=+(x.kind==='buy'?x.price_to_in_usd:x.price_from_in_usd)||0;tr.x[d.id||x.tx_hash]=[ts,x.kind==='buy'?1:0,+(+x.volume_in_usd||0).toFixed(2),(x.tx_from_address||'').slice(0,12),pr?+pr.toPrecision(6):null]}
         tr.f.push([at,(r.data||[]).length,isFinite(lo)?lo:null,hi||null]);
         if(at>=c.t+10*60e3+10e3)finishTrades(c,null)})
-      .catch(e=>err('trades '+e.message)).finally(()=>{c.trTry=0})}}
+      .catch(e=>{if(e.code!=='OBSERVATION_COMPLETE')err('trades '+e.message)}).finally(()=>{c.trTry=0})}}
 function finishTrades(c,why){const tr=c.tr;c.trDone=1;if(!tr||!tr.f.length){c.bx={miss:why||'нет запросов'};return}
   const t0=Math.floor(c.t/1000),end=t0+600;
   // покрытие: первый запрос дошёл до начала торговли (или в пуле меньше 300 сделок), каждый следующий перекрывает предыдущий
@@ -1041,10 +1041,13 @@ async function seedCompletedDays(now){
   };
   for(const day of days)await require(DIR+'/seed-completed.js').seedDay({store:COMPLETED,day,hot:C,download,archive});
 }
+function collectionPins(now){return typeof COMPLETED!=='undefined'&&COMPLETED?retentionPins(now):new Map()}
+function collectionActive(c,now,pins){return typeof COMPLETED==='undefined'||!COMPLETED||!require(DIR+'/completed-coins.js').retirementDue(c,{now,pins})}
 function retirementBlocked(c){return !!(c.chTry||c.kTry||c.pTry||c.trTry||UPQ.some(([name])=>name.includes('/'+c.a+'-')))}
 async function stageCompleted(now){
-  if(!COMPLETED)return;const pins=retentionPins(now),{retirementDue}=require(DIR+'/completed-coins.js');RETENTION.protectedResearch=pins.size;RETENTION.pendingRaw=0;
-  const candidates=[];for(const c of C.values())if(retirementDue(c,{now,pins})){if(retirementBlocked(c)){RETENTION.pendingRaw++;continue}candidates.push(c)}
+  if(!COMPLETED)return;const pins=retentionPins(now),{retirementDue}=require(DIR+'/completed-coins.js');RETENTION.protectedResearch=pins.size;RETENTION.pendingRaw=0;RETENTION.pendingWork=0;
+  const cancelled=typeof gtQ==='undefined'?0:require(DIR+'/completed-coins.js').cancelRetiredGT(gtQ,C,{now,pins});RETENTION.cancelledGT+=cancelled;if(cancelled)await new Promise(r=>setImmediate(r));
+  const candidates=[];for(const c of C.values())if(retirementDue(c,{now,pins})){if(retirementBlocked(c)){if(UPQ.some(([name])=>name.includes('/'+c.a+'-')))RETENTION.pendingRaw++;else RETENTION.pendingWork++;continue}candidates.push(c)}
   await COMPLETED.stage(candidates);RETENTION.lastSweepAt=now;
 }
 async function retireConfirmed(day,list,now){

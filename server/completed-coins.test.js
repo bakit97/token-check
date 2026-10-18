@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
-const {CompletedCoins,researchPins,retirementDue}=require('./completed-coins');
+const {CompletedCoins,researchPins,retirementDue,cancelRetiredGT}=require('./completed-coins');
 const H=3600000,now=200000000,day=t=>new Date(t+5*H).toISOString().slice(0,10);
 function fixture(t){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'completed-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));return dir}
 function coin(a='mint'){return {a,t:now-27*H,mg:{st:'ok'},ds:[[1000,1,null],[1001,2,0]],raw:{1:{at:123,slot:1,b:['Привет 🌞']}}}}
@@ -36,4 +36,10 @@ test('a migration/late response during upload cannot acknowledge an unexported m
  const store=new CompletedCoins(fixture(t)),c=coin(),d=day(c.t);await store.stage([c]);const frozen=store.view(d,[c]);c.ds.push([1002,3,4]);
  assert.equal([...frozen][0].ds.length,2);store.confirm(d,frozen);assert.equal(store.isConfirmed(c),false);
  await store.stage([c]);const changed={...c,n:'changed-after-stage'},shadowed=store.view(d,[changed]);assert.equal(shadowed.proof.length,0);store.confirm(d,shadowed);assert.equal(store.isConfirmed(c),false);assert.equal(store.needsConfirmation(d),true);
+});
+test('completed GT work is cancelled explicitly while fresh/research cohorts and discovery remain queued',()=>{
+ const expired={...coin('old'),p:'oldpool'},pinned={...coin('research'),p:'researchpool'},fresh={...coin('fresh'),p:'freshpool',t:now-H};const errors=[];
+ const queue=['p24a:oldpool','k10:oldpool','p5:researchpool','tr:freshpool','new'].map(key=>({key,rej:e=>errors.push(e)}));
+ assert.equal(cancelRetiredGT(queue,new Map([['old',expired],['research',pinned],['fresh',fresh]]),{now,pins:new Map([['research',now+H]])}),2);
+ assert.deepEqual(queue.map(x=>x.key),['p5:researchpool','tr:freshpool','new']);assert.ok(errors.every(e=>e.code==='OBSERVATION_COMPLETE'));
 });

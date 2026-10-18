@@ -24,6 +24,12 @@ function retirementDue(c,{now=Date.now(),pins=new Map()}={}){
  const ok=c.mg?.st==='ok',at=ok?c.t:Math.max(c.t,c.proofEnqueuedAt||0);
  return now-at>(ok?26:2)*HOUR;
 }
+function cancelRetiredGT(queue,coins,{now=Date.now(),pins=new Map()}={}){
+ const pools=new Set(),active=new Set();for(const c of coins.values()){const target=retirementDue(c,{now,pins})?pools:active;for(const p of [c.p,...(c.origs||[]).map(x=>x.p)])if(p)target.add(p)}for(const p of active)pools.delete(p);
+ let cancelled=0;for(let i=queue.length-1;i>=0;i--){const task=queue[i],match=/^(k10|p5|p24a|p24b|tr):(.+)$/.exec(task.key||'');if(!match||!pools.has(match[2]))continue;
+  queue.splice(i,1);task.rej(Object.assign(Error('observation window completed'),{code:'OBSERVATION_COMPLETE'}));cancelled++;
+ }return cancelled;
+}
 class CompletedCoins{
  constructor(dir){this.dir=path.join(dir,'completed-coins');this.outbox=path.join(this.dir,'raw-outbox');fs.mkdirSync(this.outbox,{recursive:true});this.index=new Map();this.confirmed=new Map();this.sealed=new Set();this.seeded=new Set();this.seedStats=new Map();this.removed=0;this.lastRemovedAt=null;
   for(const file of fs.readdirSync(this.dir)){
@@ -92,4 +98,4 @@ class CompletedCoins{
   return {rows,pendingConfirmation:pending,localArchiveBytes:bytes,openDays:this.days().length,sealedDays:this.sealed.size,removed:this.removed,lastRemovedAt:this.lastRemovedAt,legacySeed:Object.fromEntries(this.seedStats)};
  }
 }
-module.exports={CompletedCoins,researchPins,retirementDue};
+module.exports={CompletedCoins,researchPins,retirementDue,cancelRetiredGT};
