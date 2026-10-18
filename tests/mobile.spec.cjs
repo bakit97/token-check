@@ -11,7 +11,7 @@ test('Six panels, age admission, safe settings and local filter management work 
   const admitted={a:TOKEN,n:c.n,s:c.s,phase:'after',
     eventAt:now-20*60_000,acceptedAt:now-20*60_000+1200};
   const source={mode:'verified-pre-post',updated:now,
-    today:1,todayBefore:0,todayAfter:1,
+    total:1,today:1,todayBefore:0,todayAfter:1,
     settings:{beforeMinutes:2,afterMinutes:2},preConnected:true};
   source.dailyAvailability={before:false,after:true};
   source.daily={schema:1,day:new Date(now+5*3600000).toISOString().slice(0,10),complete:true,
