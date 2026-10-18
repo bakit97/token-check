@@ -545,7 +545,7 @@ async function applyModules(){var key=keyFrom('modKey'),d=draft();
 // ---- Вход в Исследование 1 ----
 function intakeFromUI(){return {manual:{enabled:$('inManual').checked,phase:$('inPhaseOn').checked?$('inPhase').value:'both',
     buyers10:{on:$('inBuyOn').checked,min:Number($('inBuy').value)},quoteSol:{on:$('inSolOn').checked,min:Number($('inSol').value)},
-    sample:{on:$('inSampleOn').checked,pct:Number($('inSample').value)}},modules:{enabled:$('inModules').checked}}}
+    sample:{on:$('inSampleOn').checked,pct:Number($('inSample').value)}},modules:{enabled:true}}}
 var INTAKE_DIRTY=false;
 function renderIntake(){if(!$('intakeBox'))return;var st=researchMeta&&researchMeta.settings,x=st&&st.intake;
   $('intakeState').textContent=!researchMeta?'нет данных':x?'вкл.':'все из «Все»';
@@ -559,14 +559,14 @@ function renderIntake(){if(!$('intakeBox'))return;var st=researchMeta&&researchM
   var parts=[];if($('inPhaseOn').checked)parts.push({before:'до',after:'после',both:'оба'}[$('inPhase').value]);if($('inBuyOn').checked)parts.push('пок. ≥ '+$('inBuy').value);if($('inSolOn').checked)parts.push('SOL ≥ '+$('inSol').value);if($('inSampleOn').checked)parts.push($('inSample').value+'%');
   $('inManualSum').textContent=$('inManual').checked?(parts.join(' · ')||'без условий'):'выкл.';
   var c=serverCfg(),byId={};(c&&c.filters||[]).forEach(function(f){byId[f.id]=f});var marked=(c&&c.modules||[]).filter(function(m){return m.toR1&&m.level==='1'});
-  $('inModSum').textContent=marked.length?marked.map(function(m){return (m.phase==='before'?'🌱 ':'🎓 ')+(byId[m.filterId]?byId[m.filterId].name:m.filterId)}).join(' · '):'Нет отмеченных. Отметь значком И1 в «Окне возможностей».';
+  $('inModSum').textContent=marked.length?marked.map(function(m){return (m.phase==='before'?'🌱 ':'🎓 ')+(byId[m.filterId]?byId[m.filterId].name:m.filterId)}).join(' · '):'нет';
   var acc=researchMeta&&researchMeta.intakeAccepted||{},rej=researchMeta&&researchMeta.intakeRejected||{};
   var a=Object.values(acc).reduce(function(p,v){return p+v},0),r=Object.values(rej).reduce(function(p,v){return p+v},0);
   $('intakeStats').textContent=x?'вошло '+a+' · не вошло '+r+(r?' ('+Object.keys(rej).map(function(k){return ({phase:'поток','no-buyers10':'нет данных о покупателях',buyers10:'мало покупателей','no-quoteSol':'нет данных SOL',quoteSol:'мало SOL',sample:'жребий','not-matched':'не прошли','modules-only-not-passed':'не в «Прошли»'})[k]+' '+rej[k]}).join(', ')+')':''):''}
 async function applyIntake(){var key=keyFrom('intakeKey'),msg=$('intakeMsg');
   if(!controlEndpoint){msg.textContent='Сервер управления недоступен';return}if(!researchMeta){msg.textContent='Сервер ещё загружается, попробуй через минуту';return}
   if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){msg.textContent='Нажми 🔒 вверху и введи пароль';return}
-  var it=intakeFromUI();if(!it.manual.enabled&&!it.modules.enabled&&!window.confirm('Оба входа выключены — исследование перестанет набирать монеты. Продолжить?'))return;
+  var it=intakeFromUI(),anyMarked=((serverCfg()||{}).modules||[]).some(function(m){return m.toR1});if(!it.manual.enabled&&!anyMarked&&!window.confirm('Оба входа выключены — исследование перестанет набирать монеты. Продолжить?'))return;
   var st=researchMeta.settings,cfg={hours:st.hours,decisionMinutes:st.decisionMinutes,minActive:st.minActive,maxIdle:st.maxIdle,minCoverage:st.minCoverage,intake:it};
   $('intakeApply').disabled=true;msg.textContent='Отправка…';
   try{var r=await ownerFetch(controlEndpoint+'/api/research-one',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(cfg)});
