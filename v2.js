@@ -342,7 +342,7 @@ function coinHtml(c,extra){
   return '<button type="button" class="coin '+(e.phase==='before'?'pre':'post')+'" data-coin="'+esc(mint(c))+'">'+
     (img?'<img class="avatar" src="'+esc(img)+'" alt="" loading="lazy">':'<span class="avatar empty"'+(c._uri?' data-uri="'+esc(c._uri)+'"':'')+'>'+esc((c.s||'?').slice(0,2))+'</span>')+
     '<span class="body"><span class="name">'+name+' <small>'+symbol+'</small></span><span class="detail"><b class="ago" data-t="'+(+e.eventAt||0)+'">'+agoText(e.eventAt)+'</b> · '+(e.phase==='before'?'🌱 до миграции':'🎓 после миграции')+'</span><span class="detail mline">'+esc(marketLine(c))+'</span>'+
-    (extra?'<span class="detail">'+esc(extra)+'</span>':'')+'</span><span class="right"><span class="price">'+price(L&&L.price||p&&p[1])+'</span><span class="growbox">'+growthHtml(c)+'</span><span class="sparkbox">'+spark(c)+'</span></span></button>';
+    (extra?'<span class="detail">'+(extra.charAt(0)==='<'?extra:esc(extra))+'</span>':'')+'</span><span class="right"><span class="price">'+price(L&&L.price||p&&p[1])+'</span><span class="growbox">'+growthHtml(c)+'</span><span class="sparkbox">'+spark(c)+'</span></span></button>';
 }
 function pc(v){return v==null||!Number.isFinite(+v)?'—':(v>0?'+':'')+Number(v).toFixed(Math.abs(v)>=10?0:1)+'%'}
 function solInPool(c){if(!Array.isArray(c.lq)||!Array.isArray(c.vmint))return null;var qi=c.vmint.indexOf('So11111111111111111111111111111111111111112');if(qi<0)return null;
@@ -611,6 +611,8 @@ function showPicker(phase,lev){
   $('pickerItems').innerHTML=items.length?items.map(function(f){return '<button type="button" style="width:100%;margin-top:7px;text-align:left" data-use="'+esc(f.id)+'">'+esc(f.name)+' · №'+esc(f.id)+' ＋</button>'}).join(''):'<div class="empty-state">Новых фильтров нет. Создай их в «Библиотеке».</div>';
   $('filterPicker').hidden=false;
 }
+var PF='all';
+function pwMin(){try{return +localStorage.getItem('passWin')||3}catch(e){return 3}}
 function renderPassed(){
   var list=lastPassed.filter(function(x){return x.deadline>now()});
   $('passedTab').textContent=list.length?' '+fmt(list.length):'';
@@ -619,12 +621,13 @@ function renderPassed(){
     (passMeta.enabled?'. Новые совпадения продолжают записываться сервером.':'. Серверные правила временно выключены, история сохранена.'): 
     '⚠ Предварительный режим на телефоне: '+fmt(lastPassed.length)+' сигналов. '+
     'Правила этого устройства пока НЕ отправляются на сервер; при закрытом сайте новые сигналы не фиксируются.';
-  $('passedList').innerHTML=list.length?list.map(function(q){
-    var left=Math.max(0,q.deadline-now()),sec=Math.ceil(left/1000),mins=Math.floor(sec/60);
-    return '<div class="card"><div class="row"><b>'+esc(q.coin.n||q.coin.s||'Токен')+'</b><span class="badge warn mono">⏳ '+mins+':'+String(sec%60).padStart(2,'0')+'</span></div><p class="muted">'+
-      (serverPassActive?'Серверный журнал: ':'Локальный предварительный: ')+
-      q.matches.map(function(f){return esc(f.name)+' · v'+esc(f.version)}).join(', ')+'</p>'+coinHtml(q.coin)+'</div>';
-  }).join(''):'<div class="empty-state">Нет активных сигналов. Исторические записи не превращаются в новые сигналы.</div>';
+  var W=pwMin(),win=lastPassed.filter(function(q){return (q.firstSeenAt||q.deadline)+W*60000>now()}),ph=function(q){return (q.coin._entry||{}).phase};
+  $('pwSum').textContent=W+' мин';$('pwV').textContent=W;$('pwMin').value=W;
+  $('pAllN').textContent=win.length;$('pBefN').textContent=win.filter(function(q){return ph(q)==='before'}).length;$('pAftN').textContent=win.filter(function(q){return ph(q)==='after'}).length;
+  $('passedTab').textContent=win.length?' '+fmt(win.length):'';
+  var sel=win.filter(function(q){return PF==='all'||ph(q)===PF});
+  $('passedList').innerHTML=sel.length?sel.map(function(q){var left=Math.max(0,(q.firstSeenAt||q.deadline)+W*60000-now()),sec=Math.ceil(left/1000);
+    return coinHtml(q.coin,'<span class="badge warn mono">⏳ '+Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')+'</span><span class="hint" style="margin:0">'+q.matches.map(function(f){return esc(f.name)}).join(', ')+'</span>')}).join(''):'<div class="empty-state">Пока нет</div>';
   var history=(serverPassActive?serverPassRows:signalLog).slice(0);
   if(!serverPassActive)history=history.reverse();
   history=history.slice(0,40);
@@ -1234,6 +1237,8 @@ function bind(){
     save();refresh();
   });
   $('r1Suggestions').addEventListener('click',function(e){var t=e.target.closest('[data-mopen]');if(t)openModSheet(t.dataset.mopen)});
+  $('pSeg').addEventListener('click',function(e){var b=e.target.closest('[data-pf]');if(!b)return;PF=b.dataset.pf;document.querySelectorAll('#pSeg [data-pf]').forEach(function(x){x.classList.toggle('active',x===b)});renderPassed()});
+  $('pwMin').addEventListener('input',function(){try{localStorage.setItem('passWin',$('pwMin').value)}catch(e){}renderPassed()});
   $('r1Seg').addEventListener('click',function(e){var b=e.target.closest('[data-r1f]');if(!b)return;R1F=b.dataset.r1f;document.querySelectorAll('#r1Seg [data-r1f]').forEach(function(x){x.classList.toggle('active',x===b)});renderR1()});
   $('r1N').addEventListener('click',function(e){var b=e.target.closest('[data-r1n]');if(!b)return;R1N=+b.dataset.r1n;document.querySelectorAll('#r1N [data-r1n]').forEach(function(x){x.classList.toggle('active',x===b)});renderR1()});
   [['r1TL','r1TLv',''],['r1TD','r1TDv',''],['r1Dec','r1DecV',' мин']].forEach(function(a){$(a[0]).addEventListener('input',function(){$(a[1]).textContent=$(a[0]).value+a[2];$('r1ResApplyRow').classList.remove('hide')})});
