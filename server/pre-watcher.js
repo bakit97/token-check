@@ -38,10 +38,10 @@ function mintFromCreateLog(value){
  * DO NOT enter the main source retroactively.
  */
 class PumpPreWatcher {
-  constructor({rpc,decode58,deriveCurve,source,onAdmitted,log=()=>{},queueLimit=600,retryDelays=[700,2200,5000],canObserve=()=>true,slotClock=null,allowRPCFallback=false}){
+  constructor({rpc,decode58,deriveCurve,source,onAdmitted,log=()=>{},queueLimit=600,retryDelays=[700,2200,5000],canObserve=()=>true,slotClock=null,telemetry=null,allowRPCFallback=false}){
     if(typeof rpc!=='function'||typeof decode58!=='function'||typeof deriveCurve!=='function'||!source)throw TypeError('Incomplete adapter dependencies');
     this.canObserve=canObserve;this.rpc=rpc;this.decode58=decode58;this.deriveCurve=deriveCurve;
-    this.slotClock=slotClock;this.allowRPCFallback=allowRPCFallback;
+    this.telemetry=telemetry;this.slotClock=slotClock;this.allowRPCFallback=allowRPCFallback;
     this.source=source;this.onAdmitted=onAdmitted||(()=>{});this.log=log;
     this.queueLimit=queueLimit;this.retryDelays=retryDelays;
     this.queue=[];this.busy=false;this.started=false;this.pending=new Set();
@@ -52,12 +52,13 @@ class PumpPreWatcher {
   onLog(value,observedAt=Date.now(),slot){
     this.stats.logs++;
     if(!isPumpCreateLog(value))return false;
-    this.stats.createLogs++;
+    this.stats.createLogs++;this.telemetry?.received(slot,observedAt);
     const mint=mintFromCreateLog(value);
     if(mint)this.source.observe?.({mint,phase:'before'});
     else this.stats.unidentifiedMint++;
-    if(!this.canObserve()){this.stats.dropped++;return false}
     const events=parsePumpCreateEvents(value,{slot,observedAt});
+    for(const event of events)this.telemetry?.event(event.mint,'create',observedAt);
+    if(!this.canObserve()){this.stats.dropped++;return false}
     if(!events.length&&!this.allowRPCFallback){this.stats.invalid++;return false}
     const signature=value.signature;
     if(this.seenSignatures.has(signature)||this.pending.has(signature))return false;
@@ -146,7 +147,7 @@ class PumpPreWatcher {
       if(!Number.isSafeInteger(blockAt)||blockAt>observedAt||await this.deriveCurve(event.mint)!==event.curve){this.stats.invalid++;return {admitted:false,reason:'invalid-create-proof'}}
       const launch={...event,blockAt},accepted=this.source.before({mint:event.mint,publicTradingAt:blockAt,observedAt,verified:true,
         proof:{family:'pump',signature:event.signature,curve:event.curve,slot:event.slot,quote:event.quote,name:event.name,symbol:event.symbol,kind:'pump-create-event',timeSource:slotTime?'slot-estimate':'pump-event-timestamp',reportedEventAt:event.blockAt||null}});
-      if(accepted.admitted){this.stats.accepted++;this.stats.logProofs++;this.stats.lastAt=Date.now();await this.onAdmitted(launch,accepted.record)}
+      if(accepted.admitted){this.telemetry?.event(event.mint,'accepted',observedAt);this.stats.accepted++;this.stats.logProofs++;this.stats.lastAt=Date.now();await this.onAdmitted(launch,accepted.record)}
       return accepted;
     }catch(e){this.stats.errors++;this.log('pump-pre log '+String(e.message||e));return {admitted:false,reason:'error'}}
   }
@@ -161,6 +162,6 @@ class PumpPreWatcher {
       }
     }finally{this.busy=false}
   }
-  summary(){return {...this.stats,mode:this.allowRPCFallback?'legacy-rpc-test':'create-event-no-rpc',queue:this.queue.length,pending:this.pending.size};}
+  summary(){return {...this.stats,daily:this.telemetry?.summary()||null,mode:this.allowRPCFallback?'legacy-rpc-test':'create-event-no-rpc',queue:this.queue.length,pending:this.pending.size};}
 }
 module.exports={PUMP,PumpPreWatcher};

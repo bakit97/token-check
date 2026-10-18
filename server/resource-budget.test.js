@@ -37,7 +37,7 @@ test('production pre has no RPC allocation; idle reserves remain available to or
 });
 test('only pre exceeding its own WS share pauses; migration subscriptions remain live',t=>{
  const f=fixture(t),b=new ResourceBudget(f);b.reserveRPC('getTransaction','migration');
- assert.equal(b.stream(140000,'pre'),true);assert.equal(b.stream(20000,'pre'),false);
+ assert.equal(b.stream(140000,'pre'),true);assert.equal(b.stream(40000,'pre'),false);
  assert.equal(b.streamAllowed('migrations'),true);b.stream(1000,'migrations');
  f.advance(60001);assert.equal(b.streamAllowed('pre'),true);
 });
@@ -102,4 +102,49 @@ test('source capacity refuses new admission without forgetting historical dedupl
   assert.equal(source.before(event(b)).reason,'resource-capacity');
   assert.equal(source.before(event(a)).reason,'already-admitted');
   assert.equal(new SourceRuntime({...f,maxRecords:1}).has(a),true);
+});
+
+
+test('WS uses exact UTF-8 byte price without allocation rounding, across reconnect/restart',t=>{
+ const f=fixture(t),b=new ResourceBudget(f);const bytes=Buffer.byteLength('coin \u041c');
+ b.stream(bytes,'pre');b.stream(1,'migrations');
+ assert.ok(Math.abs(b.summary().wsCreditsHour-(bytes+1)*20/1000000)<1e-12);
+ assert.equal(b.summary().wsMetering.bytesHour,bytes+1);
+ const restored=new ResourceBudget(f);assert.equal(restored.summary().wsCreditsHour,b.summary().wsCreditsHour);
+ assert.equal(restored.summary().wsMetering.billingVerified,false);
+});
+
+test('idle migration/pool reserves release residual budget to pre, without a 150/hour cutoff',t=>{
+ const f=fixture(t),b=new ResourceBudget(f);b.migrationPending=false;b.poolsPending=false;
+ for(let i=0;i<12;i++){assert.equal(b.stream(700000,'pre'),true);f.advance(60001)}
+ assert.ok(b.laneTotal('ws:pre')>150);assert.equal(b.streamAllowed('pre'),true);
+ b.migrationPending=true;b.poolsPending=true;b.stream(200000,'pre');
+ assert.equal(b.streamAllowed('pre'),false);assert.equal(b.streamAllowed('migrations'),true);
+});
+
+test('pre budget pause is bounded to ninety seconds with ten-second charged probes',t=>{
+ const f=fixture(t),b=new ResourceBudget(f);b.stream(200000,'pre');assert.equal(b.streamAllowed('pre'),false);
+ // Model sustained migration pressure even after old stream charges age out.
+ f.advance(60001);b.charge(18,'rpc','migration');assert.equal(b.streamAllowed('pre'),false);
+ f.advance(30000);assert.equal(b.streamAllowed('pre'),true);b.stream(1000,'pre');
+ assert.ok(b.summary().sources.pre.wsCredits>4);assert.equal(b.streamAllowed('migrations'),true);
+ f.advance(10001);assert.equal(b.streamAllowed('pre'),false);
+});
+
+test('daily Pump coverage deduplicates mints and estimates gaps from rate, never one mint per slot',t=>{
+ const f=fixture(t),{PumpTelemetry}=require('./resource-budget'),p=new PumpTelemetry(f);
+ p.connected(100);for(let i=0;i<10;i++){p.received(100+i*20);p.event('mint'+i,'create');p.event('mint'+i,'create')}
+ p.event('mint0','accepted');p.event('mint0','accepted');f.advance(80000);p.disconnected('budget',300);
+ f.advance(40000);p.connected(400);const s=p.summary(400);
+ assert.equal(s.uniqueCreates,10);assert.equal(s.accepted,1);assert.equal(s.createReceived,10);
+ assert.equal(s.budgetPausedSlots,100);assert.equal(s.lostDuringBudgetPauses.estimate,5);
+ assert.equal(s.lostDuringBudgetPauses.exact,null);assert.equal(s.budgetPausedMs,40000);
+ const r=new PumpTelemetry(f);assert.equal(r.summary().uniqueCreates,10);assert.equal(r.summary().restartGap,true);
+ f.advance(19*3600000);const next=r.summary();assert.equal(next.day,'2026-10-18');assert.equal(next.uniqueCreates,0);
+});
+
+test('Pump gap with no observed baseline stays unknown and restart downtime is not budget loss',t=>{
+ const f=fixture(t),{PumpTelemetry}=require('./resource-budget'),p=new PumpTelemetry(f);
+ p.connected(100);p.summary();f.advance(60000);const r=new PumpTelemetry(f);r.connected(250);const s=r.summary();
+ assert.equal(s.budgetPausedMs,0);assert.equal(s.otherGapMs,60000);assert.equal(s.lostDuringBudgetPauses.estimate,null);
 });
