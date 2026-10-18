@@ -724,7 +724,7 @@ function renderR1(){
     $('r1Sum').textContent=cfg.hours+' ч · '+cfg.minActive+'% · '+cfg.maxIdle+' мин';
     var sel=all.filter(function(x){return R1F==='all'||(R1F==='live')===isLive(x)}).slice(-R1N).reverse();
     $('r1Rows').innerHTML=sel.length?sel.map(function(x){var lv=isLive(x),c=lastAccepted.find(function(d){return mint(d)===x.mint}),bd='<span class="badge '+(lv?'good':'bad')+'">'+(lv?'🟢':'🔴')+'</span>';
-      return c?coinHtml(c,bd):'<div class="coin" data-coin="'+esc(x.mint)+'"><div class="body"><div class="name mono">'+esc(x.mint.slice(0,11))+'…</div><div class="detail">сделки '+x.activity.toFixed(0)+'% · простой '+x.idle+' мин</div></div>'+bd+'</div>'}).join(''):'<div class="empty-state">Пока нет</div>';
+      return coinHtml(c||coinOf(x),bd)}).join(''):'<div class="empty-state">Пока нет</div>';
     return;
   }
   const provisionalLive=lastR1.filter(function(x){return x.result.label==='live'}).length;
@@ -810,7 +810,7 @@ function renderR2(){
   var rr2=$('r2ResApplyRow').classList;if(!rr2.contains||rr2.contains('hide')){$('r2TL').value=T2.l;$('r2TLv').textContent=T2.l;$('r2TD').value=T2.d;$('r2TDv').textContent=T2.d;$('r2Dec').value=T2.m;$('r2DecV').textContent=T2.m+' мин'}
   var rows2=(r.lines||[]).filter(function(x){return R2F==='all'||x.label===R2F}).slice(-R2N).reverse();
   $('r2Rows').innerHTML=rows2.length?rows2.map(function(x){var mt=x.mint||(x.coin&&mint(x.coin)),c=mt&&lastAccepted.find(function(d){return mint(d)===mt}),st=x.label==='strong',bd='<span class="badge '+(st?'good':'bad')+'">'+(st?'🟢':'🔴')+'</span>';
-    return c?coinHtml(c,bd):'<div class="coin" data-coin="'+esc(mt||'')+'"><div class="body"><div class="name mono">'+esc((mt||'').slice(0,11))+'…</div></div>'+bd+'</div>'}).join(''):'<div class="empty-state">Пока нет</div>';
+    return coinHtml(c||coinOf(Object.assign({mint:mt},x)),bd)}).join(''):'<div class="empty-state">Пока нет</div>';
   if($('r2Matched')){
     if(!serverR2Active)$('r2Matched').textContent=
       '⚠ Предварительный режим. Подтверждённых совпадений 2-го уровня с сервера пока нет.';
@@ -888,13 +888,15 @@ function renderServerRuleHistory(){
 }
 var LP='all',LIB_SEL=false,LIBSET={},LIB_RANK=[];
 var LIB_STORE=false,STORE_N={};
+function coinOf(x){var m=x.mint||x;var c=lastAccepted.find(function(d){return mint(d)===m});if(c)return c;
+  return {a:m,n:x.name||'',s:'',ds:[],i:'',_entry:{phase:x.phase||'after',acceptedAt:x.acceptedAt||x.firstSeenAt||0,eventAt:x.eventAt||x.acceptedAt||x.firstSeenAt||0}}}
 var STORE_KINDS=[['live','🟢 Живые','1',0],['dead','🔴 Мёртвые','1',1],['strong','💪 Сильные','2',0],['weak','🪫 Слабые','2',1]];
 function storeCfg(){try{return JSON.parse(localStorage.getItem('storeCfg')||'{}')}catch(e){return {}}}
 function storeTarget(ph,k){var c=storeCfg();return (c[ph]&&c[ph][k])||2000}
 function renderStore(){var box=$('storeBox');if(!box)return;var open={};if(box.querySelectorAll)box.querySelectorAll('details[open]').forEach(function(d){open[d.dataset.sk]=1});
   var phs=LP==='all'?['before','after']:[LP];
   box.innerHTML=STORE_KINDS.map(function(K){var g=classified(K[2])[K[3]].filter(function(x){var p=r1Phase(x);return LP==='all'||p===LP}),tg=phs.reduce(function(a,ph){return a+storeTarget(ph,K[0])},0),n=STORE_N[K[0]]||20;
-    var rows=g.slice(-n).reverse().map(function(x){var c=lastAccepted.find(function(d){return mint(d)===x.mint});return c?coinHtml(c):'<div class="coin" data-coin="'+esc(x.mint)+'"><div class="body"><div class="name mono">'+esc(x.mint.slice(0,11))+'…</div></div></div>'}).join('');
+    var rows=g.slice(-n).reverse().map(function(x){return coinHtml(coinOf(x))}).join('');
     return '<details class="frow" data-sk="'+K[0]+'" style="margin-top:6px"'+(open[K[0]]?' open':'')+'><summary><span class="fname">'+K[1]+' <span class="hint">'+fmt(g.length)+'/'+fmt(tg)+'</span></span></summary>'+
       '<div class="meter" style="margin:6px 0"><div style="width:'+Math.min(100,100*g.length/tg)+'%"></div></div>'+
       (LP==='all'?'<p class="hint" style="margin:4px 0">Цель задаётся отдельно в 🌱 До и 🎓 После</p>':'<div class="prow"><label>Хранить <b class="stv">'+storeTarget(LP,K[0])+'</b> монет</label><input type="range" min="50" max="5000" step="50" value="'+storeTarget(LP,K[0])+'" data-st="'+K[0]+'"></div><div class="row applyrow hide"><button type="button" class="primary pbtn" data-stapply="'+K[0]+'" style="margin-left:auto">Применить</button></div>')+
@@ -1302,7 +1304,7 @@ function bind(){
   $('libPh').addEventListener('click',function(e){var b=e.target.closest('[data-lp]');if(!b)return;LP=b.dataset.lp;document.querySelectorAll('#libPh [data-lp]').forEach(function(x){x.classList.toggle('active',x===b)});LIB_STORE?renderStore():libRender()});
   $('storeBox').addEventListener('input',function(e){var t=e.target;if(!t.dataset.st)return;var d=t.closest('details');d.querySelector('.stv').textContent=t.value;d.querySelector('.applyrow').classList.remove('hide')});
   $('storeBox').addEventListener('click',function(e){var t=e.target,k;if((k=t.dataset.stapply)){var c=storeCfg();c[LP]=c[LP]||{};c[LP][k]=+t.closest('details').querySelector('[data-st]').value;try{localStorage.setItem('storeCfg',JSON.stringify(c))}catch(x){}renderStore();note('Применено');return}
-    if((k=t.dataset.stmore)){STORE_N[k]=(STORE_N[k]||20)+20;renderStore();return}var b=t.closest('[data-coin]');if(b){var c2=lastAccepted.find(function(d){return mint(d)===b.dataset.coin});if(c2)showCoinDetail(c2,'storeBox')}});
+    if((k=t.dataset.stmore)){STORE_N[k]=(STORE_N[k]||20)+20;renderStore();return}var b=t.closest('[data-coin]');if(b){showCoinDetail(coinOf(bank['1'].concat(bank['2']||[]).find(function(x){return x.mint===b.dataset.coin})||b.dataset.coin),'storeBox')}});
   $('libSelect').addEventListener('click',function(){LIB_SEL=!LIB_SEL;LIBSET={};this.textContent=LIB_SEL?'Отмена':'Выбрать';$('libBar').classList.toggle('hide',!LIB_SEL);$('libMsg').textContent=LIB_SEL?'Нажимай на модули, чтобы отметить':'';libRender()});
   $('libMods').addEventListener('click',function(e){var t=e.target.closest('[data-mopen]');if(!t)return;var id=t.dataset.mopen;if(LIB_SEL){LIBSET[id]=!LIBSET[id];t.classList.toggle('picked',!!LIBSET[id]);$('libMsg').textContent='Отмечено: '+Object.keys(LIBSET).filter(function(k){return LIBSET[k]}).length}else openModSheet(id)});
   $('libTest').addEventListener('click',function(){var ids=Object.keys(LIBSET).filter(function(k){return LIBSET[k]});if(ids.length<2){$('libMsg').textContent='Отметь хотя бы 2 модуля';return}
@@ -1318,7 +1320,7 @@ function bind(){
   [['r2TL','r2TLv',''],['r2TD','r2TDv',''],['r2Dec','r2DecV',' мин']].forEach(function(a){$(a[0]).addEventListener('input',function(){$(a[1]).textContent=$(a[0]).value+a[2];$('r2ResApplyRow').classList.remove('hide')})});
   $('r2ResApply').addEventListener('click',function(){try{localStorage.setItem('r2targets_'+s.r2Stream,JSON.stringify({l:+$('r2TL').value,d:+$('r2TD').value,m:+$('r2Dec').value}))}catch(e){}$('r2ResApplyRow').classList.add('hide');renderR2()});
   $('r2Suggestions').addEventListener('click',function(e){var t=e.target.closest('[data-mopen]');if(t)openModSheet(t.dataset.mopen)});
-  $('r2Rows').addEventListener('click',function(e){var b=e.target.closest('[data-coin]');if(!b)return;var c=lastAccepted.find(function(d){return mint(d)===b.dataset.coin});if(c)showCoinDetail(c,'r2Rows')});
+  $('r2Rows').addEventListener('click',function(e){var b=e.target.closest('[data-coin]');if(!b)return;showCoinDetail(coinOf(((researchTwoDataset().lines)||[]).find(function(x){return x.mint===b.dataset.coin})||b.dataset.coin),'r2Rows')});
   $('r1Ph').addEventListener('click',function(e){var b=e.target.closest('[data-r1p]');if(!b)return;R1P=b.dataset.r1p;document.querySelectorAll('#r1Ph [data-r1p]').forEach(function(x){x.classList.toggle('active',x===b)});$('r1ResApplyRow').classList.add('hide');renderR1()});
   $('r1Seg').addEventListener('click',function(e){var b=e.target.closest('[data-r1f]');if(!b)return;R1F=b.dataset.r1f;document.querySelectorAll('#r1Seg [data-r1f]').forEach(function(x){x.classList.toggle('active',x===b)});renderR1()});
   $('r1N').addEventListener('click',function(e){var b=e.target.closest('[data-r1n]');if(!b)return;R1N=+b.dataset.r1n;document.querySelectorAll('#r1N [data-r1n]').forEach(function(x){x.classList.toggle('active',x===b)});renderR1()});
@@ -1326,7 +1328,7 @@ function bind(){
   $('r1ResApply').addEventListener('click',function(){try{localStorage.setItem('r1targets'+(R1P==='all'?'':'_'+R1P),JSON.stringify({l:+$('r1TL').value,d:+$('r1TD').value}))}catch(e){}
     if(researchMeta&&+$('r1Dec').value!==researchMeta.settings.decisionMinutes){R1DEC=+$('r1Dec').value;publishResearchLevel('1')}$('r1ResApplyRow').classList.add('hide');renderR1()});
   ['r1Hours','r1Activity','r1Idle'].forEach(function(id){$(id).addEventListener('input',function(){$('r1ApplyRow').classList.remove('hide')})});
-  $('r1Rows').addEventListener('click',function(e){var b=e.target.closest('[data-coin]');if(!b)return;var c=lastAccepted.find(function(d){return mint(d)===b.dataset.coin});if(c)showCoinDetail(c,'r1Rows')});
+  $('r1Rows').addEventListener('click',function(e){var b=e.target.closest('[data-coin]');if(!b)return;showCoinDetail(coinOf(bank['1'].find(function(x){return x.mint===b.dataset.coin})||b.dataset.coin),'r1Rows')});
   $('coinList').addEventListener('click',function(e){
     const button=e.target.closest('[data-coin]');if(!button)return;
     showCoinDetail(lastAccepted.find(function(c){return mint(c)===button.dataset.coin}),'coinList');
