@@ -1,12 +1,14 @@
 {
   "baseCommit": "48cb0f8621e3a822cc65e0a7c23ba485ad3a574e",
   "files": {
-    "collector.js": "b7c1a3a41c1651225e146dfb9ef429bc848a5727806d2de4f7c3a7703f252a67",
+    "collector.js": "c5b0b9b02e3715cd23f4a2b3ad3587512ea2545e9c3547eefcfa3affbe502d69",
     "resource-budget.js": "9cac006866b307f0c6c19915afadba1ac7e6957eab7b78ea11d97271ae9fdd6f",
     "pre-watcher.js": "eb7b7fd266528786be06e923d522abbbb248b6efdf42ef2d8d6550123e3cac5d",
     "runtime-health.js": "001b44ef3198e679008fd58aa3e9f90f7843303775cbc74b3a21eda745a9ba84",
-    "stream-json.js": "867b248d3e5779b177a1560a9c8f7103f18162309476faa443aa6572dc2a736b",
+    "stream-json.js": "b212a8cabdb25f9f8ef5fe7e7c081d04dbda3e4218e6c3df6adfb453d6a48461",
     "observation-contract.js": "a7e76dfaf54463c5723801b32c29d7d4489c41ab1378958536a284f2edcb411e",
-    "packed-observations.js": "6e2622a57f6d8939411b9884ec1f9c80bd8e091b8d734c8276465789128204e4"
+    "packed-observations.js": "6e2622a57f6d8939411b9884ec1f9c80bd8e091b8d734c8276465789128204e4",
+    "completed-coins.js": "5a0399c780eb9ce81658c4ad5bb9d2b61b2c49636bb6a719337f83d340d3e948",
+    "seed-completed.js": "a15b26a2b38ff3aaba954b28c07c1a1fc69a5e9fb6b474907351d21ecece09f7"
   }
 }

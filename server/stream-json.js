@@ -30,28 +30,38 @@ function saveRows(file,rows,health){const tmp=file+'.tmp',fd=fs.openSync(tmp,'w'
  fs.renameSync(tmp,file);health?.capture('save:complete',{rows:count,chars});return count;
 }
 // Incremental replay keeps the file text and parsed array from coexisting with C.
-function loadRows(file,onRow,health){
+function* readRows(file,health,{field=null}={}){
  const {StringDecoder}=require('node:string_decoder'),decoder=new StringDecoder('utf8');
- const fd=fs.openSync(file,'r'),buffer=Buffer.alloc(65536);let mode='start',row='',depth=0,quoted=false,escape=false,count=0,allowEnd=true;
- const consume=text=>{let start=mode==='row'?0:-1;
+ const fd=fs.openSync(file,'r'),buffer=Buffer.alloc(65536);let header='',headerFound=!field;let mode='start',row='',depth=0,quoted=false,escape=false,count=0,allowEnd=true;
+ const consume=function*(text){let start=mode==='row'?0:-1;
   for(let i=0;i<text.length;i++){const ch=text[i];
    if(mode==='row'){
     if(quoted){if(escape)escape=false;else if(ch==='\\')escape=true;else if(ch==='"')quoted=false}
     else if(ch==='"')quoted=true;else if(ch==='{'||ch==='[')depth++;else if(ch==='}'||ch===']')depth--;
-    if(depth===0){row+=text.slice(start,i+1);const item=JSON.parse(row);row='';if(!item||typeof item!=='object'||Array.isArray(item))throw Error('Invalid coin row');onRow(item);count++;if(count%1000===0)health?.capture('load:rows',{rows:count});mode='comma';start=-1}
+    if(depth===0){row+=text.slice(start,i+1);const item=JSON.parse(row);row='';if(!item||typeof item!=='object'||Array.isArray(item))throw Error('Invalid coin row');yield item;count++;if(count%1000===0)health?.capture('load:rows',{rows:count});mode='comma';start=-1}
     continue;
    }
    if(/\s/.test(ch))continue;
    if(mode==='start'){if(ch!=='[')throw Error('State must be a JSON array');mode='value';continue}
    if(mode==='value'){if(ch===']'&&allowEnd){mode='done';continue}if(ch!=='{')throw Error('Invalid state row');mode='row';start=i;depth=1;quoted=false;escape=false;continue}
    if(mode==='comma'){if(ch===','){mode='value';allowEnd=false;continue}if(ch===']'){mode='done';continue}throw Error('Invalid state separator')}
-   throw Error('Trailing state data');
+   if(field&&mode==='done'&&ch==='}'){mode='wrappedDone';continue}throw Error('Trailing state data');
   }
   if(mode==='row'){row+=text.slice(start);if(row.length>16*1024*1024)throw Error('Coin row exceeds replay bound')}
  };
- try{for(;;){const n=fs.readSync(fd,buffer,0,buffer.length,null);if(!n)break;consume(decoder.write(buffer.subarray(0,n)))}consume(decoder.end());if(mode!=='done')throw Error('Incomplete state array');health?.capture('load:rows:complete',{rows:count});return count}
+ const read=function*(text){
+  if(headerFound){yield*consume(text);return}header+=text;
+  if(header.length>1024*1024)throw Error('Collection header exceeds bound');
+  const pattern=new RegExp('"'+field+'"\\s*:\\s*\\[','g');let match;
+  while((match=pattern.exec(header))){let prefix;try{prefix=JSON.parse(header.slice(0,match.index+match[0].length-1)+'[]}')}catch{continue}
+   if(!prefix||Array.isArray(prefix)||!Array.isArray(prefix[field]))continue;
+   headerFound=true;const rest=header.slice(match.index+match[0].length);header='';mode='value';yield*consume(rest);return;
+  }
+ };
+ try{for(;;){const n=fs.readSync(fd,buffer,0,buffer.length,null);if(!n)break;yield*read(decoder.write(buffer.subarray(0,n)))}yield*read(decoder.end());if(mode!==(field?'wrappedDone':'done'))throw Error('Incomplete state array');health?.capture('load:rows:complete',{rows:count});return count}
  finally{fs.closeSync(fd)}
 }
+function loadRows(file,onRow,health,options){let count=0;for(const row of readRows(file,health,options)){onRow(row);count++}return count}
 function multipartGzip(payload,name){
  const boundary='solscan-'+require('node:crypto').randomBytes(12).toString('hex');
  const metadata=JSON.stringify({name,contentType:'application/json',contentEncoding:'gzip',cacheControl:'no-cache, max-age=0'});
@@ -61,4 +71,4 @@ function multipartGzip(payload,name){
  const close=stream=>stream.closed?Promise.resolve():new Promise(resolve=>{stream.once('close',resolve);stream.once('error',()=>{});stream.destroy()});
  return {body,contentType:'multipart/related; boundary='+boundary,length:head.length+payload.bytes+tail.length,close:async()=>{await close(body);await close(file)}};
 }
-module.exports={jsonChunks,gzipJson,saveRows,loadRows,multipartGzip,rowStream};
+module.exports={jsonChunks,gzipJson,saveRows,loadRows,multipartGzip,rowStream,readRows};

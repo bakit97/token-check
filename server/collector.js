@@ -7,6 +7,8 @@ if(typeof WebSocket==='undefined'&&!process.env.WSX){const ch=require('child_pro
    Каждые 2 минуты выгружает перепись дня (по Алматы, с 00:00) в Cloud Storage. */
 const fs=require('fs'),zlib=require('zlib');
 let HEALTH=null;
+let COMPLETED=null;
+const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:30000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0};
 const gzip=require('node:util').promisify(zlib.gzip);
 let RESOURCE=null,PUBLICATIONS=null;
 const RESOURCE_STATS={lagMs:0,maxLagMs:0,memoryPressure:false};
@@ -295,7 +297,7 @@ async function admitVerifiedPublicLaunch(launch,record) {
 // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
 // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
 const MODULES=['admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
-  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js'];
+  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js'];
 let MODULES_OK=null;
 function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
   for(const name of MODULES){const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
@@ -503,18 +505,18 @@ function admitVerifiedMigration(c){
 const OBS_KEYS=['ds','k10','path','hold','bx','lq','gx','vaults','vmint','vdec','legacy','raw','tr','rawUp','trDone'],OBS_TMP=['tr','raw','dsAt','dsTryAt','tokAt','gxAt','lastTrade','kTry','pTry','trTry','trDone','lqAt','rawUp','vTry'];
 function takeObs(c){const o={};for(const k of OBS_KEYS){if(c[k]!=null)o[k]=c[k];delete c[k]}for(const k of OBS_TMP)delete c[k];return o}
 function load(){try{if(fs.existsSync(DIR+'/state.json')&&fs.statSync(DIR+'/state.json').size>64*1024*1024)throw Error('Candidate snapshot exceeds safe replay size');require(DIR+'/stream-json.js').loadRows(DIR+'/state.json',c=>{
-    delete c.chTry; // in-flight lock belongs to the old process, never to restored work
+    for(const key of ['chTry','kTry','pTry','trTry','vTry'])delete c[key]; // in-flight locks belong to the old process
     if(c.fv!==FV){c.legacy={snap:c.snap,act:c.act,k:c.k};for(const k of ['snap','act','k','o','cur','cn','orig'])delete c[k];c.fv=FV}
     if(c.t<Date.now()-50*3600e3||C.size>=5000)return;if(c.disc==='ws'&&c.d==='pumpswap')return;require(DIR+'/packed-observations.js').compactCoin(c);C.set(c.a,c)},HEALTH);log('загружено монет',C.size)}catch(e){if(e.code!=='ENOENT'){err('state restore '+e.message);throw e}}
   try{RC=JSON.parse(fs.readFileSync(DIR+'/recon.json','utf8'))}catch{}}
 function save(){try{require(DIR+'/stream-json.js').saveRows(DIR+'/state.json',C.values(),HEALTH);
-  fs.writeFileSync(DIR+'/recon.json',JSON.stringify(RC))}catch(e){err('save '+e.message)}}
+  fs.writeFileSync(DIR+'/recon.json',JSON.stringify(RC));RETENTION.stateBytes=fs.statSync(DIR+'/state.json').size;return true}catch(e){err('save '+e.message);return false}}
 const isCurve=d=>/pump-?fun/i.test(d||'')&&!/swap/i.test(d||'');
 const SKIP=new Set([WSOL,USDC,USDT]);
 function launchType(c){if(c.mg)return MIGNAME[c.mg.k]||('Другое ('+(c.d||'?')+')');return 'Проверяется'}
 const isOk=c=>c.mg?.st==='ok';
 const isRecordedPre=c=>!!c.preCurve&&SOURCE?.get(c.a)?.phase==='before';
-const observedEligible=c=>isOk(c)||isRecordedPre(c);
+const observedEligible=c=>isOk(c)||isRecordedPre(c)||c.completedLegacyObserved===1;
 const ageMin=(c,now)=>(now-c.t)/60000;
 
 /* ---------- 1. новые пулы (GeckoTerminal) ---------- */
@@ -523,8 +525,8 @@ async function addFromGT(r){const inc={};(r.included||[]).forEach(x=>inc[x.id]=x
     let bid=d.relationships?.base_token?.data?.id||'',addr=bid.replace(/^solana_/,''),q=(d.relationships?.quote_token?.data?.id||'').replace(/^solana_/,'');
     if(SKIP.has(addr)){q=addr;bid=d.relationships?.quote_token?.data?.id||'';addr=bid.replace(/^solana_/,'')}
     if(!addr||SKIP.has(addr))continue;const t=Date.parse(a.pool_created_at);if(!t||Date.now()-t>3*3600e3)continue;
-    const ex=C.get(addr);
-    if(ex){ex.pools=ex.pools||[ex.p];if(!ex.pools.includes(a.address)){if(!ex.firstPostSeenAt)ex.firstPostSeenAt=Date.now();if(ex.pools.length<12)ex.pools.push(a.address);
+    let ex=C.get(addr);if(!ex&&typeof COMPLETED!=='undefined'&&COMPLETED){const old=COMPLETED.metadata(addr);if(old?.poolKeys.includes(a.address))continue;if(old){ex=COMPLETED.readCoin(addr);C.set(addr,ex)}}
+    if(ex){ex.pools=ex.pools||[ex.p];if(!ex.pools.includes(a.address)){queueMigrationSignal(ex,Date.now());if(!ex.firstPostSeenAt)ex.firstPostSeenAt=Date.now();if(ex.pools.length<12)ex.pools.push(a.address);
         if(ex.mg&&ex.mg.st!=='ok'&&ex.mg.st!=='other')ex.mg.force=1} // у монеты новый пул — возможно, это миграция
       continue}
     if(!canAddCandidate())continue;
@@ -746,7 +748,7 @@ async function chainObsLoop(){for(;;){const now=Date.now();
           c.hold[m]={at:Date.now(),miss:'ошибка'};err('hold '+e.message)}}}
     for(const c of C.values())if(isOk(c)&&c.vmint&&!c.vdec){c.vdec=await Promise.all(c.vmint.map(async mt=>{if(mt===c.a)return c.ct?.dec??null;if(qDec.has(mt))return qDec.get(mt);
       const v=(await rpc('getAccountInfo',[mt,{encoding:'jsonParsed'}],{priority:'holders',context:'держатели'}))?.value;const d=v?.data?.parsed?.info?.decimals;if(d!=null)qDec.set(mt,+d);return d??null}))}
-    for(const c of C.values())if(c.raw&&ageMin(c,now)>24*60+20&&!c.rawUp){c.rawUp=1;uploadLater(`raw/${dayKey(c.t)}/${c.a}-state.json`,{a:c.a,p:c.p,t:c.t,vaults:c.vaults,raw:c.raw});
+    for(const c of C.values())if(c.raw&&ageMin(c,now)>24*60+20&&!c.rawUp){uploadLater(`raw/${dayKey(c.t)}/${c.a}-state.json`,{a:c.a,p:c.p,t:c.t,vaults:c.vaults,raw:c.raw});c.rawUp=1;
       c.raw=Object.fromEntries(Object.entries(c.raw).map(([m,x])=>[m,{at:x.at,slot:x.slot,miss:x.miss}]))}
   }catch(e){if(e.code!=='BUDGET_DEFERRED')err('chainobs '+e.message)}
   await sleep(10000)}}
@@ -770,7 +772,7 @@ async function reconcileBody(){const now=Date.now();const rpc=(method,params)=>g
       if(!prev){RC.log.push([now,key,'база',cur.length]);continue}
       RC.pend=RC.pend||{};const all=[...(RC.pend[key]||[]),...cur.filter(x=>!prev.has(x))];const nw=[...new Set(all)].slice(0,300);RC.pend[key]=[...new Set(all)];let known=0,added=0,forced=0;
       for(let i=0;i<nw.length;i+=100){const v=(await rpc('getMultipleAccounts',[nw.slice(i,i+100),{encoding:'base64'}]))?.value||[];
-        v.forEach((acc,j)=>{if(!acc)return;const u=b64(acc.data?.[0]);const mint=pk(u,mOff),quote=qOff?pk(u,qOff):null;const c=C.get(mint);
+        v.forEach((acc,j)=>{if(!acc)return;const u=b64(acc.data?.[0]);const mint=pk(u,mOff),quote=qOff?pk(u,qOff):null;let c=C.get(mint);if(!c&&typeof COMPLETED!=='undefined'&&COMPLETED){const old=COMPLETED.metadata(mint);if(old?.poolKeys.includes(nw[i+j])){known++;return}if(old){c=COMPLETED.readCoin(mint);C.set(mint,c)}}
           if(c&&isOk(c)){c.discoverySource=key;known++;c.rcSeen=c.rcSeen||now;return}
           if(c){queueMigrationSignal(c,now);c.discoverySource=key;if(c.mg)c.mg.force=1;c.rcSeen=now;c.firstPostSeenAt=c.firstPostSeenAt||now;forced++;return}
           C.set(mint,{a:mint,n:'',s:'',i:'',p:nw[i+j],d:key==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'recon',seen:now,disc:'chain',discoverySource:key,proofEnqueuedAt:now,rcSeen:now,firstPostSeenAt:now,pools:[nw[i+j]],fv:FV});added++});const done=new Set(nw.slice(i,i+100));RC.pend[key]=RC.pend[key].filter(x=>!done.has(x))}
@@ -788,7 +790,7 @@ function wsCandidate(kind,acc,u){if(resourcePressure())return;const now=Date.now
   if(kind==='dbc'){mint=pk(u,136)}
   else if(kind==='ll'){mint=pk(u,205);quote=pk(u,237)}
   else if(kind==='pump'){const b=pk(u,43),q=pk(u,75);if(SKIP.has(b)){mint=q;quote=b}else{mint=b;quote=q}if(SKIP.has(mint))return}
-  if(!mint)return;WS.cand[kind]=(WS.cand[kind]||0)+1;const c=C.get(mint);
+  if(!mint)return;WS.cand[kind]=(WS.cand[kind]||0)+1;let c=C.get(mint);if(!c&&typeof COMPLETED!=='undefined'&&COMPLETED){const old=COMPLETED.metadata(mint);if(old?.poolKeys.includes(pool))return;if(old){c=COMPLETED.readCoin(mint);C.set(mint,c)}}
   if(c){queueMigrationSignal(c,now);c.discoverySource=kind;if(!isOk(c)&&c.mg)c.mg.force=1;c.wsSeen=c.wsSeen||now;c.firstPostSeenAt=c.firstPostSeenAt||now;return}
   if(!canAddCandidate()){WS.capacityDrop=(WS.capacityDrop||0)+1;return}
   C.set(mint,{a:mint,n:'',s:'',i:'',p:pool,d:kind==='pump'?'pumpswap':kind==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'ws',seen:now,disc:'ws',discoverySource:kind,proofEnqueuedAt:now,wsSeen:now,firstPostSeenAt:now,pools:[pool],fv:FV})}
@@ -836,7 +838,7 @@ async function flushUploads(){
   const limit=Math.min(4,UPQ.length),started=Date.now();
   for(let i=0;i<limit&&UPQ.length&&Date.now()-started<10000;i++){
     const [n,o]=UPQ.shift();
-    try{await upload(n,o)}catch(e){err('up '+e.message);UPQ.push([n,o]);break}
+    try{await upload(n,o===null&&typeof COMPLETED!=='undefined'&&COMPLETED?COMPLETED.readRaw(n):o);if(typeof COMPLETED!=='undefined'&&COMPLETED)COMPLETED.completeRaw(n)}catch(e){err('up '+e.message);UPQ.push([n,o]);break}
   }
 }
 function rec(c,full){const mg=c.mg||{};
@@ -872,7 +874,7 @@ async function exportSource(now) {
   if(!SOURCE)return;
   const d=dayKey(now);
   const enrich=x=>{
-    const c=C.get(x.mint);
+    const c=C.get(x.mint)||COMPLETED?.metadata(x.mint);
     return {a:x.mint,phase:x.phase,eventAt:x.eventAt,acceptedAt:x.acceptedAt,
       n:c?.n||'',s:c?.s||'',i:c?.i||'',family:x.proof?.family||null,curve:x.proof?.curve||null,
       proofSig:x.proof?.signature||null,migrationPool:x.proof?.pool||null};
@@ -885,13 +887,14 @@ async function exportSource(now) {
   await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});
   await upload('source/live.json',{updated:now,count:today.length,coins:SOURCE.latest(200).map(enrich)});
 }
+function researchCoins(){return typeof COMPLETED!=='undefined'&&COMPLETED?{get:mint=>C.get(mint)||COMPLETED.readCoin(mint)}:C}
 async function exportResearchV2(now) {
   if(!RESEARCH_V2||!SOURCE)return;
   // All read-only observations originate from the accepted main source.
-  const result=RESEARCH_V2.update({source:SOURCE,coins:C,now});
+  const result=RESEARCH_V2.update({source:SOURCE,coins:researchCoins(),now});
   // A settings change does NOT abandon previously admitted cohorts.
   for(const item of OLD_RESEARCH_ONE){
-    try{item.runtime.update({source:SOURCE,coins:C,now})}
+    try{item.runtime.update({source:SOURCE,coins:researchCoins(),now})}
     catch(e){err('research old 1 '+item.epoch.hash+' '+e.message)}
   }
   await upload('research-v2/status.json',result);
@@ -925,9 +928,9 @@ async function exportPathsV2(now){
       day:d,updated:now,origin:'server-journal',count:rows.length,coins:rows
     });
   }
-  const result=RESEARCH_TWO.update({passes:PASS_V2,coins:C,now});
+  const result=RESEARCH_TWO.update({passes:PASS_V2,coins:researchCoins(),now});
   for(const item of OLD_RESEARCH_TWO){
-    try{item.runtime.update({passes:PASS_V2,coins:C,now})}
+    try{item.runtime.update({passes:PASS_V2,coins:researchCoins(),now})}
     catch(e){err('research old 2 '+item.epoch.hash+' '+e.message)}
   }
   TWO_ERR='';
@@ -1017,28 +1020,68 @@ const OBS_CONTRACT={schema:2,mode:'mirror',days:{}};
 async function exportObservationContract(name,list,now){
   const contract=require(DIR+'/observation-contract.js'),{rowStream}=require(DIR+'/stream-json.js');
   await upload(name,{schema:2,updated:now,receiptTimeUnit:'unix-ms',count:list.length,coins:rowStream(function*(){for(const c of list)yield contract.project(c,{metadata:rec(c,false),admission:SOURCE?.get(c.a)||null})})});
-  return {path:name,at:now,coins:list.length,rawStates:list.reduce((n,c)=>n+Object.keys(c.raw||{}).length,0),dsRows:list.reduce((n,c)=>n+(c.ds?.length||0),0),vaultRows:list.reduce((n,c)=>n+(c.lq?.length||0),0)};
+  return {path:name,at:now,coins:list.length,...(list.metrics||{rawStates:list.reduce((n,c)=>n+Object.keys(c.raw||{}).length,0),dsRows:list.reduce((n,c)=>n+(c.ds?.length||0),0),vaultRows:list.reduce((n,c)=>n+(c.lq?.length||0),0)})};
 }
-let EXPORT_BUSY=false;
-async function exportDays(){if(EXPORT_BUSY)return;EXPORT_BUSY=true;try{await exportDaysBody()}finally{EXPORT_BUSY=false}}
+function retentionPins(now){return require(DIR+'/completed-coins.js').researchPins({source:SOURCE,passes:PASS_V2,one:[RESEARCH_V2,...OLD_RESEARCH_ONE.map(x=>x.runtime)],two:[RESEARCH_TWO,...OLD_RESEARCH_TWO.map(x=>x.runtime)],now})}
+async function seedCompletedDays(now){
+  if(!COMPLETED)return;const {retirementDue}=require(DIR+'/completed-coins.js'),pins=retentionPins(now);
+  const days=[...new Set([dayKey(now),dayKey(now-864e5),...COMPLETED.days(),...[...C.values()].filter(c=>retirementDue(c,{now,pins})).map(c=>dayKey(c.t))])].filter(d=>!COMPLETED.seeded.has(d)&&!COMPLETED.sealed.has(d));
+  if(!days.length)return;const auth=await token(),headers={Authorization:'Bearer '+auth},temp=DIR+'/archive-seed-tmp';fs.mkdirSync(temp,{recursive:true});
+  const {Readable,Transform}=require('node:stream'),{pipeline}=require('node:stream/promises');
+  const bounded=max=>{let bytes=0;return new Transform({transform(chunk,enc,done){bytes+=chunk.length;done(bytes>max?Error('Archive seed exceeds bound'):null,chunk)}})};
+  const fetchObject=async name=>{const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent(name)+'?alt=media',{headers,signal:AbortSignal.timeout(120000)});if(r.status===404){await r.arrayBuffer();return null}if(!r.ok)throw Error('Archive seed HTTP '+r.status);return r};
+  const download=async(prefix,day)=>{const r=await fetchObject(prefix+'/'+day+'.json');if(!r)return null;const file=temp+'/'+prefix+'-'+day+'.json',raw=file+'.download',tmp=file+'.tmp';
+    try{await pipeline(Readable.fromWeb(r.body),bounded(256*1024*1024),fs.createWriteStream(raw));const fd=fs.openSync(raw,'r'),head=Buffer.alloc(2);try{fs.readSync(fd,head,0,2,0)}finally{fs.closeSync(fd)}
+      if(head[0]===31&&head[1]===139){await pipeline(fs.createReadStream(raw),zlib.createGunzip(),bounded(256*1024*1024),fs.createWriteStream(tmp));fs.unlinkSync(raw)}else fs.renameSync(raw,tmp);
+      fs.renameSync(tmp,file);return file;
+    }catch(e){for(const p of [raw,tmp])try{fs.unlinkSync(p)}catch{}throw e}
+  };
+  const archive=async name=>{const r=await fetchObject(name);if(!r)return null;const chunks=[];let bytes=0;for await(const chunk of Readable.fromWeb(r.body)){bytes+=chunk.length;if(bytes>2*1024*1024)throw Error('Raw archive seed exceeds bound');chunks.push(chunk)}
+    let body=Buffer.concat(chunks);if(body[0]===31&&body[1]===139)body=zlib.gunzipSync(body,{maxOutputLength:2*1024*1024});return JSON.parse(body.toString('utf8'));
+  };
+  for(const day of days)await require(DIR+'/seed-completed.js').seedDay({store:COMPLETED,day,hot:C,download,archive});
+}
+function retirementBlocked(c){return !!(c.chTry||c.kTry||c.pTry||c.trTry||UPQ.some(([name])=>name.includes('/'+c.a+'-')))}
+async function stageCompleted(now){
+  if(!COMPLETED)return;const pins=retentionPins(now),{retirementDue}=require(DIR+'/completed-coins.js');RETENTION.protectedResearch=pins.size;RETENTION.pendingRaw=0;
+  const candidates=[];for(const c of C.values())if(retirementDue(c,{now,pins})){if(retirementBlocked(c)){RETENTION.pendingRaw++;continue}candidates.push(c)}
+  await COMPLETED.stage(candidates);RETENTION.lastSweepAt=now;
+}
+async function retireConfirmed(day,list,now){
+  if(!COMPLETED)return;const pins=retentionPins(now),{retirementDue}=require(DIR+'/completed-coins.js');let removed=0;
+  for(const c of list){if(C.get(c.a)!==c||!retirementDue(c,{now,pins})||retirementBlocked(c))continue;
+    if(COMPLETED.isConfirmed(c)){C.delete(c.a);removed++}if(removed&&removed%32===0)await new Promise(r=>setImmediate(r));}
+  if(removed){RETENTION.removed+=removed;COMPLETED.removed+=removed;COMPLETED.lastRemovedAt=Date.now();}
+  return removed;
+}
+const LAST_DAY_EXPORT=new Map();
+let DAY_EXPORT_BUSY=false;
+async function exportDays(){if(DAY_EXPORT_BUSY)return;DAY_EXPORT_BUSY=true;try{await exportDaysBody()}finally{DAY_EXPORT_BUSY=false}}
 async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayKey(now-864e5);
-  await reloadSourceAgeConfig();
-  await reloadResearchConfig();
-  for(const d of [today,yest]){if(d===yest&&now-lastYest<30*60e3)continue;const list=[...C.values()].filter(c=>dayKey(c.t)===d);if(!list.length)continue;
-    await upload(`day/${d}.json`,{day:d,tz:'Asia/Almaty',fv:FV,updated:now,count:list.length,coins:list.map(c=>rec(c,false))});
-    if(d===yest||now-lastObs>=10*60e3){await upload(`obs/${d}.json`,{day:d,updated:now,coins:list.filter(observedEligible).map(c=>({a:c.a,t:c.t,ds:c.ds||[],lq:c.lq||[],path:c.path||null,
-      preObs:c.preCurve?((c.origs||[]).find(o=>o.d==='pump-fun')||null):null}))});if(d===today)lastObs=now}
+  await reloadSourceAgeConfig();await reloadResearchConfig();await seedCompletedDays(now);await stageCompleted(now);
+  const {rowStream}=require(DIR+'/stream-json.js'),days=[...new Set([today,yest,...(COMPLETED?.days()||[])])],completedDays=[];
+  for(const d of days){const live=[...C.values()].filter(c=>dayKey(c.t)===d),pins=COMPLETED?retentionPins(now):new Map();
+    const force=COMPLETED&&(COMPLETED.needsConfirmation(d)||live.some(c=>require(DIR+'/completed-coins.js').retirementDue(c,{now,pins})&&!retirementBlocked(c)));if(d!==today&&!force&&now-(LAST_DAY_EXPORT.get(d)||0)<30*60e3)continue;
+    if(COMPLETED?.sealed.has(d)){if(live.length)err('retention: sealed day has unexpected active records '+d);continue}
+    const list=COMPLETED?COMPLETED.view(d,live):live;if(!list.length)continue;
+    await upload(`day/${d}.json`,{day:d,tz:'Asia/Almaty',fv:FV,updated:now,count:list.length,coins:rowStream(function*(){for(const c of list)yield rec(c,false)})});
+    let obsWritten=false;
+    if(force||d!==today||now-lastObs>=10*60e3){await upload(`obs/${d}.json`,{day:d,updated:now,coins:rowStream(function*(){for(const c of list)if(observedEligible(c))yield {a:c.a,t:c.t,ds:c.ds||[],lq:c.lq||[],path:c.path||null,preObs:c.preCurve?((c.origs||[]).find(o=>o.d==='pump-fun')||null):null}})});obsWritten=true;if(d===today)lastObs=now}
     OBS_CONTRACT.days[d]=await exportObservationContract('observations-v2/'+d+'.json',list,now);
-    if(d===yest)lastYest=now}
+    if(obsWritten&&COMPLETED){COMPLETED.confirm(d,list);await retireConfirmed(d,live,Date.now());completedDays.push(d)}
+    LAST_DAY_EXPORT.set(d,now);while(LAST_DAY_EXPORT.size>4)LAST_DAY_EXPORT.delete(LAST_DAY_EXPORT.keys().next().value);if(d===yest)lastYest=now;
+  }
+  const stateCommitted=completedDays.length&&save();
   await flushUploads();
   try{await exportSource(now)}catch(e){SOURCE_ERR='выгрузка источника: '+e.message;err('source export '+e.message)}
   try{await exportResearchV2(now)}catch(e){RESEARCH_V2_ERR=e.message;err('research-v2 export '+e.message)}
   try{await exportPathsV2(now)}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('pass/r2 export '+e.message)}
+  if(stateCommitted){const activeDays=new Set([...C.values()].map(c=>dayKey(c.t)));for(const d of completedDays)if(!activeDays.has(d)&&COMPLETED.index.has(d))COMPLETED.seal(d,now)}
 }
 let STATUS_BUSY=false;
 async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const now=Date.now(),today=dayKey(now);
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,memory,packedObservations:require(DIR+'/packed-observations.js').packedStats(C),migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,resources:{...RESOURCE_STATS,rssMB:Math.round(process.memoryUsage().rss/1048576),heapMB:Math.round(process.memoryUsage().heapUsed/1048576),helius:RESOURCE?.summary(),gcs:{...RESOURCE?.storageSummary(),...PUBLICATIONS?.summary()}},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,memory,retention:{...RETENTION,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,resources:{...RESOURCE_STATS,rssMB:Math.round(process.memoryUsage().rss/1048576),heapMB:Math.round(process.memoryUsage().heapUsed/1048576),helius:RESOURCE?.summary(),gcs:{...RESOURCE?.storageSummary(),...PUBLICATIONS?.summary()}},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,queuedAt:FAST_PASS_PUBLISH_AT,publishedAt:PUBLICATIONS?.sent['passed-v2/live.json']?.at||0},
@@ -1051,7 +1094,7 @@ async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const n
 // живая лента для «Прошли»: монеты витрины младше 40 минут, раз в 30 секунд
 async function exportLive(){const now=Date.now();const list=[...C.values()].filter(c=>observedEligible(c)&&now-c.t<40*60e3);
   await upload('live.json',{updated:now,coins:list.map(c=>rec(c,true))})}
-function prune(){const now=Date.now(),lim=now-50*3600e3;const {compactCoin}=require(DIR+'/packed-observations.js');for(const [a,c] of C){if(c.t<lim)C.delete(a);else compactCoin(c,now)}}
+function prune(){const now=Date.now();const {compactCoin}=require(DIR+'/packed-observations.js');for(const c of C.values())compactCoin(c,now)}
 
 /* ---------- 7. автоисследование: сервер сам считает живых/мёртвых, ищет признаки и проверяет их на следующих днях ----------
    Расчёт — тем же кодом, что и сайт (lab-core.js). Правило ищется на прошлых днях (до 3) и проверяется на следующем дне —

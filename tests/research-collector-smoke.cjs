@@ -9,10 +9,10 @@ test('source, first research and verified Passed path start independently and pr
   assert.match(src,/PASS_ERR/);
 });
 test('research labels are computed only from the admitted source ledger',()=>{
-  assert.match(src,/RESEARCH_V2\.update\(\{source:SOURCE,coins:C,now\}\)/);
+  assert.match(src,/RESEARCH_V2\.update\(\{source:SOURCE,coins:researchCoins\(\),now\}\)/);
 });
 test('server second-level research is computed only from durable Passed stream',()=>{
-  assert.match(src,/RESEARCH_TWO\.update\(\{passes:PASS_V2,coins:C,now\}\)/);
+  assert.match(src,/RESEARCH_TWO\.update\(\{passes:PASS_V2,coins:researchCoins\(\),now\}\)/);
   assert.match(src,/PASS_V2\.update\(\{source:SOURCE,coins:C,now\}\)/);
   assert.match(src,/research-v2\/status-two\.json/);
   assert.match(src,/research-v2\/polygon-2\.json/);
