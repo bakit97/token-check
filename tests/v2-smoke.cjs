@@ -356,13 +356,13 @@ test('Expired historical coins never create fresh Passed signals on a late visit
 });
 
 test('Unknown or zero placeholder volume is a dash in cards and detail; positive observed volume is shown',()=>{
- const scope={Number,Math,String,Date,fmt:String,safeImg:()=>'',ageM:()=>'',esc:String,mint:c=>c.a,price:()=>'',time:()=>'',now:()=>Date.now(),document:{querySelectorAll:()=>[],getElementById:()=>null}};
+ const scope={Number,Math,String,Date,Object,fmt:String,passMeta:null,serverPassRows:[],serverR2Rows:[],researchMeta:null,bank:{'1':[]},sourceMeta:null,safeImg:()=>'',ageM:()=>'',esc:String,mint:c=>c.a,price:()=>'',time:()=>'',now:()=>Date.now(),document:{querySelectorAll:()=>[],getElementById:()=>null}};
  const start=js.indexOf('// ---- Живые рыночные данные'),end=js.indexOf('function showCoinDetail(',start);
  vm.runInNewContext(js.slice(start,end),scope);
  for(const value of [null,undefined,0,NaN,'0']){
   const c={a:'mint',_entry:{eventAt:1,phase:'after'},ds:[[1,1,null,1,1,1,value]]};
   assert.match(scope.coinHtml(c),/5м —/);assert.doesNotMatch(scope.coinHtml(c),/5м \$0/);
-  assert.match(scope.detail(c),/Объём 5 мин<\/span><strong[^>]*>—/);
+  assert.match(scope.detail(c),/Объём 5м<\/span><b>—/);
  }
  assert.equal(scope.observedMoney(1234),'$1234');
  assert.match(html,/Всего допущено · за всё время/);assert.doesNotMatch(html,/На витрине сейчас/);
