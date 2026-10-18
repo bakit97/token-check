@@ -647,9 +647,13 @@ var MOD_AUTO={};
 function modConds(m){return m.conds.map(function(c,j){return '<div class="row" style="gap:5px;margin-top:5px"><select class="input sm inl" style="margin:0;flex:1;min-width:0" data-mf="key" data-j="'+j+'">'+Object.keys(MLAB).map(function(k){return '<option value="'+k+'"'+(k===c.key?' selected':'')+'>'+MLAB[k]+'</option>'}).join('')+'</select>'+
     '<select class="input sm inl" style="margin:0;width:54px" data-mf="op" data-j="'+j+'"><option'+(c.op==='>='?' selected':'')+'>&gt;=</option><option'+(c.op==='<='?' selected':'')+'>&lt;=</option></select>'+
     '<input class="input sm" style="width:70px;min-height:28px;padding:2px 6px" type="number" step="any" value="'+esc(c.value)+'" data-mf="value" data-j="'+j+'"><button type="button" class="del" data-mdel="'+j+'">✕</button></div>'}).join('')}
-function modEvalHtml(m){var stale=modSig(m)!==m.evalSig,ev=m.eval||{};return (stale?'<div class="warn">⚠ Условия изменены — оценка устарела, нужен перетест</div>':'')+'<div style="'+(stale?'opacity:.45':'')+'">тест '+modEv(ev.train)+'<br>проверка '+modEv(ev.holdout)+'</div>'}
-function modTile(m){var stale=modSig(m)!==m.evalSig,t=(m.eval||{}).train;
-  return '<button type="button" class="modtile" data-mopen="'+esc(m.id)+'"><b>'+esc(m.name)+'</b><span class="hint">⏱ '+m.dm+' мин</span><span class="mt">'+(stale?'⚠ перетест':t&&t.positiveRecall!=null?'🟢 '+modPc(t.positiveRecall)+'<br>🔴 '+modPc(1-t.negativeRejection):'—')+'</span></button>'}
+function modEvalHtml(m){var stale=modSig(m)!==m.evalSig,ev=m.eval||{};return (stale?'<div class="warn">⚠ Условия изменены — оценка устарела, нужен перетест</div>':'')+'<div style="'+(stale?'opacity:.45':'')+'">тест '+modEv(ev.train)+'<br>проверка '+modEv(ev.holdout)+'<br>сейчас '+modEv(ev.live)+'</div>'}
+function modBlk(t,cls,title){var l='—',d='';if(t&&t.positiveRecall!=null){var tp=t.totalPositive,tn=t.totalNegative,pp=tp!=null?Math.round(t.positiveRecall*tp):null,pn=tn!=null?Math.round((1-t.negativeRejection)*tn):null;
+    l='🟢 '+modPc(t.positiveRecall)+(tp!=null?' <span>'+pp+' из '+tp+'</span>':'');d='<br>🔴 '+modPc(1-t.negativeRejection)+(tn!=null?' <span>'+pn+' из '+tn+'</span>':'')}
+  return '<div class="mblk '+cls+'"><i>'+title+'</i>'+l+d+'</div>'}
+function modTile(m){var stale=modSig(m)!==m.evalSig,ev=m.eval||{},age=m.createdAt?Math.max(0,Math.floor((Date.now()-m.createdAt)/864e5)):null;
+  return '<button type="button" class="modtile" data-mopen="'+esc(m.id)+'"><b>'+esc(m.name)+'</b><span class="hint">⏱ '+m.dm+' мин'+(age!=null?' · '+age+' дн':'')+'</span>'+
+    (stale?'<div class="mblk"><i>⚠ нужен перетест</i></div>':modBlk(ev.train,'mold','при создании')+modBlk(ev.live,'mnow','сейчас'))+'</button>'}
 function openModSheet(id){var m=JSON.parse(JSON.stringify(MODS[id])),old=document.getElementById('modSheet');if(old)old.remove();
   var el=document.createElement('div');el.id='modSheet';el.className='sheet';
   var draw=function(){el.innerHTML='<div class="sheetbox"><div class="prow"><label>Имя</label><input class="input sm" data-mf="name" value="'+esc(m.name)+'"></div>'+
@@ -667,10 +671,10 @@ function openModSheet(id){var m=JSON.parse(JSON.stringify(MODS[id])),old=documen
 function renderAutoSuggestions(report){
   var saved=modLoad(),list=[];
   var demo={id:'demo',name:'ДЕМО · Ранний спрос',dm:12,conds:[{key:'buyers10',op:'>=',value:8},{key:'quoteSol',op:'>=',value:2},{key:'top10',op:'<=',value:35}],
-    eval:{train:{positiveRecall:.7,negativeRejection:.9,totalPositive:60,totalNegative:250},holdout:{positiveRecall:.65,negativeRejection:.88,totalPositive:40,totalNegative:100}}};
+    createdAt:Date.now()-3*864e5,eval:{train:{positiveRecall:.7,negativeRejection:.9,totalPositive:60,totalNegative:250},holdout:{positiveRecall:.65,negativeRejection:.88,totalPositive:40,totalNegative:100},live:{positiveRecall:.62,negativeRejection:.86,totalPositive:34,totalNegative:51}}};
   demo.evalSig=modSig(demo);list.push([saved.demo||demo,'']);
   var dm=(report&&report.decisionMinutes)||(researchMeta&&researchMeta.settings&&researchMeta.settings.decisionMinutes)||15;
-  ((report&&report.rules)||[]).slice(0,8).forEach(function(x,i){var id='a'+(report.level||1)+'-'+i,m={id:id,name:'М'+(report.level||1)+'-'+(i+1),dm:dm,conds:[{key:x.rule.key,op:x.rule.op,value:x.rule.value}],eval:{train:x.train,holdout:x.holdout}};m.evalSig=modSig(m);list.push([saved[id]||m,report.level+':'+i])});
+  ((report&&report.rules)||[]).slice(0,8).forEach(function(x,i){var id='a'+(report.level||1)+'-'+i,m={id:id,name:'М'+(report.level||1)+'-'+(i+1),dm:dm,createdAt:Date.parse(report.generatedAt||report.updatedAt||'')||null,conds:[{key:x.rule.key,op:x.rule.op,value:x.rule.value}],eval:{train:x.train,holdout:x.holdout}};m.evalSig=modSig(m);list.push([saved[id]||m,report.level+':'+i])});
   list.forEach(function(p){MODS[p[0].id]=JSON.parse(JSON.stringify(p[0]));MOD_AUTO[p[0].id]=p[1]});
   var T=r1T();return '<div class="modgrid">'+list.map(function(p){return modTile(MODS[p[0].id])}).join('')+'</div>'+(list.length<2?'<p class="hint">Настоящие модули появятся, когда наберётся 🟢 '+T.l+' и 🔴 '+T.d+'.</p>':'');
 }
