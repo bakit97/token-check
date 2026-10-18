@@ -667,23 +667,24 @@ function openModSheet(id){var openG={},m=JSON.parse(JSON.stringify(MODS[id])),ol
     '<div class="prow" style="margin-bottom:0"><label>Условия</label></div>'+modConds(m,openG)+
     '<div class="subcard mev" style="margin-top:8px;font-size:12.5px">'+modEvalHtml(m)+'</div>'+
     '<div class="row applyrow"><button type="button" class="pbtn" data-mclose="1">Закрыть</button><button type="button" class="primary pbtn" data-msave="1">Сохранить</button></div>'+
-    '<button type="button" class="linkbtn" data-mwin="1" data-stage-auto="'+esc(MOD_AUTO[id]||'')+'">Добавить в окно возможностей</button></div>'};
+    '<div class="row" style="justify-content:space-between;margin-top:12px"><button type="button" class="linkbtn" style="margin:0" data-mwin="1" data-stage-auto="'+esc(MOD_AUTO[id]||'')+'">Добавить в окно</button><button type="button" class="linkbtn" style="margin:0;color:var(--bad)" data-mrm="1">Удалить модуль</button></div></div>'};
   draw();document.body.appendChild(el);
   el.addEventListener('toggle',function(e){var d=e.target;if(d.dataset&&d.dataset.g)openG[d.dataset.g]=d.open},true);
   el.addEventListener('input',function(e){var t=e.target,f=t.dataset.mf;if(!f)return;if(f==='name')m.name=t.value;else if(f==='dm'){m.dm=+t.value;el.querySelector('.mdmv').textContent=t.value}else{m.conds[+t.dataset.j][f]=f==='value'?Number(t.value):t.value}el.querySelector('.mev').innerHTML=modEvalHtml(m)});
   el.addEventListener('click',function(e){var t=e.target;if(t===el||t.dataset.mclose){el.remove();return}
     if(t.dataset.mdel!=null){m.conds.splice(+t.dataset.mdel,1);draw()}else if(t.dataset.madd){m.conds.push({key:t.dataset.madd,op:'>=',value:0});draw()}
     else if(t.dataset.msave){modSave(m);MODS[id]=m;el.remove();$('r1Suggestions').innerHTML=renderAutoSuggestions(autoOne);note('Сохранено')}
-    else if(t.dataset.mwin){if(!t.dataset.stageAuto){note('Это демо — в окно не добавляется');return}if(window.confirm('Точно добавить «'+m.name+'» в окно возможностей?')){el.remove();stageAutoRule({target:t})}}})}
+    else if(t.dataset.mwin){if(!window.confirm('Точно добавить «'+m.name+'» в окно возможностей?'))return;if(!t.dataset.stageAuto){window.alert('Это демо — в окно не добавляется');return}el.remove();stageAutoRule({target:t})}
+    else if(t.dataset.mrm){if(!window.confirm('Точно удалить «'+m.name+'»?'))return;var all=modLoad();all[id]={id:id,deleted:true};try{localStorage.setItem('r1mods',JSON.stringify(all))}catch(e){}el.remove();$('r1Suggestions').innerHTML=renderAutoSuggestions(autoOne);note('Удалено')}})}
 function renderAutoSuggestions(report){
   var saved=modLoad(),list=[];
   var demo={id:'demo',name:'ДЕМО · Ранний спрос',dm:12,conds:[{key:'buyers10',op:'>=',value:8},{key:'quoteSol',op:'>=',value:2},{key:'top10',op:'<=',value:35}],
     createdAt:Date.now()-3*864e5,eval:{train:{positiveRecall:.7,negativeRejection:.9,totalPositive:60,totalNegative:250},holdout:{positiveRecall:.65,negativeRejection:.88,totalPositive:40,totalNegative:100},live:{positiveRecall:.62,negativeRejection:.86,totalPositive:34,totalNegative:51}}};
-  demo.evalSig=modSig(demo);list.push([saved.demo||demo,'']);
+  demo.evalSig=modSig(demo);if(!(saved.demo&&saved.demo.deleted))list.push([saved.demo||demo,'']);
   var dm=(report&&report.decisionMinutes)||(researchMeta&&researchMeta.settings&&researchMeta.settings.decisionMinutes)||15;
-  ((report&&report.rules)||[]).slice(0,8).forEach(function(x,i){var id='a'+(report.level||1)+'-'+i,m={id:id,name:modAutoName([{key:x.rule.key,op:x.rule.op,value:x.rule.value}]),dm:dm,createdAt:Date.parse(report.generatedAt||report.updatedAt||'')||null,conds:[{key:x.rule.key,op:x.rule.op,value:x.rule.value}],eval:{train:x.train,holdout:x.holdout}};m.evalSig=modSig(m);list.push([saved[id]||m,report.level+':'+i])});
+  ((report&&report.rules)||[]).slice(0,8).forEach(function(x,i){var id='a'+(report.level||1)+'-'+i,m={id:id,name:modAutoName([{key:x.rule.key,op:x.rule.op,value:x.rule.value}]),dm:dm,createdAt:Date.parse(report.generatedAt||report.updatedAt||'')||null,conds:[{key:x.rule.key,op:x.rule.op,value:x.rule.value}],eval:{train:x.train,holdout:x.holdout}};m.evalSig=modSig(m);if(!(saved[id]&&saved[id].deleted))list.push([saved[id]||m,report.level+':'+i])});
   list.forEach(function(p){MODS[p[0].id]=JSON.parse(JSON.stringify(p[0]));MOD_AUTO[p[0].id]=p[1]});
-  var T=r1T();return '<div class="modgrid">'+list.map(function(p){return modTile(MODS[p[0].id])}).join('')+'</div>'+(list.length<2?'<p class="hint">Настоящие модули появятся, когда наберётся 🟢 '+T.l+' и 🔴 '+T.d+'.</p>':'');
+  var T=r1T();return '<div class="modgrid">'+list.map(function(p){return modTile(MODS[p[0].id])}).join('')+'</div>'+(list.length<2&&!(report&&report.rules&&report.rules.length)?'<p class="hint">Настоящие модули появятся, когда наберётся 🟢 '+T.l+' и 🔴 '+T.d+'.</p>':'');
 }
 var R1F='all',R1N=10,R1DEC=0;
 function r1T(){try{var t=JSON.parse(localStorage.getItem('r1targets')||'{}');return {l:t.l||100,d:t.d||40}}catch(e){return {l:100,d:40}}}
