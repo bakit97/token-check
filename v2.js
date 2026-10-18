@@ -281,9 +281,8 @@ async function pollMarket(){if(liveBusy||document.hidden)return;var mints=visibl
         var h=LIVE_HIST[m]=LIVE_HIST[m]||[];if(LIVE[m].price)h.push(LIVE[m].price);if(h.length>40)h.shift()})}
     patchCards();updateDetailStats()}catch(e){}finally{liveBusy=false}}
 function mlHtml(t){return esc(t).replace('\u0001','<b class="bu">').replace('\u0002','↑</b> <b class="sl">').replace('\u0003','↓</b>')}
-function marketLine(c){var L=liveOf(c),p=(c.ds||[]).at(-1),out=[],sol=solInPool(c);
-  var mc=L&&L.mc||null;if(mc)out.push('MC '+usd(mc));if(sol!=null)out.push('SOL '+(sol>=10?Math.round(sol):(+sol).toFixed(1)));else if(L&&L.liq)out.push('ликв. '+usd(L.liq));
-  if(L&&(L.b5!=null||L.s5!=null))out.push('\u0001'+(L.b5||0)+'\u0002'+(L.s5||0)+'\u0003');else if(p&&p[6])out.push('5м '+observedMoney(p[6]));return out.join(' · ')}
+function marketLine(c){var L=liveOf(c),out=[];if(L&&L.mc)out.push('кап '+usd(L.mc));
+  if(L&&(L.b5!=null||L.s5!=null))out.push('5м: \u0001'+(L.b5||0)+'\u0002'+(L.s5||0)+'\u0003');return out.join(' · ')}
 function patchCards(){document.querySelectorAll('[data-coin]').forEach(function(b){var m=b.dataset.coin,L=LIVE[m];if(!L)return;
   var ml=b.querySelector('.mline');if(ml){var cm=lastAccepted.find(function(x){return mint(x)===m})||{a:m};var t=marketLine(cm);ml.innerHTML=t?' · '+mlHtml(t):''}
   var pr=b.querySelector('.price');if(pr&&L.price)pr.textContent=price(L.price);
@@ -291,13 +290,15 @@ function patchCards(){document.querySelectorAll('[data-coin]').forEach(function(
   var gb=b.querySelector('.growbox');if(gb){var cc=lastAccepted.find(function(x){return mint(x)===m})||{a:m};gb.innerHTML=growthHtml(cc)}
   var av=b.querySelector('.avatar.empty');if(av&&L.img)av.outerHTML='<img class="avatar" src="'+esc(L.img)+'" alt="" loading="lazy">'})}
 function spark(c){
-  var points=(c.ds||[]).slice(-12).map(function(x){return Number(x[1])}).filter(function(x){return x>0});
-  if(points.length<2)points=(LIVE_HIST[mint(c)]||[]).slice(-20);
-  if(points.length<2)return '';
-  var low=Math.min.apply(null,points),high=Math.max.apply(null,points);if(high===low)return '';var span=high-low;
-  var d=points.map(function(p,i){return (i===0?'M':'L')+(i/(points.length-1)*59).toFixed(1)+' '+(24-20*(p-low)/span).toFixed(1)}).join(' ');
-  var up=points.at(-1)>=points[0];
-  return '<svg viewBox="0 0 62 28" class="spark" role="img" aria-label="График цены"><path d="'+d+'" fill="none" stroke="'+(up?'#38d996':'#fc6b83')+'" stroke-width="2.3" stroke-linecap="round"/></svg>';
+  var points=(c.ds||[]).slice(-24).map(function(x){return Number(x[1])}).filter(function(x){return x>0});
+  var h=LIVE_HIST[mint(c)]||[];if(h.length>points.length)points=h.slice(-30);
+  if(points.length<2)return '<svg viewBox="0 0 46 20" class="spark"><path d="M2 14H44" stroke="#3a4157" stroke-width="1.5" stroke-dasharray="2 3"/></svg>';
+  var low=Math.min.apply(null,points),high=Math.max.apply(null,points),span=(high-low)||high*.02||1,W=46,H=20;
+  var xy=points.map(function(p,i){return [(i/(points.length-1)*(W-4)+2).toFixed(1),(H-3-(H-6)*(p-low)/span).toFixed(1)]});
+  var line='M'+xy.map(function(q){return q.join(' ')}).join(' L'),up=points.at(-1)>=points[0],col=up?'#38d996':'#fc6b83',id='g'+(up?'u':'d');
+  var last=xy[xy.length-1];
+  return '<svg viewBox="0 0 '+W+' '+H+'" class="spark" role="img" aria-label="График цены"><defs><linearGradient id="'+id+'" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+col+'" stop-opacity=".35"/><stop offset="1" stop-color="'+col+'" stop-opacity="0"/></linearGradient></defs>'+
+    '<path d="'+line+' L'+last[0]+' '+H+' L2 '+H+' Z" fill="url(#'+id+')"/><path d="'+line+'" fill="none" stroke="'+col+'" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/><circle cx="'+last[0]+'" cy="'+last[1]+'" r="1.8" fill="'+col+'"/></svg>';
 }
 function observedMoney(value){return typeof value==='number'&&Number.isFinite(value)&&value>0?'$'+fmt(value):'—'}
 
