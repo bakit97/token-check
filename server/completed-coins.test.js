@@ -49,3 +49,14 @@ test('admitted Pump pre observations retain the full 26-hour window instead of t
  const now=Date.now(),c={a:'pre',t:now-6*3600000,preCurve:1,preTradingAt:now-6*3600000,mg:{st:'curve'}};
  assert.equal(retirementDue(c,{now}),false);assert.equal(retirementDue({...c,t:now-27*3600000},{now}),true);
 });
+
+
+test('closed hot duplicates can retire only when every actual observation and proof is already confirmed in the archive',async t=>{
+ const dir=fixture(t),store=new CompletedCoins(dir),c=coin('closed');c.p='pool';c.raw={1:{at:1000000,slot:5,b:['original'],vaultAt:1000001}};c.mg={st:'ok',sig:'proof',v:3};
+ await store.stage([c]);assert.equal(store.coversHot(c),false);store.confirm(day(c.t),store.view(day(c.t),[]));
+ const hot=JSON.parse(JSON.stringify(c));hot.preTradingAt=123;hot.raw[1]={at:1000000,slot:5};hot.archiveRefs={rawStates:'new/physical/location'};hot.tr={f:[],x:{}};hot.bx={miss:'no requests'};
+ assert.equal(store.coversHot(hot),true);assert.deepEqual(store.readCoin(c.a).raw[1].b,['original']);
+ for(const change of [x=>x.ds.push([9999,5,6]),x=>x.raw[1].at++,x=>x.mg.sig='new-proof',x=>x.mg=null,x=>x.wsMigrationSnapshot={at:2000000,slot:42,data:'new'},x=>x.bx={at:2000000,payers:1,n:1},x=>x.ct={at:2000000,mint:false},x=>x.origs=[{p:'another',t:c.t,ds:[[1,2]]}]]){
+  const x=JSON.parse(JSON.stringify(hot));change(x);assert.equal(store.coversHot(x),false);
+ }
+});

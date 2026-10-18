@@ -415,7 +415,7 @@ async function initSource() {
   // Journal is durable even if the VM was restarted before candidate-state save.
   for(const item of SOURCE.records.values())if(item.phase==='before'&&!C.has(item.mint)&&item.proof?.curve) {
     if(Date.now()-item.acceptedAt>26*3600e3)continue;
-    if(COMPLETED?.metadata(item.mint)){const archived=COMPLETED.readCoin(item.mint);if(archived){archived.preTradingAt=archived.preTradingAt||item.eventAt;C.set(item.mint,archived);continue;}}
+    if(COMPLETED?.metadata(item.mint)){RETENTION.archivedRestoreSkipped=(RETENTION.archivedRestoreSkipped||0)+1;continue;}
     C.set(item.mint,{a:item.mint,n:item.proof.name||'',s:item.proof.symbol||'',i:'',
       p:item.proof.curve,d:'pump-fun',q:item.proof.quote||WSOL,t:item.eventAt,
       tSrc:'pre',preTradingAt:item.eventAt,seen:item.acceptedAt,disc:'pre-ws',preCurve:1,firstPostSeenAt:null,
@@ -902,6 +902,8 @@ function chainWatch(){
 const dayKey=t=>new Date(t+TZ).toISOString().slice(0,10);
 const UPQ=[];function uploadLater(name,obj){if(typeof COMPLETED!=='undefined'&&COMPLETED){COMPLETED.enqueueRaw(name,obj);if(!UPQ.some(x=>x[0]===name))UPQ.push([name,null])}else UPQ.push([name,obj])}
 async function flushUploads(){
+  // Drain the finite old-namespace tail before moving that namespace to archive.
+  UPQ.sort((a,b)=>Number(b[0].startsWith('raw/'))-Number(a[0].startsWith('raw/')));
   // A restored raw backlog must not hold source/status/heartbeat publication hostage.
   // Keep the unsent tail intact; never drain a producer-fed queue without a bound.
   const limit=Math.min(4,UPQ.length),started=Date.now();
@@ -1115,6 +1117,15 @@ async function exportObservationSummary(name,list,now){
   const contract=require(DIR+'/observation-contract.js'),{rowStream}=require(DIR+'/stream-json.js');
   await upload(name,{schema:2,updated:now,scope:'admitted-latest-observations-only',coins:rowStream(function*(){for(const c of list){const admission=SOURCE?.get(c.a);if(admission)yield contract.projectSummary(c,{metadata:coinMetadata(c),admission});}})});
 }
+let COLD_DEDUP_BUSY=false;
+async function deduplicateClosedArchiveRows(){if(COLD_DEDUP_BUSY||!COMPLETED||!SOURCE)return;COLD_DEDUP_BUSY=true;try{
+ const now=Date.now(),pins=retentionPins(now);let checked=0,removed=0;
+ for(const c of C.values()){
+  if(now-c.t<24*3600e3+20*60e3||pins.get(c.a)>now||SOURCE.get(c.a)?.phase!=='before'||c.chTry||c.kTry||c.pTry||c.trTry||now-(c.dsTryAt||0)<35000)continue;
+  if(COMPLETED.coversHot(c)){C.delete(c.a);removed++;}if(++checked%16===0)await new Promise(r=>setImmediate(r));
+ }
+ RETENTION.closedArchiveDeduplicated=(RETENTION.closedArchiveDeduplicated||0)+removed;if(removed)save();
+}finally{COLD_DEDUP_BUSY=false}}
 const LAST_DAY_EXPORT=new Map();
 let DAY_EXPORT_BUSY=false;
 async function exportDays(){if(DAY_EXPORT_BUSY)return;DAY_EXPORT_BUSY=true;try{await exportDaysBody()}finally{DAY_EXPORT_BUSY=false}}
@@ -1188,7 +1199,8 @@ const STARTED=Date.now();
   chainLoop();chainObsLoop();setInterval(diagCheck,60000);diagCheck();
   setTimeout(()=>{reconcile();setInterval(reconcile,60*60e3)},60000);
   // Legacy research results are invalid; keep observation exports, run only v2 research.
-  setInterval(()=>{prune();save()},120000);
+  setTimeout(()=>deduplicateClosedArchiveRows().catch(e=>err('archive dedup '+e.message)),1000);
+  setInterval(()=>{prune();save();deduplicateClosedArchiveRows().catch(e=>err('archive dedup '+e.message))},120000);
   fastPassedLoop().catch(e=>err('fast pass loop '+e.message));
   (async()=>{for(;;){await sleep(120000);try{await exportDays()}catch(e){err('export '+e.message)}}})();
   (async()=>{await sleep(45000);for(;;){try{await exportLive()}catch(e){err('live '+e.message)}await sleep(30000)}})();

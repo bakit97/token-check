@@ -10,7 +10,8 @@ there is no old-commit overlay or alternate collector implementation.
 object-generation leases, and uploads the collector last to trigger its normal
 self-restart. An identical release does not restart the VM. The health check
 requires a fresh expected version, both migration subscriptions, RSS below
-450 MB and estimated combined Helius usage at most 18 credits/minute.
+450 MB (including the recorded peak), state below 30 MB, all four engines ready,
+and estimated combined Helius usage at most 18 credits/minute.
 No deployment changes the VM type or disk. Keys remain on the server.
 
 Full observation contracts live under `observations-v2/`; the phone uses their

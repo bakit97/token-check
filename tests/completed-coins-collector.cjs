@@ -55,3 +55,12 @@ test('research and Passed adapter reads the canonical schema-2 observation contr
  vm.runInContext(code.slice(code.indexOf('function researchCoins()'),code.indexOf('async function exportResearchV2(')),ctx);
  const read=ctx.researchCoins().get(c.a);assert.deepEqual(read.ds,c.ds);assert.equal(read.oldResearchLabel,undefined);assert.notEqual(read,c);assert.equal(ctx.C.get(c.a),c);
 });
+
+
+test('closed archive dedup never removes new observations or an active research cohort',async t=>{
+ const a=coin('closed-copy',25),b=coin('new-observation',25),c=coin('research-pin',25),{ctx,store,dir}=setup(t,[a,b,c]);
+ await store.stage([a,b,c]);const d=day(a.t);store.confirm(d,store.view(d,[]));b.ds.push([9999,5,6]);
+ ctx.SOURCE.records=new Map([a,b,c].map(x=>[x.a,{mint:x.a,phase:'before',acceptedAt:x===c?clock-H:x.t,eventAt:x.t}]));ctx.SOURCE.get=m=>ctx.SOURCE.records.get(m);
+ await ctx.deduplicateClosedArchiveRows();assert.equal(ctx.C.has(a.a),false);assert.equal(ctx.C.has(b.a),true);assert.equal(ctx.C.has(c.a),true);
+ assert.deepEqual(store.readCoin(a.a).ds,a.ds);assert.equal(ctx.SOURCE.records.size,3);assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'state.json'))).length,2);
+});

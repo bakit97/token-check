@@ -30,6 +30,29 @@ function cancelRetiredGT(queue,coins,{now=Date.now(),pins=new Map()}={}){
   queue.splice(i,1);task.rej(Object.assign(Error('observation window completed'),{code:'OBSERVATION_COMPLETE'}));cancelled++;
  }return cancelled;
 }
+function containsObject(archived,current){
+ if(current===undefined)return true;if(current===null||typeof current!=='object')return Object.is(archived,current);
+ if(Array.isArray(current))return Array.isArray(archived)&&JSON.stringify(archived)===JSON.stringify(current);
+ if(!archived||typeof archived!=='object')return false;return Object.entries(current).every(([k,v])=>containsObject(archived[k],v));
+}
+function containsRows(archived,current){const rows=new Set((archived||[]).map(r=>JSON.stringify(r)));return (current||[]).every(r=>rows.has(JSON.stringify(r)))}
+function containsObservations(archived,current){
+ for(const key of ['ct','mg','mg0','mgH','wsMigrationSnapshot','migrationSlot','migrationSignalAt'])if(JSON.stringify(archived[key]??null)!==JSON.stringify(current[key]??null))return false;
+ const contract=require('./observation-contract'),old=contract.project(archived,{metadata:archived}),hot=contract.project(current,{metadata:current});
+ delete old.preTradingAt;delete hot.preTradingAt;delete old.legacy;delete hot.legacy; // This value is already durable in the source admission ledger.
+ const oldObs=old.observations,newObs=hot.observations;delete old.observations;delete hot.observations;
+ if(!containsObject(old,hot)||!containsObject(oldObs.migrationProof,newObs.migrationProof))return false;
+ return newObs.pools.every(p=>{const prior=oldObs.pools.find(o=>o.address===p.address&&o.marketAt===p.marketAt);if(!prior)return false;
+  for(const [key,value] of Object.entries(p)){
+   if(key==='archives'||value===null)continue;
+   if(key==='tradeRows'&&typeof value==='object'&&!Object.keys(value).length)continue;
+   if(key==='tradeCoverage'&&!Number.isFinite(value?.at)&&Object.keys(value||{}).every(k=>['miss','reason','why','cov'].includes(k)))continue;
+   if(['ds','activity'].includes(key)){if(!containsRows(prior[key],value))return false;}
+   else if(key==='vaults'){if(!containsRows(prior.vaults?.samples,value?.samples))return false;const a={...prior.vaults},b={...value};delete a.samples;delete b.samples;if(!containsObject(a,b))return false;}
+   else if(!containsObject(prior[key],value))return false;
+  }return true;
+ });
+}
 class CompletedCoins{
  constructor(dir){this.dir=path.join(dir,'completed-coins');this.outbox=path.join(this.dir,'raw-outbox');fs.mkdirSync(this.outbox,{recursive:true});this.index=new Map();this.confirmed=new Map();this.sealed=new Set();this.seeded=new Set();this.seedStats=new Map();this.removed=0;this.lastRemovedAt=null;
   for(const file of fs.readdirSync(this.dir)){
@@ -65,6 +88,9 @@ class CompletedCoins{
  days(){return [...this.index.keys()].filter(d=>!this.sealed.has(d))}
  metadata(mint){let best=null;for(const records of this.index.values()){const row=records.get(mint);if(row&&(!best||row.t>best.t))best=row}return best}
  readCoin(mint){const e=this.metadata(mint);if(!e)return null;const fd=fs.openSync(this.file(dayOf(e.t)),'r');try{const b=Buffer.alloc(e.length);let n=0;while(n<b.length){const read=fs.readSync(fd,b,n,b.length-n,e.offset+n);if(!read)throw Error('Incomplete completed coin');n+=read}const row=JSON.parse(b.toString('utf8'));if(row.hash!==e.hash||hash(JSON.stringify(row.c))!==e.hash)throw Error('Completed coin checksum mismatch');return row.c}finally{fs.closeSync(fd)}}
+ coversHot(c){const e=this.metadata(c.a);if(!e||e.t!==c.t||!e.poolKeys.includes(c.p)||this.confirmed.get(dayOf(e.t))?.get(c.a)!==e.hash)return false;
+  const archived=this.readCoin(c.a);return archived.p===c.p&&containsObservations(archived,c);
+ }
  view(day,live){const records=this.index.get(day)||new Map(),mutable=[],shadowed=new Set();
   for(const c of live){const e=records.get(c.a);if(!e||e.hash!==hash(JSON.stringify(c))){mutable.push(c);shadowed.add(c.a)}}
   const entries=[...records.values()].filter(e=>!shadowed.has(e.mint)),file=this.file(day);
