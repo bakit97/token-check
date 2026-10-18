@@ -23,18 +23,17 @@
 <section class="page" id="p-all">
 <details class="card compact" id="ageFilterBox"><summary>⚙ Фильтр возраста: <span id="ageSummary">—</span></summary>
 <div class="controls" style="margin-top:13px">
-<label class="control"><span>🌱 Возраст до миграции</span><select class="input" id="ageBefore"></select></label>
-<label class="control"><span>🎓 Возраст после миграции</span><select class="input" id="ageAfter"></select></label>
+<label class="control"><span>🌱 Возраст до миграции</span><select class="input" id="ageBefore" disabled></select></label>
+<label class="control"><span>🎓 Возраст после миграции</span><select class="input" id="ageAfter" disabled></select></label>
 <label class="control"><span>Последних карточек</span><select class="input" id="cardLimit"><option>10</option><option>20</option><option>30</option><option>50</option><option>100</option></select></label>
-</div><button class="primary" id="applySource" style="margin-top:12px">Применить</button>
-<p class="hint">Возраст проверяется при первом появлении монеты на публичной витрине. Обычная кнопка «Применить» меняет только число карточек. Новые возрастные границы требуют отдельного подтверждения владельца и применяются сервером только к будущим событиям.</p>
-<div class="controls" style="margin-top:10px">
+</div><button class="primary" id="applySource" style="margin-top:12px">Применить</button><p class="hint">Возраст задаёт сервер. Менять его с телефона можно будет после подключения управления.</p>
+<div class="hide" id="ageOwnerBlock"><div class="controls" style="margin-top:10px">
 <label class="control"><span>Ключ владельца (не сохраняется)</span><input type="password" class="input" id="ageOwnerKey" autocomplete="off" spellcheck="false" placeholder="Только после подключения защищённого сервиса"></label>
 </div>
 <label class="hint" style="display:block;margin:10px 0"><input type="checkbox" id="confirmAgePublish"> Подтверждаю изменение серверных возрастов до/после миграции</label>
 <button type="button" id="publishSourceAge" class="primary" disabled>Изменить возраст на сервере</button>
 <p id="sourceAgeControlState" class="hint">Защищённый канал управления пока не включён.</p>
-</details>
+</div></details>
 <div class="chips seg" id="allStreams"><button class="active" data-stream="all">Все <span class="cnt" id="cntAll"></span></button><button data-stream="before">🌱 До <span class="cnt" id="cntBefore"></span></button><button data-stream="after">🎓 После <span class="cnt" id="cntAfter"></span></button></div>
 <div class="card daily-source hide" aria-label="Суточные счётчики источника">
 <div class="row"><strong>Потоки за сутки</strong><span class="hint">Сброс в 00:00 UTC+5</span></div>
@@ -140,6 +139,6 @@
 <footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — разделены серверные записи и локальные черновики; неполные наблюдения не выдаются за результат.</footer>
 </main>
 <script src="./server/observation-contract.js?v=20261018-admission-3" defer></script>
-<script src="./v2.js?v=20261018-compact-1" defer></script>
+<script src="./v2.js?v=20261018-compact-4" defer></script>
 <noscript>Текстовая сводка для ИИ: https://storage.googleapis.com/sol-scan-511718-data/ai/summary.md (JSON: ai/summary.json)</noscript>
 </body></html>
