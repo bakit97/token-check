@@ -1,26 +1,27 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "53aa54159fca0b14f784f5fd785ee5ccdf7ef2866d46c0bf47c7f459cf1cd0e9",
+    "collector.js": "a43119433b593ac2027cb953f9c20f7c7405593bf399918dfb8ab27e7efe9c4e",
     "event-clock.js": "ae835ddd6a280ae888d1b264a4e2acf665bdd62d895a3ea42c255339e793e2ad",
     "admission.js": "99feba0f235ce8e262f01b1e517a9373c906fb6c51353a2951a184ef5bfacde8",
     "source-runtime.js": "089dc694373e09fea9cd0598d9697c4f441b04c374006f677caab0502cde4e21",
     "pump-pre.js": "c3a05cd8b79e807409b7f5b86d320205835db468c068839b82668606e004bbd8",
     "pre-watcher.js": "079b33d70d39bfd25364763db0559c3d20f5ab3d130668a20c78d4a3203cfb1b",
-    "research-v2.js": "07f1de44acba6590d0904593012dd9b4f9257d2714644d7226dcabcd2de6b3d8",
-    "research-runtime.js": "2311485e787b6310cc162994ce920d3c0617ec3c77841d05618ea112aeab3684",
-    "research-config.js": "d6d68c1bda8422f3704efe6eee0f9738d8917119f6379bd7d1c02b343c4793c1",
-    "pass-runtime.js": "d521c391cec13bb13009337276b210b543018074cae4ca39f152a49ce638946f",
+    "research-v2.js": "b85745fd5e8e5b75bade6c1d265120b5b9ba54b4026697cd8707f1fef8007851",
+    "research-runtime.js": "a19a42b0a9416c6e4f626b0730b0b3990326c012ecb4a0572154756fe016407b",
+    "research-config.js": "7ac9ef909365fe8d2fe06814456459433c43b359347564cd7d8a0cf8c2e44011",
+    "pass-runtime.js": "bcc15c3ced8abf35b3ba11e681b220d3f55d2ffabf6df62306fb6b35cec0f333",
     "research-two-runtime.js": "b33aa5fdfd578c2bb01c9a14d86879e34ad098f4dd6982094cc87902a5cdb86a",
-    "auto-research-v2.js": "45f7b06194a7d8f0f061c36d7ca9a49aae6ecff536555adb929b68de6c8f068c",
+    "auto-research-v2.js": "1056dd712b2fdf10cdb49c45328572ef28ebe3982adbac95036c4e55a46975ba",
     "filter-audit.js": "035d44e9d6a527fc349dbcca2d45c5a7b6dbcfa48924281e619c80ac30ce27ae",
     "resource-budget.js": "6e2c7994f86e7cc7ce9c3ce281446e3476c12bcaafc112a7ffc723a06c955660",
     "runtime-health.js": "001b44ef3198e679008fd58aa3e9f90f7843303775cbc74b3a21eda745a9ba84",
     "stream-json.js": "b212a8cabdb25f9f8ef5fe7e7c081d04dbda3e4218e6c3df6adfb453d6a48461",
-    "observation-contract.js": "59b5e4e0def62e633a73fcc52c89c8fe4655afdf3ed525f829e72aa51690ce5f",
+    "observation-contract.js": "4c338a9d745881d4a750ac333718988c697bc12188a8eec69674408fa70e95f9",
     "packed-observations.js": "6e2622a57f6d8939411b9884ec1f9c80bd8e091b8d734c8276465789128204e4",
     "completed-coins.js": "d8280dbc9a3336e57ac880f33e4b552d7f3a64dd38460a7b364dbd2f0cb0e3c5",
     "seed-completed.js": "01522182858aba7faab6cd85a5badd7552795cecbac2c12f00755a8ce985e1a4",
-    "coin-profile.js": "d322b174ffccc2acd308b5c6fd85bf4749ac9690cd0da553284549568c73f029"
+    "coin-profile.js": "f45624c791212e38192c157fa116d5a29f1980b92ac64328fe8eb365aac7c71a",
+    "durable-json.js": "a042526c285613abc0935b43db8dffb98502054b1b9d43a8355438620dc8f192"
   }
 }

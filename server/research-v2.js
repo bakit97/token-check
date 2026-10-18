@@ -4,7 +4,7 @@
 // Outcomes are measured LATER; incomplete/missing coverage remains "pending".
 const MIN=60_000, FIVE=5*MIN;
 const KEYS=['buyers','trades','volume','liq','mc','buys','sells','buySellRatio'];
-const RULE_KEYS=[...KEYS,'buyers10','quoteSol','safeContract','top1','top10'];
+const RULE_KEYS=[...KEYS,'buyers10','quoteSol','safeContract','top1','top10','token2022','hasImage','hasDescription','sellShare','averageTrade'];
 const inRange=(x,a,b)=>Number.isFinite(x)&&x>=a&&x<=b;
 function samples(coin) {
   const src=[coin?.preObs,...(coin?.origs||[]),coin].filter(Boolean);
@@ -51,7 +51,13 @@ function featuresAt(coin,decisionAt,context={}){
     volume:finite(d?.volume??null),liq:finite(d?.liq??null),
     mc:finite(d?.mc??null),buys:finite(buys),sells:finite(sells),
     buySellRatio:finite(ratio)};
-  return {...F,...starterFeaturesAt(coin,decisionAt,context)};
+  const ct=coin?.ct,metaAt=coin?.metadataAt;
+  return {...F,...starterFeaturesAt(coin,decisionAt,context),
+    token2022:ct&&ct.at<=decisionAt&&['token','token2022'].includes(ct.prog)?(ct.prog==='token2022'?1:0):null,
+    hasImage:Number.isFinite(metaAt)&&metaAt<=decisionAt?(coin.img||coin.i?1:0):null,
+    hasDescription:Number.isFinite(metaAt)&&metaAt<=decisionAt?(coin.description?1:0):null,
+    sellShare:buys!=null&&sells!=null&&buys+sells>0?sells/(buys+sells)*100:null,
+    averageTrade:buys!=null&&sells!=null&&buys+sells>0&&F.volume!=null?F.volume/(buys+sells):null};
 }
 function activityOutcome(coin,entryAt,{hours=5,minActive=70,maxIdle=60,minCoverage=.8}={},now=Date.now()){
   if(!inRange(hours,1,24)||!inRange(minActive,0,100)||!inRange(maxIdle,5,1440))
@@ -130,15 +136,16 @@ function starterFeaturesAt(coin,decisionAt,context={}){
  // Every observation must belong to the mint's original ten-minute window.
  // Early migration may add a new pool inside that window; overlapping pools
  // yield a MAXIMUM lower bound, never a sum of potentially identical buyers.
- const pools=[coin,...(coin.origs||[]),coin.preObs].filter((p,i,all)=>p&&Number.isFinite(p.t)&&p.t>=eventAt&&p.t<=endAt&&all.findIndex(x=>x&&x.p===p.p&&x.t===p.t)===i);
+ const pools=[coin,...(coin.origs||[]),coin.preObs].filter((p,i,all)=>p&&Number.isFinite(p.t)&&p.t<=endAt&&all.findIndex(x=>x&&x.p===p.p&&x.t===p.t)===i);
  const pool=pools.find(p=>p.t===eventAt),bx=pool?.bx;
  let lower=false,buyerAt=null,buyerSource=null;
  if(pools.length===1&&bx?.cov===true&&Number.isFinite(bx.at)&&bx.at<=decisionAt&&bx.at>=pool.t+10*MIN+5000&&Number.isFinite(bx.payers)&&decisionAt-bx.at<=7*MIN)buyers10=bx.payers;
  if(buyers10==null){
   const proofs=[];
   for(const p of pools){
-   for(const g of p.gx||[]){const at=g[0]*1000;if(at<p.t||at>endAt||at>decisionAt)continue;
-    const n=Number.isFinite(g[7])?g[7]:g[3];if(Number.isInteger(n)&&n>=0)proofs.push({n,at,source:'gt-unique-buyers-prefix'});}
+   for(const g of p.gx||[]){const at=g[0]*1000;if(at<p.t||at>endAt||at>decisionAt||at<eventAt)continue;
+    if(p.t<eventAt&&at-5*MIN<eventAt)continue;
+    const n=p.t>=eventAt&&Number.isFinite(g[7])?g[7]:g[3];if(Number.isInteger(n)&&n>=0)proofs.push({n,at,source:'gt-unique-buyers-prefix'});}
    const b=p.bx;if(p.t===eventAt&&b&&Number.isFinite(b.at)&&b.at<=decisionAt&&b.at>=endAt&&Number.isInteger(b.payers)&&b.payers>=0&&b.n>=b.payers&&b.buys>=b.payers)proofs.push({n:b.payers,at:b.at,source:'recorded-first-ten-minute-trades'});
   }
   const best=proofs.sort((a,b)=>b.n-a.n||a.at-b.at)[0];if(best){buyers10=best.n;lower=true;buyerAt=best.at;buyerSource=best.source;}
@@ -160,7 +167,8 @@ function starterFeaturesAt(coin,decisionAt,context={}){
  return {safeContract,quoteSol,buyers10,top1,top10,...(lower?{buyers10LowerBound:true,buyers10At:buyerAt,buyers10Source:buyerSource}:{})};
 }
 function evaluation(F,rule){
-  if(!F||!rule||![...KEYS,'safeContract','quoteSol','buyers10','top1','top10'].includes(rule.key)||
+  if(rule?.conds){if(!Array.isArray(rule.conds)||!rule.conds.length||rule.conds.length>8)return 'unknown';const results=rule.conds.map(c=>evaluation(F,{key:c?.key,op:c?.op,value:c?.value}));return results.includes('reject')?'reject':results.includes('unknown')?'unknown':'pass'}
+  if(!F||!rule||!RULE_KEYS.includes(rule.key)||
       !['>=','<='].includes(rule.op)||!Number.isFinite(rule.value))return 'unknown';
   if(rule.conditions){if(!Array.isArray(rule.conditions)||rule.conditions.length>8)return 'unknown';const results=rule.conditions.map(c=>evaluation(F,c));
     if(results.includes('reject'))return 'reject';if(results.includes('unknown'))return 'unknown';}
@@ -202,7 +210,7 @@ function proposeRules(rows,{positive='live',negative='dead',minPos=100,minNeg=1,
   for(const key of RULE_KEYS){
     const vals=sorted.map(r=>r.features?.[key]).filter(v=>typeof v==='number'&&Number.isFinite(v)).sort((a,b)=>a-b);
     if(vals.length<Math.max(12,Math.floor(rows.length*.4)))continue;
-    for(const p of [.05,.1,.2,.3,.4,.5,.6,.7,.8,.9,.95]){
+    for(const p of Array.from({length:49},(_,i)=>(i+1)/50)){
       const threshold=vals[Math.floor((vals.length-1)*p)];
       for(const op of ['>=','<=']){
         const rule={key,op,value:+threshold.toPrecision(8)};
@@ -218,8 +226,32 @@ function proposeRules(rows,{positive='live',negative='dead',minPos=100,minNeg=1,
       }
     }
   }
-  out.sort((a,b)=>b.score-a.score||b.train.positiveRecall-a.train.positiveRecall);
-  return out.slice(0,maxRules);
+  const rank=(a,b)=>b.score-a.score||b.train.positiveRecall-a.train.positiveRecall;
+  out.sort(rank);
+  const leaves=out.slice(0,24),beam=out.slice(0,16);
+  for(let size=2;size<=3;size++){
+    const next=[];
+    for(const parent of beam.filter(x=>(x.rule.conds?.length||1)===size-1))for(const leaf of leaves){
+      const conds=[...(parent.rule.conds||[parent.rule]),leaf.rule];
+      if(new Set(conds.map(x=>x.key)).size!==size)continue;
+      conds.sort((a,b)=>ruleKey(a).localeCompare(ruleKey(b)));
+      const sig=conds.map(ruleKey).join('&');if(seenRules.has(sig))continue;seenRules.add(sig);
+      const rule={...conds[0],conditions:conds.slice(1),conds},stat=ruleStats(rows,rule,positive,negative);
+      if(stat.positiveRecall<.55||stat.negativeRejection<.5||stat.evaluablePositive/pos.length<.85||stat.evaluableNegative/neg.length<.85)continue;
+      // An extra condition must improve rejection by >=5pp without losing positives.
+      if(stat.positiveRecall+1e-9<parent.train.positiveRecall||stat.negativeRejection-parent.train.negativeRejection<.05-1e-9)continue;
+      const score=2*stat.positiveRecall*stat.negativeRejection/(stat.positiveRecall+stat.negativeRejection);
+      next.push({rule,train:stat,score});
+    }
+    next.sort(rank);beam.push(...next.slice(0,16));out.push(...next.slice(0,16));
+  }
+  out.sort(rank);const unique=[];
+  for(const item of out){
+    const keys=r=>(r.conds||[r]).map(c=>c.key+'|'+c.op).sort().join('&');
+    if(unique.some(x=>keys(x.rule)===keys(item.rule)&&Math.abs(x.train.positiveRecall-item.train.positiveRecall)<.03&&Math.abs(x.train.negativeRejection-item.train.negativeRejection)<.03))continue;
+    unique.push(item);if(unique.length>=maxRules)break;
+  }
+  return unique;
 }
 function capBank(rows,labelFn=it=>it.label,positive='live',negative='dead',max=5000){
   const seen=new Set();

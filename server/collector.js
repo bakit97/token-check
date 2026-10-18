@@ -398,6 +398,7 @@ let RESEARCH_V2=null, RESEARCH_V2_ERR='', RESEARCH_BANK_UPLOADED=0;
 let PASS_V2=null, RESEARCH_TWO=null, AUTO_V2=null, FILTER_AUDIT=null;
 let RESEARCH_ONE_EPOCH=null, RESEARCH_TWO_EPOCH=null, RESEARCH_CONFIG_ERR='';
 let OLD_RESEARCH_ONE=[], OLD_RESEARCH_TWO=[];
+let AUTO_STUDIES=null;
 let PASS_ERR='', TWO_ERR='', PASS_CFG_ERR='', TWO_BANK_UPLOADED=0, AUTO_UPLOADED=0;
 async function admitVerifiedPublicLaunch(launch,record) {
   const existing=C.get(record.mint);
@@ -414,7 +415,7 @@ async function admitVerifiedPublicLaunch(launch,record) {
 // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
 // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
 const MODULES=['event-clock.js','admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
-  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js'];
+  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js'];
 let MODULES_OK=null;
 function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
   for(const name of MODULES){const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
@@ -522,7 +523,7 @@ async function initPathsV2(){
   // localStorage setting as permission to create an authoritative alert.
   const config=await getObj('config/pass-filters.json');
   if(!config)throw Error('Missing server filter configuration');
-  PASS_V2=new (require(DIR+'/pass-runtime.js').PassRuntime)({dir:DIR,config});
+  PASS_V2=new (require(DIR+'/pass-runtime.js').PassRuntime)({dir:DIR,config:require(DIR+'/pass-runtime.js').verdictConfig(config)});
   const {ResearchTwoRuntime,configOf}=require(DIR+'/research-two-runtime.js');
   const {ResearchEpoch}=require(DIR+'/research-config.js');
   const requested=await getObj('config/research-two.json')||configOf();
@@ -535,6 +536,7 @@ async function initPathsV2(){
   });
   recoverSupersededStudies();
   AUTO_V2=require(DIR+'/auto-research-v2.js');
+  AUTO_STUDIES=new AUTO_V2.AutoStudies({dir:DIR});
   FILTER_AUDIT=new (require(DIR+'/filter-audit.js').FilterAudit)({dir:DIR});
   PASS_ERR='';TWO_ERR='';PASS_CFG_ERR='';
   log('серверные пути готовы: Прошли',PASS_V2.records.size,
@@ -553,7 +555,7 @@ async function reloadResearchConfig(){
         recoverSupersededStudies();
         RESEARCH_BANK_UPLOADED=0;AUTO_UPLOADED=0;
         log('первый исследовательский полигон переключён на новую эпоху',x.hash);
-      }
+      }else RESEARCH_V2.config=RESEARCH_ONE_EPOCH.current.config;
     }
     if(RESEARCH_TWO_EPOCH&&RESEARCH_TWO){
       const cfg=await getObj('config/research-two.json');
@@ -980,7 +982,7 @@ async function flushUploadsInner(){
   }
 }
 function coinMetadata(c){const mg=c.mg||{};
-  const r={a:c.a,n:c.n,s:c.s,i:c.i,p:c.p,d:c.d,q:c.q,t:c.t,tSrc:c.tSrc||'gt',t0:c.t0||null,createdAt:c.createdAt||null,createdAtSource:c.createdAtSource||null,uri:c.uri||null,description:c.description||null,seen:c.seen,disc:c.disc||null,rcSeen:c.rcSeen||null,wsSeen:c.wsSeen||null,firstPostSeenAt:c.firstPostSeenAt||null,preCurve:!!c.preCurve,preTradingAt:c.preTradingAt||null,ty:launchType(c),
+  const r={a:c.a,n:c.n,s:c.s,i:c.i,p:c.p,d:c.d,q:c.q,t:c.t,tSrc:c.tSrc||'gt',t0:c.t0||null,createdAt:c.createdAt||null,createdAtSource:c.createdAtSource||null,uri:c.uri||null,metadataAt:c.metadataAt,description:c.description||null,seen:c.seen,disc:c.disc||null,rcSeen:c.rcSeen||null,wsSeen:c.wsSeen||null,firstPostSeenAt:c.firstPostSeenAt||null,preCurve:!!c.preCurve,preTradingAt:c.preTradingAt||null,ty:launchType(c),
     mk:mg.k||null,mst:mg.st||null,mw:mg.why||'',mT:mg.mT||null,mSig:mg.sig||null,mSeen:mg.seenAt||null,mCr:mg.creator??null,mH:c.mgH||[],mk0:c.mg0?.k||null,
     origs:(c.origs||[]).map(o=>({p:o.p,t:o.t,d:o.d,movedAt:o.movedAt})),
     preObs:c.preCurve?((c.origs||[]).find(o=>o.d==='pump-fun')||null):null,ct:c.ct||null,curveSol:c.preCurve&&c.curveSol?.length?c.curveSol:undefined,soc:c.soc||0,tk:c.tk&&isFinite(c.tk)?c.tk:null,tkAt:c.tkAt||null,
@@ -1125,12 +1127,12 @@ async function exportPathsV2(now){
     });
     TWO_BANK_UPLOADED=now;
   }
-  if(AUTO_V2&&RESEARCH_V2&&(p.added||result.added||now-AUTO_UPLOADED>20*60e3)){
+  if(AUTO_V2&&RESEARCH_V2&&(now-AUTO_UPLOADED>60*60e3)){
     const levelOne=RESEARCH_V2.select({limit:10000}).map(x=>({
       ...x,time:x.acceptedAt
     }));
     const levelTwo=RESEARCH_TWO.select({limit:10000});
-    const one=AUTO_V2.discover(levelOne,{level:'1'});
+    const one=AUTO_STUDIES.report(levelOne,{level:'1',settings:RESEARCH_V2.config,now});
     const two=AUTO_V2.discover(levelTwo,{level:'2'});
     await upload('research-v2/auto-1.json',{updated:now,epochStart:RESEARCH_V2.cohortStart,...one});
     await upload('research-v2/auto-2.json',{updated:now,epochStart:RESEARCH_TWO.cohortStart,...two});

@@ -636,7 +636,7 @@ function renderPassed(){
   $('passedTab').textContent=list.length?' '+fmt(list.length):'';
   $('passedStats').textContent=serverPassActive?
     '✓ Серверный журнал: '+fmt(serverPassRows.length)+' записей в доступной выгрузке · активных: '+fmt(list.length)+
-    (passMeta.enabled?'. Новые совпадения продолжают записываться сервером.':'. Серверные правила временно выключены, история сохранена.'): 
+    (passMeta.enabled?'. Новые совпадения продолжают записываться сервером.':'. Серверные правила временно выключены, история сохранена.'):
     '⚠ Предварительный режим на телефоне: '+fmt(lastPassed.length)+' сигналов. '+
     'Правила этого устройства пока НЕ отправляются на сервер; при закрытом сайте новые сигналы не фиксируются.';
   var W=pwMin(),win=lastPassed.filter(function(q){return (q.firstSeenAt||q.deadline)+W*60000>now()}),ph=function(q){return (q.coin._entry||{}).phase};
@@ -722,11 +722,7 @@ function openModSheet(id){var openG={},m=JSON.parse(JSON.stringify(MODS[id])),ol
     else if(t.dataset.mrm){if(!window.confirm('Точно удалить «'+m.name+'»?'))return;var all=modLoad();all[id]={id:id,deleted:true};try{localStorage.setItem('r1mods',JSON.stringify(all))}catch(e){}el.remove();renderR1();renderR2();libRender();note('Удалено')}})}
 function renderAutoSuggestions(report,lvl,ph){
   lvl=lvl||1;var saved=modLoad(),list=[];
-  var demo={id:'demo',phase:'before',name:'ДЕМО · Ранний спрос',dm:12,conds:[{key:'buyers10',op:'>=',value:8},{key:'quoteSol',op:'>=',value:2},{key:'top10',op:'<=',value:35}],
-    createdAt:Date.now()-3*864e5,eval:{train:{positiveRecall:.7,negativeRejection:.9,totalPositive:60,totalNegative:250},holdout:{positiveRecall:.65,negativeRejection:.88,totalPositive:40,totalNegative:100},live:{positiveRecall:.62,negativeRejection:.86,totalPositive:34,totalNegative:51}}};
-  demo.evalSig=modSig(demo);if(lvl===1&&!(saved.demo&&saved.demo.deleted))list.push([saved.demo||demo,'']);
-  var dm=(report&&report.decisionMinutes)||(researchMeta&&researchMeta.settings&&researchMeta.settings.decisionMinutes)||15;
-  ((report&&report.rules)||[]).slice(0,8).forEach(function(x,i){var id='a'+(report.level||1)+'-'+i,m={id:id,name:modAutoName([{key:x.rule.key,op:x.rule.op,value:x.rule.value}]),dm:dm,createdAt:Date.parse(report.generatedAt||report.updatedAt||'')||null,conds:[{key:x.rule.key,op:x.rule.op,value:x.rule.value}],eval:{train:x.train,holdout:x.holdout}};m.evalSig=modSig(m);if(!(saved[id]&&saved[id].deleted))list.push([saved[id]||m,report.level+':'+i])});
+  ((report&&report.rules)||[]).forEach(function(x,i){var id=x.id||('a'+(report.level||1)+'-'+i),m={id:id,level:String(lvl),phase:x.phase,name:x.name||modAutoName(x.conds||[x.rule]),dm:x.verdictMinutes||report.decisionMinutes||10,createdAt:x.createdAt||null,liveFrom:x.liveFrom||null,conds:x.conds||x.rule.conds||[x.rule].concat(x.rule.conditions||[]),eval:x.eval||{train:x.train,holdout:x.holdout,live:x.live}};m.evalSig=modSig(m);if(!(saved[id]&&saved[id].deleted))list.push([saved[id]||m,report.level+':'+i])});
   list.forEach(function(p){MODS[p[0].id]=JSON.parse(JSON.stringify(p[0]));MOD_AUTO[p[0].id]=p[1]});
   Object.keys(saved).forEach(function(k){var u=saved[k];if(k.indexOf('u')===0&&!u.deleted&&String(u.level)===String(lvl))list.push([u,''])});
   var PH=ph||(lvl===1?R1P:s.r2Stream);list=list.filter(function(p){return PH==='all'||!p[0].phase||p[0].phase===PH});
@@ -734,11 +730,13 @@ function renderAutoSuggestions(report,lvl,ph){
 }
 var R1F='all',R1N=10,R1DEC=0,R1P='all';
 function r1Phase(x){if(x.phase)return x.phase;var c=lastAccepted.find(function(d){return mint(d)===x.mint});return c&&c._entry&&c._entry.phase||''}
-function r1T(){try{var t=JSON.parse(localStorage.getItem('r1targets'+(R1P==='all'?'':'_'+R1P))||'{}');return {l:t.l||100,d:t.d||40}}catch(e){return {l:100,d:40}}}
+function onePhaseSettings(cfg,phase){return cfg&&cfg.phases&&cfg.phases[phase==='all'?'before':phase]||cfg||{}}
+function r1T(){var c=onePhaseSettings(researchMeta&&researchMeta.settings,R1P);return {l:c.targetLive||100,d:c.targetDead||40}}
+
 function renderR1(){
   var rs=$('r1Suggestions');if(rs)rs.innerHTML=renderAutoSuggestions(autoOne);
   if(researchMeta){
-    const cfg=researchMeta.settings||{},counts=researchMeta.counts||{},p=researchMeta.pending||{};
+    const cfg=onePhaseSettings(researchMeta.settings,R1P),counts=researchMeta.counts||{},p=researchMeta.pending||{};
     var a=counts.live||0,b=counts.dead||0;
     $('r1Live').textContent=fmt(a);$('r1Dead').textContent=fmt(b);
     $('r1Auto').textContent='Серверные наблюдения · '+cfg.hours+' ч · активность ≥'+cfg.minActive+
@@ -756,7 +754,7 @@ function renderR1(){
     var r1ar=$('r1ApplyRow').classList;if(!r1ar.contains||r1ar.contains('hide')){$('r1Hours').value=cfg.hours;$('r1HoursValue').textContent=cfg.hours+' ч';$('r1Activity').value=cfg.minActive;$('r1ActivityValue').textContent=cfg.minActive+'%';$('r1Idle').value=cfg.maxIdle;$('r1IdleValue').textContent=cfg.maxIdle+' мин'}
     var T=r1T(),rr=$('r1ResApplyRow').classList;if(!rr.contains||rr.contains('hide')){$('r1TL').value=T.l;$('r1TLv').textContent=T.l;$('r1TD').value=T.d;$('r1TDv').textContent=T.d;$('r1Dec').value=cfg.decisionMinutes;$('r1DecV').textContent=cfg.decisionMinutes+' мин'}
     if(R1DEC&&R1DEC===cfg.decisionMinutes)R1DEC=0;$('r1ResSum').textContent='🟢 '+a+'/'+T.l+' · 🔴 '+b+'/'+T.d+' · '+(R1DEC?R1DEC+' мин ⏳':cfg.decisionMinutes+' мин');$('r1Meter').style.width=Math.min(100,Math.min(a/T.l,b/T.d)*100)+'%';
-    var isLive=function(x){return x.activity>=cfg.minActive&&x.idle<=cfg.maxIdle},all=bank['1'].filter(function(x){return R1P==='all'||r1Phase(x)===R1P});
+    var isLive=function(x){if(x.label)return x.label==='live';var c=onePhaseSettings(researchMeta.settings,r1Phase(x));return x.activity>=c.minActive&&x.idle<=c.maxIdle},all=bank['1'].filter(function(x){return R1P==='all'||r1Phase(x)===R1P});
     if(R1P!=='all'){a=all.filter(isLive).length;b=all.length-a;$('r1Live').textContent=fmt(a);$('r1Dead').textContent=fmt(b);$('r1ResSum').textContent=$('r1ResSum').textContent.replace(/^🟢 \d+/,'🟢 '+a).replace(/🔴 \d+/,'🔴 '+b)}
     $('r1AllN').textContent=fmt(all.length);$('r1Wait').textContent=R1P==='all'?fmt(p['not-yet-finished']||0):'—';
     $('r1Sum').textContent=cfg.hours+' ч · '+cfg.minActive+'% · '+cfg.maxIdle+' мин';
@@ -1094,7 +1092,7 @@ async function publishResearchLevel(level){
   const endpoint=one?'/api/research-one':'/api/research-two';
   const current=one?researchMeta:twoMeta;
   if(!controlEndpoint||!current){note('Серверное исследование ещё недоступно');return}
-  if(!$(checkField).checked){note('Подтверди изменение серверного исследования');return}
+
   const key=keyFrom(keyField);
   if(!key){
     note('Требуется отдельный ключ владельца');return;
@@ -1104,7 +1102,7 @@ async function publishResearchLevel(level){
     cfg={hours:Number($('r1Hours').value),
       decisionMinutes:Number($('r1Dec').value)||researchMeta.settings.decisionMinutes,
       minActive:Number($('r1Activity').value),
-      maxIdle:Number($('r1Idle').value),
+      maxIdle:Number($('r1Idle').value),targetLive:Number($('r1TL').value),targetDead:Number($('r1TD').value),
       minCoverage:researchMeta.settings.minCoverage,...(researchMeta.settings.intake?{intake:researchMeta.settings.intake}:{})};
     if(!Number.isInteger(cfg.hours)||cfg.hours<1||cfg.hours>24||
        !Number.isInteger(cfg.maxIdle)||cfg.maxIdle<5||cfg.maxIdle>1440||
@@ -1118,6 +1116,7 @@ async function publishResearchLevel(level){
       note('Неверный порог второго исследования');return;
     }
   }
+  if(one){var base=JSON.parse(JSON.stringify(researchMeta.settings)),phases=base.phases||{before:Object.assign({},base),after:Object.assign({},base)};var update=cfg;['before','after'].forEach(function(phase){if(R1P==='all'||R1P===phase)phases[phase]=Object.assign({},phases[phase],update);delete phases[phase].phases});cfg=Object.assign({},base,{phases:phases})}
   $(buttonField).disabled=true;
   $(statusField).textContent='Отправка серверной версии…';
   const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
@@ -1266,7 +1265,7 @@ function stageAutoRule(e){
   var btn=e.target.closest('[data-stage-auto]');if(!btn)return;
   var parts=btn.dataset.stageAuto.split(':'),level=parts[0],report=level==='1'?autoOne:autoTwo,item=report&&report.rules&&report.rules[Number(parts[1])];
   if(!item||!item.rule){note('Нет серверного модуля');return}
-  var r=item.rule,conds=r.conds||[r].concat(r.conditions||[]),keys=['buyers','trades','volume','liq','mc','buys','sells','buySellRatio','buyers10','safeContract','quoteSol','top1','top10'];
+  var r=item.rule,conds=r.conds||[r].concat(r.conditions||[]),keys=['buyers','trades','volume','liq','mc','buys','sells','buySellRatio','buyers10','safeContract','quoteSol','top1','top10','token2022','hasImage','hasDescription','sellShare','averageTrade'];
   if(!conds.length||conds.length>8||conds.some(function(c){return !keys.includes(c.key)||!['>=','<='].includes(c.op)||!Number.isFinite(c.value)||c.value<0})){note('Неподдерживаемые условия модуля');return}
   var d=draft();if(!d){note('Нет данных сервера');return}
   var phase=item.phase||r.phase;if(!['before','after'].includes(phase)){note('У модуля не указан поток');return}
@@ -1343,8 +1342,7 @@ function bind(){
   $('r1Seg').addEventListener('click',function(e){var b=e.target.closest('[data-r1f]');if(!b)return;R1F=b.dataset.r1f;document.querySelectorAll('#r1Seg [data-r1f]').forEach(function(x){x.classList.toggle('active',x===b)});renderR1()});
   $('r1N').addEventListener('click',function(e){var b=e.target.closest('[data-r1n]');if(!b)return;R1N=+b.dataset.r1n;document.querySelectorAll('#r1N [data-r1n]').forEach(function(x){x.classList.toggle('active',x===b)});renderR1()});
   [['r1TL','r1TLv',''],['r1TD','r1TDv',''],['r1Dec','r1DecV',' мин']].forEach(function(a){$(a[0]).addEventListener('input',function(){$(a[1]).textContent=$(a[0]).value+a[2];$('r1ResApplyRow').classList.remove('hide')})});
-  $('r1ResApply').addEventListener('click',function(){try{localStorage.setItem('r1targets'+(R1P==='all'?'':'_'+R1P),JSON.stringify({l:+$('r1TL').value,d:+$('r1TD').value}))}catch(e){}
-    if(researchMeta&&+$('r1Dec').value!==researchMeta.settings.decisionMinutes){R1DEC=+$('r1Dec').value;publishResearchLevel('1')}$('r1ResApplyRow').classList.add('hide');renderR1()});
+  $('r1ResApply').addEventListener('click',function(){publishResearchLevel('1')});
   ['r1Hours','r1Activity','r1Idle'].forEach(function(id){$(id).addEventListener('input',function(){$('r1ApplyRow').classList.remove('hide')})});
   $('r1Rows').addEventListener('click',function(e){var b=e.target.closest('[data-coin]');if(!b)return;showCoinDetail(coinOf(bank['1'].find(function(x){return x.mint===b.dataset.coin})||b.dataset.coin),'r1Rows')});
   $('coinList').addEventListener('click',function(e){
@@ -1529,7 +1527,7 @@ async function loadInternal(){
       return x.mint&&Number.isFinite(x.activePct)&&Number.isFinite(x.maxIdleObserved)&&x.features;
     });
     bank['1']=sourceRows.map(function(x){
-      return {mint:x.mint,t:x.acceptedAt,activity:x.activePct,
+      return {mint:x.mint,phase:x.phase,label:x.label,t:x.acceptedAt,activity:x.activePct,
         idle:x.maxIdleObserved,features:x.features};
     }).sort(function(a,b){return a.t-b.t});
     researchServerBank=true;

@@ -53,15 +53,18 @@ function settings(cfg={}) {
     minActive:cfg.minActive??70,
     maxIdle:cfg.maxIdle??60,
     minCoverage:cfg.minCoverage??.8,
+    targetLive:cfg.targetLive??100,targetDead:cfg.targetDead??40,
     ...(cfg.intake!=null?{intake:intakeSettings(cfg.intake)}:{})
   };
-  if(!Number.isInteger(result.hours)||result.hours<1||result.hours>24 ||
-     !Number.isInteger(result.decisionMinutes)||result.decisionMinutes<1||result.decisionMinutes>30 ||
+  if(!Number.isInteger(result.hours)||result.hours<1||result.hours>12 ||
+     !Number.isInteger(result.decisionMinutes)||result.decisionMinutes<2||result.decisionMinutes>15 ||
      !Number.isFinite(result.minActive)||result.minActive<0||result.minActive>100 ||
      !Number.isInteger(result.maxIdle)||result.maxIdle<5||result.maxIdle>1440||
      !Number.isFinite(result.minCoverage)||result.minCoverage<.5||result.minCoverage>1) {
     throw new RangeError('Invalid first-level observation settings');
   }
+  for(const key of ['targetLive','targetDead'])if(!Number.isInteger(result[key])||result[key]<10||result[key]>5000)throw RangeError('Invalid research target');
+  if(cfg.phases){result.phases={};for(const phase of ['before','after'])result.phases[phase]=settings({...result,...cfg.phases[phase],phases:null})}
   return result;
 }
 function atomicJSON(filepath,obj) {
@@ -75,11 +78,11 @@ function atomicJSON(filepath,obj) {
   }finally{fs.closeSync(handle)}
   fs.renameSync(temporary,filepath);
   // fsync the directory so rename is durable after a VM crash.
-  const dir=fs.openSync(path.dirname(filepath),'r');
-  try{fs.fsyncSync(dir)}finally{fs.closeSync(dir)}
+  require('./durable-json').syncDirectory(path.dirname(filepath));
 }
+function phaseSettings(cfg,phase){return cfg.phases?.[phase]||cfg}
 function classOf(row,cfg) {
-  return row.activePct>=cfg.minActive && row.maxIdleObserved<=cfg.maxIdle ? 'live':'dead';
+  cfg=phaseSettings(cfg,row.phase);return row.activePct>=cfg.minActive && row.maxIdleObserved<=cfg.maxIdle ? 'live':'dead';
 }
 
 class ResearchRuntime {
@@ -105,7 +108,7 @@ class ResearchRuntime {
            !r.features||typeof r.features!=='object')
           throw Error('Malformed saved research sample');
       }
-      this.rows=capBank(state.rows,r=>classOf(r,this.config),'live','dead',MAX_BANK_PER_CLASS);
+      this.rows=capPhases(state.rows,this.config);
       this.lookup=new Set(this.rows.map(r=>r.mint));
       for(const pair of state.processed||[]) {
         if(Array.isArray(pair)&&typeof pair[0]==='string'&&Number.isSafeInteger(pair[1]))
@@ -126,7 +129,8 @@ class ResearchRuntime {
       const age=now-row.acceptedAt;
       if(row.acceptedAt<this.cohortStart||row.acceptedAt>=this.cohortEnd||age<0||age>FRESH_WINDOW||this.processed.has(row.mint))continue;
       considered++;
-      if(age<this.config.hours*HOURS+3*MIN){
+      const cfg=phaseSettings(this.config,row.phase);
+      if(age<cfg.hours*HOURS+3*MIN){
         pending['not-yet-finished']=(pending['not-yet-finished']||0)+1;
         continue;
       }
@@ -146,22 +150,22 @@ class ResearchRuntime {
         pending['candidate-missing']=(pending['candidate-missing']||0)+1;
         continue;
       }
-      const decisionAt=row.acceptedAt+this.config.decisionMinutes*MIN;
-      const result=activityOutcome(coin,row.acceptedAt,this.config,now);
+      const decisionAt=row.acceptedAt+cfg.decisionMinutes*MIN;
+      const result=activityOutcome(coin,row.acceptedAt,cfg,now);
       if(result.label==='pending'){
         this.lastAttemptAt.set(row.mint,{at:now,acceptedAt:row.acceptedAt,why:result.why});
         pending[result.why]=(pending[result.why]||0)+1;
         continue;
       }
       this.lastAttemptAt.delete(row.mint);
-      const features=featuresAt(coin,decisionAt,{eventAt:row.eventAt,phase:row.phase});
-      const gate=intakeDecision(this.config.intake,row,features,passes);
+      const features=featuresAt(coin,decisionAt,{eventAt:row.acceptedAt,phase:row.phase});
+      const gate=intakeDecision(cfg.intake,row,features,passes);
       if(!gate.ok){this.processed.set(row.mint,row.acceptedAt);this.intakeRejected[gate.why]=(this.intakeRejected[gate.why]||0)+1;continue}
       this.intakeAccepted[gate.via]=(this.intakeAccepted[gate.via]||0)+1;
       this.rows.push({via:gate.via,
         mint:row.mint,phase:row.phase,
         acceptedAt:row.acceptedAt,decisionAt,
-        hours:this.config.hours,
+        hours:cfg.hours,label:result.label,
         activePct:result.activePct,
         maxIdleObserved:result.maxIdleObserved,
         coverage:result.coverage,
@@ -178,7 +182,7 @@ class ResearchRuntime {
     for(const [mint,retry] of this.lastAttemptAt)
       if(now-retry.acceptedAt>FRESH_WINDOW)this.lastAttemptAt.delete(mint);
     if(added){
-      this.rows=capBank(this.rows,r=>classOf(r,this.config),'live','dead',MAX_BANK_PER_CLASS);
+      this.rows=capPhases(this.rows,this.config);
       this.lookup=new Set(this.rows.map(r=>r.mint));
       atomicJSON(this.file,{schema:1,rows:this.rows,
         processed:[...this.processed],savedAt:now});
@@ -214,4 +218,5 @@ class ResearchRuntime {
       .map(r=>({...r,label:classOf(r,this.config)}));
   }
 }
-module.exports={intakeDecision,intakeSettings,ResearchRuntime,settings,classOf};
+function capPhases(rows,cfg){return ['before','after'].flatMap(phase=>capBank(rows.filter(r=>r.phase===phase),r=>classOf(r,cfg),'live','dead',MAX_BANK_PER_CLASS)).sort((a,b)=>a.time-b.time)}
+module.exports={phaseSettings,intakeDecision,intakeSettings,ResearchRuntime,settings,classOf};

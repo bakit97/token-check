@@ -73,7 +73,7 @@ test('Six panels, age admission, safe settings and local filter management work 
   await expect(page.locator('#r1Auto')).toContainText('Ожидают окончания наблюдения: 1');
   await expect(page.locator('#applyR1')).toBeDisabled();
   await page.locator('#tabs [data-page="r2"]').click();
-  await expect(page.locator('#r2Graph')).toContainText('Нет монет с полной историей');
+  await expect(page.locator('#r2Graph')).toContainText('Пока нет монет с историей после точки 0');
   await page.locator('#tabs [data-page="library"]').click();
   await page.locator('#libNew').click();
   await expect(page.locator('#modSheet')).toBeVisible();

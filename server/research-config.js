@@ -3,15 +3,18 @@
 // Previous epochs remain available to finish their own observation windows.
 const fs=require('node:fs'),path=require('node:path');
 const crypto=require('node:crypto');
-const hashOf=cfg=>crypto.createHash('sha256').update(JSON.stringify(cfg)).digest('hex').slice(0,20);
+function semantic(cfg){if(Array.isArray(cfg))return cfg.map(semantic);if(!cfg||typeof cfg!=='object')return cfg;
+ const out=Object.fromEntries(Object.entries(cfg).filter(([k])=>!['targetLive','targetDead','targetStrong','targetWeak'].includes(k)).map(([k,v])=>[k,semantic(v)]));
+ if(out.phases){const base={...out};delete base.phases;if(Object.values(out.phases).every(v=>JSON.stringify(v)===JSON.stringify(base)))delete out.phases}return out;
+}
+const hashOf=cfg=>crypto.createHash('sha256').update(JSON.stringify(semantic(cfg))).digest('hex').slice(0,20);
 function atomic(file,value){
   const tmp=file+'.tmp',data=Buffer.from(JSON.stringify(value));
   const fd=fs.openSync(tmp,'w',0o600);
   try{let i=0;while(i<data.length)i+=fs.writeSync(fd,data,i,data.length-i);fs.fsyncSync(fd)}
   finally{fs.closeSync(fd)}
   fs.renameSync(tmp,file);
-  const d=fs.openSync(path.dirname(file),'r');
-  try{fs.fsyncSync(d)}finally{fs.closeSync(d)}
+  require('./durable-json').syncDirectory(path.dirname(file));
 }
 function isEpoch(e,key){
   return e&&e.key===key&&typeof e.hash==='string'&&
@@ -44,7 +47,7 @@ class ResearchEpoch{
   }
   apply(raw){
     const config=this.validate(raw),hash=hashOf(config);
-    if(this.current?.hash===hash)return false;
+    if(this.current?.hash===hash){if(JSON.stringify(config)!==JSON.stringify(this.current.config)){const next={...this.current,config};atomic(this.file,{schema:2,current:next,history:this.history,updated:Date.now()});this.current=next}return false;}
     const now=Date.now();
     const activeAt=this.current?now:(this.adoptLegacy?0:now);
     const next={key:this.key,hash,activeAt,config};
