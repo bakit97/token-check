@@ -8,7 +8,7 @@ if(typeof WebSocket==='undefined'&&!process.env.WSX){const ch=require('child_pro
 const fs=require('fs'),zlib=require('zlib');
 let HEALTH=null;
 let COMPLETED=null;
-const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:30000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0,pendingWork:0,cancelledGT:0};
+const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:45000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0,pendingWork:0,cancelledGT:0};
 let RESOURCE=null;
 const resourcePressure=()=>process.memoryUsage().rss>=360*1024*1024;
 const BUCKET='sol-scan-511718-data',DIR=process.env.SOLSCAN_DIR||'/var/solscan',TZ=5*3600e3;
