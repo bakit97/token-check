@@ -34,3 +34,11 @@ test('slow discovery bootstrap does not block live processing after startup',asy
  assert.equal(ctx.start(),undefined);assert.equal(requested,1);assert.equal(added,0);
  release({});await new Promise(r=>setImmediate(r));assert.equal(added,3);
 });
+
+test('canonical collector retains the shared authenticated configuration loader',async()=>{
+ const vm=require('node:vm'),requests=[],ctx={BUCKET:'test',token:async()=>'<mock>',AbortSignal,fetch:async(url,options)=>{requests.push({url,options});return {status:200,ok:true,json:async()=>({enabled:true})}}};vm.createContext(ctx);
+ vm.runInContext(body.slice(body.indexOf('async function getObj('),body.indexOf('async function upload('))+';this.read=getObj;',ctx);
+ assert.equal((await ctx.read('config/pass-filters.json')).enabled,true);assert.match(requests[0].url,/config%2Fpass-filters.json/);assert.ok(requests[0].options.signal);
+ ctx.fetch=async()=>({status:404});assert.equal(await ctx.read('config/missing.json'),null);
+ ctx.fetch=async()=>({status:503,ok:false});await assert.rejects(ctx.read('config/source-age.json'),/503/);
+});

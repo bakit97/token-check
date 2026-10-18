@@ -920,6 +920,8 @@ function coinMetadata(c){const mg=c.mg||{};
     live:c.lastTrade?Date.now()-c.lastTrade<30*60e3:false,lastTrade:c.lastTrade||null,legacy:c.legacy?1:0};
   return r}
 async function token(){const r=await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',{headers:{'Metadata-Flavor':'Google'}});return (await r.json()).access_token}
+async function getObj(name){const tk=await token();const r=await fetch(`https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/${encodeURIComponent(name)}?alt=media`,{headers:{Authorization:'Bearer '+tk},signal:AbortSignal.timeout(30000)});
+  if(r.status===404)return null;if(!r.ok)throw new Error('get '+name+' '+r.status);return r.json()}
 async function upload(name,obj){
   if(HEALTH)HEALTH.activeUploads++;
   let payload,multipart;try{
