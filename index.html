@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b0d14">
 <title>SOL·СКАН · v2</title>
-<link rel="stylesheet" href="./v2.css?v=20261019-p-2">
+<link rel="stylesheet" href="./v2.css?v=20261019-p-3">
 </head>
 <body>
 <header><div class="app">
@@ -91,8 +91,9 @@
 </details>
 </section>
 <section class="page" id="p-passed" hidden>
+<div class="hint" id="pToday" style="margin:0 0 6px">Сегодня сигналов: —</div>
 <details class="frow" id="pwFold"><summary><span class="fname">Окно <span class="hint" id="pwSum">3 мин</span></span></summary>
-<div class="prow"><label for="pwMin">Монета видна <b id="pwV">3</b> мин после прохода, потом скрывается</label><input id="pwMin" type="range" min="1" max="5" step="1" value="3"></div></details>
+<div class="prow"><label for="pwMin">Монета видна <b id="pwV">3</b> мин после прохода, потом скрывается</label><input id="pwMin" type="range" min="1" max="5" step="1" value="3"></div><div class="row applyrow hide" id="pwApplyRow"><button type="button" class="primary pbtn" id="pwApply" style="margin-left:auto">Применить</button></div></details>
 <div class="chips seg" id="pSeg"><button class="active" data-pf="all">Все <span class="cnt" id="pAllN">0</span></button><button data-pf="before">🌱 До <span class="cnt" id="pBefN">0</span></button><button data-pf="after">🎓 После <span class="cnt" id="pAftN">0</span></button></div>
 <div class="list" id="passedList"></div>
 <div hidden>
@@ -173,6 +174,6 @@
 <footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — разделены серверные записи и локальные черновики; неполные наблюдения не выдаются за результат.</footer>
 </main>
 <script src="./server/observation-contract.js?v=20261018-admission-3" defer></script>
-<script src="./v2.js?v=20261019-p-2" defer></script>
+<script src="./v2.js?v=20261019-p-3" defer></script>
 <noscript>Текстовая сводка для ИИ: https://storage.googleapis.com/sol-scan-511718-data/ai/summary.md (JSON: ai/summary.json)</noscript>
 </body></html>

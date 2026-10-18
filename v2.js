@@ -622,7 +622,9 @@ function renderPassed(){
     '⚠ Предварительный режим на телефоне: '+fmt(lastPassed.length)+' сигналов. '+
     'Правила этого устройства пока НЕ отправляются на сервер; при закрытом сайте новые сигналы не фиксируются.';
   var W=pwMin(),win=lastPassed.filter(function(q){return (q.firstSeenAt||q.deadline)+W*60000>now()}),ph=function(q){return (q.coin._entry||{}).phase};
-  $('pwSum').textContent=W+' мин';$('pwV').textContent=W;$('pwMin').value=W;
+  $('pwSum').textContent=W+' мин';if($('pwApplyRow').classList.contains&&$('pwApplyRow').classList.contains('hide')){$('pwV').textContent=W;$('pwMin').value=W}
+  var d0=new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Almaty'}));d0.setHours(0,0,0,0);var t0=Date.now()-(new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Almaty'}))-d0),td=lastPassed.filter(function(q){return (q.firstSeenAt||0)>=t0});
+  $('pToday').textContent='Сегодня сигналов: '+td.length+' · 🌱 '+td.filter(function(q){return ph(q)==='before'}).length+' · 🎓 '+td.filter(function(q){return ph(q)==='after'}).length;
   $('pAllN').textContent=win.length;$('pBefN').textContent=win.filter(function(q){return ph(q)==='before'}).length;$('pAftN').textContent=win.filter(function(q){return ph(q)==='after'}).length;
   $('passedTab').textContent=win.length?' '+fmt(win.length):'';
   var sel=win.filter(function(q){return PF==='all'||ph(q)===PF});
@@ -1238,7 +1240,8 @@ function bind(){
   });
   $('r1Suggestions').addEventListener('click',function(e){var t=e.target.closest('[data-mopen]');if(t)openModSheet(t.dataset.mopen)});
   $('pSeg').addEventListener('click',function(e){var b=e.target.closest('[data-pf]');if(!b)return;PF=b.dataset.pf;document.querySelectorAll('#pSeg [data-pf]').forEach(function(x){x.classList.toggle('active',x===b)});renderPassed()});
-  $('pwMin').addEventListener('input',function(){try{localStorage.setItem('passWin',$('pwMin').value)}catch(e){}renderPassed()});
+  $('pwMin').addEventListener('input',function(){$('pwV').textContent=$('pwMin').value;$('pwApplyRow').classList.remove('hide')});
+  $('pwApply').addEventListener('click',function(){try{localStorage.setItem('passWin',$('pwMin').value)}catch(e){}$('pwApplyRow').classList.add('hide');renderPassed();note('Применено')});
   $('r1Seg').addEventListener('click',function(e){var b=e.target.closest('[data-r1f]');if(!b)return;R1F=b.dataset.r1f;document.querySelectorAll('#r1Seg [data-r1f]').forEach(function(x){x.classList.toggle('active',x===b)});renderR1()});
   $('r1N').addEventListener('click',function(e){var b=e.target.closest('[data-r1n]');if(!b)return;R1N=+b.dataset.r1n;document.querySelectorAll('#r1N [data-r1n]').forEach(function(x){x.classList.toggle('active',x===b)});renderR1()});
   [['r1TL','r1TLv',''],['r1TD','r1TDv',''],['r1Dec','r1DecV',' мин']].forEach(function(a){$(a[0]).addEventListener('input',function(){$(a[1]).textContent=$(a[0]).value+a[2];$('r1ResApplyRow').classList.remove('hide')})});
