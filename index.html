@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b0d14">
 <title>SOL·СКАН · v2</title>
-<link rel="stylesheet" href="./v2.css?v=20261018-r1-1">
+<link rel="stylesheet" href="./v2.css?v=20261019-r1-2">
 </head>
 <body>
 <header><div class="app">
@@ -112,7 +112,14 @@
 <div class="chips seg" id="r1Seg"><button class="active" data-r1f="all">Все <span class="cnt" id="r1AllN"></span></button><button data-r1f="live">🟢 <span id="r1Live">—</span></button><button data-r1f="dead">🔴 <span id="r1Dead">—</span></button><span class="cnt" style="align-self:center">⏳ <span id="r1Wait">—</span></span></div>
 <div class="chips seg" id="r1N"><button class="active" data-r1n="10">10</button><button data-r1n="20">20</button><button data-r1n="50">50</button><button data-r1n="100">100</button></div>
 <div class="list" id="r1Rows"></div>
-<div hidden><button id="applyR1"></button><input id="ownerResearchOneKey" class="ownerkey"><input id="confirmResearchOne" type="checkbox" checked><div id="r1Auto"></div><div id="r1Meter"></div><div id="r1Suggestions"></div></div>
+<details class="frow" id="r1ResFold"><summary><span class="fname">Исследование <span class="hint" id="r1ResSum"></span></span></summary>
+<div class="prow"><label for="r1TL">Нужно 🟢 живых <b id="r1TLv">100</b></label><input id="r1TL" type="range" min="20" max="500" step="10" value="100"></div>
+<div class="prow"><label for="r1TD">Нужно 🔴 мёртвых <b id="r1TDv">40</b></label><input id="r1TD" type="range" min="10" max="300" step="10" value="40"></div>
+<div class="prow"><label for="r1Dec">Время поиска сходства <b id="r1DecV">15 мин</b> от обнаружения</label><input id="r1Dec" type="range" min="2" max="15" step="1" value="15"></div>
+<div class="row applyrow hide" id="r1ResApplyRow"><button type="button" class="primary pbtn" id="r1ResApply" style="margin-left:auto">Применить</button></div></details>
+<div class="meter" style="margin:8px 0"><div id="r1Meter" style="width:0"></div></div>
+<div id="r1Suggestions"></div>
+<div hidden><button id="applyR1"></button><input id="ownerResearchOneKey" class="ownerkey"><input id="confirmResearchOne" type="checkbox" checked><div id="r1Auto"></div></div>
 </section>
 <section class="page" id="p-r2" hidden>
 <h1>Исследование 2-го уровня</h1><p class="muted">Источник: «Прошли». Одна общая кривая, точка 0 — окончание таймера решения, следующие 300 минут — только для оценки результата.</p>
@@ -160,6 +167,6 @@
 <footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — разделены серверные записи и локальные черновики; неполные наблюдения не выдаются за результат.</footer>
 </main>
 <script src="./server/observation-contract.js?v=20261018-admission-3" defer></script>
-<script src="./v2.js?v=20261018-r1-1" defer></script>
+<script src="./v2.js?v=20261019-r1-2" defer></script>
 <noscript>Текстовая сводка для ИИ: https://storage.googleapis.com/sol-scan-511718-data/ai/summary.md (JSON: ai/summary.json)</noscript>
 </body></html>
