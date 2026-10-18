@@ -6,7 +6,7 @@ if(typeof WebSocket==='undefined'&&!process.env.WSX){const ch=require('child_pro
    активность каждые 5 минут в течение 5 часов, свечи первых 10 минут и итог за 5 часов.
    Каждые 2 минуты выгружает перепись дня (по Алматы, с 00:00) в Cloud Storage. */
 const fs=require('fs'),zlib=require('zlib');
-let HEALTH=null;
+let HEALTH=null,PROFILES=null;
 let COMPLETED=null;
 const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:45000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0,pendingWork:0,cancelledGT:0};
 let RESOURCE=null;
@@ -116,8 +116,9 @@ async function ctCheck(c){
   const rpc=rpcFor(c,'контракт');
   const mi=await rpc('getAccountInfo',[c.a,{encoding:'jsonParsed'}]);const v=mi?.value;if(!v)throw new Error('токен не найден');
   const ct=ctFromMint(v);
-  if(ct.metaMut==null){const mv=(await rpc('getAccountInfo',[await metadataOf(c.a),{encoding:'base64'}]))?.value;if(mv)ct.metaMut=metaMutable(b64(mv.data?.[0]))}
-  ct.at=Date.now();c.ct=ct}
+  ct.at=Date.now();c.ct=ct; // A deferred optional metadata read must not discard verified mint rights.
+  if(ct.metaMut==null)try{const mv=(await rpc('getAccountInfo',[await metadataOf(c.a),{encoding:'base64'}]))?.value;if(mv?.owner===META){const bytes=b64(mv.data?.[0]);ct.metaMut=metaMutable(bytes);const meta=require(DIR+'/coin-profile.js').parseMetadata(bytes);if(meta.uri)c.uri=meta.uri}}catch(e){c.metadataReason=e.code==='BUDGET_DEFERRED'?'budget-deferred':'metadata-unavailable'}
+}
 // разбор mint-аккаунта (jsonParsed) без запросов — общий для одиночной и пакетной проверки
 function ctFromMint(v){
   if(![T22,'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'].includes(v.owner)||v.data?.parsed?.type!=='mint')throw Error('Unverified mint account');
@@ -137,16 +138,16 @@ function ctFromMint(v){
    Кривая pump: real_sol_reserves = u64 @32, complete = bool @48. Замер — только у монет перед моментом решения. */
 const PRE_STATS={ct:0,curve:0,calls:0,deferred:0,errors:0};
 async function preChainSweep(){const now=Date.now(),dec=(PASS_V2?.config?.decisionMinutes||15)*60e3;
-  const pre=[...C.values()].filter(c=>isRecordedPre(c)&&now-c.t<dec+5*60e3);
-  const needCt=pre.filter(c=>!c.ct&&now-c.t>=30e3).slice(0,200);
-  const needCurve=pre.filter(c=>c.p&&now-c.t>=dec-3*60e3&&now-c.t<=dec+60e3&&!(c.curveSol?.length&&now-c.curveSol.at(-1)[0]<50e3)).slice(0,200);
-  const call=async(list,enc)=>{PRE_STATS.calls++;return (await rpc('getMultipleAccounts',[list,enc],{context:'до миграции',source:'до миграции'}))?.value||[]};
+  const pre=[...C.values()].filter(c=>isRecordedPre(c)&&isCurve(c.d)&&now-(SOURCE.get(c.a)?.acceptedAt||now)<dec+5*60e3);
+  const needCt=pre.filter(c=>!c.ct).sort((a,b)=>(SOURCE.get(b.a)?.acceptedAt||0)-(SOURCE.get(a.a)?.acceptedAt||0)).slice(0,100);
+  const needCurve=pre.filter(c=>c.p&&now-(c.curveSol?.at(-1)?.[0]||0)>=50e3).sort((a,b)=>(a.curveSol?.at(-1)?.[0]||0)-(b.curveSol?.at(-1)?.[0]||0)||(SOURCE.get(b.a)?.acceptedAt||0)-(SOURCE.get(a.a)?.acceptedAt||0)).slice(0,200);
+  const call=async(list,enc)=>{PRE_STATS.calls++;return (await rpc('getMultipleAccounts',[list,enc],{priority:enc.encoding==='jsonParsed'?'metadata':'pools',context:'до миграции',source:'pump-card'}))?.value||[]};
   try{
-    for(let i=0;i<needCt.length;i+=100){const part=needCt.slice(i,i+100);const v=await call(part.map(c=>c.a),{encoding:'jsonParsed'});const at=Date.now();
-      part.forEach((c,j)=>{if(!v[j])return;try{const ct=ctFromMint(v[j]);ct.at=at;ct.batch=1;c.ct=ct;PRE_STATS.ct++}catch(e){}})}
-    for(let i=0;i<needCurve.length;i+=100){const part=needCurve.slice(i,i+100);const v=await call(part.map(c=>c.p),{encoding:'base64',dataSlice:{offset:0,length:49}});const at=Date.now();
-      part.forEach((c,j)=>{const a=v[j];if(!a||a.owner!==PUMP)return;const u=b64(a.data?.[0]);if(u.length<49)return;
-        const lam=Number(Buffer.from(u).readBigUInt64LE(32));(c.curveSol=c.curveSol||[]).push([at,lam,u[48]?1:0]);if(c.curveSol.length>12)c.curveSol.shift();PRE_STATS.curve++})}
+    if(needCt.length){const v=await call(needCt.map(c=>c.a),{encoding:'jsonParsed'});const at=Date.now();needCt.forEach((c,j)=>{if(!v[j])return;try{const ct=ctFromMint(v[j]);ct.at=at;ct.batch=1;c.ct=ct;PRE_STATS.ct++}catch{PRE_STATS.errors++}})}
+  }catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else{PRE_STATS.errors++;err('pre contracts '+e.message)}}
+  try{for(let i=0;i<needCurve.length;i+=100){const part=needCurve.slice(i,i+100),pools=part.map(c=>c.p),v=await call(pools,{encoding:'base64',dataSlice:{offset:0,length:49}}),at=Date.now();
+      part.forEach((c,j)=>{const a=v[j];if(c.p!==pools[j]||!a||a.owner!==PUMP)return;const u=b64(a.data?.[0]);if(u.length<49)return;
+        const lam=Number(Buffer.from(u).readBigUInt64LE(32));(c.curveSol=c.curveSol||[]).push([at,lam,u[48]?1:0]);if(c.curveSol.length>20)c.curveSol.shift();PRE_STATS.curve++})}
   }catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else{PRE_STATS.errors++;err('pre sweep '+e.message)}}}
 
 /* ---------- миграция. Доказательство = 2 условия вместе:
@@ -400,20 +401,20 @@ let OLD_RESEARCH_ONE=[], OLD_RESEARCH_TWO=[];
 let PASS_ERR='', TWO_ERR='', PASS_CFG_ERR='', TWO_BANK_UPLOADED=0, AUTO_UPLOADED=0;
 async function admitVerifiedPublicLaunch(launch,record) {
   const existing=C.get(record.mint);
-  if(existing){existing.preCurve=existing.preCurve||1;existing.preTradingAt=record.eventAt;
+  if(existing){existing.preCurve=existing.preCurve||1;existing.preTradingAt=record.eventAt;existing.createdAt=record.eventAt;existing.createdAtSource='verified-create-log-slot-time';
     if(!existing.n)existing.n=launch.name;if(!existing.s)existing.s=launch.symbol;
     return;
   }
   C.set(record.mint,{a:record.mint,n:launch.name,s:launch.symbol,i:'',
     p:launch.curve,d:'pump-fun',q:launch.quote||WSOL,t:record.eventAt,
-    preTradingAt:record.eventAt,tSrc:'pre',seen:record.acceptedAt,disc:'pre-ws',
+    preTradingAt:record.eventAt,createdAt:record.eventAt,createdAtSource:'verified-create-log-slot-time',tSrc:'pre',seen:record.acceptedAt,disc:'pre-ws',
     preCurve:1,pools:[launch.curve],fv:FV,
     mg:{v:MGV,st:'curve',k:'curve-pump',final:1,lastAt:record.acceptedAt}});
 }
 // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
 // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
 const MODULES=['event-clock.js','admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
-  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js'];
+  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js'];
 let MODULES_OK=null;
 function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
   for(const name of MODULES){const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
@@ -595,7 +596,7 @@ function admitVerifiedMigration(c){
   }catch(e){SOURCE_ERR='ошибка записи источника: '+e.message;err('source '+e.message)}
 }
 
-const OBS_KEYS=['ds','k10','path','hold','bx','lq','gx','vaults','vmint','vdec','vaultIdentityAt','legacy','raw','tr','rawUp','trDone','archiveRefs'],OBS_TMP=['tr','raw','dsAt','dsTryAt','tokAt','gxAt','lastTrade','kTry','pTry','trTry','trDone','lqAt','rawUp','vTry'];
+const OBS_KEYS=['curveSol','ds','k10','path','hold','bx','lq','gx','vaults','vmint','vdec','vaultIdentityAt','legacy','raw','tr','rawUp','trDone','archiveRefs'],OBS_TMP=['tr','raw','dsAt','dsTryAt','tokAt','gxAt','lastTrade','kTry','pTry','trTry','trDone','lqAt','rawUp','vTry'];
 function takeObs(c){const o={};for(const k of OBS_KEYS){if(c[k]!=null)o[k]=c[k];delete c[k]}for(const k of OBS_TMP)delete c[k];return o}
 function load(){try{require(DIR+'/stream-json.js').loadRows(DIR+'/state.json',c=>{
     for(const key of ['chTry','kTry','pTry','trTry','vTry'])delete c[key]; // in-flight locks belong to the old process
@@ -979,7 +980,7 @@ async function flushUploadsInner(){
   }
 }
 function coinMetadata(c){const mg=c.mg||{};
-  const r={a:c.a,n:c.n,s:c.s,i:c.i,p:c.p,d:c.d,q:c.q,t:c.t,tSrc:c.tSrc||'gt',t0:c.t0||null,seen:c.seen,disc:c.disc||null,rcSeen:c.rcSeen||null,wsSeen:c.wsSeen||null,firstPostSeenAt:c.firstPostSeenAt||null,preCurve:!!c.preCurve,preTradingAt:c.preTradingAt||null,ty:launchType(c),
+  const r={a:c.a,n:c.n,s:c.s,i:c.i,p:c.p,d:c.d,q:c.q,t:c.t,tSrc:c.tSrc||'gt',t0:c.t0||null,createdAt:c.createdAt||null,createdAtSource:c.createdAtSource||null,uri:c.uri||null,description:c.description||null,seen:c.seen,disc:c.disc||null,rcSeen:c.rcSeen||null,wsSeen:c.wsSeen||null,firstPostSeenAt:c.firstPostSeenAt||null,preCurve:!!c.preCurve,preTradingAt:c.preTradingAt||null,ty:launchType(c),
     mk:mg.k||null,mst:mg.st||null,mw:mg.why||'',mT:mg.mT||null,mSig:mg.sig||null,mSeen:mg.seenAt||null,mCr:mg.creator??null,mH:c.mgH||[],mk0:c.mg0?.k||null,
     origs:(c.origs||[]).map(o=>({p:o.p,t:o.t,d:o.d,movedAt:o.movedAt})),
     preObs:c.preCurve?((c.origs||[]).find(o=>o.d==='pump-fun')||null):null,ct:c.ct||null,curveSol:c.preCurve&&c.curveSol?.length?c.curveSol:undefined,soc:c.soc||0,tk:c.tk&&isFinite(c.tk)?c.tk:null,tkAt:c.tkAt||null,
@@ -1045,16 +1046,16 @@ async function exportSource(now) {
   const d=dayKey(now);
   const enrich=x=>{
     const c=C.get(x.mint)||COMPLETED?.metadata(x.mint);
-    return {a:x.mint,phase:x.phase,eventAt:x.eventAt,acceptedAt:x.acceptedAt,
+    return {...require(DIR+'/coin-profile.js').cardAt(c,now),a:x.mint,phase:x.phase,eventAt:x.eventAt,acceptedAt:x.acceptedAt,
       n:c?.n||'',s:c?.s||'',i:c?.i||'',family:x.proof?.family||null,curve:x.proof?.curve||null,
-      proofSig:x.proof?.signature||null,uri:x.proof?.uri||null,migrationPool:x.proof?.pool||null,proofKind:x.proof?.kind||null,eventSlot:x.proof?.slot||null,eventTimeSource:x.proof?.timeSource||null};
+      proofSig:x.proof?.signature||null,uri:c?.uri||x.proof?.uri||null,migrationPool:x.proof?.pool||null,proofKind:x.proof?.kind||null,eventSlot:x.proof?.slot||null,eventTimeSource:x.proof?.timeSource||null};
   };
   const summary=SOURCE.summary(now);
   const today=SOURCE.day(d).map(enrich);
   // Нет задним числом добавленных кандидатов из обычной ленты.
   // Предмиграционный адаптер пока не активен: не выдавать пустоту за готовность.
   AI_SNAP.source=summary;
-  await upload('source/status.json',{...summary,mode:'verified-pre-post',preConnected:preFlowing(),preLive:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:preFlowing()&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
+  await upload('source/status.json',{...summary,cardUnits:{sol:'SOL',top10:'percent',b5:'transactions',s5:'transactions',createdAt:'unix-ms'},mode:'verified-pre-post',preConnected:preFlowing(),preLive:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:preFlowing()&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
   await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});
   await upload('source/live.json',{updated:now,count:today.length,coins:SOURCE.latest(200).map(enrich)});
 }
@@ -1226,7 +1227,7 @@ async function retireConfirmed(day,list,now){
 }
 async function exportObservationSummary(name,list,now){
   const contract=require(DIR+'/observation-contract.js'),{rowStream}=require(DIR+'/stream-json.js');
-  await upload(name,{schema:2,updated:now,scope:'admitted-latest-observations-only',coins:rowStream(function*(){for(const c of list){const admission=SOURCE?.get(c.a);if(admission)yield contract.projectSummary(c,{metadata:coinMetadata(c),admission});}})});
+  await upload(name,{schema:2,updated:now,scope:'admitted-latest-observations-only',coins:rowStream(function*(){for(const c of list){const admission=SOURCE?.get(c.a);if(admission)yield contract.projectSummary(c,{metadata:{...coinMetadata(c),...require(DIR+'/coin-profile.js').cardAt(c,now)},admission});}})});
 }
 let COLD_DEDUP_BUSY=false;
 async function deduplicateClosedArchiveRows(){if(COLD_DEDUP_BUSY||!COMPLETED||!SOURCE)return;COLD_DEDUP_BUSY=true;try{
@@ -1263,7 +1264,7 @@ async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayK
 let STATUS_BUSY=false;
 async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const now=Date.now(),today=dayKey(now);
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,coinProfiles:PROFILES?.stats||null,resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,publishedAt:FAST_PASS_PUBLISH_AT},
@@ -1303,6 +1304,9 @@ const STARTED=Date.now();
   try{await initSource();await reloadSourceAgeConfig()}catch(e){SOURCE_ERR=e.message;err('главный источник не запустился: '+e.message)}
   try{await initResearchV2()}catch(e){RESEARCH_V2_ERR=e.message;err('исследование v2 не запустилось: '+e.message)}
   try{await initPathsV2()}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('серверные пути не запустились: '+e.message)}
+  PROFILES=new (require(DIR+'/coin-profile.js').CoinProfiles)();
+  const updateProfiles=()=>PROFILES.update({coins:C,source:SOURCE,rpc:(m,p)=>rpc(m,p,{priority:'identity',context:'карточка',source:'coin-profile'})}).catch(e=>err('profiles '+e.message));
+  setInterval(updateProfiles,60000);updateProfiles();
   chainWatch();setInterval(()=>exportStatus().catch(e=>err('status '+e.message)),60000);exportStatus().catch(e=>err('status '+e.message));
   startDiscoveryBootstrap();
   setInterval(pollNew,90000);

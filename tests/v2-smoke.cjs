@@ -358,7 +358,7 @@ test('Expired historical coins never create fresh Passed signals on a late visit
 test('Unknown or zero placeholder volume is a dash in cards and detail; positive observed volume is shown',()=>{
  const scope={Number,Math,String,Date,Object,fmt:String,passMeta:null,serverPassRows:[],serverR2Rows:[],researchMeta:null,bank:{'1':[]},sourceMeta:null,safeImg:()=>'',ageM:()=>'',esc:String,mint:c=>c.a,price:()=>'',time:()=>'',now:()=>Date.now(),document:{querySelectorAll:()=>[],getElementById:()=>null}};
  const start=js.indexOf('// ---- Живые рыночные данные'),end=js.indexOf('function showCoinDetail(',start);
- vm.runInNewContext(js.slice(start,end),scope);
+ vm.runInNewContext(js.slice(js.indexOf('function sourceCard('),js.indexOf('function admitted('))+js.slice(start,end),scope);
  for(const value of [null,undefined,0,NaN,'0']){
   const c={a:'mint',_entry:{eventAt:1,phase:'after'},ds:[[1,1,null,1,1,1,value]]};
   assert.doesNotMatch(scope.coinHtml(c),/5м \$0/);
@@ -379,7 +379,7 @@ test('compound owner publication preserves contract and SOL guards',()=>{
 
 
 test('fresh canonical summaries expose exact Source admissions before slower source/day publication',()=>{
- const at=2000000,mint='Mint'.padEnd(44,'a'),context={};vm.createContext(context);vm.runInContext(js.slice(js.indexOf('function canonicalAdmissions('),js.indexOf('async function loadInternal('))+';this.read=canonicalAdmissions;',context);
+ const at=2000000,mint='Mint'.padEnd(44,'a'),context={};vm.createContext(context);vm.runInContext(js.slice(js.indexOf('function sourceCard('),js.indexOf('function admitted('))+js.slice(js.indexOf('function canonicalAdmissions('),js.indexOf('async function loadInternal('))+';this.read=canonicalAdmissions;',context);
  const admission={v:1,mint,phase:'before',eventAt:at-15000,acceptedAt:at-10000,proof:{signature:'signed-create',family:'pump'}},row=require('../server/observation-contract').projectSummary({a:mint,p:'curve',t:admission.eventAt},{metadata:{n:'New'},admission}),file={schema:2,updated:at-1000,coins:[row]};
  assert.equal(context.read([file],at)[0].acceptedAt,admission.acceptedAt);assert.equal(context.read([file],at)[0].proofSig,'signed-create');
  assert.equal(context.read([{...file,updated:at-8*60000}],at).length,0);

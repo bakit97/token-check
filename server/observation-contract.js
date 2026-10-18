@@ -1,6 +1,6 @@
 (function(root){
 'use strict';
-const META=new Set(['a','n','s','i','p','d','q','t','t0','tSrc','seen','disc','rcSeen','wsSeen','firstPostSeenAt','preCurve','preTradingAt','ty','mk','mst','mw','mT','mSig','mSeen','mCr','mH','mk0','ct','soc','tk','tkAt','lastTrade','live','legacy']);
+const META=new Set(['a','n','s','i','p','d','q','t','t0','tSrc','seen','disc','rcSeen','wsSeen','firstPostSeenAt','preCurve','preTradingAt','ty','mk','mst','mw','mT','mSig','mSeen','mCr','mH','mk0','ct','soc','tk','tkAt','lastTrade','live','legacy','createdAt','createdAtSource','uri','description','sol','b5','s5','top10','safeContract','img','cardAt','marketObservedAt']);
 const day=t=>new Date(t+5*3600000).toISOString().slice(0,10);
 function series(rows,kind){return (rows||[]).map(row=>kind==='vault'?{at:row[0]*1000,slot:row[1],balances:row.slice(2)}:{at:row[0]*1000,values:row.slice(1)})}
 function poolRecord(c,mint){
@@ -8,7 +8,7 @@ function poolRecord(c,mint){
  return {address:c.p||null,marketAt:c.t,kind:c.d||null,quoteMint:c.q||null,movedAt:c.movedAt||null,
   ds:series(c.ds,'ds'),vaults:{addresses:c.vaults||null,mints:c.vmint||null,decimals:c.vdec||null,identityAt:c.vaultIdentityAt||null,samples:series(c.lq,'vault')},
   candles10:c.k10||null,holders10:c.hold?.['10']||null,holders:c.hold||{},rawStates:raw,
-  tradeCoverage:c.bx||null,tradeFetches:(tr?.f||[]).map(f=>({at:f[0],count:f[1],marketMinAt:f[2]==null?null:f[2]*1000,marketMaxAt:f[3]==null?null:f[3]*1000})),tradeRows:tr?.x||null,tradeRowMarketTimeUnit:'unix-seconds',tradeRowReceiptTime:'fetch-coverage-only',
+  curveSol:c.curveSol||null,tradeCoverage:c.bx||null,tradeFetches:(tr?.f||[]).map(f=>({at:f[0],count:f[1],marketMinAt:f[2]==null?null:f[2]*1000,marketMaxAt:f[3]==null?null:f[3]*1000})),tradeRows:tr?.x||null,tradeRowMarketTimeUnit:'unix-seconds',tradeRowReceiptTime:'fetch-coverage-only',
   activity:series(c.gx,'ds'),path:c.path||null,
   archives:c.archiveRefs?{...c.archiveRefs}:{rawStates:c.rawUp?'raw/'+archiveDay+'/'+mint+'-state.json':null,trades:c.trDone&&tr?.f?.length?'raw/'+archiveDay+'/'+mint+'-trades.json':null,verification:'legacy-reference-not-reconciled'}};
 }
@@ -21,12 +21,12 @@ function project(c,{metadata={},admission=null}={}){
 }
 // Phone projection; complete histories remain in the daily schema-2 archive.
 function projectSummary(c,options={}){
- const thin=p=>({...p,ds:(p.ds||[]).slice(-2),lq:(p.lq||[]).slice(-2),gx:(p.gx||[]).slice(-2),raw:{},tr:null,k10:null,path:null,origs:[]});
+ const thin=p=>({...p,ds:(p.ds||[]).slice(-2),lq:(p.lq||[]).slice(-2),gx:(p.gx||[]).slice(-2),curveSol:(p.curveSol||[]).slice(-2),raw:{},tr:null,k10:null,path:null,origs:[]});
  const input={...thin(c),origs:(c.origs||[]).map(thin)},row=project(input,options);
  row.observations.readScope='latest-observations-only';return row;
 }
 function restorePool(p,cutoff){const valid=x=>Number.isFinite(x?.at)&&x.at<=cutoff;
- return {p:p.address,t:p.marketAt,d:p.kind,q:p.quoteMint,movedAt:p.movedAt,archiveRefs:p.archives||null,rawUp:p.archives?.rawStates?1:0,trDone:p.archives?.trades?1:0,
+ return {curveSol:(p.curveSol||[]).filter(r=>Number.isFinite(r[0])&&r[0]<=cutoff),p:p.address,t:p.marketAt,d:p.kind,q:p.quoteMint,movedAt:p.movedAt,archiveRefs:p.archives||null,rawUp:p.archives?.rawStates?1:0,trDone:p.archives?.trades?1:0,
   ds:(p.ds||[]).filter(valid).map(x=>[x.at/1000,...x.values]),lq:(p.vaults?.samples||[]).filter(valid).map(x=>[x.at/1000,x.slot,...x.balances]),
   vaults:p.vaults?.addresses,vmint:p.vaults?.mints,vdec:p.vaults?.decimals,vaultIdentityAt:p.vaults?.identityAt,
   k10:valid(p.candles10)?p.candles10:null,hold:Object.fromEntries(Object.entries(p.holders||{}).filter(([,x])=>valid(x))),

@@ -149,7 +149,7 @@ function starterFeaturesAt(coin,decisionAt,context={}){
   if(row&&Number.isFinite(row[2+qi])&&row[2+qi]>=0)quoteSol=row[2+qi]/1e9;
  }
  // До миграции: SOL в кривой pump (real_sol_reserves), замер не старше 7 мин и не позже момента решения.
- if(quoteSol==null&&Array.isArray(coin?.curveSol)&&(!coin.q||coin.q===WSOL)){
+ if(quoteSol==null&&coin?.mg?.st!=='ok'&&/pump-?fun/i.test(coin?.d||'')&&Array.isArray(coin?.curveSol)&&(!coin.q||coin.q===WSOL)){
   let best=null;for(const r of coin.curveSol)if(Array.isArray(r)&&r[0]<=decisionAt&&decisionAt-r[0]<=7*MIN&&Number.isFinite(r[1])&&r[1]>=0&&(!best||r[0]>best[0]))best=r;
   if(best)quoteSol=best[1]/1e9;
  }
