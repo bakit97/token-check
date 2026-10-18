@@ -261,10 +261,11 @@ function spark(c){
   var up=points.at(-1)>=points[0];
   return '<svg viewBox="0 0 62 28" class="spark" role="img" aria-label="График цены"><path d="'+d+'" fill="none" stroke="'+(up?'#38d996':'#fc6b83')+'" stroke-width="2.3" stroke-linecap="round"/></svg>';
 }
+function observedMoney(value){return typeof value==='number'&&Number.isFinite(value)&&value>0?'$'+fmt(value):'—'}
 function coinHtml(c,extra){
   var e=c._entry,p=(c.ds||[]).at(-1),img=safeImg(c.i);
   var age=ageM(e.eventAt),name=esc(c.n||c.s||'Токен'),symbol=esc(c.s||'');
-  var metric=p?'L $'+fmt(p[2]||0)+' · 5м $'+fmt(p[6]||0):'Нет последних снимков';
+  var metric=p?'L '+observedMoney(p[2])+' · 5м '+observedMoney(p[6]):'Нет последних снимков';
   return '<button type="button" class="coin" data-coin="'+esc(mint(c))+'">'+
     (img?'<img class="avatar" src="'+esc(img)+'" alt="" loading="lazy">':'<span class="avatar empty">'+esc((c.s||'?').slice(0,2))+'</span>')+
     '<span class="body"><span class="name">'+name+' <small>'+symbol+'</small></span><span class="detail">'+age+' · '+(e.phase==='before'?'🌱 до':'🎓 после')+'</span><span class="detail">'+metric+'</span>'+
@@ -277,7 +278,7 @@ function detail(c){
     '<div class="statgrid"><div class="stat"><span>Начало потока</span><strong style="font-size:15px">'+time(e.eventAt)+'</strong></div>'+
     '<div class="stat"><span>Первое подтверждение</span><strong style="font-size:15px">'+time(e.acceptedAt)+'</strong></div>'+
     '<div class="stat"><span>Цена последняя</span><strong style="font-size:15px">'+price(p[1])+'</strong></div>'+
-    '<div class="stat"><span>Объём 5 мин</span><strong style="font-size:15px">$'+fmt(p[6]||0)+'</strong></div></div>'+
+    '<div class="stat"><span>Объём 5 мин</span><strong style="font-size:15px">'+observedMoney(p[6])+'</strong></div></div>'+
     '<p class="hint">Источники проверки: '+esc(c.mk||c.d||'нет данных')+'. Допуск подтверждается главным серверным журналом. Недостающие торговые данные отображаются как неизвестные.</p></div>';
 }
 function showCoinDetail(c,anchorId){
@@ -293,7 +294,7 @@ function renderAll(){
   renderDailySource();
   var count=sourceActive?sourceMeta.today:0;
   $('admitCount').textContent=sourceActive?fmt(count):'—';
-  $('visibleCount').textContent=sourceActive?fmt(lastVisible.length):'—';
+  $('visibleCount').textContent=sourceActive&&Number.isSafeInteger(sourceMeta?.total)?fmt(sourceMeta.total):'—';
   $('todayTab').textContent=count?' '+fmt(count):'';
   $('sourceNote').textContent=sourceActive?
     (sourceMeta?.preConnected?'✓ Главный источник: журнал сервера. До миграции — публичные торговые кривые Pump.fun; после — подтверждённые миграции. Дублей нет.':'⚠ Источник до миграции пока не подтвердил связь с сетью. Постмиграционные события продолжают проверяться.')+' Возраст проверяется при ВХОДЕ, карточка не исчезает через 2 минуты.':

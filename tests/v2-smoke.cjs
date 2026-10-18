@@ -79,7 +79,7 @@ test('главный источник authoritative: только принято
   const coins=[{a:good,n:'Допущена',mst:'ok',mT:now-20*60e3,mSeen:now-19*60e3,
     ds:[[Math.floor(now/1000),0.0001,5000,10000,4,3,100]]},
     {a:other,n:'Не допущена',mst:'ok',mT:now-20*60e3,mSeen:now-19*60e3}];
-  const src={updated:now,mode:'verified-post-only',today:1,
+  const src={updated:now,mode:'verified-post-only',today:1,total:1,
     settings:{beforeMinutes:2,afterMinutes:2}};
   const admitted={a:good,phase:'after',eventAt:now-20*60e3,acceptedAt:now-19*60e3};
   const fetch=async url=>({ok:true,status:200,json:async()=>{
@@ -324,4 +324,18 @@ test('Expired historical coins never create fresh Passed signals on a late visit
   assert.equal(memory.has('solscan_v2_verified_passes_20261017'),false);
   assert.doesNotMatch(el('passedList').innerHTML,/Старый токен/);
   assert.equal(el('passedArchiveCount').textContent,'0');
+});
+
+test('Unknown or zero placeholder volume is a dash in cards and detail; positive observed volume is shown',()=>{
+ const scope={Number,fmt:String,safeImg:()=>'',ageM:()=>'',esc:String,mint:c=>c.a,spark:()=>'',price:()=>'',time:()=>''};
+ const start=js.indexOf('function observedMoney('),end=js.indexOf('function showCoinDetail(',start);
+ vm.runInNewContext(js.slice(start,end),scope);
+ for(const value of [null,undefined,0,NaN,'0']){
+  const c={a:'mint',_entry:{eventAt:1,phase:'after'},ds:[[1,1,null,1,1,1,value]]};
+  assert.match(scope.coinHtml(c),/5м —/);assert.doesNotMatch(scope.coinHtml(c),/5м \$0/);
+  assert.match(scope.detail(c),/Объём 5 мин<\/span><strong[^>]*>—/);
+ }
+ assert.equal(scope.observedMoney(1234),'$1234');
+ assert.match(html,/Всего допущено · за всё время/);assert.doesNotMatch(html,/На витрине сейчас/);
+ assert.match(js,/fmt\(sourceMeta.total\)/);
 });
