@@ -290,6 +290,7 @@ function showCoinDetail(c,anchorId){
 }
 function renderAll(){
   var today=day(now());
+  renderDailySource();
   var count=sourceActive?sourceMeta.today:0;
   $('admitCount').textContent=sourceActive?fmt(count):'—';
   $('visibleCount').textContent=sourceActive?fmt(lastVisible.length):'—';
@@ -299,6 +300,23 @@ function renderAll(){
     '⛔ Главный источник сервера недоступен или устарел. Вход новых монет приостановлен. Непроверенные кандидаты из старых данных сюда не подставляются.';
   var list=lastVisible.slice(0,s.limit);
   $('coinList').innerHTML=list.length?list.map(function(c){return coinHtml(c)}).join(''):'<div class="empty-state">Пока нет подтверждённых записей в этом потоке. Монеты, не успевшие пройти фильтр возраста на входе, не добавляются позже задним числом.</div>';
+}
+function dailySourceText(label,row,available){
+  if(!available||!row||!['seen','accepted','tooOld','unverified'].every(function(k){return Number.isSafeInteger(row[k])&&row[k]>=0}))return label+': нет данных';
+  var late=row.tooOld&&Number.isFinite(row.averageLateMs)?' (в среднем на '+(row.averageLateMs/(row.averageLateMs<60000?1000:60000)).toLocaleString('ru-RU',{maximumFractionDigits:1})+(row.averageLateMs<60000?' сек':' мин')+')': '';
+  return label+': увидели '+fmt(row.seen)+' · прошли '+fmt(row.accepted)+' · опоздали '+fmt(row.tooOld)+late+' · не подтв. '+fmt(row.unverified)+
+    (row.alreadyAdmitted?' · уже в «Все» '+fmt(row.alreadyAdmitted):'')+(row.other?' · другие отказы '+fmt(row.other):'');
+}
+function renderDailySource(){
+  var daily=sourceMeta?.daily;
+  var valid=sourceActive&&Number.isFinite(sourceMeta?.updated)&&now()-sourceMeta.updated<=7*60000&&daily?.schema===1&&daily.day===day(now())&&daily.complete===true;
+  var availability=sourceMeta?.dailyAvailability;
+  $('dailyBefore').textContent=dailySourceText('До миграции',daily?.before,valid&&availability?.before===true);
+  $('dailyAfter').textContent=dailySourceText('После миграции',daily?.after,valid&&availability?.after===true);
+  $('dailySourceNote').textContent=valid?
+    'Уникальные mint в каждом потоке. Опоздание — превышение порога возраста.'+(daily.partialDay?' Сегодня учёт с '+time(daily.startedAt)+' (UTC+5), день неполный.':'')+
+    ((!availability?.before||!availability?.after)?' Недоступный поток: нет данных.':''):
+    'Нет свежих полных данных сервера за текущие сутки. Сброс в 00:00 UTC+5.';
 }
 function renderLocalPreview(){
   if(!$('localPreview'))return;
@@ -1273,7 +1291,7 @@ function init(){
   document.querySelectorAll('#levels [data-level]').forEach(function(x){x.classList.toggle('active',x.dataset.level===s.level)});
   bind();refresh();load();
   setInterval(load,45000);
-  setInterval(function(){if(dataset.length){renderAll();renderPassed()}},10000);
+  setInterval(function(){renderDailySource();if(dataset.length){renderAll();renderPassed()}},10000);
 }
 window.addEventListener('error',function(e){if($('dataState'))$('dataState').textContent='Ошибка интерфейса: '+(e.message||'неизвестная')+'. Старый сайт доступен по кнопке сверху.'});
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
