@@ -21,8 +21,10 @@ function researchPins({source,passes,one=[],two=[],now=Date.now()}={}){
 }
 function retirementDue(c,{now=Date.now(),pins=new Map()}={}){
  if(!Number.isFinite(c.t)||pins.get(c.a)>now)return false;
- const ok=c.mg?.st==='ok'||!!(c.preCurve&&Number.isFinite(c.preTradingAt)),at=ok?c.t:Math.max(c.t,c.proofEnqueuedAt||0);
- return now-at>(ok?26:2)*HOUR;
+ // Мигрировавшие (витрина) наблюдаются 24 ч → 26 ч; монеты до миграции нужны только на 5 ч исследования → 6 ч
+ // (исследования дополнительно держат свои монеты через pins). Остальные кандидаты — 2 ч.
+ const post=c.mg?.st==='ok',pre=!post&&!!(c.preCurve&&Number.isFinite(c.preTradingAt)),at=post||pre?c.t:Math.max(c.t,c.proofEnqueuedAt||0);
+ return now-at>(post?26:pre?6:2)*HOUR;
 }
 function cancelRetiredGT(queue,coins,{now=Date.now(),pins=new Map()}={}){
  const pools=new Set(),active=new Set();for(const c of coins.values()){const target=retirementDue(c,{now,pins})?pools:active;for(const p of [c.p,...(c.origs||[]).map(x=>x.p)])if(p)target.add(p)}for(const p of active)pools.delete(p);
