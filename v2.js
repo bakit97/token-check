@@ -636,22 +636,39 @@ function renderPassed(){
       '<p class="muted">'+x.matches.map(function(f){return esc(f.name)+' · v'+esc(f.version)+' ('+esc(f.key)+' '+esc(f.op)+' '+fmt(f.value)+')'}).join(', ')+'</p></div>';
   }).join(''):'<p class="muted">Журнал пуст. Источником являются только признанные главным сервером монеты.</p>';
 }
+var MLAB={buyers10:'Покупатели 10 мин',quoteSol:'SOL в пуле',top1:'Топ-1 держатель %',top10:'Топ-10 держателей %',buyers:'Покупатели',trades:'Сделки',volume:'Объём $',liq:'Ликвидность $',mc:'Капитализация $',buys:'Покупки',sells:'Продажи',buySellRatio:'Покупки/продажи'};
+var MODS={};
+function modSig(m){return JSON.stringify([m.dm,m.conds])}
+function modLoad(){try{return JSON.parse(localStorage.getItem('r1mods')||'{}')}catch(e){return {}}}
+function modSave(m){var all=modLoad();all[m.id]=m;try{localStorage.setItem('r1mods',JSON.stringify(all))}catch(e){}}
+function modPc(v){return v==null?'—':Math.round(v*100)+'%'}
+function modEv(t){if(!t||t.positiveRecall==null)return '—';return '🟢 '+modPc(t.positiveRecall)+' · 🔴 '+modPc(1-t.negativeRejection)+(t.totalPositive!=null?' <span class="hint">на 🟢'+t.totalPositive+' 🔴'+t.totalNegative+'</span>':'')}
+function modCard(m,auto){var stale=modSig(m)!==m.evalSig,ev=m.eval||{};
+  var conds=m.conds.map(function(c,j){return '<div class="row" style="gap:5px;margin-top:5px"><select class="input sm inl" style="margin:0;flex:1;min-width:0" data-mf="key" data-j="'+j+'">'+Object.keys(MLAB).map(function(k){return '<option value="'+k+'"'+(k===c.key?' selected':'')+'>'+MLAB[k]+'</option>'}).join('')+'</select>'+
+    '<select class="input sm inl" style="margin:0;width:54px" data-mf="op" data-j="'+j+'"><option'+(c.op==='>='?' selected':'')+'>&gt;=</option><option'+(c.op==='<='?' selected':'')+'>&lt;=</option></select>'+
+    '<input class="input sm" style="width:70px;min-height:28px;padding:2px 6px" type="number" step="any" value="'+esc(c.value)+'" data-mf="value" data-j="'+j+'"><button type="button" class="del" data-mdel="'+j+'">✕</button></div>'}).join('');
+  return '<details class="frow mod" data-mid="'+esc(m.id)+'" style="margin-top:6px"><summary><span class="fname">'+esc(m.name)+' <span class="hint">⏱ '+m.dm+' мин · '+(stale?'⚠ нужен перетест':modEv(ev.train).replace(/ <span.*$/,''))+'</span></span>'+
+    '<button type="button" class="add1" data-stage-auto="'+esc(auto||'')+'">+ в окно</button></summary>'+
+    '<div class="prow"><label>Имя</label><input class="input sm" data-mf="name" value="'+esc(m.name)+'"></div>'+
+    '<div class="prow"><label>Время вердикта <b class="mdmv">'+m.dm+'</b> мин от обнаружения</label><input type="range" min="2" max="15" step="1" value="'+m.dm+'" data-mf="dm"></div>'+
+    '<div class="prow" style="margin-bottom:0"><label>Условия</label></div>'+conds+'<button type="button" class="add1" style="margin-top:6px" data-madd="1">+ условие</button>'+
+    '<div class="subcard" style="margin-top:8px;font-size:12.5px">'+(stale?'<div class="warn">⚠ Условия изменены — оценка устарела, нужен перетест</div>':'')+
+    '<div style="'+(stale?'opacity:.45':'')+'">тест '+modEv(ev.train)+'<br>проверка '+modEv(ev.holdout)+'</div></div>'+
+    '<div class="row applyrow"><button type="button" class="primary pbtn" data-msave="1" style="margin-left:auto">Сохранить</button></div></details>'}
 function renderAutoSuggestions(report){
-  if(!report||!Array.isArray(report.rules)||!report.rules.length){var T=r1T();return '<p class="hint">Модули появятся, когда наберётся 🟢 '+T.l+' и 🔴 '+T.d+'.</p>'}
-  const labels={buyers:'Покупатели',buyers10:'Покупатели 10 мин',trades:'Сделки',volume:'Объём $',liq:'Ликвидность $',mc:'Капитализация $',buys:'Покупки',sells:'Продажи',buySellRatio:'Покупки/продажи',quoteSol:'SOL в пуле',top1:'Топ-1 держатель %',top10:'Топ-10 держателей %'};
-  const pc=function(v){return v==null?'—':Math.round(v*100)+'%'};
-  const dm=(report.decisionMinutes||(researchMeta&&researchMeta.settings&&researchMeta.settings.decisionMinutes)||'—');
-  const ev=function(t){if(!t||t.positiveRecall==null)return '—';var n=(t.totalPositive!=null?' на 🟢'+t.totalPositive+' 🔴'+t.totalNegative:'');return '🟢 '+pc(t.positiveRecall)+' · 🔴 '+pc(1-t.negativeRejection)+n};
-  return report.rules.slice(0,8).map(function(x,i){
-    return '<div class="frow" style="margin-top:6px"><div class="row"><b style="font-size:13px">М'+(report.level||1)+'-'+(i+1)+' · ⏱ '+dm+' мин</b>'+
-      '<button type="button" class="add1" data-stage-auto="'+esc(report.level)+':'+i+'">+ в окно</button></div>'+
-      '<div style="font-size:12.5px;margin-top:2px">'+esc(labels[x.rule.key]||x.rule.key)+' '+esc(x.rule.op)+' '+fmt(x.rule.value)+'</div>'+
-      '<div class="hint" style="margin:2px 0 0">тест '+ev(x.train)+'<br>проверка '+ev(x.holdout)+'</div></div>'}).join('');
+  var saved=modLoad(),list=[];
+  var demo={id:'demo',name:'ДЕМО · Ранний спрос',dm:12,conds:[{key:'buyers10',op:'>=',value:8},{key:'quoteSol',op:'>=',value:2},{key:'top10',op:'<=',value:35}],
+    eval:{train:{positiveRecall:.7,negativeRejection:.9,totalPositive:60,totalNegative:250},holdout:{positiveRecall:.65,negativeRejection:.88,totalPositive:40,totalNegative:100}}};
+  demo.evalSig=modSig(demo);list.push([saved.demo||demo,'']);
+  var dm=(report&&report.decisionMinutes)||(researchMeta&&researchMeta.settings&&researchMeta.settings.decisionMinutes)||15;
+  ((report&&report.rules)||[]).slice(0,8).forEach(function(x,i){var id='a'+(report.level||1)+'-'+i,m={id:id,name:'М'+(report.level||1)+'-'+(i+1),dm:dm,conds:[{key:x.rule.key,op:x.rule.op,value:x.rule.value}],eval:{train:x.train,holdout:x.holdout}};m.evalSig=modSig(m);list.push([saved[id]||m,report.level+':'+i])});
+  list.forEach(function(p){MODS[p[0].id]=JSON.parse(JSON.stringify(p[0]))});
+  var T=r1T();return list.map(function(p){return modCard(MODS[p[0].id],p[1])}).join('')+(list.length<2?'<p class="hint">Настоящие модули появятся, когда наберётся 🟢 '+T.l+' и 🔴 '+T.d+'.</p>':'');
 }
 var R1F='all',R1N=10,R1DEC=0;
 function r1T(){try{var t=JSON.parse(localStorage.getItem('r1targets')||'{}');return {l:t.l||100,d:t.d||40}}catch(e){return {l:100,d:40}}}
 function renderR1(){
-  if($('r1Suggestions'))$('r1Suggestions').innerHTML=renderAutoSuggestions(autoOne);
+  var rs=$('r1Suggestions');if(rs&&!(rs.querySelector&&rs.querySelector('details.mod[open]')))rs.innerHTML=renderAutoSuggestions(autoOne);
   if(researchMeta){
     const cfg=researchMeta.settings||{},counts=researchMeta.counts||{},p=researchMeta.pending||{};
     const a=counts.live||0,b=counts.dead||0;
@@ -1195,6 +1212,11 @@ function bind(){
     }
     save();refresh();
   });
+  $('r1Suggestions').addEventListener('input',function(e){var t=e.target,d=t.closest('[data-mid]');if(!d||!t.dataset.mf)return;var m=MODS[d.dataset.mid],f=t.dataset.mf;
+    if(f==='name')m.name=t.value;else if(f==='dm'){m.dm=+t.value;d.querySelector('.mdmv').textContent=t.value}else{var c=m.conds[+t.dataset.j];c[f]=f==='value'?Number(t.value):t.value}});
+  $('r1Suggestions').addEventListener('click',function(e){var t=e.target,d=t.closest('[data-mid]');if(!d)return;var m=MODS[d.dataset.mid];
+    var redraw=function(){var o=document.createElement('div');o.innerHTML=modCard(m,d.querySelector('[data-stage-auto]').dataset.stageAuto);var n=o.firstChild;n.open=true;d.replaceWith(n)};
+    if(t.dataset.mdel!=null){m.conds.splice(+t.dataset.mdel,1);redraw()}else if(t.dataset.madd){m.conds.push({key:'buyers10',op:'>=',value:0});redraw()}else if(t.dataset.msave){modSave(m);var o=d;redraw();note('Сохранено')}});
   $('r1Seg').addEventListener('click',function(e){var b=e.target.closest('[data-r1f]');if(!b)return;R1F=b.dataset.r1f;document.querySelectorAll('#r1Seg [data-r1f]').forEach(function(x){x.classList.toggle('active',x===b)});renderR1()});
   $('r1N').addEventListener('click',function(e){var b=e.target.closest('[data-r1n]');if(!b)return;R1N=+b.dataset.r1n;document.querySelectorAll('#r1N [data-r1n]').forEach(function(x){x.classList.toggle('active',x===b)});renderR1()});
   [['r1TL','r1TLv',''],['r1TD','r1TDv',''],['r1Dec','r1DecV',' мин']].forEach(function(a){$(a[0]).addEventListener('input',function(){$(a[1]).textContent=$(a[0]).value+a[2];$('r1ResApplyRow').classList.remove('hide')})});
