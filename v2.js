@@ -564,16 +564,17 @@ function renderIntake(){if(!$('intakeBox'))return;var st=researchMeta&&researchM
   var c=serverCfg(),r=c&&c.r1||{};$('inModSum').textContent=(r.before||r.after)?'вкл':'выкл';
   var acc=researchMeta&&researchMeta.intakeAccepted||{},rej=researchMeta&&researchMeta.intakeRejected||{};
   var a=Object.values(acc).reduce(function(p,v){return p+v},0),r=Object.values(rej).reduce(function(p,v){return p+v},0);
-  $('intakeStats').textContent=x?'вошло '+a+' · не вошло '+r+(r?' ('+Object.keys(rej).map(function(k){return ({phase:'поток','no-buyers10':'нет данных о покупателях',buyers10:'мало покупателей','no-quoteSol':'нет данных SOL',quoteSol:'мало SOL',sample:'жребий','not-matched':'не прошли','modules-only-not-passed':'не в «Прошли»'})[k]+' '+rej[k]}).join(', ')+')':''):''}
+  $('intakeStats').textContent='ушло в И1: '+(x?a:'—');
+  var ar=$('intakeApplyRow');if(ar&&ar.classList)ar.classList.toggle('hide',!(INTAKE_DIRTY||MOD_DIRTY))}
 async function applyIntake(){var key=keyFrom('intakeKey'),msg=$('intakeMsg');
   if(!controlEndpoint){msg.textContent='Сервер управления недоступен';return}if(!researchMeta){msg.textContent='Сервер ещё загружается, попробуй через минуту';return}
   if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){msg.textContent='Нажми 🔒 вверху и введи пароль';return}
-  var it=intakeFromUI(),anyMarked=!!((serverCfg()||{}).r1&&((serverCfg().r1.before)||(serverCfg().r1.after)));if(!it.manual.enabled&&!anyMarked&&!window.confirm('Оба входа выключены — исследование перестанет набирать монеты. Продолжить?'))return;
+  var it=intakeFromUI(),anyMarked=!!((serverCfg()||{}).r1&&((serverCfg().r1.before)||(serverCfg().r1.after)));if(!it.manual.enabled&&!anyMarked&&!window.confirm('В И1 ничего не пойдёт. Продолжить?'))return;
   var st=researchMeta.settings,cfg={hours:st.hours,decisionMinutes:st.decisionMinutes,minActive:st.minActive,maxIdle:st.maxIdle,minCoverage:st.minCoverage,intake:it};
   if(MOD_DIRTY)applyModules();
   $('intakeApply').disabled=true;msg.textContent='Отправка…';
   try{var r=await ownerFetch(controlEndpoint+'/api/research-one',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(cfg)});
-    $('intakeKey').value='';rememberIfOk(r,key);msg.textContent=r.ok?'✓ Принято':'Сервер отклонил: HTTP '+r.status+(r.status===401?' (неверный пароль)':'');if(r.ok)INTAKE_DIRTY=false}
+    $('intakeKey').value='';rememberIfOk(r,key);msg.textContent=r.ok?'✓ Принято':'Сервер отклонил: HTTP '+r.status+(r.status===401?' (неверный пароль)':'');if(r.ok){INTAKE_DIRTY=false;renderIntake()}}
   catch(e){msg.textContent='Ошибка связи: '+String(e.message||e)}finally{$('intakeApply').disabled=false}}
 function renderModules(){
   var html='';
