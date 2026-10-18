@@ -96,7 +96,7 @@ function createEvent(bytes,slot,observedAt){
  }
  let quote='So11111111111111111111111111111111111111112';
  if(remaining>=234&&bytes.subarray(offset+202,offset+234).some(b=>b!==0))quote=encodeKey(bytes.subarray(offset+202,offset+234));
- return {mint,curve,quote,slot,blockAt,observedAt,name:strings[0].slice(0,40),symbol:strings[1].slice(0,16)};
+ return {mint,curve,quote,slot,blockAt,observedAt,name:strings[0].slice(0,40),symbol:strings[1].slice(0,16),uri:/^(https:\/\/|ipfs:\/\/)[^\s"'<>]{4,290}$/.test(strings[2]||'')?strings[2]:null};
 }
 function parsePumpCreateEvents(value,{slot,observedAt}={}){
  if(value?.err!==null||!isPumpCreateLog(value)||!Number.isSafeInteger(slot)||slot<=0||!Number.isSafeInteger(observedAt))return [];

@@ -148,7 +148,7 @@ class PumpPreWatcher {
       }
       if(!Number.isSafeInteger(blockAt)||blockAt>observedAt||await this.deriveCurve(event.mint)!==event.curve){this.stats.invalid++;return {admitted:false,reason:'invalid-create-proof'}}
       const launch={...event,blockAt},accepted=this.source.before({mint:event.mint,publicTradingAt:blockAt,observedAt,verified:true,
-        proof:{family:'pump',signature:event.signature,curve:event.curve,slot:event.slot,quote:event.quote,name:event.name,symbol:event.symbol,kind:'pump-create-event',timeSource:slotTime?'slot-estimate':'pump-event-timestamp',reportedEventAt:event.blockAt||null}});
+        proof:{family:'pump',signature:event.signature,curve:event.curve,slot:event.slot,quote:event.quote,name:event.name,symbol:event.symbol,uri:event.uri||null,kind:'pump-create-event',timeSource:slotTime?'slot-estimate':'pump-event-timestamp',reportedEventAt:event.blockAt||null}});
       if(accepted.admitted){this.telemetry?.event(event.mint,'accepted',observedAt);this.stats.accepted++;this.stats.logProofs++;this.stats.lastAt=Date.now();await this.onAdmitted(launch,accepted.record)}
       return accepted;
     }catch(e){this.stats.errors++;this.log('pump-pre log '+String(e.message||e));return {admitted:false,reason:'error'}}

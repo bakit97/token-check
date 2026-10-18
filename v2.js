@@ -108,7 +108,7 @@ function admitted() {
     return Object.assign({},raw,{a:record.a,n:raw.n||record.n||'',
       s:raw.s||record.s||'',i:raw.i||record.i||'',
       _entry:{phase:record.phase,eventAt:record.eventAt,acceptedAt:record.acceptedAt},
-      _sourceProof:record.proofSig||null});
+      _sourceProof:record.proofSig||null,_uri:record.uri||null});
   }).sort(function(a,b){return b._entry.acceptedAt-a._entry.acceptedAt});
 }
 function visibleAll(coins) {
@@ -280,11 +280,12 @@ async function pollMarket(){if(liveBusy||document.hidden)return;var mints=visibl
     patchCards();updateDetailStats()}catch(e){}finally{liveBusy=false}}
 function marketLine(c){var L=liveOf(c),p=(c.ds||[]).at(-1);
   if(L)return 'MC '+usd(L.mc)+' · ликв. '+usd(L.liq)+' · 5м '+usd(L.v5)+' · '+(L.b5==null?'—':L.b5)+'/'+(L.s5==null?'—':L.s5)+' сд.';
-  if(p)return 'L '+observedMoney(p[2])+' · 5м '+observedMoney(p[6]);return 'загрузка данных…'}
+  if(p)return 'L '+observedMoney(p[2])+' · 5м '+observedMoney(p[6]);var e=c._entry;return e&&now()-e.eventAt<120000?'ждём DexScreener…':'нет данных DexScreener'}
 function patchCards(){document.querySelectorAll('[data-coin]').forEach(function(b){var m=b.dataset.coin,L=LIVE[m];if(!L)return;
   var ml=b.querySelector('.mline');if(ml)ml.textContent=marketLine({a:m});
   var pr=b.querySelector('.price');if(pr&&L.price)pr.textContent=price(L.price);
   var sp=b.querySelector('.sparkbox');if(sp)sp.innerHTML=spark({a:m});
+  var gb=b.querySelector('.growbox');if(gb){var cc=lastAccepted.find(function(x){return mint(x)===m})||{a:m};gb.innerHTML=growthHtml(cc)}
   var av=b.querySelector('.avatar.empty');if(av&&L.img)av.outerHTML='<img class="avatar" src="'+esc(L.img)+'" alt="" loading="lazy">'})}
 function spark(c){
   var points=(c.ds||[]).slice(-12).map(function(x){return Number(x[1])}).filter(function(x){return x>0});
@@ -296,13 +297,42 @@ function spark(c){
   return '<svg viewBox="0 0 62 28" class="spark" role="img" aria-label="График цены"><path d="'+d+'" fill="none" stroke="'+(up?'#38d996':'#fc6b83')+'" stroke-width="2.3" stroke-linecap="round"/></svg>';
 }
 function observedMoney(value){return typeof value==='number'&&Number.isFinite(value)&&value>0?'$'+fmt(value):'—'}
+
+// База для роста: первая известная цена монеты (снимок сервера после появления, иначе первая цена DexScreener в этой сессии).
+var LIVE_BASE={};
+function basePrice(c){var m=mint(c);if(LIVE_BASE[m])return LIVE_BASE[m];var e=c._entry||{},t=(e.eventAt||0)/1000;
+  var r=(c.ds||[]).find(function(x){return x[0]>=t&&+x[1]>0});if(r){LIVE_BASE[m]=+r[1];return LIVE_BASE[m]}
+  var h=LIVE_HIST[m];if(h&&h.length){LIVE_BASE[m]=h[0];return h[0]}return null}
+function growthHtml(c){var L=liveOf(c),p=(c.ds||[]).at(-1),cur=L&&L.price||p&&+p[1],b=basePrice(c);
+  if(!cur||!b)return '';var g=(cur/b-1)*100;return '<span class="grow '+(g>=0?'up':'down')+'">'+(g>=0?'+':'')+(Math.abs(g)>=1000?Math.round(g):g.toFixed(Math.abs(g)<10?1:0))+'%</span>'}
+// Список без мигания: существующие карточки обновляются на месте, новые плавно появляются, ушедшие плавно исчезают.
+function updateList(box,items,keyFn,htmlFn,emptyHtml){if(!box)return;
+  if(!items.length){box.innerHTML=emptyHtml;return}
+  if(!box.children||typeof document.createElement!=='function'||typeof requestAnimationFrame!=='function'){box.innerHTML=items.map(htmlFn).join('');return}
+  var old={};Array.prototype.forEach.call(box.children,function(el){if(el.dataset&&el.dataset.key)old[el.dataset.key]=el});
+  var keep={},frag=[];items.forEach(function(it){var k=keyFn(it);keep[k]=1;var tmp=document.createElement('div');tmp.innerHTML=htmlFn(it).trim();var el=tmp.firstChild;el.dataset.key=k;
+    if(old[k]){old[k].innerHTML=el.innerHTML;old[k].className=el.className;frag.push(old[k])}else{el.classList.add('enter');frag.push(el)}});
+  Object.keys(old).forEach(function(k){if(!keep[k]){var el=old[k];el.classList.add('leave');setTimeout(function(){if(el.parentNode)el.parentNode.removeChild(el)},320)}});
+  Array.prototype.forEach.call(box.querySelectorAll('.empty-state'),function(e){e.remove()});
+  var ref=null;for(var i=frag.length-1;i>=0;i--){var el=frag[i];if(el.nextSibling!==ref||el.parentNode!==box)box.insertBefore(el,ref);ref=el}
+  requestAnimationFrame(function(){box.querySelectorAll('.enter').forEach(function(el){el.classList.add('shown')})})}
+
+// Логотипы: DexScreener (если у монеты есть профиль) или картинка из метаданных pump.fun (uri из события создания).
+var IMG={},IMG_BUSY=0,IMG_TRIED={};
+function ipfsHttp(u){return /^ipfs:\/\//.test(u)?'https://ipfs.io/ipfs/'+u.slice(7):u}
+function imgOf(c){var m=mint(c);return IMG[m]||safeImg(c.i)||(LIVE[m]&&LIVE[m].img?safeImg(LIVE[m].img):'')}
+function loadLogos(){document.querySelectorAll('.avatar.empty[data-uri]').forEach(function(el){var m=el.closest('[data-coin]');m=m&&m.dataset.coin;var u=el.dataset.uri;
+  if(!m||IMG_TRIED[m]||IMG_BUSY>=4)return;IMG_TRIED[m]=1;IMG_BUSY++;
+  fetch(ipfsHttp(u),{cache:'force-cache'}).then(function(r){return r.ok?r.json():null}).then(function(j){var im=j&&typeof j.image==='string'?ipfsHttp(j.image):'';
+    if(im&&/^https:\/\//.test(im)){IMG[m]=im;document.querySelectorAll('[data-coin="'+m+'"] .avatar.empty').forEach(function(a){a.outerHTML='<img class="avatar" src="'+esc(im)+'" alt="" loading="lazy">'})}})
+  .catch(function(){}).finally(function(){IMG_BUSY--})})}
 function coinHtml(c,extra){
-  var e=c._entry,p=(c.ds||[]).at(-1),L=liveOf(c),img=safeImg(c.i)||(L&&L.img?safeImg(L.img):'');
+  var e=c._entry,p=(c.ds||[]).at(-1),L=liveOf(c),img=imgOf(c);
   var name=esc(c.n||c.s||'Токен'),symbol=esc(c.s||'');
-  return '<button type="button" class="coin" data-coin="'+esc(mint(c))+'">'+
-    (img?'<img class="avatar" src="'+esc(img)+'" alt="" loading="lazy">':'<span class="avatar empty">'+esc((c.s||'?').slice(0,2))+'</span>')+
+  return '<button type="button" class="coin '+(e.phase==='before'?'pre':'post')+'" data-coin="'+esc(mint(c))+'">'+
+    (img?'<img class="avatar" src="'+esc(img)+'" alt="" loading="lazy">':'<span class="avatar empty"'+(c._uri?' data-uri="'+esc(c._uri)+'"':'')+'>'+esc((c.s||'?').slice(0,2))+'</span>')+
     '<span class="body"><span class="name">'+name+' <small>'+symbol+'</small></span><span class="detail"><b class="ago" data-t="'+(+e.eventAt||0)+'">'+agoText(e.eventAt)+'</b> · '+(e.phase==='before'?'🌱 до миграции':'🎓 после миграции')+'</span><span class="detail mline">'+esc(marketLine(c))+'</span>'+
-    (extra?'<span class="detail">'+esc(extra)+'</span>':'')+'</span><span class="right"><span class="price">'+price(L&&L.price||p&&p[1])+'</span><span class="sparkbox">'+spark(c)+'</span></span></button>';
+    (extra?'<span class="detail">'+esc(extra)+'</span>':'')+'</span><span class="right"><span class="price">'+price(L&&L.price||p&&p[1])+'</span><span class="growbox">'+growthHtml(c)+'</span><span class="sparkbox">'+spark(c)+'</span></span></button>';
 }
 function detailStats(m){var L=LIVE[m]||{};function pc(v){return v==null?'—':(v>0?'+':'')+Number(v).toFixed(1)+'%'}
   return [['Цена',price(L.price)],['Капитализация',usd(L.mc)],['Ликвидность',usd(L.liq)],['Объём 5 мин',usd(L.v5)],
@@ -350,7 +380,7 @@ function renderAll(){
     (sourceMeta?.preConnected?'✓ Главный источник: журнал сервера. До миграции — публичные торговые кривые Pump.fun; после — подтверждённые миграции. Дублей нет.':'⚠ Источник до миграции пока не подтвердил связь с сетью. Постмиграционные события продолжают проверяться.')+' Возраст проверяется при ВХОДЕ, карточка не исчезает через 2 минуты.':
     '⛔ Главный источник сервера недоступен или устарел. Вход новых монет приостановлен. Непроверенные кандидаты из старых данных сюда не подставляются.';
   var list=lastVisible.slice(0,s.limit);
-  $('coinList').innerHTML=list.length?list.map(function(c){return coinHtml(c)}).join(''):'<div class="empty-state">Пока нет подтверждённых записей в этом потоке. Монеты, не успевшие пройти фильтр возраста на входе, не добавляются позже задним числом.</div>';
+  updateList($('coinList'),list,function(c){return mint(c)},function(c){return coinHtml(c)},'<div class="empty-state">Пока нет подтверждённых записей в этом потоке. Монеты, не успевшие пройти фильтр возраста на входе, не добавляются позже задним числом.</div>');
 }
 // Наглядная скорость: белое — сколько обнаружили за сутки, зелёное — сколько успели по нашему фильтру возраста.
 function speedHtml(seen,passed){if(!Number.isSafeInteger(seen))return '';return fmt(seen)+(Number.isSafeInteger(passed)?' · <b class="pass">'+fmt(passed)+'</b>':'')}
@@ -1426,7 +1456,7 @@ function init(){
   document.querySelectorAll('#levels [data-level]').forEach(function(x){x.classList.toggle('active',x.dataset.level===s.level)});
   bind();refresh();load();
   setInterval(load,45000);
-  setInterval(tickAges,1000);setInterval(pollMarket,20000);setTimeout(pollMarket,1500);
+  setInterval(tickAges,1000);setInterval(pollMarket,15000);setTimeout(pollMarket,1500);setInterval(loadLogos,2000);
   setInterval(pollPassedLive,15000);
   document.addEventListener('visibilitychange',function(){
     if(!document.hidden){pollPassedLive();if(now()-loadedAt>60000)load()}

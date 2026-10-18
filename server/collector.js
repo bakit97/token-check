@@ -1047,7 +1047,7 @@ async function exportSource(now) {
     const c=C.get(x.mint)||COMPLETED?.metadata(x.mint);
     return {a:x.mint,phase:x.phase,eventAt:x.eventAt,acceptedAt:x.acceptedAt,
       n:c?.n||'',s:c?.s||'',i:c?.i||'',family:x.proof?.family||null,curve:x.proof?.curve||null,
-      proofSig:x.proof?.signature||null,migrationPool:x.proof?.pool||null,proofKind:x.proof?.kind||null,eventSlot:x.proof?.slot||null,eventTimeSource:x.proof?.timeSource||null};
+      proofSig:x.proof?.signature||null,uri:x.proof?.uri||null,migrationPool:x.proof?.pool||null,proofKind:x.proof?.kind||null,eventSlot:x.proof?.slot||null,eventTimeSource:x.proof?.timeSource||null};
   };
   const summary=SOURCE.summary(now);
   const today=SOURCE.day(d).map(enrich);
