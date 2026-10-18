@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b0d14">
 <title>SOL·СКАН · v2</title>
-<link rel="stylesheet" href="./v2.css?v=20261018-cnt-1">
+<link rel="stylesheet" href="./v2.css?v=20261018-compact-3">
 </head>
 <body>
 <header><div class="app">
@@ -21,15 +21,7 @@
 <main class="app">
 <div id="dataState" role="status">Загрузка данных настоящего сервера…</div>
 <section class="page" id="p-all">
-<h1>Все</h1><p class="muted">Главный источник. Монета входит один раз: либо до, либо после миграции. Ни один другой раздел не может добавить её сюда.</p>
-<div class="chips" id="allStreams"><button class="active" data-stream="all">Общие <span class="cnt" id="cntAll"></span></button><button data-stream="before">🌱 До миграции <span class="cnt" id="cntBefore"></span></button><button data-stream="after">🎓 После миграции <span class="cnt" id="cntAfter"></span></button></div>
-<div class="card daily-source" aria-label="Суточные счётчики источника">
-<div class="row"><strong>Потоки за сутки</strong><span class="hint">Сброс в 00:00 UTC+5</span></div>
-<p id="dailyBefore">До миграции: нет данных</p>
-<p id="dailyAfter">После миграции: нет данных</p>
-<p class="hint" id="dailySourceNote">Счётчики рассчитывает сервер.</p>
-</div>
-<details class="card"><summary>⚙ Фильтры возраста и лента</summary>
+<details class="card compact" id="ageFilterBox"><summary>⚙ Фильтр возраста: <span id="ageSummary">—</span></summary>
 <div class="controls" style="margin-top:13px">
 <label class="control"><span>🌱 Возраст до миграции</span><select class="input" id="ageBefore"></select></label>
 <label class="control"><span>🎓 Возраст после миграции</span><select class="input" id="ageAfter"></select></label>
@@ -43,7 +35,15 @@
 <button type="button" id="publishSourceAge" class="primary" disabled>Изменить возраст на сервере</button>
 <p id="sourceAgeControlState" class="hint">Защищённый канал управления пока не включён.</p>
 </details>
-<div class="statgrid"><div class="stat"><span>Допущено за сегодня · доступная выгрузка</span><strong id="admitCount">—</strong></div><div class="stat"><span>Всего допущено · за всё время</span><strong id="visibleCount">—</strong></div></div>
+<div class="chips seg" id="allStreams"><button class="active" data-stream="all">Все <span class="cnt" id="cntAll"></span></button><button data-stream="before">🌱 До <span class="cnt" id="cntBefore"></span></button><button data-stream="after">🎓 После <span class="cnt" id="cntAfter"></span></button></div>
+<div class="card daily-source hide" aria-label="Суточные счётчики источника">
+<div class="row"><strong>Потоки за сутки</strong><span class="hint">Сброс в 00:00 UTC+5</span></div>
+<p id="dailyBefore">До миграции: нет данных</p>
+<p id="dailyAfter">После миграции: нет данных</p>
+<p class="hint" id="dailySourceNote">Счётчики рассчитывает сервер.</p>
+</div>
+
+<div class="statgrid hide"><div class="stat"><span>Допущено за сегодня · доступная выгрузка</span><strong id="admitCount">—</strong></div><div class="stat"><span>Всего допущено · за всё время</span><strong id="visibleCount">—</strong></div></div>
 <div id="sourceNote" class="notice">Источник до миграции ещё подключается. Не показываем непроверенные данные.</div>
 <div id="coinList" class="list"><div class="empty-state">Получение новых событий…</div></div>
 </section>
@@ -140,6 +140,6 @@
 <footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — разделены серверные записи и локальные черновики; неполные наблюдения не выдаются за результат.</footer>
 </main>
 <script src="./server/observation-contract.js?v=20261018-admission-3" defer></script>
-<script src="./v2.js?v=20261018-cnt-1" defer></script>
+<script src="./v2.js?v=20261018-compact-1" defer></script>
 <noscript>Текстовая сводка для ИИ: https://storage.googleapis.com/sol-scan-511718-data/ai/summary.md (JSON: ai/summary.json)</noscript>
 </body></html>

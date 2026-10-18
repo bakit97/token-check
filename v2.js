@@ -344,6 +344,8 @@ function renderAll(){
   $('admitCount').textContent=sourceActive?fmt(count):'—';
   $('visibleCount').textContent=sourceActive&&Number.isSafeInteger(sourceMeta?.total)?fmt(sourceMeta.total):'—';
   renderSpeedCounters();
+  var st=sourceMeta&&sourceMeta.settings;if($('ageSummary'))$('ageSummary').textContent=st?'до '+st.beforeMinutes+' мин · после '+st.afterMinutes+' мин':'—';
+  setTimeout(function(){var n=$('sourceNote');if(n)n.classList.toggle('hide',/^✓/.test(n.textContent))},0);
   $('sourceNote').textContent=sourceActive?
     (sourceMeta?.preConnected?'✓ Главный источник: журнал сервера. До миграции — публичные торговые кривые Pump.fun; после — подтверждённые миграции. Дублей нет.':'⚠ Источник до миграции пока не подтвердил связь с сетью. Постмиграционные события продолжают проверяться.')+' Возраст проверяется при ВХОДЕ, карточка не исчезает через 2 минуты.':
     '⛔ Главный источник сервера недоступен или устарел. Вход новых монет приостановлен. Непроверенные кандидаты из старых данных сюда не подставляются.';
