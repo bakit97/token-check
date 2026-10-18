@@ -342,7 +342,7 @@ async function initSource() {
   await EVENT_CLOCK.refresh();
   setInterval(()=>{EVENT_CLOCK.refresh().catch(()=>{})},10000);
   const PumpPreWatcher=require(DIR+'/pre-watcher.js').PumpPreWatcher;
-  PRE=new PumpPreWatcher({canObserve:canAddCandidate,rpc:(method,params)=>rpc(method,params,{priority:'pre',context:'новые до миграции',source:'pre'}),decode58:b58dec,deriveCurve:bondingCurveOf,source:SOURCE,
+  PRE=new PumpPreWatcher({canObserve:canAddCandidate,rpc:(method,params)=>rpc(method,params,{priority:'pre',context:'новые до миграции',source:'pre'}),decode58:b58dec,deriveCurve:bondingCurveOf,source:SOURCE,slotClock:EVENT_CLOCK,
     onAdmitted:admitVerifiedPublicLaunch,log:msg=>err(msg)});
   // Journal is durable even if the VM was restarted before candidate-state save.
   for(const item of SOURCE.records.values())if(C.size<5000&&item.acceptedAt>Date.now()-50*3600e3&&item.phase==='before'&&!C.has(item.mint)&&item.proof?.curve) {
@@ -899,7 +899,7 @@ async function exportSource(now) {
     const c=C.get(x.mint)||COMPLETED?.metadata(x.mint);
     return {a:x.mint,phase:x.phase,eventAt:x.eventAt,acceptedAt:x.acceptedAt,
       n:c?.n||'',s:c?.s||'',i:c?.i||'',family:x.proof?.family||null,curve:x.proof?.curve||null,
-      proofSig:x.proof?.signature||null,migrationPool:x.proof?.pool||null};
+      proofSig:x.proof?.signature||null,migrationPool:x.proof?.pool||null,proofKind:x.proof?.kind||null,eventSlot:x.proof?.slot||null,eventTimeSource:x.proof?.timeSource||null};
   };
   const summary=SOURCE.summary(now);
   const today=SOURCE.day(d).map(enrich);

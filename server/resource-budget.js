@@ -2,8 +2,9 @@
 // Local estimates, not provider billing. Fail closed on damaged accounting.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const MIN=60000;
-const RPC_COST={getProgramAccounts:10,getTransaction:10,getSignaturesForAddress:10,
-  getBlock:10,getBlocks:10,getBlocksWithLimit:10,getInflationReward:10};
+// https://www.helius.dev/docs/billing/credits (checked 2026-10-18).
+// Standard archival RPC is 1 credit; enhanced history is a different method.
+const RPC_COST={getProgramAccounts:10,getTransactionsForAddress:10,getTransfersByAddress:10};
 const rpcCost=method=>RPC_COST[method]||1;
 class BudgetDeferred extends Error{constructor(){super('Helius budget: observation deferred');this.code='BUDGET_DEFERRED'}}
 function atomic(file,obj){const fd=fs.openSync(file+'.tmp','w');try{fs.writeFileSync(fd,JSON.stringify(obj));fs.fsyncSync(fd)}finally{fs.closeSync(fd)}fs.renameSync(file+'.tmp',file);if(process.platform!=='win32'){const dir=fs.openSync(path.dirname(file),'r');try{fs.fsyncSync(dir)}finally{fs.closeSync(dir)}}}
@@ -39,7 +40,8 @@ class ResourceBudget{
     return {estimate:true,baselineCredits:this.state.baselineCredits??174302,limit:this.limit,usedEstimated:this.state.used,
       resetAt:this.state.resetAt,remainingDays:remainingMinutes/1440,creditsMinute:m.rpc+m.ws,
       rpcCreditsHour:h.rpc,wsCreditsHour:h.ws,targetCreditsMinute:Math.min(this.target,this.rate()),sources:this.state.sources,
-      allocation:{migration:'first; 4 credits/min reserved for pools',pools:'batched, 5 min before 2h / 30 min thereafter',holdersCreditsHour:60,preCreditsHour:60,preWSCreditsHour:60},
+      accountingVersion:'helius-standard-rpc-20261018',historicalEstimatesRetained:true,
+      allocation:{migration:'fresh first; up to 10 RPC credits/min reserved',pools:'4 RPC credits/min; batched, 5 min before 2h / 30 min thereafter',holdersCreditsHour:60,preCreditsHour:0,preWSCreditsHour:150,preWSCreditsMinute:3,wsHeadroomCredits:3.5},
       projectedAtReset:Math.ceil(this.state.used+observed*remainingMinutes),
       overForecast:this.state.used+observed*remainingMinutes>this.limit,
       lanes:Object.fromEntries(['migration','reconcile','pools','holders','metadata','pre'].map(lane=>[lane,{creditsMinute:this.laneTotal(lane,MIN),creditsHour:this.laneTotal(lane)}])),pending:{migration:this.migrationPending,pools:this.poolsPending},reconcileCreditsHour:this.laneTotal('reconcile'),resetRequired:this.now()>=this.state.resetAt,deferred:this.state.deferred};}
@@ -49,11 +51,13 @@ class ResourceBudget{
   laneTotal(lane,window=60*MIN){this.trim();return this.state.buckets.filter(b=>b.at>this.now()-window).reduce((n,b)=>n+(b.lanes?.[lane]||0),0)}
   allow(cost,priority=0){const lane=this.lane(priority),m=this.totals(MIN),h=this.totals(60*MIN),rate=Math.min(this.target,this.rate());
     // Migration stream never disconnects. Leave metering headroom and a pool reserve.
-    const ceiling=Math.max(0,rate-.75),total=m.rpc+m.ws;
-    const proofReserve=this.migrationPending?Math.max(0,11-this.laneTotal('migration',MIN)-this.laneTotal('reconcile',MIN)):0;
-    const poolReserve=this.poolsPending?Math.max(0,4-this.laneTotal('pools',MIN)):0;
+    const ceiling=Math.max(0,rate-Math.max(.5,3.5-m.ws)),total=m.rpc+m.ws;
+    const poolFloor=Math.min(4,ceiling*.3),proofFloor=Math.min(10,Math.max(0,ceiling-poolFloor-.5));
+    const proofReserve=this.migrationPending?Math.max(0,proofFloor-this.laneTotal('migration',MIN)):0;
+    const poolReserve=this.poolsPending?Math.max(0,poolFloor-this.laneTotal('pools',MIN)):0;
     const cap=Math.max(0,ceiling-(lane==='migration'||lane==='reconcile'?poolReserve:lane==='pools'?proofReserve:proofReserve+poolReserve));
-    const hourly={metadata:60,holders:60,pre:60,background:30,reconcile:65}[lane]??Infinity;
+    const hourly={metadata:60,holders:60,pre:0,background:30,reconcile:65}[lane]??Infinity;
+    if(lane==='reconcile'&&this.migrationPending)return false;
     return this.state.used+cost<=this.limit&&rate>0&&total+cost<=cap&&h.rpc+h.ws+cost<=rate*60&&this.laneTotal(lane)+cost<=hourly;
   }
   charge(cost,type,lane=type,source=lane){this.trim();const at=Math.floor(this.now()/1000)*1000;let b=this.state.buckets.find(b=>b.at===at);
@@ -70,7 +74,7 @@ class ResourceBudget{
     return source!=='pre'||this.streamAllowed('pre');
   }
   streamAllowed(source='pre'){if(source!=='pre')return true;
-    return this.rate()>0&&this.state.used<this.limit&&this.laneTotal('ws:pre')<60&&this.laneTotal('ws:pre',MIN)<1.5;
+    return this.rate()>0&&this.state.used<this.limit&&this.laneTotal('ws:pre')<150&&this.laneTotal('ws:pre',MIN)<Math.min(3,this.rate()*.2);
   }
   reserveWrite(){this.trim();const t=this.now(),d=new Date(t),end=Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,1);
     // Keep 1,000 operations for deployments/control/other clients; no borrowing.

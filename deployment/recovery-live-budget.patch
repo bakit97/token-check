@@ -147,7 +147,7 @@
 +  setInterval(()=>{EVENT_CLOCK.refresh().catch(()=>{})},10000);
    const PumpPreWatcher=require(DIR+'/pre-watcher.js').PumpPreWatcher;
 -  PRE=new PumpPreWatcher({rpc:(method,params)=>rpc(method,params,{priority:0,context:'новые до миграции'}),decode58:b58dec,deriveCurve:bondingCurveOf,source:SOURCE,
-+  PRE=new PumpPreWatcher({rpc:(method,params)=>rpc(method,params,{priority:'pre',context:'новые до миграции',source:'pre'}),decode58:b58dec,deriveCurve:bondingCurveOf,source:SOURCE,
++  PRE=new PumpPreWatcher({rpc:(method,params)=>rpc(method,params,{priority:'pre',context:'новые до миграции',source:'pre'}),decode58:b58dec,deriveCurve:bondingCurveOf,source:SOURCE,slotClock:EVENT_CLOCK,
      onAdmitted:admitVerifiedPublicLaunch,log:msg=>err(msg)});
    // Journal is durable even if the VM was restarted before candidate-state save.
    for(const item of SOURCE.records.values())if(item.phase==='before'&&!C.has(item.mint)&&item.proof?.curve) {
@@ -488,7 +488,7 @@
    }
  }
  function rec(c,full){const mg=c.mg||{};
-@@ -773,17 +865,24 @@
+@@ -773,36 +865,44 @@
    else r.ds=c.ds||[];
    return r}
  async function token(){const r=await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',{headers:{'Metadata-Flavor':'Google'}});return (await r.json()).access_token}
@@ -518,8 +518,10 @@
 +    const c=C.get(x.mint)||COMPLETED?.metadata(x.mint);
      return {a:x.mint,phase:x.phase,eventAt:x.eventAt,acceptedAt:x.acceptedAt,
        n:c?.n||'',s:c?.s||'',i:c?.i||'',family:x.proof?.family||null,curve:x.proof?.curve||null,
-       proofSig:x.proof?.signature||null,migrationPool:x.proof?.pool||null};
-@@ -792,17 +891,18 @@
+-      proofSig:x.proof?.signature||null,migrationPool:x.proof?.pool||null};
++      proofSig:x.proof?.signature||null,migrationPool:x.proof?.pool||null,proofKind:x.proof?.kind||null,eventSlot:x.proof?.slot||null,eventTimeSource:x.proof?.timeSource||null};
+   };
+   const summary=SOURCE.summary(now);
    const today=SOURCE.day(d).map(enrich);
    // Нет задним числом добавленных кандидатов из обычной ленты.
    // Предмиграционный адаптер пока не активен: не выдавать пустоту за готовность.
