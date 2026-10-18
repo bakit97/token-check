@@ -837,7 +837,8 @@ async function chainObsLoop(){for(;;){const now=Date.now();
         try{await collectPoolBatch(part);if(i+33>=jobs.length)RESOURCE.poolsPending=false}catch(e){if(e.code!=='BUDGET_DEFERRED')throw e;
           for(const [c] of jobs.slice(i))c.poolBudgetDeferredAt=c.poolBudgetDeferredAt||Date.now();break}}
     }
-    for(const c of C.values()){if(!isOk(c)||!c.ct)continue;c.hold=c.hold||{};const a=ageMin(c,now);
+    // Держатели — только у монет, допущенных в «Все» после миграции: опоздавшие нам не нужны, а бюджет ограничен.
+    for(const c of C.values()){if(!isOk(c)||!c.ct||SOURCE?.get(c.a)?.phase!=='after')continue;c.hold=c.hold||{};const a=ageMin(c,now);
       for(const m of HOLD_M){if(c.hold[m])continue;if(a>=m+2){c.hold[m]={at:now,miss:c.holderBudgetDeferredAt?'бюджет':'опоздали'};continue}
         if(a>=m)try{await holdersSnap(c,m);delete c.holderBudgetDeferredAt}catch(e){if(e.code==='BUDGET_DEFERRED'){c.holderBudgetDeferredAt=c.holderBudgetDeferredAt||Date.now();continue}
           c.hold[m]={at:Date.now(),miss:'ошибка'};err('hold '+e.message)}}}

@@ -400,7 +400,7 @@ function renderLocalPreview(){
     '<p class="muted">Сейчас нет совпадений. Старые монеты не пересчитываются задним числом.</p>';
 }
 function ruleLabel(f){
-  const labels={buyers:'Покупатели 5м',buyers10:'Покупатели за первые 10 мин',safeContract:'Контракт без опасных прав',quoteSol:'Реальные SOL в пуле',trades:'Сделки 5м',volume:'Объём $',liq:'Ликвидность $',mc:'Капитализация $',buys:'Покупки 5м',sells:'Продажи 5м',buySellRatio:'Покупки/продажи'};
+  const labels={top1:'Топ-1 держатель, % (без пула)',top10:'Топ-10 держателей, % (без пула)',buyers:'Покупатели 5м',buyers10:'Покупатели за первые 10 мин',safeContract:'Контракт без опасных прав',quoteSol:'Реальные SOL в пуле',trades:'Сделки 5м',volume:'Объём $',liq:'Ликвидность $',mc:'Капитализация $',buys:'Покупки 5м',sells:'Продажи 5м',buySellRatio:'Покупки/продажи'};
   const one=function(r){return (labels[r.key]||r.key)+' '+r.op+' '+fmt(r.value)};
   return [one(f)].concat((f.conditions||[]).map(one)).join(' · и ');
 }
@@ -740,7 +740,7 @@ function openEditor(id){
 function saveEditor(e){
   e.preventDefault();
   var name=$('filterName').value.trim(),key=$('filterKey').value,op=$('filterOp').value,value=Number($('filterValue').value);
-  if(!name||!['buyers','trades','volume','liq','mc','buys','sells','buySellRatio','buyers10','safeContract','quoteSol'].includes(key)||!['>=','<='].includes(op)||!Number.isFinite(value)||value<0||value>1e12){note('Проверь название и значение');return}
+  if(!name||!['buyers','trades','volume','liq','mc','buys','sells','buySellRatio','buyers10','safeContract','quoteSol','top1','top10'].includes(key)||!['>=','<='].includes(op)||!Number.isFinite(value)||value<0||value>1e12){note('Проверь название и значение');return}
   var same=s.filters.find(function(f){return f.id!==editorId&&f.level===s.level&&f.key===key&&f.op===op&&f.value===value});
   if(same){note('Такие же правила уже есть: №'+same.id);return}
   if(editorId){

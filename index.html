@@ -131,7 +131,7 @@
 <form id="editor" class="card" hidden>
 <div class="row"><h2 id="editorTitle">Новый фильтр</h2><button type="button" id="closeEditor">Закрыть</button></div>
 <label class="control" style="margin-top:10px"><span>Название</span><input type="text" class="input" id="filterName" maxlength="64" required></label>
-<div class="controls" style="margin-top:11px"><label class="control"><span>Показатель</span><select id="filterKey" class="input"><option value="buyers10">Покупатели первых 10 мин</option><option value="quoteSol">Реальные SOL в пуле</option><option value="safeContract">Безопасные права контракта (1/0)</option><option value="buyers">Покупатели 5м</option><option value="trades">Сделки за 5 мин</option><option value="volume">Объём за 5 мин ($)</option><option value="liq">Ликвидность ($)</option><option value="mc">Капитализация ($)</option><option value="buys">Покупки за 5 мин</option><option value="sells">Продажи за 5 мин</option><option value="buySellRatio">Покупки / продажи</option></select></label>
+<div class="controls" style="margin-top:11px"><label class="control"><span>Показатель</span><select id="filterKey" class="input"><option value="top10">Топ-10 держателей, % (без пула)</option><option value="top1">Топ-1 держатель, % (без пула)</option><option value="buyers10">Покупатели первых 10 мин</option><option value="quoteSol">Реальные SOL в пуле</option><option value="safeContract">Безопасные права контракта (1/0)</option><option value="buyers">Покупатели 5м</option><option value="trades">Сделки за 5 мин</option><option value="volume">Объём за 5 мин ($)</option><option value="liq">Ликвидность ($)</option><option value="mc">Капитализация ($)</option><option value="buys">Покупки за 5 мин</option><option value="sells">Продажи за 5 мин</option><option value="buySellRatio">Покупки / продажи</option></select></label>
 <label class="control"><span>Условие</span><select class="input" id="filterOp"><option value=">=">Не меньше ≥</option><option value="<=">Не больше ≤</option></select></label></div>
 <label class="control" style="margin-top:11px"><span>Значение</span><input class="input" type="number" min="0" max="1000000000000" step="any" id="filterValue" value="20" required></label>
 <div class="action-bar"><button class="primary" type="submit">Сохранить</button><button id="deleteFilter" type="button" class="dangerbtn">Удалить</button></div><p class="hint" id="editorNote">Для изменённых условий результаты прошлой версии не переписываются.</p></form>
@@ -140,6 +140,6 @@
 <footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — разделены серверные записи и локальные черновики; неполные наблюдения не выдаются за результат.</footer>
 </main>
 <script src="./server/observation-contract.js?v=20261018-admission-3" defer></script>
-<script src="./v2.js?v=20261018-ai-1" defer></script>
+<script src="./v2.js?v=20261018-hold-1" defer></script>
 <noscript>Текстовая сводка для ИИ: https://storage.googleapis.com/sol-scan-511718-data/ai/summary.md (JSON: ai/summary.json)</noscript>
 </body></html>

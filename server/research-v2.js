@@ -152,10 +152,14 @@ function starterFeaturesAt(coin,decisionAt,context={}){
   let best=null;for(const r of coin.curveSol)if(Array.isArray(r)&&r[0]<=decisionAt&&decisionAt-r[0]<=7*MIN&&Number.isFinite(r[1])&&r[1]>=0&&(!best||r[0]>best[0]))best=r;
   if(best)quoteSol=best[1]/1e9;
  }
- return {safeContract,quoteSol,buyers10,...(lower?{buyers10LowerBound:true,buyers10At:buyerAt,buyers10Source:buyerSource}:{})};
+ // Концентрация у крупнейших держателей (без хранилищ пула) — снимок не позже момента решения.
+ let top1=null,top10=null;
+ for(const [,h] of Object.entries(coin?.hold||{}))if(h&&!h.miss&&Number.isFinite(h.at)&&h.at<=decisionAt&&Number.isFinite(h.top10)&&(!top10||h.at>top10.at))top10={at:h.at,v:h.top10*100,v1:Number.isFinite(h.top1)?h.top1*100:null};
+ if(top10){top1=top10.v1;top10=top10.v}
+ return {safeContract,quoteSol,buyers10,top1,top10,...(lower?{buyers10LowerBound:true,buyers10At:buyerAt,buyers10Source:buyerSource}:{})};
 }
 function evaluation(F,rule){
-  if(!F||!rule||![...KEYS,'safeContract','quoteSol','buyers10'].includes(rule.key)||
+  if(!F||!rule||![...KEYS,'safeContract','quoteSol','buyers10','top1','top10'].includes(rule.key)||
       !['>=','<='].includes(rule.op)||!Number.isFinite(rule.value))return 'unknown';
   if(rule.conditions){if(!Array.isArray(rule.conditions)||rule.conditions.length>8)return 'unknown';const results=rule.conditions.map(c=>evaluation(F,c));
     if(results.includes('reject'))return 'reject';if(results.includes('unknown'))return 'unknown';}

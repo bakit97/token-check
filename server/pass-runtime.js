@@ -9,7 +9,7 @@ const {featuresAt,evaluation}=require('./research-v2');
 
 const MIN=60000,WINDOW=72*60*MIN,TZ=5*3600000;
 function kzDay(at){return new Date(at+TZ).toISOString().slice(0,10)}
-const KEYS=new Set(['buyers','trades','volume','liq','mc','buys','sells','buySellRatio','buyers10','safeContract','quoteSol']);
+const KEYS=new Set(['buyers','trades','volume','liq','mc','buys','sells','buySellRatio','buyers10','safeContract','quoteSol','top1','top10']);
 const PHASES=new Set(['before','after']);
 
 function configOf(raw={}){
