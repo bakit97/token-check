@@ -663,9 +663,27 @@ function modEvalHtml(m){var stale=modSig(m)!==m.evalSig,ev=m.eval||{};return (st
 function modBlk(t,cls,title){var l='—',d='';if(t&&t.positiveRecall!=null){var tp=t.totalPositive,tn=t.totalNegative,pp=tp!=null?Math.round(t.positiveRecall*tp):null,pn=tn!=null?Math.round((1-t.negativeRejection)*tn):null;
     l='🟢 '+modPc(t.positiveRecall)+(tp!=null?' <span>'+pp+' из '+tp+'</span>':'');d='<br>🔴 '+modPc(1-t.negativeRejection)+(tn!=null?' <span>'+pn+' из '+tn+'</span>':'')}
   return '<div class="mblk '+cls+'"><i>'+title+'</i>'+l+d+'</div>'}
+function modTestBlk(t){if(!t)return '';var pc=function(a,b){return b?Math.round(100*a/b)+'%':'—'};
+  return '<div class="mblk mtest"><i>тест · '+(function(d){d=Math.max(0,(Date.now()-t.at)/60000);return d<1?'только что':d<60?Math.floor(d)+' мин назад':d<1440?Math.floor(d/60)+' ч назад':Math.floor(d/1440)+' дн назад'})()+'</i>🟢 '+pc(t.pl,t.tl)+' <span>'+t.pl+' из '+t.tl+'</span><br>🔴 '+pc(t.pd,t.td)+' <span>'+t.pd+' из '+t.td+'</span><br>🏅 место '+t.rank+' из '+t.of+'</div>'}
+function modPass(m,f){if(!f)return false;return m.conds.every(function(c){var v=f[c.key];if(v==null||!isFinite(+v))return false;return c.op==='<='?+v<=+c.value:+v>=+c.value})}
+function runLibTest(ids,nl,nd){var lv=String(s.level),g=classified(lv),ph=function(x){return LP==='all'||r1Phase(x)===LP},A=g[0].filter(ph).slice(-nl),B=g[1].filter(ph).slice(-nd);
+  if(!A.length||!B.length){window.alert('В хранилище мало монет: 🟢 '+A.length+' · 🔴 '+B.length);return}
+  var res=ids.map(function(id){var m=MODS[id],pl=A.filter(function(x){return modPass(m,x.features)}).length,pd=B.filter(function(x){return modPass(m,x.features)}).length;return {id:id,pl:pl,tl:A.length,pd:pd,td:B.length,sc:pl/A.length-pd/B.length}});
+  res.sort(function(a,b){return b.sc-a.sc});var at=Date.now();
+  res.forEach(function(r,i){var m=MODS[r.id];m.eval=m.eval||{};m.eval.test={pl:r.pl,tl:r.tl,pd:r.pd,td:r.td,at:at,rank:i+1,of:res.length};modSave(m)});
+  LIB_SEL=false;LIBSET={};$('libSelect').textContent='Тест';$('libBar').classList.add('hide');$('libMsg').textContent='Тест завершён';libRender();renderR1();renderR2()}
+function openTestSheet(ids){var lv=String(s.level),g=classified(lv),ph=function(x){return LP==='all'||r1Phase(x)===LP},ma=g[0].filter(ph).length,mb=g[1].filter(ph).length,nm=lv==='1'?['🟢 живых','🔴 мёртвых']:['💪 сильных','🪫 слабых'];
+  var el=document.createElement('div');el.className='sheet';el.id='testSheet';var da=Math.min(500,ma)||0,db=Math.min(500,mb)||0;
+  el.innerHTML='<div class="sheetbox"><b style="font-size:15px">Материал для теста</b><p class="hint" style="margin:4px 0">Модулей: '+ids.length+' · в хранилище '+nm[0]+' '+ma+', '+nm[1]+' '+mb+'</p>'+
+    '<div class="prow"><label>Взять '+nm[0]+' <b class="tva">'+da+'</b></label><input type="range" min="0" max="'+ma+'" step="1" value="'+da+'" data-tv="a"></div>'+
+    '<div class="prow"><label>Взять '+nm[1]+' <b class="tvb">'+db+'</b></label><input type="range" min="0" max="'+mb+'" step="1" value="'+db+'" data-tv="b"></div>'+
+    '<div class="row applyrow"><button type="button" class="pbtn" data-tclose="1">Закрыть</button><button type="button" class="primary pbtn" data-trun="1">Тест</button></div></div>';
+  document.body.appendChild(el);
+  el.addEventListener('input',function(e){var t=e.target;if(t.dataset.tv)el.querySelector('.tv'+t.dataset.tv).textContent=t.value});
+  el.addEventListener('click',function(e){var t=e.target;if(t===el||t.dataset.tclose){el.remove();return}if(t.dataset.trun){var a=+el.querySelector('[data-tv="a"]').value,b=+el.querySelector('[data-tv="b"]').value;el.remove();runLibTest(ids,a,b)}})}
 function modTile(m){var stale=modSig(m)!==m.evalSig,ev=m.eval||{},age=m.createdAt?Math.max(0,Math.floor((Date.now()-m.createdAt)/864e5)):null;
   return '<button type="button" class="modtile" data-mopen="'+esc(m.id)+'">'+(age!=null?'<span class="mage">'+(m.phase==='after'?'🎓 ':m.phase==='before'?'🌱 ':'')+age+' дн</span>':'')+'<b>'+esc(m.name)+'</b><span class="hint">вердикт '+m.dm+' мин</span>'+
-    (stale?'<div class="mblk"><i>⚠ нужен перетест</i></div>':modBlk(ev.train,'mold','при создании')+modBlk(ev.live,'mnow','сейчас'))+'</button>'}
+    (stale?'<div class="mblk"><i>⚠ нужен перетест</i></div>':modBlk(ev.train,'mold','при создании')+modBlk(ev.live,'mnow','сейчас'))+modTestBlk(ev.test)+'</button>'}
 function openModSheet(id){var openG={},m=JSON.parse(JSON.stringify(MODS[id])),old=document.getElementById('modSheet');if(old)old.remove();
   var el=document.createElement('div');el.id='modSheet';el.className='sheet';
   var draw=function(){el.innerHTML='<div class="sheetbox"><div class="prow"><label>Имя</label><input class="input sm" data-mf="name" value="'+esc(m.name)+'"></div>'+
@@ -1306,15 +1324,9 @@ function bind(){
   $('storeBox').addEventListener('click',function(e){var t=e.target,k;var sk=t.closest('[data-sk]');if(sk){STORE_K=sk.dataset.sk;renderStore();return}if(t.dataset.stgear){STORE_GEAR=!STORE_GEAR;renderStore();return}
     if((k=t.dataset.stapply)){var c=storeCfg();c[LP]=c[LP]||{};c[LP][k]=+$('storeBox').querySelector('[data-st]').value;try{localStorage.setItem('storeCfg',JSON.stringify(c))}catch(x){}STORE_GEAR=false;renderStore();note('Применено');return}
     if((k=t.dataset.stmore)){STORE_N[k]=(STORE_N[k]||20)+20;renderStore();return}var b=t.closest('[data-coin]');if(b){showCoinDetail(coinOf(bank['1'].concat(bank['2']||[]).find(function(x){return x.mint===b.dataset.coin})||b.dataset.coin),'storeBox')}});
-  $('libSelect').addEventListener('click',function(){LIB_SEL=!LIB_SEL;LIBSET={};this.textContent=LIB_SEL?'Отмена':'Выбрать';$('libBar').classList.toggle('hide',!LIB_SEL);$('libMsg').textContent=LIB_SEL?'Нажимай на модули, чтобы отметить':'';libRender()});
+  $('libSelect').addEventListener('click',function(){LIB_SEL=!LIB_SEL;LIBSET={};this.textContent=LIB_SEL?'Отмена':'Тест';$('libBar').classList.toggle('hide',!LIB_SEL);$('libMsg').textContent=LIB_SEL?'Выбери модули для теста':'';libRender()});
   $('libMods').addEventListener('click',function(e){var t=e.target.closest('[data-mopen]');if(!t)return;var id=t.dataset.mopen;if(LIB_SEL){LIBSET[id]=!LIBSET[id];t.classList.toggle('picked',!!LIBSET[id]);$('libMsg').textContent='Отмечено: '+Object.keys(LIBSET).filter(function(k){return LIBSET[k]}).length}else openModSheet(id)});
-  $('libTest').addEventListener('click',function(){var ids=Object.keys(LIBSET).filter(function(k){return LIBSET[k]});if(ids.length<2){$('libMsg').textContent='Отметь хотя бы 2 модуля';return}
-    var g=classified(s.level),ready=g[0].length>=s.poly[s.level][0]&&g[1].length>=s.poly[s.level][1];
-    var rk=ids.map(function(id){return [id,modScore(MODS[id])]}).sort(function(a,b){return (b[1]??-999)-(a[1]??-999)});LIB_RANK=rk;
-    $('libMsg').innerHTML=(ready?'':'⚠ Полигон ещё не набран — сравнение по оценке при создании.<br>')+rk.map(function(r,i){return (i+1)+'. '+esc(MODS[r[0]].name)+' · '+(r[1]==null?'—':(r[1]>0?'+':'')+r[1])}).join('<br>')});
-  $('libKeepBtn').addEventListener('click',function(){if(!LIB_RANK.length){$('libMsg').textContent='Сначала «Тест выбранных»';return}var k=+$('libKeep').value,drop=LIB_RANK.slice(k);if(!drop.length){$('libMsg').textContent='Удалять нечего';return}
-    if(!window.confirm('Оставить лучшие '+k+' и удалить '+drop.length+' модулей везде?'))return;var all=modLoad();drop.forEach(function(r){all[r[0]]={id:r[0],deleted:true}});try{localStorage.setItem('r1mods',JSON.stringify(all))}catch(e){}
-    LIB_RANK=[];LIBSET={};$('libMsg').textContent='Удалено: '+drop.length;libRender();renderR1();renderR2()});
+  $('libTest').addEventListener('click',function(){var ids=Object.keys(LIBSET).filter(function(k){return LIBSET[k]});if(!ids.length){$('libMsg').textContent='Отметь хотя бы один модуль';return}openTestSheet(ids)});
   $('r2Seg').addEventListener('click',function(e){var b=e.target.closest('[data-r2f]');if(!b)return;R2F=b.dataset.r2f;document.querySelectorAll('#r2Seg [data-r2f]').forEach(function(x){x.classList.toggle('active',x===b)});renderR2()});
   $('r2N').addEventListener('click',function(e){var b=e.target.closest('[data-r2n]');if(!b)return;R2N=+b.dataset.r2n;document.querySelectorAll('#r2N [data-r2n]').forEach(function(x){x.classList.toggle('active',x===b)});renderR2()});
   $('r2Strong').addEventListener('input',function(){$('r2StrongValue').textContent=$('r2Strong').value+'%';$('r2ApplyRow').classList.remove('hide')});

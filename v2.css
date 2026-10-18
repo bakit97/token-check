@@ -7,3 +7,4 @@
 .pwrap{display:grid;gap:0}.pstrip{font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:10px 10px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pstrip.pre{background:#123a2c;color:#7ff0c0}.pstrip.post{background:#33265c;color:#d2c2ff}.pwrap .coin{border-top-left-radius:0;border-top-right-radius:0}
 #r1Rows .coin,#r2Rows .coin,#passedList .coin{max-width:100%;min-width:0;overflow:hidden}#r1Rows,#r2Rows,#passedList{min-width:0;max-width:100%}
 .libsel .modtile{opacity:.6}.libsel .modtile.picked{opacity:1;outline:2px solid var(--accent)}#levels,#libPh{margin-bottom:6px}
+.mtest{background:#3a2a12;color:#ffd99a}
