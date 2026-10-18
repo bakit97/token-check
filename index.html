@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b0d14">
 <title>SOL·СКАН · v2</title>
-<link rel="stylesheet" href="./v2.css?v=20261018-mine-2">
+<link rel="stylesheet" href="./v2.css?v=20261018-mine-3">
 </head>
 <body>
 <header><div class="app">
@@ -47,21 +47,30 @@
 <div id="coinList" class="list"><div class="empty-state">Получение новых событий…</div></div>
 </section>
 <section class="page" id="p-mine" hidden>
+<div class="chips seg" id="mineSub"><button class="active" data-msub="win">Окно возможностей</button><button data-msub="r1">Вход в Иссл. 1</button></div>
+<div id="paneWin">
 <div class="chips seg" id="mineStreams"><button class="active" data-mstream="before">🌱 До</button><button data-mstream="after">🎓 После</button></div>
-<div class="card compact"><div class="row"><b>Окно возможностей · 1 уровень</b><span class="badge" id="serverModuleCount">—</span></div><div id="serverModules" class="flist"></div>
-<span id="serverModulesRaw" hidden></span><button type="button" class="pbtn" id="mineAdd" style="margin-top:8px">+ Добавить фильтр</button></div>
-<div class="card compact" id="intakeBox"><div class="row"><b>Вход в Исследование 1</b><span class="badge" id="intakeState">—</span></div>
-<div class="sw"><label><input type="checkbox" id="inManual"> Ручной фильтр</label><label><input type="checkbox" id="inModules"> Модули окна возможностей</label></div>
-<div id="inManualBox">
-<div class="prow"><label><input type="checkbox" id="inPhaseOn"> Поток</label><select class="input sm" id="inPhase"><option value="both">оба</option><option value="before">до миграции</option><option value="after">после миграции</option></select></div>
-<div class="prow"><label><input type="checkbox" id="inBuyOn"> Покупатели за 10 мин ≥ <b id="inBuyV">3</b></label><input type="range" id="inBuy" min="0" max="100" step="1" value="3"></div>
-<div class="prow"><label><input type="checkbox" id="inSolOn"> SOL в пуле ≥ <b id="inSolV">0.5</b></label><input type="range" id="inSol" min="0" max="50" step="0.5" value="0.5"></div>
-<div class="prow"><label><input type="checkbox" id="inSampleOn"> Случайная доля <b id="inSampleV">100</b>%</label><input type="range" id="inSample" min="5" max="100" step="5" value="100"></div>
+<div class="card compact"><div class="row"><b>1 уровень</b><button type="button" class="pbtn add1" data-addlev="1">+ модуль</button></div><div id="mods1" class="flist"></div></div>
+<div class="card compact"><div class="row"><b>2 уровень</b><button type="button" class="pbtn add1" data-addlev="2">+ модуль</button></div><div id="mods2" class="flist"></div></div>
+<div id="modPicker" class="card compact" hidden><div class="row"><b id="modPickerT">Добавить</b><button type="button" class="pbtn" id="modPickerX">✕</button></div><div id="modPickerList" class="flist"></div></div>
+<div class="row applyrow" id="modApplyRow" hidden><input type="password" class="input sm" id="modKey" placeholder="пароль" autocomplete="off"><button type="button" class="primary pbtn" id="modApply">Применить</button></div>
+<p class="hint" id="modMsg"></p>
+<span id="serverModuleCount" hidden></span><span id="serverModules" hidden></span>
 </div>
-<p class="hint" id="intakeStats">—</p>
-<div class="row" style="gap:6px"><input type="password" class="input sm" id="intakeKey" placeholder="пароль" autocomplete="off" spellcheck="false"><button type="button" class="primary pbtn" id="intakeApply">Применить</button></div>
-<p class="hint" id="intakeMsg">Изменения начинают новую группу наблюдений; старые итоги сохраняются.</p></div>
-<details class="card compact"><summary>⚙ Черновики и публикация</summary>
+<div id="paneR1" hidden>
+<div class="card compact" id="intakeBox"><div class="row"><b>Вход в Исследование 1</b><span class="badge" id="intakeState">—</span></div>
+<div class="sw"><label><input type="checkbox" id="inManual"> Ручной фильтр</label><label><input type="checkbox" id="inModules"> Отмеченные модули</label></div>
+<div id="inManualBox">
+<div class="prow"><label><input type="checkbox" id="inPhaseOn"> Поток <select class="input sm inl" id="inPhase"><option value="both">оба</option><option value="before">до</option><option value="after">после</option></select></label></div>
+<div class="prow"><label><input type="checkbox" id="inBuyOn"> Покупатели 10 мин ≥ <b id="inBuyV">3</b></label><input type="range" id="inBuy" min="0" max="100" step="1" value="3"></div>
+<div class="prow"><label><input type="checkbox" id="inSolOn"> SOL в пуле ≥ <b id="inSolV">0.5</b></label><input type="range" id="inSol" min="0" max="50" step="0.5" value="0.5"></div>
+<div class="prow"><label><input type="checkbox" id="inSampleOn"> Случайно <b id="inSampleV">100</b>%</label><input type="range" id="inSample" min="5" max="100" step="5" value="100"></div>
+</div>
+<p class="hint" id="intakeStats"></p>
+<div class="row applyrow"><input type="password" class="input sm" id="intakeKey" placeholder="пароль" autocomplete="off"><button type="button" class="primary pbtn" id="intakeApply">Применить</button></div>
+<p class="hint" id="intakeMsg"></p></div>
+</div>
+<details class="card compact hide" id="oldDrafts"><summary>⚙ Черновики и публикация</summary>
 <div class="grid2" id="moduleGrid"></div>
 <details class="card"><summary>👁 Предпросмотр локальных фильтров</summary>
 <p class="hint">Только кандидаты из главного источника, наблюдавшиеся пока страница открыта. Это не серверный журнал и не исторический результат.</p>
@@ -153,6 +162,6 @@
 <footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — разделены серверные записи и локальные черновики; неполные наблюдения не выдаются за результат.</footer>
 </main>
 <script src="./server/observation-contract.js?v=20261018-admission-3" defer></script>
-<script src="./v2.js?v=20261018-mine-1" defer></script>
+<script src="./v2.js?v=20261018-mine-3" defer></script>
 <noscript>Текстовая сводка для ИИ: https://storage.googleapis.com/sol-scan-511718-data/ai/summary.md (JSON: ai/summary.json)</noscript>
 </body></html>

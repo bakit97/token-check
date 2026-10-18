@@ -44,7 +44,8 @@ function configOf(raw={}){
   }
   cfg.filters=cfg.filters.map(f=>({id:f.id,name:f.name.trim(),level:f.level,key:f.key,
     op:f.op,value:f.value,version:f.version,...(f.conditions?{conditions:f.conditions.map(c=>({key:c.key,op:c.op,value:c.value}))}:{})}));
-  cfg.modules=cfg.modules.map(m=>({filterId:m.filterId,phase:m.phase,level:m.level,enabled:m.enabled}));
+  // toR1: монеты этого модуля идут и во вход Исследования 1 (поле отсутствует → прежний хеш конфигурации).
+  cfg.modules=cfg.modules.map(m=>({filterId:m.filterId,phase:m.phase,level:m.level,enabled:m.enabled,...(m.toR1===true?{toR1:true}:{})}));
   return cfg;
 }
 function digest(cfg){return crypto.createHash('sha256').update(JSON.stringify(cfg)).digest('hex').slice(0,20)}

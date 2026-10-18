@@ -495,30 +495,50 @@ function ruleLabel(f){
   const one=function(r){return (labels[r.key]||r.key)+' '+r.op+' '+fmt(r.value)};
   return [one(f)].concat((f.conditions||[]).map(one)).join(' · и ');
 }
-var MINE_STREAM='before';
+var MINE_STREAM='before',MOD_DRAFT=null,MOD_DIRTY=false,PICK_LEVEL='1';
 var TAGK={buyers10:'пок.10м',quoteSol:'SOL',top10:'топ-10%',top1:'топ-1%',buyers:'пок.5м',trades:'сделки',volume:'объём',liq:'ликв.',mc:'MC',buySellRatio:'пок/прод',buys:'покупки',sells:'продажи'};
 function ruleTags(f){return [f].concat(f.conditions||[]).map(function(r){if(r.key==='safeContract')return '<span class="tag">контракт ✓</span>';
   return '<span class="tag">'+esc(TAGK[r.key]||r.key)+' '+(r.op==='>='?'≥':'≤')+' '+esc(fmt(r.value))+'</span>'}).join('')}
-function renderServerModules(){
-  const meta=serverPassActive&&passMeta||null,cfg=meta&&meta.serverConfig;
-  if(!cfg){$('serverModuleCount').textContent='нет данных';$('serverModules').innerHTML='<p class="hint">Конфигурация сервера недоступна.</p>';return}
-  const filters=new Map((cfg.filters||[]).map(function(f){return [f.id,f]})),today=day(now());
-  const mods=(cfg.modules||[]).filter(function(m){return m.level==='1'&&m.phase===MINE_STREAM&&filters.has(m.filterId)});
-  const on=mods.filter(function(m){return m.enabled}).length;
-  $('serverModuleCount').textContent=cfg.enabled?on+' вкл.':'выключено';
-  $('serverModules').innerHTML=mods.length?mods.map(function(m){var f=filters.get(m.filterId);
-    var n=serverPassRows.filter(function(r){return r.phase===m.phase&&day(r.acceptedAt)===today&&(r.matches||[]).some(function(x){return x.id===f.id})}).length;
-    return '<details class="frow"><summary><span class="fname">'+esc(f.name)+'</span><span class="fcnt">'+n+'</span><span class="tg '+(m.enabled&&cfg.enabled?'on':'')+'" title="включается после входа с паролем"></span></summary>'+
-      '<div class="tags">'+ruleTags(f)+'</div><p class="hint">v'+esc(f.version)+' · прошло сегодня: '+n+' · '+(m.enabled?'включён':'выключен')+'</p></details>'}).join(''):
-    '<p class="hint">Для этого потока фильтров нет.</p>';
-}
+function serverCfg(){return serverPassActive&&passMeta&&passMeta.serverConfig||null}
+function draft(){if(!MOD_DIRTY||!MOD_DRAFT){var c=serverCfg();MOD_DRAFT=c?JSON.parse(JSON.stringify({schema:1,enabled:c.enabled,activatedAt:c.activatedAt||0,decisionMinutes:c.decisionMinutes,filters:c.filters||[],modules:c.modules||[]})):null}return MOD_DRAFT}
+function modRow(m,i,byId,today){var f=byId[m.filterId];if(!f)return '';
+  var n=serverPassRows.filter(function(r){return r.phase===m.phase&&day(r.acceptedAt)===today&&(r.matches||[]).some(function(x){return x.id===f.id})}).length;
+  return '<details class="frow"><summary><span class="fname">'+esc(f.name)+'</span><span class="fcnt">'+n+'</span>'+
+    (m.level==='1'?'<span class="r1b'+(m.toR1?' on':'')+'" data-r1="'+i+'" title="в Исследование 1">И1</span>':'')+
+    '<span class="tg'+(m.enabled?' on':'')+'" data-tg="'+i+'"></span></summary><div class="tags">'+ruleTags(f)+'</div>'+
+    '<div class="row" style="margin-top:6px"><span class="hint">v'+esc(f.version)+' · сегодня '+n+'</span><button type="button" class="pbtn del" data-del="'+i+'">убрать</button></div></details>'}
+function renderServerModules(){var d=draft();if(!$('mods1'))return;
+  if(!d){$('mods1').innerHTML=$('mods2').innerHTML='<p class="hint">нет данных сервера</p>';return}
+  var byId={};d.filters.forEach(function(f){byId[f.id]=f});var today=day(now());
+  ['1','2'].forEach(function(l){var h='';d.modules.forEach(function(m,i){if(m.level===l&&m.phase===MINE_STREAM)h+=modRow(m,i,byId,today)});$('mods'+l).innerHTML=h||'<p class="hint">пусто</p>'});
+  $('modApplyRow').hidden=!MOD_DIRTY}
+function showModPicker(level){PICK_LEVEL=level;var d=draft();if(!d)return;var have={};d.modules.forEach(function(m){if(m.phase===MINE_STREAM&&m.level===level)have[m.filterId]=1});
+  var pool={};d.filters.concat(s.filters||[]).forEach(function(f){if(String(f.level)===level&&!have[f.id])pool[f.id]=f});
+  var list=Object.values(pool);$('modPickerT').textContent='Добавить · '+level+' ур. · '+(MINE_STREAM==='before'?'до':'после');
+  $('modPickerList').innerHTML=list.length?list.map(function(f){return '<button type="button" class="frow pick" data-pick="'+esc(f.id)+'"><span class="fname">'+esc(f.name)+'</span><div class="tags">'+ruleTags(f)+'</div></button>'}).join(''):'<p class="hint">В Библиотеке нет подходящих фильтров.</p>';
+  $('modPicker').hidden=false}
+function pickFilter(id){var d=draft(),f=d.filters.find(function(x){return x.id===id});
+  if(!f){var lf=(s.filters||[]).find(function(x){return x.id===id});if(!lf)return;
+    f={id:String(lf.id),name:String(lf.name).slice(0,64),level:String(lf.level),key:lf.key,op:lf.op,value:Number(lf.value),version:Number(lf.version)||1,...(lf.conditions?{conditions:lf.conditions.map(function(c){return {key:c.key,op:c.op,value:c.value}})}:{})};d.filters.push(f)}
+  d.modules.push({filterId:f.id,phase:MINE_STREAM,level:PICK_LEVEL,enabled:true});MOD_DIRTY=true;$('modPicker').hidden=true;renderServerModules()}
+function modClick(e){var t=e.target,d=draft();if(!d)return;
+  if(t.dataset.tg!=null){e.preventDefault();var m=d.modules[+t.dataset.tg];m.enabled=!m.enabled;MOD_DIRTY=true;renderServerModules()}
+  else if(t.dataset.r1!=null){e.preventDefault();var m2=d.modules[+t.dataset.r1];if(m2.toR1)delete m2.toR1;else m2.toR1=true;MOD_DIRTY=true;renderServerModules()}
+  else if(t.dataset.del!=null){d.modules.splice(+t.dataset.del,1);MOD_DIRTY=true;renderServerModules()}}
+async function applyModules(){var key=$('modKey').value.trim(),d=draft();
+  if(!controlEndpoint){$('modMsg').textContent='Сервер управления недоступен';return}
+  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){$('modMsg').textContent='Введи пароль';return}
+  $('modApply').disabled=true;$('modMsg').textContent='Отправка…';
+  try{var r=await fetch(controlEndpoint+'/api/filter-config',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(d)});
+    $('modKey').value='';if(r.ok){MOD_DIRTY=false;$('modMsg').textContent='✓ Принято, сервер применит за пару минут'}else $('modMsg').textContent='Отклонено: HTTP '+r.status+(r.status===401?' (пароль)':'')}
+  catch(e){$('modMsg').textContent='Ошибка связи'}finally{$('modApply').disabled=false}}
 // ---- Вход в Исследование 1 ----
 function intakeFromUI(){return {manual:{enabled:$('inManual').checked,phase:$('inPhaseOn').checked?$('inPhase').value:'both',
     buyers10:{on:$('inBuyOn').checked,min:Number($('inBuy').value)},quoteSol:{on:$('inSolOn').checked,min:Number($('inSol').value)},
     sample:{on:$('inSampleOn').checked,pct:Number($('inSample').value)}},modules:{enabled:$('inModules').checked}}}
 var INTAKE_DIRTY=false;
 function renderIntake(){if(!$('intakeBox'))return;var st=researchMeta&&researchMeta.settings,x=st&&st.intake;
-  $('intakeState').textContent=!researchMeta?'нет данных':x?'настроен':'все из «Все»';
+  $('intakeState').textContent=!researchMeta?'нет данных':x?'вкл.':'все из «Все»';
   if(!INTAKE_DIRTY){var m=x?x.manual:{enabled:true,phase:'both',buyers10:{on:true,min:3},quoteSol:{on:true,min:0.5},sample:{on:false,pct:100}};
     $('inManual').checked=!!m.enabled;$('inModules').checked=x?!!x.modules.enabled:true;
     $('inPhaseOn').checked=m.phase!=='both';$('inPhase').value=m.phase;
@@ -528,7 +548,7 @@ function renderIntake(){if(!$('intakeBox'))return;var st=researchMeta&&researchM
   $('inManualBox').classList.toggle('dim',!$('inManual').checked);
   var acc=researchMeta&&researchMeta.intakeAccepted||{},rej=researchMeta&&researchMeta.intakeRejected||{};
   var a=Object.values(acc).reduce(function(p,v){return p+v},0),r=Object.values(rej).reduce(function(p,v){return p+v},0);
-  $('intakeStats').textContent=x?'С момента запуска сервера: вошло '+a+' · не вошло '+r+(r?' ('+Object.keys(rej).map(function(k){return ({phase:'поток','no-buyers10':'нет данных о покупателях',buyers10:'мало покупателей','no-quoteSol':'нет данных SOL',quoteSol:'мало SOL',sample:'жребий','not-matched':'не прошли','modules-only-not-passed':'не в «Прошли»'})[k]+' '+rej[k]}).join(', ')+')':''):'Сейчас в исследование идут все монеты из «Все».'}
+  $('intakeStats').textContent=x?'вошло '+a+' · не вошло '+r+(r?' ('+Object.keys(rej).map(function(k){return ({phase:'поток','no-buyers10':'нет данных о покупателях',buyers10:'мало покупателей','no-quoteSol':'нет данных SOL',quoteSol:'мало SOL',sample:'жребий','not-matched':'не прошли','modules-only-not-passed':'не в «Прошли»'})[k]+' '+rej[k]}).join(', ')+')':''):''}
 async function applyIntake(){var key=$('intakeKey').value.trim(),msg=$('intakeMsg');
   if(!controlEndpoint||!researchMeta){msg.textContent='Сервер управления недоступен';return}
   if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){msg.textContent='Введи пароль';return}
@@ -536,7 +556,7 @@ async function applyIntake(){var key=$('intakeKey').value.trim(),msg=$('intakeMs
   var st=researchMeta.settings,cfg={hours:st.hours,decisionMinutes:st.decisionMinutes,minActive:st.minActive,maxIdle:st.maxIdle,minCoverage:st.minCoverage,intake:it};
   $('intakeApply').disabled=true;msg.textContent='Отправка…';
   try{var r=await fetch(controlEndpoint+'/api/research-one',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(cfg)});
-    $('intakeKey').value='';msg.textContent=r.ok?'✓ Принято. Сервер применит в течение пары минут.':'Сервер отклонил: HTTP '+r.status+(r.status===401?' (неверный пароль)':'');if(r.ok)INTAKE_DIRTY=false}
+    $('intakeKey').value='';msg.textContent=r.ok?'✓ Принято':'Сервер отклонил: HTTP '+r.status+(r.status===401?' (неверный пароль)':'');if(r.ok)INTAKE_DIRTY=false}
   catch(e){msg.textContent='Ошибка связи: '+String(e.message||e)}finally{$('intakeApply').disabled=false}}
 function renderModules(){
   var html='';
@@ -1133,10 +1153,15 @@ function bind(){
   $('publishServerConfig').addEventListener('click',publishServerConfig);
   $('publishSourceAge').addEventListener('click',publishSourceAge);
   $('publishResearchOne').addEventListener('click',function(){publishResearchLevel('1')});
-  document.querySelectorAll('#mineStreams button').forEach(function(b){b.addEventListener('click',function(){MINE_STREAM=b.dataset.mstream;document.querySelectorAll('#mineStreams button').forEach(function(x){x.classList.toggle('active',x===b)});renderServerModules()})});
+  document.querySelectorAll('#mineSub button').forEach(function(b){b.addEventListener('click',function(){document.querySelectorAll('#mineSub button').forEach(function(x){x.classList.toggle('active',x===b)});$('paneWin').hidden=b.dataset.msub!=='win';$('paneR1').hidden=b.dataset.msub!=='r1'})});
+  document.querySelectorAll('#mineStreams button').forEach(function(b){b.addEventListener('click',function(){MINE_STREAM=b.dataset.mstream;document.querySelectorAll('#mineStreams button').forEach(function(x){x.classList.toggle('active',x===b)});$('modPicker').hidden=true;renderServerModules()})});
+  document.querySelectorAll('[data-addlev]').forEach(function(b){b.addEventListener('click',function(){showModPicker(b.dataset.addlev)})});
+  $('modPickerX').addEventListener('click',function(){$('modPicker').hidden=true});
+  $('modPickerList').addEventListener('click',function(e){var b=e.target.closest('[data-pick]');if(b)pickFilter(b.dataset.pick)});
+  $('mods1').addEventListener('click',modClick);$('mods2').addEventListener('click',modClick);$('modApply').addEventListener('click',applyModules);
   ['inManual','inModules','inPhaseOn','inPhase','inBuyOn','inBuy','inSolOn','inSol','inSampleOn','inSample'].forEach(function(id){$(id).addEventListener('input',function(){INTAKE_DIRTY=true;renderIntake()})});
   $('intakeApply').addEventListener('click',applyIntake);
-  $('mineAdd').addEventListener('click',function(){var b=document.querySelector('#tabs [data-page="library"]');if(b)b.click()});
+
   $('publishResearchTwo').addEventListener('click',function(){publishResearchLevel('2')});
   $('tabs').addEventListener('click',function(e){
     var b=e.target.closest('button[data-page]');if(!b)return;
