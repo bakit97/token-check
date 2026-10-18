@@ -894,7 +894,7 @@ var STORE_KINDS=[['live','🟢 Живые','1',0],['dead','🔴 Мёртвые',
 function storeCfg(){try{return JSON.parse(localStorage.getItem('storeCfg')||'{}')}catch(e){return {}}}
 function storeTarget(ph,k){var c=storeCfg();return (c[ph]&&c[ph][k])||2000}
 var STORE_K='live',STORE_GEAR=false;
-function renderStore(){var box=$('storeBox');if(!box)return;var phs=LP==='all'?['before','after']:[LP];
+function renderStore(){var box=$('storeBox');if(!box)return;if(LP==='all'){LP='before';document.querySelectorAll('#libPh [data-lp]').forEach(function(x){x.classList.toggle('active',x.dataset.lp==='before')})}var phs=LP==='all'?['before','after']:[LP];
   var info=STORE_KINDS.map(function(K){var g=classified(K[2])[K[3]].filter(function(x){return LP==='all'||r1Phase(x)===LP}),tg=phs.reduce(function(a,ph){return a+storeTarget(ph,K[0])},0);return {K:K,g:g,tg:tg}});
   var cur=info.find(function(i){return i.K[0]===STORE_K}),n=STORE_N[STORE_K]||20;
   var tabs='<div class="row" style="gap:5px;align-items:center"><div class="chips seg" style="margin:0;flex:1">'+info.map(function(i){return '<button type="button" data-sk="'+i.K[0]+'"'+(i.K[0]===STORE_K?' class="active"':'')+'>'+i.K[1].split(' ')[0]+' <span class="cnt">'+fmt(i.g.length)+'/'+fmt(i.tg)+'</span></button>'}).join('')+'</div><button type="button" class="add1" data-stgear="1" title="Настройка">⚙</button></div>';
@@ -908,7 +908,7 @@ function libRender(){var lvl=+s.level||1,rep=lvl===1?autoOne:autoTwo,h=renderAut
 function modScore(m){var e=m.eval||{},t=e.poly||e.train;return t&&t.positiveRecall!=null?Math.round((t.positiveRecall-(1-t.negativeRejection))*100):null}
 function renderLibrary(){
   renderServerRuleHistory();
-  $('storeBox').classList.toggle('hide',!LIB_STORE);$('libLevelBox').classList.toggle('hide',LIB_STORE);if(LIB_STORE){renderStore();return}
+  $('storeBox').classList.toggle('hide',!LIB_STORE);var lpa=document.querySelector('#libPh [data-lp="all"]');if(lpa)lpa.classList.toggle('hide',LIB_STORE);$('libLevelBox').classList.toggle('hide',LIB_STORE);if(LIB_STORE){renderStore();return}
   var names=s.level==='1'?['Живые','Мёртвые']:['Сильные','Слабые'],target=s.poly[s.level],groups=classified(s.level),lenA=groups[0].length,lenB=groups[1].length;
   $('polyTitle').textContent='🟢 '+fmt(lenA)+'/'+fmt(target[0])+' · 🔴 '+fmt(lenB)+'/'+fmt(target[1]);
   libRender();
