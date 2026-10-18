@@ -579,7 +579,7 @@ async function reloadPassConfig(){
   try{
     const config=await getObj('config/pass-filters.json');
     if(!config)throw Error('No pass configuration');
-    if(PASS_V2.applyConfig(config))
+    if(PASS_V2.applyConfig(require(DIR+'/pass-runtime.js').verdictConfig(config)))
       log('применена новая серверная версия фильтров',PASS_V2.configHash);
     PASS_CFG_ERR='';
   }catch(e){
@@ -1094,7 +1094,7 @@ async function exportPathsV2(now){
     serverOnly:true});
   await upload('passed-v2/live.json',{
     updated:now,origin:'server-journal',
-    coins:PASS_V2.latest(1000).filter(x=>x.zeroAt>now)
+    coins:PASS_V2.latest(1000).filter(x=>x.schema===2?now-x.firstSeenAt<5*60e3:x.zeroAt>now)
   });
   for(const d of [dayKey(now),dayKey(now-864e5)]){
     const rows=PASS_V2.day(d);
@@ -1174,7 +1174,7 @@ async function fastPassedLoop(){
             const publishAt=Date.now();
             await upload('passed-v2/live.json',{
               updated:publishAt,origin:'server-journal',
-              coins:PASS_V2.latest(1000).filter(x=>x.zeroAt>publishAt)
+              coins:PASS_V2.latest(1000).filter(x=>x.schema===2?publishAt-x.firstSeenAt<5*60e3:x.zeroAt>publishAt)
             });
             FAST_PASS_PUBLISH_AT=publishAt;
           }

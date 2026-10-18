@@ -523,16 +523,17 @@ function ruleLabel(f){
 }
 var MINE_STREAM='before',MOD_DRAFT=null,MOD_DIRTY=false,PICK_LEVEL='1';
 var TAGK={buyers10:'пок.10м',quoteSol:'SOL',top10:'топ-10%',top1:'топ-1%',buyers:'пок.5м',trades:'сделки',volume:'объём',liq:'ликв.',mc:'MC',buySellRatio:'пок/прод',buys:'покупки',sells:'продажи'};
-function ruleTags(f){return [f].concat(f.conditions||[]).map(function(r){if(r.key==='safeContract')return '<span class="tag">контракт ✓</span>';
+function ruleTags(f){return (f.conds||[f].concat(f.conditions||[])).map(function(r){if(r.key==='safeContract')return '<span class="tag">контракт ✓</span>';
   return '<span class="tag">'+esc(TAGK[r.key]||r.key)+' '+(r.op==='>='?'≥':'≤')+' '+esc(fmt(r.value))+'</span>'}).join('')}
 function serverCfg(){return serverPassActive&&passMeta&&passMeta.serverConfig||null}
-function draft(){if(!MOD_DIRTY||!MOD_DRAFT){var c=serverCfg();MOD_DRAFT=c?JSON.parse(JSON.stringify({schema:1,enabled:c.enabled,activatedAt:c.activatedAt||0,decisionMinutes:c.decisionMinutes,filters:c.filters||[],modules:c.modules||[],r1:{before:!!(c.r1&&c.r1.before),after:!!(c.r1&&c.r1.after)}})):null}return MOD_DRAFT}
+function draft(){if(!MOD_DIRTY||!MOD_DRAFT){var c=serverCfg();MOD_DRAFT=c?JSON.parse(JSON.stringify({schema:1,enabled:c.enabled,activatedAt:c.activatedAt||0,decisionMinutes:c.decisionMinutes,filters:c.filters||[],modules:c.modules||[],passMode:c.passMode||{before:'1',after:'1'},r1:{before:!!(c.r1&&c.r1.before),after:!!(c.r1&&c.r1.after)}})):null}return MOD_DRAFT}
+function dfltVerdict(){var c=serverCfg();return c&&c.decisionMinutes||10}
 function modRow(m,i,byId,today){var f=byId[m.filterId];if(!f)return '';
   var n=serverPassRows.filter(function(r){return r.phase===m.phase&&day(r.acceptedAt)===today&&(r.matches||[]).some(function(x){return x.id===f.id})}).length;
   return '<details class="frow"><summary><span class="fname">'+esc(f.name)+'</span><span class="fcnt">'+n+'</span>'+
 
     '<span class="tg'+(m.enabled?' on':'')+'" data-tg="'+i+'"></span></summary><div class="tags">'+ruleTags(f)+'</div>'+
-    '<div class="row" style="margin-top:6px"><span class="hint">v'+esc(f.version)+' · сегодня '+n+'</span><button type="button" class="pbtn del" data-del="'+i+'">убрать</button></div></details>'}
+    '<div class="row" style="margin-top:6px"><span class="hint">v'+esc(f.version)+' · вердикт '+esc(f.verdictMinutes||dfltVerdict())+' мин · сегодня '+n+'</span><button type="button" class="pbtn del" data-del="'+i+'">убрать</button></div></details>'}
 function renderServerModules(){var d=draft();if(!$('mods1'))return;
   if(!d){$('mods1').innerHTML=$('mods2').innerHTML='<p class="hint">нет данных сервера</p>';return}
   var byId={};d.filters.forEach(function(f){byId[f.id]=f});var today=day(now());
@@ -546,7 +547,7 @@ function showModPicker(level){PICK_LEVEL=level;var d=draft();if(!d)return;var ha
   $('modPicker').hidden=false}
 function pickFilter(id){var d=draft(),f=d.filters.find(function(x){return x.id===id});
   if(!f){var lf=(s.filters||[]).find(function(x){return x.id===id});if(!lf)return;
-    f={id:String(lf.id),name:String(lf.name).slice(0,64),level:String(lf.level),key:lf.key,op:lf.op,value:Number(lf.value),version:Number(lf.version)||1,...(lf.conditions?{conditions:lf.conditions.map(function(c){return {key:c.key,op:c.op,value:c.value}})}:{})};d.filters.push(f)}
+    f={id:String(lf.id),name:String(lf.name).slice(0,64),level:String(lf.level),key:lf.key,op:lf.op,value:Number(lf.value),version:Number(lf.version)||1,verdictMinutes:lf.verdictMinutes||dfltVerdict(),...(lf.conds?{conds:lf.conds}:{}),...(lf.phase?{phase:lf.phase}:{}),...(lf.conditions?{conditions:lf.conditions.map(function(c){return {key:c.key,op:c.op,value:c.value}})}:{})};d.filters.push(f)}
   d.modules.push({filterId:f.id,phase:MINE_STREAM,level:PICK_LEVEL,enabled:true});MOD_DIRTY=true;$('modPicker').hidden=true;renderServerModules()}
 function modClick(e){var t=e.target,d=draft();if(!d)return;
   if(t.dataset.tg!=null){e.preventDefault();var m=d.modules[+t.dataset.tg];m.enabled=!m.enabled;MOD_DIRTY=true;renderServerModules()}
@@ -628,7 +629,7 @@ function showPicker(phase,lev){
   $('filterPicker').hidden=false;
 }
 var PF='all';
-var PM_DRAFT=null;function pwMode(){try{return localStorage.getItem('passMode')||'1'}catch(e){return '1'}}
+var PM_DRAFT=null;function pwMode(){var c=serverCfg(),ph=PF==='before'?'before':PF==='after'?'after':MINE_STREAM;if(c&&c.passMode)return typeof c.passMode==='object'?c.passMode[ph]||'1':String(c.passMode);return '1'}
 function pwMin(){try{return +localStorage.getItem('passWin')||3}catch(e){return 3}}
 function renderPassed(){
   var list=lastPassed.filter(function(x){return x.deadline>now()});
@@ -641,7 +642,7 @@ function renderPassed(){
   var W=pwMin(),win=lastPassed.filter(function(q){return (q.firstSeenAt||q.deadline)+W*60000>now()}),ph=function(q){return (q.coin._entry||{}).phase};
   var PMm=PM_DRAFT||pwMode();document.querySelectorAll&&document.querySelectorAll('#pwMode [data-pm]').forEach(function(x){x.classList.toggle('active',x.dataset.pm===PMm)});$('pwSum').textContent=(pwMode()==='12'?'ур.1+2':'ур.1')+' · '+W+' мин';if($('pwApplyRow').classList.contains&&$('pwApplyRow').classList.contains('hide')){$('pwV').textContent=W;$('pwMin').value=W}
   var d0=new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Almaty'}));d0.setHours(0,0,0,0);var t0=Date.now()-(new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Almaty'}))-d0),td=lastPassed.filter(function(q){return (q.firstSeenAt||0)>=t0});
-  $('pToday').textContent='Сегодня сигналов: '+td.length+' · 🌱 '+td.filter(function(q){return ph(q)==='before'}).length+' · 🎓 '+td.filter(function(q){return ph(q)==='after'}).length;
+  var totals=passMeta&&passMeta.today;$('pToday').textContent=totals&&totals.day===day(now())?'Сегодня сигналов: '+(totals.before+totals.after)+' · 🌱 '+totals.before+' · 🎓 '+totals.after:'Сегодня сигналов: нет данных';
   $('pAllN').textContent=win.length;$('pBefN').textContent=win.filter(function(q){return ph(q)==='before'}).length;$('pAftN').textContent=win.filter(function(q){return ph(q)==='after'}).length;
   $('passedTab').textContent=win.length?' '+fmt(win.length):'';
   var sel=win.filter(function(q){return PF==='all'||ph(q)===PF});
@@ -1262,37 +1263,20 @@ async function loadPassedArchiveDay(){
   }
 }
 function stageAutoRule(e){
-  const btn=e.target.closest('[data-stage-auto]');
-  if(!btn)return;
-  const id=btn.dataset.stageAuto.split(':'),level=id[0],index=Number(id[1]);
-  const report=level==='1'?autoOne:level==='2'?autoTwo:null;
-  const item=report?.rules?.[index],rule=item?.rule;
-  if(!rule||!['buyers','trades','volume','liq','mc','buys','sells','buySellRatio'].includes(rule.key)||
-     !['>=','<='].includes(rule.op)||!Number.isFinite(rule.value)||rule.value<0){
-    note('Некорректное условие исследования');return;
-  }
-  s.level=level;s.tab='library';save();
-  document.querySelectorAll('#tabs [data-page]').forEach(function(x){
-    x.classList.toggle('active',x.dataset.page==='library');
-  });
-  document.querySelectorAll('.page').forEach(function(x){
-    x.hidden=x.id!=='p-library';
-  });
-  document.querySelectorAll('#levels [data-level]').forEach(function(x){
-    x.classList.toggle('active',x.dataset.level===level);
-  });
-  renderLibrary();
-  openEditor(null);
-  const titles={buyers:'Покупатели',trades:'Сделки',volume:'Объём',
-    liq:'Ликвидность',mc:'Капитализация',buys:'Покупки',sells:'Продажи',
-    buySellRatio:'Покупки/продажи'};
-  $('filterName').value=(titles[rule.key]||rule.key)+' '+rule.op+' '+fmt(rule.value);
-  $('filterKey').value=rule.key;
-  $('filterOp').value=rule.op;
-  $('filterValue').value=rule.value;
-  $('editorNote').textContent='Черновик из автоматического исследования. Проверь и нажми «Сохранить». Не включает модуль и не меняет сервер.';
-  note('Предложение скопировано в редактор. Подтверди сохранение вручную.');
+  var btn=e.target.closest('[data-stage-auto]');if(!btn)return;
+  var parts=btn.dataset.stageAuto.split(':'),level=parts[0],report=level==='1'?autoOne:autoTwo,item=report&&report.rules&&report.rules[Number(parts[1])];
+  if(!item||!item.rule){note('Нет серверного модуля');return}
+  var r=item.rule,conds=r.conds||[r].concat(r.conditions||[]),keys=['buyers','trades','volume','liq','mc','buys','sells','buySellRatio','buyers10','safeContract','quoteSol','top1','top10'];
+  if(!conds.length||conds.length>8||conds.some(function(c){return !keys.includes(c.key)||!['>=','<='].includes(c.op)||!Number.isFinite(c.value)||c.value<0})){note('Неподдерживаемые условия модуля');return}
+  var d=draft();if(!d){note('Нет данных сервера');return}
+  var phase=item.phase||r.phase;if(!['before','after'].includes(phase)){note('У модуля не указан поток');return}
+  var id=String(item.id||r.id||('auto'+level+'_'+Date.now())).replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,64),f={id:id,name:String(item.name||r.name||ruleLabel(r)).slice(0,64),level:level,phase:phase,version:item.version||1,verdictMinutes:item.verdictMinutes||r.verdictMinutes||d.decisionMinutes,conds:conds.map(function(c){return {key:c.key,op:c.op,value:c.value}})};
+  Object.assign(f,f.conds[0]);f.conditions=f.conds.slice(1);
+  var pos=d.filters.findIndex(function(x){return x.id===id});if(pos<0)d.filters.push(f);else d.filters[pos]=f;
+  if(!d.modules.some(function(x){return x.filterId===id&&x.phase===phase&&x.level===level}))d.modules.push({filterId:id,phase:phase,level:level,enabled:true});
+  MINE_STREAM=phase;MOD_DIRTY=true;renderServerModules();note('Модуль подготовлен в Окне. Примените настройки сервера');
 }
+
 function bind(){
   $('exportServerConfig').addEventListener('click',exportServerConfig);
   $('loadPassedDay').addEventListener('click',loadPassedArchiveDay);
@@ -1335,10 +1319,10 @@ function bind(){
     save();refresh();
   });
   $('r1Suggestions').addEventListener('click',function(e){var t=e.target.closest('[data-mopen]');if(t)openModSheet(t.dataset.mopen)});
-  $('pSeg').addEventListener('click',function(e){var b=e.target.closest('[data-pf]');if(!b)return;PF=b.dataset.pf;document.querySelectorAll('#pSeg [data-pf]').forEach(function(x){x.classList.toggle('active',x===b)});renderPassed()});
+  $('pSeg').addEventListener('click',function(e){var b=e.target.closest('[data-pf]');if(!b)return;PF=b.dataset.pf;PM_DRAFT=null;document.querySelectorAll('#pSeg [data-pf]').forEach(function(x){x.classList.toggle('active',x===b)});renderPassed()});
   $('pwMin').addEventListener('input',function(){$('pwV').textContent=$('pwMin').value;$('pwApplyRow').classList.remove('hide')});
   $('pwMode').addEventListener('click',function(e){var b=e.target.closest('[data-pm]');if(!b)return;PM_DRAFT=b.dataset.pm;$('pwApplyRow').classList.remove('hide');renderPassed()});
-  $('pwApply').addEventListener('click',function(){try{localStorage.setItem('passWin',$('pwMin').value);if(PM_DRAFT)localStorage.setItem('passMode',PM_DRAFT)}catch(e){}PM_DRAFT=null;$('pwApplyRow').classList.add('hide');renderPassed();note('Применено')});
+  $('pwApply').addEventListener('click',async function(){try{localStorage.setItem('passWin',$('pwMin').value)}catch(e){}if(PM_DRAFT){var d=draft();if(!d){note('Нет данных сервера');return}var ph=PF==='before'?'before':PF==='after'?'after':MINE_STREAM;d.passMode=d.passMode||{before:'1',after:'1'};d.passMode[ph]=PM_DRAFT;MOD_DIRTY=true;await applyModules();if(MOD_DIRTY)return}PM_DRAFT=null;$('pwApplyRow').classList.add('hide');renderPassed();note('Применено')});
   $('libPh').addEventListener('click',function(e){var b=e.target.closest('[data-lp]');if(!b)return;LP=b.dataset.lp;document.querySelectorAll('#libPh [data-lp]').forEach(function(x){x.classList.toggle('active',x===b)});LIB_STORE?renderStore():libRender()});
   $('storeBox').addEventListener('input',function(e){var t=e.target;if(!t.dataset.st)return;$('storeBox').querySelector('.stv').textContent=t.value});
   $('storeBox').addEventListener('click',function(e){var t=e.target,k;var sk=t.closest('[data-sk]');if(sk){STORE_K=sk.dataset.sk;renderStore();return}if(t.dataset.stgear){STORE_GEAR=!STORE_GEAR;renderStore();return}
@@ -1672,7 +1656,7 @@ async function pollPassedLive(){
       if(!row||typeof row.mint!=='string'||!Number.isSafeInteger(row.acceptedAt)||
          !Number.isSafeInteger(row.firstSeenAt)||!Number.isSafeInteger(row.zeroAt)||
          !['before','after'].includes(row.phase)||!Array.isArray(row.matches)||
-         row.zeroAt<=row.firstSeenAt||row.firstSeenAt>now()+60000)continue;
+         (row.schema===2?row.zeroAt>row.firstSeenAt||row.firstSeenAt-row.zeroAt>120000:row.zeroAt<=row.firstSeenAt)||row.firstSeenAt>now()+60000)continue;
       current.set(row.mint,row);
     }
     serverPassRows=[...current.values()].sort(function(a,b){

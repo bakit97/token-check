@@ -8,6 +8,9 @@ const crypto=require('node:crypto');
 const {featuresAt,evaluation}=require('./research-v2');
 
 const MIN=60000,WINDOW=72*60*MIN,TZ=5*3600000;
+function syncDirectory(dir){
+  let fd;try{fd=fs.openSync(dir,'r');fs.fsyncSync(fd)}catch(e){if(process.platform!=='win32'||!['EPERM','EISDIR','EACCES'].includes(e.code))throw e}finally{if(fd!=null)fs.closeSync(fd)}
+}
 function kzDay(at){return new Date(at+TZ).toISOString().slice(0,10)}
 const KEYS=new Set(['buyers','trades','volume','liq','mc','buys','sells','buySellRatio','buyers10','safeContract','quoteSol','top1','top10']);
 const PHASES=new Set(['before','after']);
@@ -19,6 +22,7 @@ function configOf(raw={}){
     schema:1,enabled:raw.enabled,activatedAt:raw.activatedAt,
     decisionMinutes:raw.decisionMinutes,
     filters:raw.filters,modules:raw.modules,
+    ...(raw.passMode!=null?{passMode:typeof raw.passMode==='object'?{before:String(raw.passMode.before),after:String(raw.passMode.after)}:{before:String(raw.passMode),after:String(raw.passMode)}}:{}),
     // Переключатель окна «→ И1» по потокам; отсутствует → прежний хеш.
     ...(raw.r1&&typeof raw.r1==='object'?{r1:{before:raw.r1.before===true,after:raw.r1.after===true}}:{})
   };
@@ -27,8 +31,11 @@ function configOf(raw={}){
      !Array.isArray(cfg.filters)||cfg.filters.length>200||
      !Array.isArray(cfg.modules)||cfg.modules.length>200)
     throw new RangeError('Invalid pass configuration');
+  if(cfg.passMode&&Object.values(cfg.passMode).some(x=>!['1','12'].includes(x)))throw new TypeError('Invalid passMode');
   const ids=new Set();
-  for(const f of cfg.filters){
+  for(const original of cfg.filters){
+    const f={...original};
+    if(f.conds!=null){if(!Array.isArray(f.conds)||!f.conds.length||f.conds.length>8)throw new TypeError('Invalid conds');Object.assign(f,{key:f.conds[0]?.key,op:f.conds[0]?.op,value:f.conds[0]?.value});f.conditions=f.conds.slice(1)}
     if(!f||typeof f.id!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(f.id)||ids.has(f.id)||
        typeof f.name!=='string'||!f.name.trim()||f.name.length>64||
        !['1','2'].includes(f.level)||!KEYS.has(f.key)||!['>=','<='].includes(f.op)||
@@ -36,6 +43,8 @@ function configOf(raw={}){
        !Number.isInteger(f.version)||f.version<1)
       throw new TypeError('Invalid filter in pass configuration');
     if(f.conditions!=null&&(!Array.isArray(f.conditions)||f.conditions.length>8||f.conditions.some(c=>!c||!KEYS.has(c.key)||!['>=','<='].includes(c.op)||!Number.isFinite(c.value)||c.value<0||c.value>1e12||c.conditions!=null)))throw new TypeError('Invalid compound filter');
+    if(f.verdictMinutes!=null&&(!Number.isInteger(f.verdictMinutes)||f.verdictMinutes<1||f.verdictMinutes>30))throw new TypeError('Invalid module verdictMinutes');
+    if(f.phase!=null&&!PHASES.has(f.phase))throw new TypeError('Invalid filter phase');
     ids.add(f.id);
   }
   for(const m of cfg.modules){
@@ -44,18 +53,18 @@ function configOf(raw={}){
        cfg.filters.find(f=>f.id===m.filterId).level!==m.level)
       throw new TypeError('Invalid module in pass configuration');
   }
-  cfg.filters=cfg.filters.map(f=>({id:f.id,name:f.name.trim(),level:f.level,key:f.key,
-    op:f.op,value:f.value,version:f.version,...(f.conditions?{conditions:f.conditions.map(c=>({key:c.key,op:c.op,value:c.value}))}:{})}));
+  cfg.filters=cfg.filters.map(original=>{const f={...original};if(f.conds){Object.assign(f,{key:f.conds[0]?.key,op:f.conds[0]?.op,value:f.conds[0]?.value});f.conditions=f.conds.slice(1)}return {id:f.id,name:f.name.trim(),level:f.level,key:f.key,
+    op:f.op,value:f.value,version:f.version,...(f.phase?{phase:f.phase}:{}),...(f.verdictMinutes!=null?{verdictMinutes:f.verdictMinutes}:{}),...(f.conds?{conds:f.conds.map(c=>({key:c.key,op:c.op,value:c.value}))}:{}),...(f.conditions?{conditions:f.conditions.map(c=>({key:c.key,op:c.op,value:c.value}))}:{})}});
   // toR1: монеты этого модуля идут и во вход Исследования 1 (поле отсутствует → прежний хеш конфигурации).
   cfg.modules=cfg.modules.map(m=>({filterId:m.filterId,phase:m.phase,level:m.level,enabled:m.enabled,...(m.toR1===true?{toR1:true}:{})}));
   return cfg;
 }
 function digest(cfg){return crypto.createHash('sha256').update(JSON.stringify(cfg)).digest('hex').slice(0,20)}
 function isEvent(x){
-  return x&&x.schema===1&&typeof x.mint==='string'&&x.mint.length>=32&&
+  return x&&[1,2].includes(x.schema)&&typeof x.mint==='string'&&x.mint.length>=32&&
     PHASES.has(x.phase)&&Number.isSafeInteger(x.acceptedAt)&&
     Number.isSafeInteger(x.firstSeenAt)&&Number.isSafeInteger(x.zeroAt)&&
-    x.zeroAt>x.acceptedAt&&x.firstSeenAt>=x.acceptedAt&&x.firstSeenAt<=x.zeroAt&&
+    x.zeroAt>x.acceptedAt&&x.firstSeenAt>=x.acceptedAt&&(x.schema===2?x.firstSeenAt>=x.zeroAt&&x.firstSeenAt<=x.zeroAt+2*MIN:x.firstSeenAt<=x.zeroAt)&&
     typeof x.configHash==='string'&&Array.isArray(x.matches)&&x.matches.length>0&&
     x.features&&typeof x.features==='object';
 }
@@ -103,8 +112,7 @@ class PassRuntime {
       const journal=fs.openSync(file,'r+');
       try{fs.ftruncateSync(journal,complete.length);fs.fsyncSync(journal)}
       finally{fs.closeSync(journal)}
-      const dir=fs.openSync(path.dirname(file),'r');
-      try{fs.fsyncSync(dir)}finally{fs.closeSync(dir)}
+      syncDirectory(path.dirname(file));
     }
     for(const line of complete.toString('utf8').split('\n')){
       if(!line)continue;
@@ -139,16 +147,14 @@ class PassRuntime {
           written+=fs.writeSync(fd,data,written,data.length-written);fs.fsyncSync(fd)}
         finally{fs.closeSync(fd)}
         fs.renameSync(temp,this.activationFile);
-        const dir=fs.openSync(path.dirname(this.activationFile),'r');
-        try{fs.fsyncSync(dir)}finally{fs.closeSync(dir)}
+        syncDirectory(path.dirname(this.activationFile));
       }
     }
     if(!cfg.enabled&&fs.existsSync(this.activationFile)){
       // Disabling invalidates this activation epoch. A later re-enable
       // must not resurrect admissions from the interval while disabled.
       fs.unlinkSync(this.activationFile);
-      const fd=fs.openSync(path.dirname(this.activationFile),'r');
-      try{fs.fsyncSync(fd)}finally{fs.closeSync(fd)}
+      syncDirectory(path.dirname(this.activationFile));
     }
     this.config=cfg;
     this.configHash=h;
@@ -170,6 +176,7 @@ class PassRuntime {
   update({source,coins,now=Date.now()}={}){
     if(!source?.records||!coins?.get)throw new TypeError('Source ledger and candidate map required');
     let added=0,missingFeatures=0,considered=0;
+    if(this.config.passMode)return this._updateVerdicts({source,coins,now});
     const cfg=this.config;
     if(cfg.enabled){
       const available=new Map(cfg.filters.map(f=>[f.id,f]));
@@ -218,12 +225,49 @@ class PassRuntime {
     this.updated=now;
     return {added,considered,missingFeatures,...this.summary(now)};
   }
+  _updateVerdicts({source,coins,now}){
+    const cfg=this.config;let added=0,considered=0,missingFeatures=0,waiting=0,rejected=0;
+    if(cfg.enabled){
+      const byId=new Map(cfg.filters.map(f=>[f.id,f]));
+      const selected=cfg.modules.filter(m=>m.enabled&&(m.level==='1'||cfg.passMode[m.phase]==='12'))
+        .map(m=>({module:m,filter:byId.get(m.filterId)})).filter(x=>x.filter&&(!x.filter.phase||x.filter.phase===x.module.phase));
+      const maxMinutes=Math.max(1,...selected.map(x=>x.filter.verdictMinutes||cfg.decisionMinutes));
+      const recent=typeof source.recentAdmissions==='function'?source.recentAdmissions(now-(maxMinutes+2)*MIN,now):source.records.values();
+      for(const row of recent){
+        if(!PHASES.has(row.phase)||this.records.has(row.mint)||row.acceptedAt<cfg.activatedAt||row.acceptedAt>now)continue;
+        const rules=selected.filter(x=>x.module.phase===row.phase);
+        if(!rules.some(x=>x.module.level==='1')||(cfg.passMode[row.phase]==='12'&&!rules.some(x=>x.module.level==='2')))continue;
+        const minutes=Math.max(...rules.map(x=>x.filter.verdictMinutes||cfg.decisionMinutes)),zeroAt=row.acceptedAt+minutes*MIN;
+        if(now<zeroAt){waiting++;continue}if(now>zeroAt+2*MIN)continue;
+        considered++;const coin=coins.get(row.mint);if(!coin){missingFeatures++;continue}
+        const verdicts=rules.map(({filter:f})=>{
+          const at=row.acceptedAt+(f.verdictMinutes||cfg.decisionMinutes)*MIN;
+          const features=featuresAt(coin,at,{eventAt:row.acceptedAt,phase:row.phase});
+          return {filter:f,at,features,result:evaluation(features,f)};
+        });
+        if(verdicts.some(x=>x.result==='unknown')){missingFeatures++;continue}
+        if(verdicts.some(x=>x.result!=='pass')){rejected++;continue}
+        this._append({schema:2,mint:row.mint,phase:row.phase,acceptedAt:row.acceptedAt,eventAt:row.eventAt,
+          firstSeenAt:now,zeroAt,passMode:cfg.passMode[row.phase],verdictMinutes:minutes,configHash:this.configHash,
+          features:featuresAt(coin,zeroAt,{eventAt:row.acceptedAt,phase:row.phase}),
+          matches:verdicts.filter(x=>x.filter.level==='1').map(x=>({...x.filter})),
+          moduleVerdicts:verdicts.map(x=>({id:x.filter.id,level:x.filter.level,version:x.filter.version,at:x.at,features:x.features,result:x.result})),
+          secondLevelRules:cfg.modules.filter(m=>m.enabled&&m.level==='2'&&m.phase===row.phase).map(m=>byId.get(m.filterId)).filter(Boolean).map(f=>({...f})),
+          name:String(coin.n||coin.s||'').slice(0,64),kind:'completed-module-verdicts'});added++;
+      }
+    }
+    for(const [mint,row] of this.records)if(now-row.acceptedAt>WINDOW)this.records.delete(mint);
+    this.updated=now;this.verdictStats={waiting,rejected,missingFeatures,considered};
+    return {added,...this.verdictStats,...this.summary(now)};
+  }
   summary(now=Date.now()){
     const arr=[...this.records.values()];
-    const current=arr.filter(x=>x.zeroAt>now);
+    const current=arr.filter(x=>x.schema===2?now-x.firstSeenAt<5*MIN:x.zeroAt>now);
+    const todayRows=arr.filter(x=>kzDay(x.firstSeenAt)===kzDay(now));
     return {schema:1,updated:this.updated,enabled:this.config.enabled,
       activatedAt:this.config.activatedAt,
-      decisionMinutes:this.config.decisionMinutes,
+      decisionMinutes:this.config.decisionMinutes,...(this.config.passMode?{passMode:this.config.passMode,verdictStats:this.verdictStats||{}}:{}),
+      today:{day:kzDay(now),before:todayRows.filter(x=>x.phase==='before').length,after:todayRows.filter(x=>x.phase==='after').length},
       configHash:this.configHash,
       registeredModules:this.config.modules.filter(m=>m.enabled&&m.level==='1').length,
       storedLast72h:arr.length,active:current.length,appendedThisProcess:this.appended,
@@ -236,4 +280,5 @@ class PassRuntime {
       .sort((a,b)=>b.firstSeenAt-a.firstSeenAt);
   }
 }
-module.exports={PassRuntime,configOf,isEvent};
+function verdictConfig(raw){return {...raw,passMode:raw.passMode||{before:'1',after:'1'},filters:(raw.filters||[]).map(f=>({...f,verdictMinutes:f.verdictMinutes||raw.decisionMinutes}))}}
+module.exports={PassRuntime,configOf,isEvent,verdictConfig};
