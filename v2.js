@@ -343,13 +343,21 @@ function renderAll(){
   var count=sourceActive?sourceMeta.today:0;
   $('admitCount').textContent=sourceActive?fmt(count):'—';
   $('visibleCount').textContent=sourceActive&&Number.isSafeInteger(sourceMeta?.total)?fmt(sourceMeta.total):'—';
-  $('todayTab').textContent=count?' '+fmt(count):'';
+  renderSpeedCounters();
   $('sourceNote').textContent=sourceActive?
     (sourceMeta?.preConnected?'✓ Главный источник: журнал сервера. До миграции — публичные торговые кривые Pump.fun; после — подтверждённые миграции. Дублей нет.':'⚠ Источник до миграции пока не подтвердил связь с сетью. Постмиграционные события продолжают проверяться.')+' Возраст проверяется при ВХОДЕ, карточка не исчезает через 2 минуты.':
     '⛔ Главный источник сервера недоступен или устарел. Вход новых монет приостановлен. Непроверенные кандидаты из старых данных сюда не подставляются.';
   var list=lastVisible.slice(0,s.limit);
   $('coinList').innerHTML=list.length?list.map(function(c){return coinHtml(c)}).join(''):'<div class="empty-state">Пока нет подтверждённых записей в этом потоке. Монеты, не успевшие пройти фильтр возраста на входе, не добавляются позже задним числом.</div>';
 }
+// Наглядная скорость: белое — сколько обнаружили за сутки, зелёное — сколько успели по нашему фильтру возраста.
+function speedHtml(seen,passed){if(!Number.isSafeInteger(seen))return '';return fmt(seen)+(Number.isSafeInteger(passed)?' · <b class="pass">'+fmt(passed)+'</b>':'')}
+function renderSpeedCounters(){var d=sourceMeta&&sourceMeta.daily,ok=sourceActive&&d&&d.day===day(now()),b=ok&&d.before||{},a=ok&&d.after||{};
+  function sum(k){return Number.isSafeInteger(b[k])&&Number.isSafeInteger(a[k])?b[k]+a[k]:null}
+  $('todayTab').innerHTML=ok?' '+speedHtml(sum('seen'),sum('accepted')):'';
+  $('cntAll').innerHTML=ok?speedHtml(sum('seen'),sum('accepted')):'';
+  $('cntBefore').innerHTML=ok?speedHtml(b.seen,b.accepted):'';
+  $('cntAfter').innerHTML=ok?speedHtml(a.seen,a.accepted):'';}
 function dailySourceText(label,row,available){
   if(!available||!row||!['seen','accepted','tooOld','unverified'].every(function(k){return Number.isSafeInteger(row[k])&&row[k]>=0}))return label+': нет данных';
   var late=row.tooOld&&Number.isFinite(row.averageLateMs)?' (в среднем на '+(row.averageLateMs/(row.averageLateMs<60000?1000:60000)).toLocaleString('ru-RU',{maximumFractionDigits:1})+(row.averageLateMs<60000?' сек':' мин')+')': '';
