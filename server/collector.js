@@ -151,27 +151,75 @@ async function officialPools(fam,mint,quote){const te=new TextEncoder(),out=[];
   return out}
 const MIG_PROG={pump:PUMP,launch:LAUNCH,'launch-v4':LAUNCH,dbc:DBC};
 // первая успешная транзакция пула (листаем подписи до самой старой, максимум 60 страниц)
-async function firstOkSig(pool,rpc){let before,pages=[];for(let n=0;n<10;n++){const sg=await rpc('getSignaturesForAddress',[pool,before?{limit:1000,before}:{limit:1000}]);
-    if(!sg?.length){before=null;break}pages.push(sg);if(pages.length>2)pages.shift();before=sg[sg.length-1].signature;if(sg.length<1000){before=null;break}}
-  if(before)return{tooLong:1};const all=pages.flat().reverse();return all.find(x=>!x.err)||null}
-async function proveMig(pool,fam,curve,rpc){const f=await firstOkSig(pool,rpc);if(!f)return{why:'у пула нет успешных транзакций'};if(f.tooLong)return{why:'история пула длиннее 10 000 транзакций',tooLong:1};
-  const t=await rpc('getTransaction',[f.signature,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}]);if(!t||t.meta?.err)return{why:'транзакция создания недоступна'};
-  const keys=[...t.transaction.message.accountKeys,...(t.meta.loadedAddresses?.writable||[]),...(t.meta.loadedAddresses?.readonly||[])];
-  const pi=keys.indexOf(pool);const created=pi>=0&&t.meta.preBalances[pi]===0&&t.meta.postBalances[pi]>0;
-  if(!created)return{why:'пул создан не в первой успешной транзакции'};
-  const prog=MIG_PROG[fam],ci=curve?keys.indexOf(curve):-1;let hit=null;
-  const check=ix=>{if(keys[ix.programIdIndex]!==prog)return;const d=Buffer.from(b58dec(ix.data||'1')).subarray(0,8).toString('hex');
-    if(MIG_IX[prog].has(d)&&ix.accounts.includes(pi)&&(!curve||ix.accounts.includes(ci)))hit=d};
-  t.transaction.message.instructions.forEach(check);(t.meta.innerInstructions||[]).forEach(g=>g.instructions.forEach(check));
-  if(!hit)return{why:'в транзакции создания пула нет инструкции миграции, ссылающейся на этот пул'};
-  return{ok:1,sig:f.signature,slot:t.slot,t:(t.blockTime||f.blockTime)*1000,ix:hit}}
+const MIG_BLOCKS=new Map(),PROOF_FAST={slotBlocks:0,slotCacheHits:0,firstPages:0,transactionReads:0,verified:0,blockFilterOverflow:0};
+async function firstOkSig(pool,rpc){
+  PROOF_FAST.firstPages++;
+  const page=await rpc('getSignaturesForAddress',[pool,{limit:1000,commitment:'confirmed'}]);
+  if(!page?.length)return null;
+  if(page.length>=1000)return {tooLong:1};
+  return [...page].reverse().find(x=>!x.err)||null;
+}
+function verifyMigTransaction(pool,fam,curve,t,signature,blockTime,slot){
+  if(!t||t.meta?.err||!t.transaction?.message)return {why:'транзакция создания недоступна'};
+  const msg=t.transaction.message,keys=[...(msg.accountKeys||[]).map(k=>typeof k==='string'?k:k.pubkey),...(t.meta.loadedAddresses?.writable||[]),...(t.meta.loadedAddresses?.readonly||[])];
+  const pi=keys.indexOf(pool),ci=curve?keys.indexOf(curve):-1;
+  if(pi<0||t.meta.preBalances?.[pi]!==0||!(t.meta.postBalances?.[pi]>0))return {why:'транзакция не создаёт пул'};
+  if(curve&&ci<0)return {why:'транзакция не ссылается на кривую'};
+  const prog=MIG_PROG[fam];let hit=null;
+  const check=ix=>{const program=typeof ix.programId==='string'?ix.programId:keys[ix.programIdIndex];
+    if(program!==prog||!Array.isArray(ix.accounts))return;
+    let d;try{d=Buffer.from(b58dec(ix.data||'1')).subarray(0,8).toString('hex')}catch{return}
+    if(MIG_IX[prog]?.has(d)&&ix.accounts.includes(pi)&&(!curve||ix.accounts.includes(ci)))hit=d;
+  };
+  (msg.instructions||[]).forEach(check);(t.meta.innerInstructions||[]).forEach(g=>(g.instructions||[]).forEach(check));
+  if(!hit)return {why:'нет инструкции миграции с пулом и кривой'};
+  const seconds=t.blockTime||blockTime;if(!Number.isFinite(seconds)||seconds<=0)return {why:'нет времени блока'};
+  return {ok:1,sig:signature,slot:t.slot||slot,t:seconds*1000,ix:hit};
+}
+function hasMigrationInstruction(t){
+  if(t.meta?.err||!t.transaction?.message)return false;
+  const keys=[...(t.transaction.message.accountKeys||[]).map(k=>typeof k==='string'?k:k.pubkey),...(t.meta?.loadedAddresses?.writable||[]),...(t.meta?.loadedAddresses?.readonly||[])];
+  const instructions=[...(t.transaction.message.instructions||[])];for(const group of t.meta?.innerInstructions||[])instructions.push(...(group.instructions||[]));
+  return instructions.some(ix=>{const prog=ix.programId||keys[ix.programIdIndex];if(!MIG_IX[prog])return false;
+    try{return MIG_IX[prog].has(Buffer.from(b58dec(ix.data||'1')).subarray(0,8).toString('hex'))}catch{return false}});
+}
+async function proveMig(pool,fam,curve,rpc,slot){
+  if(Number.isSafeInteger(slot)&&slot>0){
+    let block=MIG_BLOCKS.get(slot);
+    if(block)PROOF_FAST.slotCacheHits++;
+    else{
+      PROOF_FAST.slotBlocks++;
+      const full=await rpc('getBlock',[slot,{encoding:'json',transactionDetails:'full',rewards:false,maxSupportedTransactionVersion:1,commitment:'confirmed'}]);
+      if(!full?.transactions)return {why:'блок сигнала пока недоступен'};
+      const transactions=[];
+      for(let i=0;i<full.transactions.length;i++){
+        if(hasMigrationInstruction(full.transactions[i])){if(transactions.length<128)transactions.push(full.transactions[i]);else PROOF_FAST.blockFilterOverflow++;}
+        if(i%32===31)await new Promise(resolve=>setImmediate(resolve));
+      }
+      block={blockTime:full.blockTime,transactions};MIG_BLOCKS.set(slot,block);
+      while(MIG_BLOCKS.size>4)MIG_BLOCKS.delete(MIG_BLOCKS.keys().next().value);
+    }
+    for(const tx of block.transactions){const sig=tx.transaction?.signatures?.[0];if(!sig)continue;
+      const proof=verifyMigTransaction(pool,fam,curve,tx,sig,block.blockTime,slot);
+      if(proof.ok){PROOF_FAST.verified++;return {...proof,method:'signal-slot-block'}};
+    }
+    return {why:'в блоке сигнала нет доказанной миграции этого пула',final:1};
+  }
+  const first=await firstOkSig(pool,rpc);
+  if(!first)return {why:'у пула нет успешных транзакций'};
+  if(first.tooLong)return {why:'первая страница не содержит начало истории; старую историю не листаем',tooLong:1};
+  PROOF_FAST.transactionReads++;
+  const t=await rpc('getTransaction',[first.signature,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}]);
+  const proof=verifyMigTransaction(pool,fam,curve,t,first.signature,first.blockTime,first.slot);
+  if(proof.ok)PROOF_FAST.verified++;return proof;
+}
 function pair2(u,o1,o2,mint){const x=pk(u,o1),y=pk(u,o2);return x===mint?y:y===mint?x:null}
 async function exists(list,rpc){if(!list.length)return[];const v=(await rpc('getMultipleAccounts',[list,{encoding:'base64',dataSlice:{offset:0,length:0}}]))?.value||[];return list.filter((x,i)=>v[i])}
 const MIG_OK={pump:'pump',launch:'launch','launch-v4':'launch-v4',dbc:'dbc'};
 const MIG_UNK={pump:'unk-pump',launch:'unk-launch','launch-v4':'unk-launch',dbc:'unk-dbc'};
 const DEXOF={pump:'pumpswap',launch:'raydium-cpmm','launch-v4':'raydium',dbc:'meteora-damm-v2'};
 function setMg(c,st,k,why,x={}){const now=Date.now(),prev=c.mg;
-  c.mg={v:MGV,st,k,why:why||'',owner:x.owner||prev?.owner||'',pool:x.pool||null,sig:x.sig||null,mT:x.mT||null,ix:x.ix||null,creator:x.creator??null,watch:x.watch||null,final:x.final||0,
+  c.mg={v:MGV,st,k,why:why||'',owner:x.owner||prev?.owner||'',pool:x.pool||null,sig:x.sig||null,mT:x.mT||null,ix:x.ix||null,creator:x.creator??null,watch:x.watch||null,signal:c.wsMigrationSnapshot||prev?.signal||null,final:x.final||0,
     seenAt:prev&&prev.v===MGV&&prev.st===st&&prev.k===k?prev.seenAt:now,lastAt:now,n:(prev?.v===MGV?prev.n||0:0)+1};
   c.mgH=c.mgH||[];const last=c.mgH[c.mgH.length-1];if(!last||last[1]!==k||last[2]!==st)c.mgH.push([now,k,st]);if(c.mgH.length>20)c.mgH.shift()}
 // витрина монеты = официальный пул миграции; при переезде старые данные сохраняются в orig
@@ -181,7 +229,7 @@ async function migCheck(c){if(rejectOldProof(c))return;const rpc=rpcFor(c,'ми�
   if(c.preCurve&&c.d==='pump-fun'){
     const poolList=await officialPools('pump',c.a,c.q||WSOL);
     for(const p of await exists(poolList,rpc)){
-      const proof=await proveMig(p,'pump',await bondingCurveOf(c.a),rpc);
+      const proof=await proveMig(p,'pump',await bondingCurveOf(c.a),rpc,c.migrationSlot);
       if(proof.ok){
         moveTo(c,p,'pump',proof);
         setMg(c,'ok','pump','',{pool:p,sig:proof.sig,mT:proof.t,ix:proof.ix});
@@ -194,7 +242,8 @@ async function migCheck(c){if(rejectOldProof(c))return;const rpc=rpcFor(c,'ми�
     return;
   }
   if(c.tSrc==='gt'&&c.d&&!/pump|meteora|dbc|raydium|launch|bags|stonk|believe|moon|heaven|jup/i.test(c.d)){setMg(c,'other','other:'+c.d.slice(0,12),'площадка '+c.d);return}
-  const pv=(await rpc('getAccountInfo',[c.p,{encoding:'base64'}]))?.value;if(!pv)throw new Error('пул не найден');
+  const signal=c.wsMigrationSnapshot;
+  const pv=signal&&signal.address===c.p&&Date.now()-signal.at<30000?{owner:signal.owner,data:[signal.data,'base64']}:(await rpc('getAccountInfo',[c.p,{encoding:'base64'}]))?.value;if(!pv)throw new Error('пул не найден');
   const owner=pv.owner,u=b64(pv.data?.[0]),mint=c.a;
   let fam=null,quote=null,cands=[],curve=null,base='manual',baseK='other',why='',creator=null,watch=null;
   if(owner===PUMP_AMM){fam='pump';baseK='manual-pump';quote=pair2(u,43,75,mint)||c.q||WSOL;curve=await bondingCurveOf(mint);cands=await officialPools('pump',mint,quote);why='не официальный адрес пула pump.fun';
@@ -227,13 +276,13 @@ async function migCheck(c){if(rejectOldProof(c))return;const rpc=rpcFor(c,'ми�
   else{setMg(c,'other','other:'+owner.slice(0,6),'',{owner});return}
   const x={owner,creator,watch};
   // 1) этот пул — официальный?
-  if(cands.includes(c.p)){const r=await proveMig(c.p,fam,curve,rpc);
+  if(cands.includes(c.p)){const r=await proveMig(c.p,fam,curve,rpc,c.migrationSlot);
     if(r.ok){setMg(c,'ok',MIG_OK[fam],'',{...x,pool:c.p,sig:r.sig,mT:r.t,ix:r.ix});if(c.t!==r.t){c.t0=c.t0||c.t;c.t=r.t}admitVerifiedMigration(c);return}
-    setMg(c,'unk',MIG_UNK[fam],r.why,{...x,final:r.tooLong?1:0});return}
+    setMg(c,'unk',MIG_UNK[fam],r.why,{...x,final:r.tooLong||r.final?1:0});return}
   // 2) у монеты есть официальный пул в другом месте — витрина переезжает туда
-  let fail=null;for(const P of await exists(cands.filter(p=>p!==c.p),rpc)){const r=await proveMig(P,fam,curve,rpc);
+  let fail=null;for(const P of await exists(cands.filter(p=>p!==c.p),rpc)){const r=await proveMig(P,fam,curve,rpc,c.migrationSlot);
     if(r.ok){moveTo(c,P,fam,r);setMg(c,'ok',MIG_OK[fam],'',{owner:'',pool:P,sig:r.sig,mT:r.t,ix:r.ix});admitVerifiedMigration(c);return}fail=fail||r}
-  if(fail){setMg(c,'unk',MIG_UNK[fam],'официальный пул есть, но миграция не доказана: '+fail.why,{...x,final:fail.tooLong?1:0});return}
+  if(fail){setMg(c,'unk',MIG_UNK[fam],'официальный пул есть, но миграция не доказана: '+fail.why,{...x,final:fail.tooLong||fail.final?1:0});return}
   setMg(c,base,baseK,why,x)}
 const MIGNAME={pump:'pump.fun → PumpSwap',dbc:'Meteora DBC → Meteora',launch:'LaunchLab → Raydium','launch-v4':'LaunchLab → Raydium',
   'curve-dbc':'Meteora DBC (кривая)','curve-launch':'LaunchLab (кривая)','manual-pump':'Пул вручную (PumpSwap)','manual-meteora':'Пул вручную (Meteora)','manual-raydium':'Пул вручную (Raydium)',
@@ -245,7 +294,7 @@ async function curveSweep(){const now=Date.now();const list=[...C.values()].filt
   for(let i=0;i<list.length;i+=100){const part=list.slice(i,i+100);try{const v=(await rpc('getMultipleAccounts',[part.map(c=>c.mg.watch),{encoding:'base64',dataSlice:{offset:0,length:320}}],{priority:'migration',context:'кривые'}))?.value||[];
     part.forEach((c,j)=>{if(!v[j]||curveDone(v[j]))c.mg.force=1;else c.mg.lastAt=now})}catch(e){err('sweep '+e.message)}}}
 function queueMigrationSignal(c,now){if(c.mg?.st==='ok')return;
-  if(!c.discoverySource||c.proofExpiredAt){c.proofEnqueuedAt=now;delete c.proofExpiredAt;delete c.proofRetryAt;delete c.proofBudgetDeferredAt;delete c.proofProgressAt;if(c.mg){c.mg.force=1;c.mg.n=0}}}
+  if(!c.discoverySource||c.proofExpiredAt||(c.migrationSignalAt&&c.migrationSignalAt>proofQueuedAt(c))){c.proofEnqueuedAt=now;delete c.proofExpiredAt;delete c.proofRetryAt;delete c.proofBudgetDeferredAt;delete c.proofProgressAt;if(c.mg){c.mg.force=1;c.mg.n=0}}}
 function proofQueuedAt(c){return c.proofEnqueuedAt||c.firstPostSeenAt||c.wsSeen||c.rcSeen||c.seen||c.t}
 function expireProofs(now=Date.now()){for(const c of C.values())if(!(c.mg?.st==='ok'&&c.mg.v===MGV)&&!c.preCurve&&!c.proofExpiredAt&&now-proofQueuedAt(c)>2*3600e3){
   c.proofExpiredAt=now;delete c.proofProgressAt;delete c.proofBudgetDeferredAt;delete c.proofRetryAt;
@@ -266,16 +315,17 @@ function rejectOldProof(c,now=Date.now()){
   setMg(c,'unk','unk-age','опоздал (предварительная оценка возраста)',{final:1});
   return true;
 }
-function proofAgeBand(c,now){const age=now-proofQueuedAt(c),buyMinutes=SOURCE?.settings().afterMinutes||2;return age<buyMinutes*60e3?0:age<15*60e3?1:2}
-function compareProofTasks(a,b,now){return proofAgeBand(a,now)-proofAgeBand(b,now)||Number(now-proofQueuedAt(a)>=15*60e3)-Number(now-proofQueuedAt(b)>=15*60e3)||Number(!!b.proofProgressAt&&now-b.proofProgressAt<4*60e3)-Number(!!a.proofProgressAt&&now-a.proofProgressAt<4*60e3)||Number(!!b.discoverySource)-Number(!!a.discoverySource)||(a.proofAttemptAt||0)-(b.proofAttemptAt||0)||b.t-a.t}
+function proofAgeBand(c,now){const age=proofEventAge(c,now)?.ageMs??(now-proofQueuedAt(c)),buyMinutes=SOURCE?.settings().afterMinutes||2;return age<buyMinutes*60e3?0:age<15*60e3?1:2}
+function compareProofTasks(a,b,now){return proofAgeBand(a,now)-proofAgeBand(b,now)||Number(now-proofQueuedAt(a)>=15*60e3)-Number(now-proofQueuedAt(b)>=15*60e3)||Number(!!b.proofProgressAt&&now-b.proofProgressAt<4*60e3)-Number(!!a.proofProgressAt&&now-a.proofProgressAt<4*60e3)||Number(!!b.discoverySource)-Number(!!a.discoverySource)||(proofEventAge(a,now)?.at||proofQueuedAt(a))-(proofEventAge(b,now)?.at||proofQueuedAt(b))||(a.proofAttemptAt||0)-(b.proofAttemptAt||0)||b.t-a.t}
 function migrationQueueSummary(now=Date.now()){
   const out={length:0,ready:0,freshUnder15m:0,waitingBudget:0,expired:0,buyWindowOpen:0,buyWindowMissedPending:0,lateProofRejected:0,ageRejected:0,oldestTaskAt:null,oldestAgeSec:0,reconcilePending:{dbc:RC.pend?.dbc?.length||0,ll:RC.pend?.ll?.length||0}};
   for(const c of C.values()){if(c.proofAgeRejectedAt)out.ageRejected++;if(c.buyWindowMissedAt)out.lateProofRejected++;if(c.proofExpiredAt){out.expired++;continue}if(!needMig(c,now))continue;
-    const at=proofQueuedAt(c);out.length++;if(proofAgeBand(c,now)===0)out.buyWindowOpen++;else out.buyWindowMissedPending++;if(now-at<15*60e3)out.freshUnder15m++;if(c.proofBudgetDeferredAt)out.waitingBudget++;
+    const at=proofEventAge(c,now)?.at||proofQueuedAt(c);out.length++;if(proofAgeBand(c,now)===0)out.buyWindowOpen++;else out.buyWindowMissedPending++;if(now-at<15*60e3)out.freshUnder15m++;if(c.proofBudgetDeferredAt)out.waitingBudget++;
     if(!c.chTry&&(!c.proofRetryAt||now>=c.proofRetryAt))out.ready++;out.oldestTaskAt=out.oldestTaskAt==null?at:Math.min(at,out.oldestTaskAt);}
   out.oldestAgeSec=out.oldestTaskAt==null?0:Math.max(0,Math.floor((now-out.oldestTaskAt)/1000));return out;
 }
 function needMig(c,now){if(c.proofExpiredAt)return false;if(now-proofQueuedAt(c)>2*3600e3&&c.mg)return false;if(!c.mg||c.mg.v!==MGV||c.mg.force)return true;
+  if(c.mg.st==='unk'&&!c.mg.final&&proofAgeBand(c,now)===0)return now-c.mg.lastAt>=2000;
   const BACK=[2,5,10,20,40];const n=c.mg.n||1;return c.mg.st==='unk'&&!c.mg.final&&n<=BACK.length&&now-c.mg.lastAt>=BACK[n-1]*60e3&&now-proofQueuedAt(c)<2*3600e3}
 async function chainLoop(){let lastSweep=0;for(;;){const now=Date.now();
   if(!resourcePressure()&&now-lastSweep>10*60e3){lastSweep=now;CTX='кривые';await curveSweep()}
@@ -284,9 +334,9 @@ async function chainLoop(){let lastSweep=0;for(;;){const now=Date.now();
   const c=candidates.sort((a,b)=>compareProofTasks(a,b,now))[0];
   if(!c){await sleep(2000);continue}c.chTry=1;c.proofAttemptAt=now;
   try{CTX='миграция';if(needMig(c,Date.now())){if(c.mg&&c.mg.v!==MGV&&!c.mg0)c.mg0=c.mg;await migCheck(c);delete c.proofProgressAt;delete c.proofBudgetDeferredAt}CTX='контракт';if(!c.ct&&isOk(c))await ctCheck(c)}
-  catch(e){if(e.code==='BUDGET_DEFERRED'){if(needMig(c,Date.now()))c.proofBudgetDeferredAt=c.proofBudgetDeferredAt||Date.now();c.proofRetryAt=Date.now()+60000;await sleep(3000);continue}rpcFail++;err('chain '+e.message);if(/ключа/.test(e.message))await sleep(60000);
+  catch(e){if(e.code==='BUDGET_DEFERRED'){if(needMig(c,Date.now()))c.proofBudgetDeferredAt=c.proofBudgetDeferredAt||Date.now();c.proofRetryAt=Date.now()+3000;await sleep(500);continue}rpcFail++;err('chain '+e.message);if(/ключа/.test(e.message))await sleep(60000);
     else if((c.mgErr=(c.mgErr||0)+1)>=3){c.mgErr=0;setMg(c,'unk','unk-err','ошибка проверки: '+e.message.slice(0,80))}}
-  finally{setTimeout(()=>{c.chTry=0},30000)}}}
+  finally{c.chTry=0;if(needMig(c,Date.now())&&!c.proofRetryAt)c.proofRetryAt=Date.now()+2000}}}
 
 /* ---------- состояние ----------
    Правило: каждое наблюдение хранит абсолютное время, когда сервер его ПОЛУЧИЛ (at, мс) — данные никогда не привязываются
@@ -804,7 +854,7 @@ async function reconcileBody(){const now=Date.now();const rpc=(method,params)=>g
    Meteora DBC: кривые с флагом «мигрировала»; LaunchLab: кривые со статусом 2; PumpSwap: аккаунты пулов с index = 0 (создаются один раз).
    Это только кандидаты — миграция всё равно доказывается транзакцией. */
 const WS={on:false,preOn:false,preSub:false,connected:{dbc:false,ll:false},preBudgetPauses:0,prePausedAt:0,preGapMs:0,bytes:0,msgs:{},cand:{},err:0,since:0};const wsSeen=new Map();
-function wsCandidate(kind,acc,u,slot){if(resourcePressure())return;const now=Date.now();if(wsSeen.has(acc)&&now-wsSeen.get(acc)<6*3600e3)return;wsSeen.set(acc,now);
+function wsCandidate(kind,acc,u,slot,owner){if(resourcePressure())return;const now=Date.now();if(wsSeen.has(acc)&&now-wsSeen.get(acc)<6*3600e3)return;wsSeen.set(acc,now);
   if(wsSeen.size>10000)for(const [k,t] of wsSeen)if(now-t>6*3600e3)wsSeen.delete(k);
   while(wsSeen.size>20000)wsSeen.delete(wsSeen.keys().next().value);
   let mint=null,quote=null,pool=acc;
@@ -812,9 +862,10 @@ function wsCandidate(kind,acc,u,slot){if(resourcePressure())return;const now=Dat
   else if(kind==='ll'){mint=pk(u,205);quote=pk(u,237)}
   else if(kind==='pump'){const b=pk(u,43),q=pk(u,75);if(SKIP.has(b)){mint=q;quote=b}else{mint=b;quote=q}if(SKIP.has(mint))return}
   if(!mint)return;SOURCE?.observe({mint,phase:'after'});WS.cand[kind]=(WS.cand[kind]||0)+1;let c=C.get(mint);if(!c&&typeof COMPLETED!=='undefined'&&COMPLETED){const old=COMPLETED.metadata(mint);if(old?.poolKeys.includes(pool))return;if(old){c=COMPLETED.readCoin(mint);C.set(mint,c)}}
-  if(c){c.migrationSlot=slot||c.migrationSlot;c.migrationSignalAt=now;queueMigrationSignal(c,now);c.discoverySource=kind;if(!isOk(c)&&c.mg)c.mg.force=1;c.wsSeen=c.wsSeen||now;c.firstPostSeenAt=c.firstPostSeenAt||now;return}
+  const snapshot=((kind==='dbc'&&owner===DBC&&u.length===424&&u[305]===1)||(kind==='ll'&&owner===LAUNCH&&u.length>268&&u[17]===2))?{address:acc,owner,at:now,slot:slot||null,data:Buffer.from(u).toString('base64')}:null;
+  if(c){if(snapshot)c.wsMigrationSnapshot=snapshot;c.migrationSlot=slot||c.migrationSlot;c.migrationSignalAt=now;queueMigrationSignal(c,now);c.discoverySource=kind;if(!isOk(c)&&c.mg)c.mg.force=1;c.wsSeen=c.wsSeen||now;c.firstPostSeenAt=c.firstPostSeenAt||now;return}
   if(!canAddCandidate()){WS.capacityDrop=(WS.capacityDrop||0)+1;return}
-  C.set(mint,{a:mint,n:'',s:'',i:'',p:pool,d:kind==='pump'?'pumpswap':kind==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'ws',migrationSlot:slot||null,migrationSignalAt:now,seen:now,disc:'ws',discoverySource:kind,proofEnqueuedAt:now,wsSeen:now,firstPostSeenAt:now,pools:[pool],fv:FV})}
+  C.set(mint,{a:mint,n:'',s:'',i:'',p:pool,d:kind==='pump'?'pumpswap':kind==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'ws',wsMigrationSnapshot:snapshot,migrationSlot:slot||null,migrationSignalAt:now,seen:now,disc:'ws',discoverySource:kind,proofEnqueuedAt:now,wsSeen:now,firstPostSeenAt:now,pools:[pool],fv:FV})}
 function chainWatch(){
   const connect=async(channel)=>{const key=await heliusKey();if(!key||(channel==='pre'&&(!PRE||!RESOURCE?.streamAllowed('pre')))){setTimeout(()=>connect(channel),10000);return}
     const pre=channel==='pre',subs={},ws=new WebSocket('wss://mainnet.helius-rpc.com/?api-key='+key);let timer;
@@ -838,7 +889,7 @@ function chainWatch(){
       const slot=m.params?.result?.context?.slot;EVENT_CLOCK?.observe(slot,Date.now());
       WS.msgs[n]=(WS.msgs[n]||0)+1;
       if(pre){PRE?.onLog(v,Date.now(),slot);if(!RESOURCE.streamAllowed('pre')){WS.preBudgetPauses++;try{ws.close()}catch{}}return}
-      try{wsCandidate(n,v.pubkey,b64(v.account?.data?.[0]),slot)}catch(x){WS.err++;err('ws '+x.message)}
+      try{wsCandidate(n,v.pubkey,b64(v.account?.data?.[0]),slot,v.account?.owner)}catch(x){WS.err++;err('ws '+x.message)}
     };
     ws.onerror=()=>{WS.err++;try{ws.close()}catch{}};
     ws.onclose=()=>{clearInterval(timer);if(pre){WS.preOn=false;WS.preSub=false;WS.prePausedAt=WS.prePausedAt||Date.now()}
@@ -1106,7 +1157,7 @@ async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayK
 let STATUS_BUSY=false;
 async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const now=Date.now(),today=dayKey(now);
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,memory,retention:{...RETENTION,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,resources:{...RESOURCE_STATS,rssMB:Math.round(process.memoryUsage().rss/1048576),heapMB:Math.round(process.memoryUsage().heapUsed/1048576),helius:RESOURCE?.summary(),gcs:{...RESOURCE?.storageSummary(),...PUBLICATIONS?.summary()}},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,memory,retention:{...RETENTION,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,resources:{...RESOURCE_STATS,rssMB:Math.round(process.memoryUsage().rss/1048576),heapMB:Math.round(process.memoryUsage().heapUsed/1048576),helius:RESOURCE?.summary(),gcs:{...RESOURCE?.storageSummary(),...PUBLICATIONS?.summary()}},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,queuedAt:FAST_PASS_PUBLISH_AT,publishedAt:PUBLICATIONS?.sent['passed-v2/live.json']?.at||0},

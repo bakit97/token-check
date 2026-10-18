@@ -1,7 +1,7 @@
 {
   "baseCommit": "48cb0f8621e3a822cc65e0a7c23ba485ad3a574e",
   "files": {
-    "collector.js": "b72c52fc07fea9dd35711b89d3e930d3899dd7188b062b0bee08f9e311e96fcf",
+    "collector.js": "9f2ae899b369352a4d12f39cce2fdc3e4bd2af899cf438af0a2cbdf3bf7bbbe9",
     "resource-budget.js": "c4697d2a9cce6898b290960699c20fc544b9fa5d9fe65016e91f57295b1f8dd4",
     "pre-watcher.js": "8a873574983c11a5aeccc784f769071888d91c60ced4c57ee7c1d352499a431d",
     "runtime-health.js": "001b44ef3198e679008fd58aa3e9f90f7843303775cbc74b3a21eda745a9ba84",

@@ -2,7 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
 const code=fs.readFileSync(process.env.SOLSCAN_TEST_COLLECTOR||path.join(__dirname,'../server/collector.js'),'utf8');
 const clock=200000000;
-function setup(coins){const C=new Map(coins.map((c,i)=>[i,c])),ctx={C,SOURCE:{settings:()=>({afterMinutes:2})},MGV:3,RC:{},Date:{now:()=>clock},setMg:(c,st,k,why,x)=>c.mg={st,k,why,final:x.final,v:3}};
+function setup(coins){const C=new Map(coins.map((c,i)=>[i,c])),ctx={EVENT_CLOCK:null,C,SOURCE:{settings:()=>({afterMinutes:2})},MGV:3,RC:{},Date:{now:()=>clock},setMg:(c,st,k,why,x)=>c.mg={st,k,why,final:x.final,v:3}};
  vm.createContext(ctx);vm.runInContext(code.slice(code.indexOf('function queueMigrationSignal('),code.indexOf('async function chainLoop()'))+'\nthis.signal=queueMigrationSignal;this.expire=expireProofs;this.summary=migrationQueueSummary;this.compare=(a,b)=>compareProofTasks(a,b,'+clock+');',ctx);return ctx;}
 test('fresh pending proofs precede old partially-paid work; queue reports oldest age',()=>{
  const fresh={t:clock-60000},old={t:clock-3600000,proofProgressAt:clock-1000},ctx=setup([old,fresh]);
