@@ -10,12 +10,12 @@ async function get(path){
   return resp.json();
 }
 const [st,live,today,heartbeat]=await Promise.all(pathList.map(get));
-let raw=null, obs=null;
-try{raw=await get('day/'+day+'.json')}catch(e){console.error('Candidate day feed unavailable:',e.message)}
-try{obs=await get('obs/'+day+'.json')}catch(e){console.error('Observation archive unavailable:',e.message)}
+const {createRequire}=await import('node:module');const require=createRequire(import.meta.url),{toLegacy}=require('../server/observation-contract.js');
+const contract=await get('observations-v2/'+day+'.json');
+if(contract.schema!==2)throw Error('canonical observation schema unavailable');
 const sourceByMint=new Map(today.coins.map(c=>[c.a,c]));
-const candidates=new Map((raw?.coins||[]).map(c=>[c.a,c]));
-const observations=new Map((obs?.coins||[]).map(c=>[c.a,c]));
+const candidates=new Map(contract.coins.map(c=>[c.a,toLegacy(c)]));
+const observations=new Map();
 const coverage={
   before:{count:0,candidate:0,priceHistory:0,tradeHistory:0,preHistoric:0,noCandidate:0},
   after:{count:0,candidate:0,priceHistory:0,tradeHistory:0,preHistoric:0,noCandidate:0}
@@ -40,7 +40,8 @@ const ageMax={before:settings.beforeMinutes,after:settings.afterMinutes};
 check(['verified-pre-post','verified-post-only'].includes(st.mode),'unknown source mode');
 check(now-st.updated<7*60_000,'source stale >7 minutes');
 check(now-heartbeat.updated<7*60_000,'collector heartbeat stale >7 minutes');
-check(st.mode!=='verified-pre-post'||st.preConnected===true,'Pump create logs subscription not acknowledged');
+check(heartbeat.ws?.connected?.dbc===true&&heartbeat.ws?.connected?.ll===true,'DBC/LaunchLab not connected');
+check(st.mode!=='verified-pre-post'||st.preConnected===true||(heartbeat.ws?.preBudgetPauses>0&&heartbeat.ws?.preGapCurrentMs<=120000),'Pump create subscription unavailable outside a measured budget pause');
 check([settings.beforeMinutes,settings.afterMinutes].every(n=>Number.isInteger(n)&&n>=1&&n<=10),'age filter malformed');
 check(Array.isArray(live.coins),'no source/live coins');
 check(Array.isArray(today.coins),'no source/day coins');

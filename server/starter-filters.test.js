@@ -21,3 +21,16 @@ test('compound configuration preserves all guards and rejects nested or unknown 
  const bad=JSON.parse(JSON.stringify(cfg));bad.filters[0].conditions[0].key='madeUp';assert.throws(()=>configOf(bad));
  const nested=JSON.parse(JSON.stringify(cfg));nested.filters[0].conditions[0].conditions=[];assert.throws(()=>configOf(nested));
 });
+
+test('a proven buyer lower bound qualifies only thresholds it actually proves',()=>{
+ const c=coin();delete c.bx;c.gx=[[(c.t+6*M)/1000,10,1,8,1,18,2,12,2]];
+ const F=starterFeaturesAt(c,T);assert.equal(F.buyers10,12);assert.equal(F.buyers10LowerBound,true);assert.equal(evaluation(F,cfg.filters[0]),'pass');assert.equal(evaluation(F,{key:'buyers10',op:'>=',value:25}),'unknown');
+ assert.equal(evaluation(F,{key:'buyers10',op:'<=',value:10}),'reject');assert.equal(evaluation(F,{key:'buyers10',op:'<=',value:20}),'unknown');
+ c.gx.push([(c.t+8*M)/1000,5,0,5,0,7,1,7,1]);assert.equal(starterFeaturesAt(c,T).buyers10,12,'overlapping buyer windows must never be summed');
+});
+test('buyer evidence excludes future receipts and buyers of a later migrated pool',()=>{
+ const c=coin();delete c.bx;c.gx=[[(c.t+11*M)/1000,30,1,30,1,30,1,30,1]];assert.equal(starterFeaturesAt(c,T).buyers10,null);
+ c.gx=[[(c.t+6*M)/1000,12,1,12,1,12,1,12,1]];assert.equal(starterFeaturesAt(c,c.t+5*M).buyers10,null);
+ assert.equal(starterFeaturesAt(c,T,{eventAt:c.t-60*M,phase:'before'}).buyers10,null);
+ const prior={t:c.t-60*M,gx:[[(c.t-55*M)/1000,11,0,11,0,11,0,11,0]]};c.origs=[prior];assert.equal(starterFeaturesAt(c,T,{eventAt:prior.t,phase:'before'}).buyers10,11);
+});

@@ -185,7 +185,7 @@ class ResearchTwoRuntime {
       this.retry.delete(pass.mint);
       // Level-two conditions and versions were frozen at first Passed.
       // Their metrics use only observations up to the fixed zeroAt.
-      const F=featuresAt(coin,pass.zeroAt);
+      const F=featuresAt(coin,pass.zeroAt,{eventAt:pass.eventAt,phase:pass.phase});
       const secondLevelMatches=(pass.secondLevelRules||[])
         .filter(f=>evaluation(F,f)==='pass').map(f=>({...f}));
       newRows.push({

@@ -121,7 +121,7 @@ class ResearchRuntime {
         continue;
       }
       this.lastAttemptAt.delete(row.mint);
-      const features=featuresAt(coin,decisionAt);
+      const features=featuresAt(coin,decisionAt,{eventAt:row.eventAt,phase:row.phase});
       this.rows.push({
         mint:row.mint,phase:row.phase,
         acceptedAt:row.acceptedAt,decisionAt,
