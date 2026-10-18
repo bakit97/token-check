@@ -6,7 +6,7 @@
     "pre-watcher.js": "eb7b7fd266528786be06e923d522abbbb248b6efdf42ef2d8d6550123e3cac5d",
     "runtime-health.js": "001b44ef3198e679008fd58aa3e9f90f7843303775cbc74b3a21eda745a9ba84",
     "stream-json.js": "b212a8cabdb25f9f8ef5fe7e7c081d04dbda3e4218e6c3df6adfb453d6a48461",
-    "observation-contract.js": "a7e76dfaf54463c5723801b32c29d7d4489c41ab1378958536a284f2edcb411e",
+    "observation-contract.js": "5a5c20b1dacfe4ffca3cfefc2f1d847c12d5043e885570ee8e1b95822b871464",
     "packed-observations.js": "6e2622a57f6d8939411b9884ec1f9c80bd8e091b8d734c8276465789128204e4",
     "completed-coins.js": "3d9a7ae7f1cbdbbaaf306162cb77bfa3b19e12c142e430e1ee86847760980c2f",
     "seed-completed.js": "a15b26a2b38ff3aaba954b28c07c1a1fc69a5e9fb6b474907351d21ecece09f7"

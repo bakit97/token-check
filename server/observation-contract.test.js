@@ -1,6 +1,10 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),{project,toLegacy,chainDrain}=require('./observation-contract');
 const mint='mint',at=2000000;
+test('archiving retains program ownership, verifier version, watched curve and previous migration evidence',()=>{
+ const c={a:'mint',p:'pool',t:1000,mg:{v:3,st:'ok',k:'launch-v4',owner:'AMM4_PROGRAM',pool:'pool',sig:'signature',mT:1000,ix:'migrate_to_amm',creator:true,watch:'curve',seenAt:2000,lastAt:3000,n:2,final:1},mg0:{v:2,st:'unk',k:'unk-launch',owner:'old-program',watch:'curve',lastAt:1000}};
+ const proof=JSON.parse(JSON.stringify(project(c))).observations.migrationProof;assert.equal(proof.programOwner,'AMM4_PROGRAM');assert.equal(proof.verificationVersion,3);assert.equal(proof.watchCurve,'curve');assert.equal(proof.stateObservedAt,3000);assert.deepEqual(proof.sourceState,c.mg);assert.deepEqual(proof.previousState,c.mg0);
+});
 function coin(){return {a:mint,p:'pool',d:'meteora-damm-v2',t:1000000,ds:[[1001,2,0,40,5,6,7]],lq:[[1002,12,999,100],[1003,13,998,4]],vaults:['base','quote'],vmint:[mint,'quoteMint'],vdec:[6,9],vaultIdentityAt:1002000,
  k10:{at:1100000,src:'trades',c:[[1001,1,2,1,2,3]]},hold:{10:{at:1600000,top1:.2}},raw:{1:{at:1060000,slot:12,b:['pool','base','quote'],vaultAt:1060100,vaultSlot:13}},tr:{f:[[1100000,12,1001,1010]],x:{sig:[1001,'owner',2,true,1]}},gx:[[1100,2,3]],bx:{at:1100000,cov:true},path:{at:1200000,upto:3,c:[[1001,2,3,1,2]]},origs:[{p:'curve',d:'pump-fun',t:900000,ds:[[999,1,null]],raw:{1:{at:990000,slot:11,b:['curve']}}}]};}
 test('all required observations and absolute receipt times survive the new contract round trip',()=>{

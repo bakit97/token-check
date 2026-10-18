@@ -15,7 +15,8 @@ function poolRecord(c,mint){
 function project(c,{metadata={},admission=null}={}){
  const out={};for(const [key,value] of Object.entries(metadata))if(META.has(key))out[key]=value;
  out.a=c.a;out.schema=2;out.observations={schema:2,receiptTimeUnit:'unix-ms',seriesResolutionMs:1000,primaryPool:c.p||null,admission,
-  migrationProof:c.mg?{status:c.mg.st,signature:c.mg.sig||null,pool:c.mg.pool||null,blockAt:c.mg.mT||null,instruction:c.mg.ix||null,creator:c.mg.creator??null,observedAt:c.mg.seenAt||null,reason:c.mg.why||null}:null,
+  migrationProof:c.mg?{status:c.mg.st,signature:c.mg.sig||null,pool:c.mg.pool||null,blockAt:c.mg.mT||null,instruction:c.mg.ix||null,creator:c.mg.creator??null,observedAt:c.mg.seenAt||null,reason:c.mg.why||null,
+   family:c.mg.k||null,programOwner:c.mg.owner||null,watchCurve:c.mg.watch||null,verificationVersion:c.mg.v||null,stateObservedAt:c.mg.lastAt||c.mg.seenAt||null,sourceState:{...c.mg},previousState:c.mg0?{...c.mg0}:null}:null,
   pools:[poolRecord(c,c.a),...(c.origs||[]).map(o=>poolRecord(o,c.a))]};return out;
 }
 function restorePool(p,cutoff){const valid=x=>Number.isFinite(x?.at)&&x.at<=cutoff;
