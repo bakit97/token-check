@@ -678,22 +678,22 @@ function openModSheet(id){var openG={},m=JSON.parse(JSON.stringify(MODS[id])),ol
   el.addEventListener('input',function(e){var t=e.target,f=t.dataset.mf;if(!f)return;if(f==='name')m.name=t.value;else if(f==='dm'){m.dm=+t.value;el.querySelector('.mdmv').textContent=t.value}else{m.conds[+t.dataset.j][f]=f==='value'?Number(t.value):t.value}el.querySelector('.mev').innerHTML=modEvalHtml(m)});
   el.addEventListener('click',function(e){var t=e.target;if(t===el||t.dataset.mclose){el.remove();return}
     if(t.dataset.mdel!=null){m.conds.splice(+t.dataset.mdel,1);draw()}else if(t.dataset.madd){m.conds.push({key:t.dataset.madd,op:'>=',value:0});draw()}
-    else if(t.dataset.msave){modSave(m);MODS[id]=m;el.remove();$('r1Suggestions').innerHTML=renderAutoSuggestions(autoOne);note('Сохранено')}
+    else if(t.dataset.msave){modSave(m);MODS[id]=m;el.remove();renderR1();renderR2();note('Сохранено')}
     else if(t.dataset.mwin){if(!window.confirm('Точно добавить «'+m.name+'» в окно возможностей?'))return;if(!t.dataset.stageAuto){window.alert('Это демо — в окно не добавляется');return}el.remove();stageAutoRule({target:t})}
-    else if(t.dataset.mrm){if(!window.confirm('Точно удалить «'+m.name+'»?'))return;var all=modLoad();all[id]={id:id,deleted:true};try{localStorage.setItem('r1mods',JSON.stringify(all))}catch(e){}el.remove();$('r1Suggestions').innerHTML=renderAutoSuggestions(autoOne);note('Удалено')}})}
-function renderAutoSuggestions(report){
-  var saved=modLoad(),list=[];
+    else if(t.dataset.mrm){if(!window.confirm('Точно удалить «'+m.name+'»?'))return;var all=modLoad();all[id]={id:id,deleted:true};try{localStorage.setItem('r1mods',JSON.stringify(all))}catch(e){}el.remove();renderR1();renderR2();note('Удалено')}})}
+function renderAutoSuggestions(report,lvl){
+  lvl=lvl||1;var saved=modLoad(),list=[];
   var demo={id:'demo',phase:'before',name:'ДЕМО · Ранний спрос',dm:12,conds:[{key:'buyers10',op:'>=',value:8},{key:'quoteSol',op:'>=',value:2},{key:'top10',op:'<=',value:35}],
     createdAt:Date.now()-3*864e5,eval:{train:{positiveRecall:.7,negativeRejection:.9,totalPositive:60,totalNegative:250},holdout:{positiveRecall:.65,negativeRejection:.88,totalPositive:40,totalNegative:100},live:{positiveRecall:.62,negativeRejection:.86,totalPositive:34,totalNegative:51}}};
-  demo.evalSig=modSig(demo);if(!(saved.demo&&saved.demo.deleted))list.push([saved.demo||demo,'']);
+  demo.evalSig=modSig(demo);if(lvl===1&&!(saved.demo&&saved.demo.deleted))list.push([saved.demo||demo,'']);
   var dm=(report&&report.decisionMinutes)||(researchMeta&&researchMeta.settings&&researchMeta.settings.decisionMinutes)||15;
   ((report&&report.rules)||[]).slice(0,8).forEach(function(x,i){var id='a'+(report.level||1)+'-'+i,m={id:id,name:modAutoName([{key:x.rule.key,op:x.rule.op,value:x.rule.value}]),dm:dm,createdAt:Date.parse(report.generatedAt||report.updatedAt||'')||null,conds:[{key:x.rule.key,op:x.rule.op,value:x.rule.value}],eval:{train:x.train,holdout:x.holdout}};m.evalSig=modSig(m);if(!(saved[id]&&saved[id].deleted))list.push([saved[id]||m,report.level+':'+i])});
   list.forEach(function(p){MODS[p[0].id]=JSON.parse(JSON.stringify(p[0]));MOD_AUTO[p[0].id]=p[1]});
-  list=list.filter(function(p){return R1P==='all'||!p[0].phase||p[0].phase===R1P});
-  var T=r1T();return '<div class="modgrid">'+list.map(function(p){return modTile(MODS[p[0].id])}).join('')+'</div>'+(list.length<2&&!(report&&report.rules&&report.rules.length)?'<p class="hint">Настоящие модули появятся, когда наберётся 🟢 '+T.l+' и 🔴 '+T.d+'.</p>':'');
+  var PH=lvl===1?R1P:s.r2Stream;list=list.filter(function(p){return PH==='all'||!p[0].phase||p[0].phase===PH});
+  var T=lvl===1?r1T():r2T();return '<div class="modgrid">'+list.map(function(p){return modTile(MODS[p[0].id])}).join('')+'</div>'+(!(report&&report.rules&&report.rules.length)?'<p class="hint">Модули появятся, когда наберётся 🟢 '+T.l+' и 🔴 '+T.d+'.</p>':'');
 }
 var R1F='all',R1N=10,R1DEC=0,R1P='all';
-function r1Phase(x){if(x.phase)return x.phase;var c=dataset.find(function(d){return mint(d)===x.mint});return c&&c._entry&&c._entry.phase||''}
+function r1Phase(x){if(x.phase)return x.phase;var c=lastAccepted.find(function(d){return mint(d)===x.mint});return c&&c._entry&&c._entry.phase||''}
 function r1T(){try{var t=JSON.parse(localStorage.getItem('r1targets'+(R1P==='all'?'':'_'+R1P))||'{}');return {l:t.l||100,d:t.d||40}}catch(e){return {l:100,d:40}}}
 function renderR1(){
   var rs=$('r1Suggestions');if(rs)rs.innerHTML=renderAutoSuggestions(autoOne);
@@ -721,7 +721,7 @@ function renderR1(){
     $('r1AllN').textContent=fmt(all.length);$('r1Wait').textContent=R1P==='all'?fmt(p['not-yet-finished']||0):'—';
     $('r1Sum').textContent=cfg.hours+' ч · '+cfg.minActive+'% · '+cfg.maxIdle+' мин';
     var sel=all.filter(function(x){return R1F==='all'||(R1F==='live')===isLive(x)}).slice(-R1N).reverse();
-    $('r1Rows').innerHTML=sel.length?sel.map(function(x){var lv=isLive(x),c=dataset.find(function(d){return mint(d)===x.mint}),bd='<span class="badge '+(lv?'good':'bad')+'">'+(lv?'🟢':'🔴')+'</span>';
+    $('r1Rows').innerHTML=sel.length?sel.map(function(x){var lv=isLive(x),c=lastAccepted.find(function(d){return mint(d)===x.mint}),bd='<span class="badge '+(lv?'good':'bad')+'">'+(lv?'🟢':'🔴')+'</span>';
       return c?coinHtml(c,bd):'<div class="coin" data-coin="'+esc(x.mint)+'"><div class="body"><div class="name mono">'+esc(x.mint.slice(0,11))+'…</div><div class="detail">сделки '+x.activity.toFixed(0)+'% · простой '+x.idle+' мин</div></div>'+bd+'</div>'}).join(''):'<div class="empty-state">Пока нет</div>';
     return;
   }
@@ -735,31 +735,37 @@ function renderR1(){
   $('r1Rows').innerHTML='<div class="muted">Подтверждённые наблюдения сервера отсутствуют или не загружены. Не подменяем их расчётами телефона.</div>';
 }
 function lineGraph(rows){
-  if(!rows.length)return '<div class="empty-state">Нет монет с полной историей от точки 0. Будущие цены не подставляем.</div>';
-  var max=20,min=-20;
-  for(var p of rows){max=Math.max(max,p.pct);min=Math.min(min,p.pct)}
-  max=Math.min(500,max+10);min=Math.max(-100,min-10);
-  function y(v){return 185-(v-min)/Math.max(1,max-min)*155}
-  function x(t){return 114+t/300*426}
-  var path=rows.map(function(p,i){return (i?'L':'M')+x(p.min).toFixed(1)+' '+y(p.pct).toFixed(1)}).join(' ');
-  return '<svg viewBox="0 0 560 235" role="img" aria-label="Средняя цена монет: зона до решения выделена зелёным, 300 минут после точки ноль"><rect x="16" y="20" width="98" height="165" fill="#143e2f"/><line x1="114" y1="20" x2="114" y2="185" stroke="#9568fa" stroke-width="2"/>'+
-  '<path d="M16 185H542 M16 102H542 M16 20H542" fill="none" stroke="#343a4b" stroke-width="1"/>'+
-  '<path d="'+path+'" fill="none" stroke="#38d996" stroke-width="2.8" stroke-linecap="round"/>'+
-  '<g fill="#acb5c8" font-size="12"><text x="18" y="37">До решения</text><text x="108" y="211">0</text><text x="185" y="211">60</text><text x="307" y="211">150</text><text x="465" y="211">270</text><text x="514" y="211">300</text></g></svg>';
+  if(!rows.length)return '<div class="empty-state">Пока нет монет с историей после точки 0</div>';
+  var max=10,min=-10;for(var p of rows){max=Math.max(max,p.pct);min=Math.min(min,p.pct)}
+  max=Math.ceil(Math.min(500,max*1.1)/10)*10;min=Math.floor(Math.max(-100,min*1.1)/10)*10;
+  var W=560,H=230,L=44,R=12,T=14,B=26;function y(v){return T+(max-v)/(max-min)*(H-T-B)}function x(t){return L+t/300*(W-L-R)}
+  var pts=rows.map(function(p){return x(p.min).toFixed(1)+' '+y(p.pct).toFixed(1)}),line='M'+pts.join(' L'),z=y(0).toFixed(1);
+  var area=line+' L'+x(rows[rows.length-1].min).toFixed(1)+' '+z+' L'+x(rows[0].min).toFixed(1)+' '+z+' Z',last=rows[rows.length-1],up=last.pct>=0,col=up?'#38d996':'#fc6b83';
+  var n=rows.reduce(function(m,p){return Math.max(m,p.n||0)},0);
+  return '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Средняя цена после точки 0"><defs><linearGradient id="gU" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#38d996" stop-opacity=".35"/><stop offset="1" stop-color="#38d996" stop-opacity="0"/></linearGradient><linearGradient id="gD" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#fc6b83" stop-opacity=".35"/><stop offset="1" stop-color="#fc6b83" stop-opacity="0"/></linearGradient>'+
+    '<clipPath id="cU"><rect x="0" y="0" width="'+W+'" height="'+z+'"/></clipPath><clipPath id="cD"><rect x="0" y="'+z+'" width="'+W+'" height="'+H+'"/></clipPath></defs>'+
+    '<g stroke="#262c3c" stroke-width="1">'+[max,min].map(function(v){return '<path d="M'+L+' '+y(v).toFixed(1)+'H'+(W-R)+'"/>'}).join('')+'</g>'+
+    '<path d="M'+L+' '+z+'H'+(W-R)+'" stroke="#59607a" stroke-dasharray="4 4"/>'+
+    '<path d="'+area+'" fill="url(#gU)" clip-path="url(#cU)"/><path d="'+area+'" fill="url(#gD)" clip-path="url(#cD)"/>'+
+    '<path d="'+line+'" fill="none" stroke="#38d996" stroke-width="2.4" stroke-linejoin="round" clip-path="url(#cU)"/><path d="'+line+'" fill="none" stroke="#fc6b83" stroke-width="2.4" stroke-linejoin="round" clip-path="url(#cD)"/>'+
+    '<circle cx="'+x(last.min).toFixed(1)+'" cy="'+y(last.pct).toFixed(1)+'" r="4" fill="'+col+'"/>'+
+    '<g fill="#8e98b0" font-size="11"><text x="'+(L-6)+'" y="'+(y(max)+4)+'" text-anchor="end">+'+max+'%</text><text x="'+(L-6)+'" y="'+(+z+4)+'" text-anchor="end">0</text><text x="'+(L-6)+'" y="'+(y(min)+4)+'" text-anchor="end">'+min+'%</text>'+
+    [0,60,120,180,240,300].map(function(t){return '<text x="'+x(t)+'" y="'+(H-8)+'" text-anchor="middle">'+(t?t+'м':'точка 0')+'</text>'}).join('')+'</g>'+
+    '<text x="'+(W-R)+'" y="12" text-anchor="end" font-size="12" font-weight="800" fill="'+col+'">'+(up?'+':'')+last.pct.toFixed(1)+'% · '+n+' монет</text></svg>';
 }
 function researchTwoDataset(){
   if(serverR2Active){
-    const lines=serverR2Rows.filter(function(x){return x.phase===s.r2Stream});
+    const lines=serverR2Rows.filter(function(x){return s.r2Stream==='all'||x.phase===s.r2Stream});
     const valid=lines.length;
     const strong=lines.filter(function(x){return x.label==='strong'}).length;
     const weak=lines.filter(function(x){return x.label==='weak'}).length;
-    const aggregate=serverR2Curve&&serverR2Curve[s.r2Stream]||[];
+    const aggregate=s.r2Stream!=='all'?(serverR2Curve&&serverR2Curve[s.r2Stream]||[]):(function(){var A=(serverR2Curve&&serverR2Curve.before)||[],B=(serverR2Curve&&serverR2Curve.after)||[],m=new Map();A.concat(B).forEach(function(p){var q=m.get(p.min)||{min:p.min,sum:0,n:0};q.sum+=p.pct*(p.n||1);q.n+=(p.n||1);m.set(p.min,q)});return [...m.values()].sort(function(a,b){return a.min-b.min}).map(function(q){return {min:q.min,pct:q.sum/q.n,n:q.n}})})();
     const curve=valid?[{min:0,pct:0,n:valid}].concat(aggregate):[];
     const waiting=twoMeta&&twoMeta.pending||{};
     const pending=Object.values(waiting).reduce(function(a,b){return a+(Number(b)||0)},0);
     return {curve,valid,pending,strong,weak,lines,fromServer:true};
   }
-  var coins=lastPassed.filter(function(x){return x.coin._entry.phase===s.r2Stream});
+  var coins=lastPassed.filter(function(x){return s.r2Stream==='all'||x.coin._entry.phase===s.r2Stream});
   var lines=[],valid=0,pending=0,strong=0,weak=0;
   for(var q of coins){
     var outcome=labTwo(q.coin,q);if(outcome.label==='pending'){pending++;continue}
@@ -774,9 +780,18 @@ function researchTwoDataset(){
   }
   return {curve:curve,valid:valid,pending:pending,strong:strong,weak:weak,lines:lines,fromServer:false};
 }
+var R2F='all',R2N=10;
+function r2T(){try{var t=JSON.parse(localStorage.getItem('r2targets_'+s.r2Stream)||'{}');return {l:t.l||40,d:t.d||40}}catch(e){return {l:40,d:40}}}
 function renderR2(){
-  if($('r2Suggestions'))$('r2Suggestions').innerHTML=renderAutoSuggestions(autoTwo);
-  var r=researchTwoDataset();
+  if($('r2Suggestions'))$('r2Suggestions').innerHTML=renderAutoSuggestions(autoTwo,2);
+  var r=researchTwoDataset(),thr=(twoMeta&&twoMeta.settings&&twoMeta.settings.minAbove)||s.r2Strong,T2=r2T();
+  var ar2=$('r2ApplyRow').classList;if(!ar2.contains||ar2.contains('hide')){$('r2Strong').value=thr;$('r2StrongValue').textContent=thr+'%'}
+  $('r2Sum').textContent='≥ '+thr+'% из 300 мин';$('r2AllN').textContent=r.strong+r.weak;$('r2SN').textContent=r.strong;$('r2WN').textContent=r.weak;$('r2Wait').textContent=r.pending;
+  $('r2ResSum').textContent='🟢 '+r.strong+'/'+T2.l+' · 🔴 '+r.weak+'/'+T2.d;
+  var rr2=$('r2ResApplyRow').classList;if(!rr2.contains||rr2.contains('hide')){$('r2TL').value=T2.l;$('r2TLv').textContent=T2.l;$('r2TD').value=T2.d;$('r2TDv').textContent=T2.d}
+  var rows2=(r.lines||[]).filter(function(x){return R2F==='all'||x.label===R2F}).slice(-R2N).reverse();
+  $('r2Rows').innerHTML=rows2.length?rows2.map(function(x){var mt=x.mint||(x.coin&&mint(x.coin)),c=mt&&lastAccepted.find(function(d){return mint(d)===mt}),st=x.label==='strong',bd='<span class="badge '+(st?'good':'bad')+'">'+(st?'🟢':'🔴')+'</span>';
+    return c?coinHtml(c,bd):'<div class="coin" data-coin="'+esc(mt||'')+'"><div class="body"><div class="name mono">'+esc((mt||'').slice(0,11))+'…</div></div>'+bd+'</div>'}).join(''):'<div class="empty-state">Пока нет</div>';
   if($('r2Matched')){
     if(!serverR2Active)$('r2Matched').textContent=
       '⚠ Предварительный режим. Подтверждённых совпадений 2-го уровня с сервера пока нет.';
@@ -1245,6 +1260,13 @@ function bind(){
   $('pSeg').addEventListener('click',function(e){var b=e.target.closest('[data-pf]');if(!b)return;PF=b.dataset.pf;document.querySelectorAll('#pSeg [data-pf]').forEach(function(x){x.classList.toggle('active',x===b)});renderPassed()});
   $('pwMin').addEventListener('input',function(){$('pwV').textContent=$('pwMin').value;$('pwApplyRow').classList.remove('hide')});
   $('pwApply').addEventListener('click',function(){try{localStorage.setItem('passWin',$('pwMin').value)}catch(e){}$('pwApplyRow').classList.add('hide');renderPassed();note('Применено')});
+  $('r2Seg').addEventListener('click',function(e){var b=e.target.closest('[data-r2f]');if(!b)return;R2F=b.dataset.r2f;document.querySelectorAll('#r2Seg [data-r2f]').forEach(function(x){x.classList.toggle('active',x===b)});renderR2()});
+  $('r2N').addEventListener('click',function(e){var b=e.target.closest('[data-r2n]');if(!b)return;R2N=+b.dataset.r2n;document.querySelectorAll('#r2N [data-r2n]').forEach(function(x){x.classList.toggle('active',x===b)});renderR2()});
+  $('r2Strong').addEventListener('input',function(){$('r2StrongValue').textContent=$('r2Strong').value+'%';$('r2ApplyRow').classList.remove('hide')});
+  [['r2TL','r2TLv'],['r2TD','r2TDv']].forEach(function(a){$(a[0]).addEventListener('input',function(){$(a[1]).textContent=$(a[0]).value;$('r2ResApplyRow').classList.remove('hide')})});
+  $('r2ResApply').addEventListener('click',function(){try{localStorage.setItem('r2targets_'+s.r2Stream,JSON.stringify({l:+$('r2TL').value,d:+$('r2TD').value}))}catch(e){}$('r2ResApplyRow').classList.add('hide');renderR2()});
+  $('r2Suggestions').addEventListener('click',function(e){var t=e.target.closest('[data-mopen]');if(t)openModSheet(t.dataset.mopen)});
+  $('r2Rows').addEventListener('click',function(e){var b=e.target.closest('[data-coin]');if(!b)return;var c=lastAccepted.find(function(d){return mint(d)===b.dataset.coin});if(c)showCoinDetail(c,'r2Rows')});
   $('r1Ph').addEventListener('click',function(e){var b=e.target.closest('[data-r1p]');if(!b)return;R1P=b.dataset.r1p;document.querySelectorAll('#r1Ph [data-r1p]').forEach(function(x){x.classList.toggle('active',x===b)});$('r1ResApplyRow').classList.add('hide');renderR1()});
   $('r1Seg').addEventListener('click',function(e){var b=e.target.closest('[data-r1f]');if(!b)return;R1F=b.dataset.r1f;document.querySelectorAll('#r1Seg [data-r1f]').forEach(function(x){x.classList.toggle('active',x===b)});renderR1()});
   $('r1N').addEventListener('click',function(e){var b=e.target.closest('[data-r1n]');if(!b)return;R1N=+b.dataset.r1n;document.querySelectorAll('#r1N [data-r1n]').forEach(function(x){x.classList.toggle('active',x===b)});renderR1()});
@@ -1252,7 +1274,7 @@ function bind(){
   $('r1ResApply').addEventListener('click',function(){try{localStorage.setItem('r1targets'+(R1P==='all'?'':'_'+R1P),JSON.stringify({l:+$('r1TL').value,d:+$('r1TD').value}))}catch(e){}
     if(researchMeta&&+$('r1Dec').value!==researchMeta.settings.decisionMinutes){R1DEC=+$('r1Dec').value;publishResearchLevel('1')}$('r1ResApplyRow').classList.add('hide');renderR1()});
   ['r1Hours','r1Activity','r1Idle'].forEach(function(id){$(id).addEventListener('input',function(){$('r1ApplyRow').classList.remove('hide')})});
-  $('r1Rows').addEventListener('click',function(e){var b=e.target.closest('[data-coin]');if(!b)return;var c=dataset.find(function(d){return mint(d)===b.dataset.coin});if(c)showCoinDetail(c,'r1Rows')});
+  $('r1Rows').addEventListener('click',function(e){var b=e.target.closest('[data-coin]');if(!b)return;var c=lastAccepted.find(function(d){return mint(d)===b.dataset.coin});if(c)showCoinDetail(c,'r1Rows')});
   $('coinList').addEventListener('click',function(e){
     const button=e.target.closest('[data-coin]');if(!button)return;
     showCoinDetail(lastAccepted.find(function(c){return mint(c)===button.dataset.coin}),'coinList');
@@ -1605,7 +1627,7 @@ function init(){
   s.r1Activity=clamp(s.r1Activity,0,100,70);s.r1Idle=clamp(s.r1Idle,5,120,60);
   s.r2Strong=clamp(s.r2Strong,1,100,70);s.r2Step=[1,5,10,15,30,60].includes(+s.r2Step)?+s.r2Step:5;
   s.level=['1','2'].includes(s.level)?s.level:'1';s.stream=['all','before','after'].includes(s.stream)?s.stream:'all';
-  s.r2Stream=['before','after'].includes(s.r2Stream)?s.r2Stream:'after';
+  s.r2Stream=['before','after','all'].includes(s.r2Stream)?s.r2Stream:'after';
   if(!['all','mine','passed','r1','r2','library'].includes(s.tab))s.tab='all';
   $('ageBefore').innerHTML=Array.from({length:10},function(_,i){return '<option value="'+(i+1)+'">'+(i+1)+' мин</option>'}).join('');
   $('ageAfter').innerHTML=$('ageBefore').innerHTML;
