@@ -303,8 +303,9 @@ var LIVE_BASE={};
 function basePrice(c){var m=mint(c);if(LIVE_BASE[m])return LIVE_BASE[m];var e=c._entry||{},t=(e.eventAt||0)/1000;
   var r=(c.ds||[]).find(function(x){return x[0]>=t&&+x[1]>0});if(r){LIVE_BASE[m]=+r[1];return LIVE_BASE[m]}
   var h=LIVE_HIST[m];if(h&&h.length){LIVE_BASE[m]=h[0];return h[0]}return null}
-function growthHtml(c){var L=liveOf(c),p=(c.ds||[]).at(-1),cur=L&&L.price||p&&+p[1],b=basePrice(c);
-  if(!cur||!b)return '';var g=(cur/b-1)*100;return '<span class="grow '+(g>=0?'up':'down')+'">'+(g>=0?'+':'')+(Math.abs(g)>=1000?Math.round(g):g.toFixed(Math.abs(g)<10?1:0))+'%</span>'}
+function growthHtml(c){var L=liveOf(c),p=(c.ds||[]).at(-1),m=mint(c),h=LIVE_HIST[m],cur,b;
+  if(L&&L.price&&h&&h.length){cur=L.price;b=h[0]}else{cur=p&&+p[1];var e=c._entry||{},t=(e.eventAt||0)/1000,r=(c.ds||[]).find(function(x){return x[0]>=t&&+x[1]>0});b=r&&+r[1]}
+  if(!cur||!b||cur/b>1000||cur/b<0.001)return '';var g=(cur/b-1)*100;return '<span class="grow '+(g>=0?'up':'down')+'">'+(g>=0?'+':'')+(Math.abs(g)>=1000?Math.round(g):g.toFixed(Math.abs(g)<10?1:0))+'%</span>'}
 // Список без мигания: существующие карточки обновляются на месте, новые плавно появляются, ушедшие плавно исчезают.
 function updateList(box,items,keyFn,htmlFn,emptyHtml){if(!box)return;
   if(!items.length){box.innerHTML=emptyHtml;return}
@@ -753,6 +754,23 @@ function lineGraph(rows){
     [0,60,120,180,240,300].map(function(t){return '<text x="'+x(t)+'" y="'+(H-8)+'" text-anchor="middle">'+(t?t+'м':'точка 0')+'</text>'}).join('')+'</g>'+
     '<text x="'+(W-R)+'" y="12" text-anchor="end" font-size="12" font-weight="800" fill="'+col+'">'+(up?'+':'')+last.pct.toFixed(1)+'% · '+n+' монет</text></svg>';
 }
+function lineGraph2(r){var ls=(r.lines||[]).filter(function(x){return Array.isArray(x.curve)&&x.curve.length>1});
+  if(!ls.length)return lineGraph(r.curve.length>1?r.curve:[]);
+  var mx=10,mn=-10;ls.forEach(function(l){l.curve.forEach(function(p){mx=Math.max(mx,p.pct);mn=Math.min(mn,p.pct)})});mx=Math.ceil(Math.min(300,mx*1.05)/10)*10;mn=Math.floor(Math.max(-100,mn*1.05)/10)*10;
+  var W=560,H=250,L=44,R=12,T=18,B=26;function y(v){return T+(mx-v)/(mx-mn)*(H-T-B)}function x(t){return L+t/300*(W-L-R)}
+  function path(c){return 'M'+c.map(function(p){return x(p.min).toFixed(1)+' '+y(p.pct).toFixed(1)}).join(' L')}
+  function avg(g){var m=new Map();g.forEach(function(l){l.curve.forEach(function(p){var q=m.get(p.min)||{s:0,n:0};q.s+=p.pct;q.n++;m.set(p.min,q)})});return [...m.entries()].sort(function(a,b){return a[0]-b[0]}).map(function(e){return {min:e[0],pct:e[1].s/e[1].n}})}
+  var st=ls.filter(function(l){return l.label==='strong'}),wk=ls.filter(function(l){return l.label!=='strong'}),z=y(0).toFixed(1);
+  var out='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Цена каждой монеты и средние сильных и слабых">';
+  [mx,0,mn].forEach(function(v){out+='<path d="M'+L+' '+y(v).toFixed(1)+'H'+(W-R)+'" stroke="'+(v?'#262c3c':'#59607a')+'"'+(v?'':' stroke-dasharray="4 4"')+'/><text x="'+(L-6)+'" y="'+(y(v)+4).toFixed(1)+'" fill="#8e98b0" font-size="11" text-anchor="end">'+(v>0?'+':'')+v+(v?'%':'')+'</text>'});
+  wk.forEach(function(l){out+='<path d="'+path(l.curve)+'" fill="none" stroke="#fc6b83" stroke-opacity=".22" stroke-width="1.2"/>'});
+  st.forEach(function(l){out+='<path d="'+path(l.curve)+'" fill="none" stroke="#38d996" stroke-opacity=".3" stroke-width="1.2"/>'});
+  var a1=st.length?avg(st):null,a2=wk.length?avg(wk):null;
+  if(a2)out+='<path d="'+path(a2)+'" fill="none" stroke="#fc6b83" stroke-width="3"/>';if(a1)out+='<path d="'+path(a1)+'" fill="none" stroke="#38d996" stroke-width="3"/>';
+  var f=function(a){var v=a[a.length-1].pct;return (v>=0?'+':'')+v.toFixed(0)+'%'};
+  out+='<text x="'+(W-R)+'" y="12" text-anchor="end" font-size="12" font-weight="800">'+(a1?'<tspan fill="#38d996">🟢 '+f(a1)+' · '+st.length+'</tspan>':'')+(a2?'<tspan fill="#fc6b83">   🔴 '+f(a2)+' · '+wk.length+'</tspan>':'')+'</text>';
+  [0,60,120,180,240,300].forEach(function(t){out+='<text x="'+x(t)+'" y="'+(H-8)+'" fill="#8e98b0" font-size="11" text-anchor="middle">'+(t?t+'м':'точка 0')+'</text>'});
+  return out+'</svg>'}
 function researchTwoDataset(){
   if(serverR2Active){
     const lines=serverR2Rows.filter(function(x){return s.r2Stream==='all'||x.phase===s.r2Stream});
@@ -810,7 +828,7 @@ function renderR2(){
         }).join('');
     }
   }
-  $('r2Graph').innerHTML=lineGraph(r.curve.length>1?r.curve:[]);
+  $('r2Graph').innerHTML=lineGraph2(r);
   $('r2Stats').textContent=(r.fromServer?'✓ Серверные наблюдения. ':'⚠ Предварительный режим телефона. ')+
     'Размечено: 🟢 сильных '+r.strong+' · 🔴 слабых '+r.weak+' · ожидание/пробелы '+r.pending+'.';
   if($('r2AutoText'))$('r2AutoText').textContent=autoTwo?
