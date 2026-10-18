@@ -14,13 +14,44 @@ const FRESH_WINDOW=48*HOURS;
 const RETRY_INCOMPLETE_MS=15*MIN;
 const MAX_CLASSIFICATION_CHECKS=250; // per two-minute collector export
 
+/* Вход в Исследование 1: два пути, каждый можно включить/выключить.
+   manual — ручной входной фильтр (поток, покупатели за 10 мин, SOL в пуле, случайная доля) — каждый параметр со своим переключателем;
+   modules — монеты, прошедшие модули окна возможностей («Прошли»).
+   Нет конфигурации intake → прежнее поведение (все монеты «Все»). */
+function intakeSettings(x){
+  if(x==null)return null;
+  const num=(v,lo,hi)=>Number.isFinite(+v)&&+v>=lo&&+v<=hi?+v:null;
+  const m=x.manual||{},on=v=>v===true;
+  const out={manual:{enabled:on(m.enabled),phase:['before','after','both'].includes(m.phase)?m.phase:'both',
+      buyers10:{on:on(m.buyers10?.on),min:num(m.buyers10?.min,0,10000)??3},
+      quoteSol:{on:on(m.quoteSol?.on),min:num(m.quoteSol?.min,0,100000)??0.5},
+      sample:{on:on(m.sample?.on),pct:num(m.sample?.pct,1,100)??100}},
+    modules:{enabled:on(x.modules?.enabled)}};
+  return out}
+function sampled(mint,pct){if(pct>=100)return true;let h=2166136261;for(const ch of mint){h^=ch.charCodeAt(0);h=Math.imul(h,16777619)>>>0}return (h%10000)/100<pct}
+// Решение о входе; null-признак при включённом параметре = монета не входит (причина «нет данных»).
+function intakeDecision(intake,row,features,passes){
+  if(!intake)return {ok:true,via:'all'};
+  const via=[];
+  const m=intake.manual;
+  if(m.enabled){let ok=true,why=null;
+    if(m.phase!=='both'&&row.phase!==m.phase){ok=false;why='phase'}
+    if(ok&&m.buyers10.on){const v=features?.buyers10;if(v==null){ok=false;why='no-buyers10'}else if(v<m.buyers10.min){ok=false;why='buyers10'}}
+    if(ok&&m.quoteSol.on){const v=features?.quoteSol;if(v==null){ok=false;why='no-quoteSol'}else if(v<m.quoteSol.min){ok=false;why='quoteSol'}}
+    if(ok&&m.sample.on&&!sampled(row.mint,m.sample.pct)){ok=false;why='sample'}
+    if(ok)via.push('manual');else if(!intake.modules.enabled)return {ok:false,why};
+  }
+  if(intake.modules.enabled&&passes?.records?.has?.(row.mint))via.push('modules');
+  return via.length?{ok:true,via:via.join('+')}:{ok:false,why:m.enabled?'not-matched':'modules-only-not-passed'};
+}
 function settings(cfg={}) {
   const result={
     hours:cfg.hours??5,
     decisionMinutes:cfg.decisionMinutes??10,
     minActive:cfg.minActive??70,
     maxIdle:cfg.maxIdle??60,
-    minCoverage:cfg.minCoverage??.8
+    minCoverage:cfg.minCoverage??.8,
+    ...(cfg.intake!=null?{intake:intakeSettings(cfg.intake)}:{})
   };
   if(!Number.isInteger(result.hours)||result.hours<1||result.hours>24 ||
      !Number.isInteger(result.decisionMinutes)||result.decisionMinutes<1||result.decisionMinutes>30 ||
@@ -56,7 +87,7 @@ class ResearchRuntime {
     this.file=path.join(dir,bankName);
     this.cohortStart=cohortStart;this.cohortEnd=cohortEnd;
     fs.mkdirSync(dir,{recursive:true});
-    this.config=settings(config);
+    this.config=settings(config);this.intakeRejected={};this.intakeAccepted={};
     this.rows=[];
     this.lookup=new Set();
     this.processed=new Map();
@@ -82,7 +113,7 @@ class ResearchRuntime {
       for(const r of this.rows)this.processed.set(r.mint,r.acceptedAt);
     }
   }
-  update({source,coins,now=Date.now()}={}) {
+  update({source,coins,passes=null,now=Date.now()}={}) {
     if(!source?.records || !coins?.get)throw new TypeError('Need source ledger and coin map');
     let added=0,considered=0,attempted=0;
     const pending={},byPhase={before:{live:0,dead:0},after:{live:0,dead:0}};
@@ -122,7 +153,10 @@ class ResearchRuntime {
       }
       this.lastAttemptAt.delete(row.mint);
       const features=featuresAt(coin,decisionAt,{eventAt:row.eventAt,phase:row.phase});
-      this.rows.push({
+      const gate=intakeDecision(this.config.intake,row,features,passes);
+      if(!gate.ok){this.processed.set(row.mint,row.acceptedAt);this.intakeRejected[gate.why]=(this.intakeRejected[gate.why]||0)+1;continue}
+      this.intakeAccepted[gate.via]=(this.intakeAccepted[gate.via]||0)+1;
+      this.rows.push({via:gate.via,
         mint:row.mint,phase:row.phase,
         acceptedAt:row.acceptedAt,decisionAt,
         hours:this.config.hours,
@@ -154,7 +188,7 @@ class ResearchRuntime {
     this.pending=pending;
     this.lastAt=now;
     return {added,considered,attempted,
-      maxChecksPerRun:MAX_CLASSIFICATION_CHECKS,...this.summary()};
+      maxChecksPerRun:MAX_CLASSIFICATION_CHECKS,intake:this.config.intake,intakeAccepted:this.intakeAccepted,intakeRejected:this.intakeRejected,...this.summary()};
   }
   summary(){
     const counts={live:0,dead:0,preLive:0,preDead:0,postLive:0,postDead:0};
@@ -178,4 +212,4 @@ class ResearchRuntime {
       .map(r=>({...r,label:classOf(r,this.config)}));
   }
 }
-module.exports={ResearchRuntime,settings,classOf};
+module.exports={intakeDecision,intakeSettings,ResearchRuntime,settings,classOf};

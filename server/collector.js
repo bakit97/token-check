@@ -1062,10 +1062,10 @@ function researchCoins(){const contract=require(DIR+'/observation-contract.js');
 async function exportResearchV2(now) {
   if(!RESEARCH_V2||!SOURCE)return;
   // All read-only observations originate from the accepted main source.
-  const result=RESEARCH_V2.update({source:SOURCE,coins:researchCoins(),now});
+  const result=RESEARCH_V2.update({source:SOURCE,coins:researchCoins(),passes:PASS_V2,now});
   // A settings change does NOT abandon previously admitted cohorts.
   for(const item of OLD_RESEARCH_ONE){
-    try{item.runtime.update({source:SOURCE,coins:researchCoins(),now})}
+    try{item.runtime.update({source:SOURCE,coins:researchCoins(),passes:PASS_V2,now})}
     catch(e){err('research old 1 '+item.epoch.hash+' '+e.message)}
   }
   AI_SNAP.r1=result;

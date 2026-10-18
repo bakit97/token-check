@@ -495,30 +495,49 @@ function ruleLabel(f){
   const one=function(r){return (labels[r.key]||r.key)+' '+r.op+' '+fmt(r.value)};
   return [one(f)].concat((f.conditions||[]).map(one)).join(' · и ');
 }
+var MINE_STREAM='before';
+var TAGK={buyers10:'пок.10м',quoteSol:'SOL',top10:'топ-10%',top1:'топ-1%',buyers:'пок.5м',trades:'сделки',volume:'объём',liq:'ликв.',mc:'MC',buySellRatio:'пок/прод',buys:'покупки',sells:'продажи'};
+function ruleTags(f){return [f].concat(f.conditions||[]).map(function(r){if(r.key==='safeContract')return '<span class="tag">контракт ✓</span>';
+  return '<span class="tag">'+esc(TAGK[r.key]||r.key)+' '+(r.op==='>='?'≥':'≤')+' '+esc(fmt(r.value))+'</span>'}).join('')}
 function renderServerModules(){
-  const meta=serverPassActive&&passMeta||null;
-  const cfg=meta&&meta.serverConfig;
-  if(!cfg){
-    $('serverModuleCount').textContent='Не подключено';
-    $('serverModules').textContent='Проверенная серверная конфигурация пока не опубликована. Черновики справа не заменяют её.';
-    return;
-  }
-  const filters=new Map((cfg.filters||[]).map(function(f){return [f.id,f]}));
-  const active=(cfg.modules||[]).filter(function(m){
-    return m.enabled&&filters.has(m.filterId);
-  });
-  $('serverModuleCount').textContent=cfg.enabled?fmt(active.length)+' включено':'Выключено';
-  if(!cfg.enabled){
-    $('serverModules').textContent='Новые серверные сигналы отключены; старая история «Прошли» сохраняется.';
-    return;
-  }
-  $('serverModules').innerHTML=active.length?active.map(function(m){
-    const f=filters.get(m.filterId);
-    return '<div class="filter-row"><b>'+esc(m.phase==='before'?'🌱 До':'🎓 После')+
-      ' · '+esc(m.level)+'-й уровень · '+esc(f.name)+'</b>'+
-      '<p class="muted">v'+esc(f.version)+' · '+esc(ruleLabel(f))+'</p></div>';
-  }).join(''):'<p class="muted">Серверная версия включена, но активных модулей нет.</p>';
+  const meta=serverPassActive&&passMeta||null,cfg=meta&&meta.serverConfig;
+  if(!cfg){$('serverModuleCount').textContent='нет данных';$('serverModules').innerHTML='<p class="hint">Конфигурация сервера недоступна.</p>';return}
+  const filters=new Map((cfg.filters||[]).map(function(f){return [f.id,f]})),today=day(now());
+  const mods=(cfg.modules||[]).filter(function(m){return m.level==='1'&&m.phase===MINE_STREAM&&filters.has(m.filterId)});
+  const on=mods.filter(function(m){return m.enabled}).length;
+  $('serverModuleCount').textContent=cfg.enabled?on+' вкл.':'выключено';
+  $('serverModules').innerHTML=mods.length?mods.map(function(m){var f=filters.get(m.filterId);
+    var n=serverPassRows.filter(function(r){return r.phase===m.phase&&day(r.acceptedAt)===today&&(r.matches||[]).some(function(x){return x.id===f.id})}).length;
+    return '<details class="frow"><summary><span class="fname">'+esc(f.name)+'</span><span class="fcnt">'+n+'</span><span class="tg '+(m.enabled&&cfg.enabled?'on':'')+'" title="включается после входа с паролем"></span></summary>'+
+      '<div class="tags">'+ruleTags(f)+'</div><p class="hint">v'+esc(f.version)+' · прошло сегодня: '+n+' · '+(m.enabled?'включён':'выключен')+'</p></details>'}).join(''):
+    '<p class="hint">Для этого потока фильтров нет.</p>';
 }
+// ---- Вход в Исследование 1 ----
+function intakeFromUI(){return {manual:{enabled:$('inManual').checked,phase:$('inPhaseOn').checked?$('inPhase').value:'both',
+    buyers10:{on:$('inBuyOn').checked,min:Number($('inBuy').value)},quoteSol:{on:$('inSolOn').checked,min:Number($('inSol').value)},
+    sample:{on:$('inSampleOn').checked,pct:Number($('inSample').value)}},modules:{enabled:$('inModules').checked}}}
+var INTAKE_DIRTY=false;
+function renderIntake(){if(!$('intakeBox'))return;var st=researchMeta&&researchMeta.settings,x=st&&st.intake;
+  $('intakeState').textContent=!researchMeta?'нет данных':x?'настроен':'все из «Все»';
+  if(!INTAKE_DIRTY){var m=x?x.manual:{enabled:true,phase:'both',buyers10:{on:true,min:3},quoteSol:{on:true,min:0.5},sample:{on:false,pct:100}};
+    $('inManual').checked=!!m.enabled;$('inModules').checked=x?!!x.modules.enabled:true;
+    $('inPhaseOn').checked=m.phase!=='both';$('inPhase').value=m.phase;
+    $('inBuyOn').checked=m.buyers10.on;$('inBuy').value=m.buyers10.min;$('inSolOn').checked=m.quoteSol.on;$('inSol').value=m.quoteSol.min;
+    $('inSampleOn').checked=m.sample.on;$('inSample').value=m.sample.pct}
+  $('inBuyV').textContent=$('inBuy').value;$('inSolV').textContent=$('inSol').value;$('inSampleV').textContent=$('inSample').value;
+  $('inManualBox').classList.toggle('dim',!$('inManual').checked);
+  var acc=researchMeta&&researchMeta.intakeAccepted||{},rej=researchMeta&&researchMeta.intakeRejected||{};
+  var a=Object.values(acc).reduce(function(p,v){return p+v},0),r=Object.values(rej).reduce(function(p,v){return p+v},0);
+  $('intakeStats').textContent=x?'С момента запуска сервера: вошло '+a+' · не вошло '+r+(r?' ('+Object.keys(rej).map(function(k){return ({phase:'поток','no-buyers10':'нет данных о покупателях',buyers10:'мало покупателей','no-quoteSol':'нет данных SOL',quoteSol:'мало SOL',sample:'жребий','not-matched':'не прошли','modules-only-not-passed':'не в «Прошли»'})[k]+' '+rej[k]}).join(', ')+')':''):'Сейчас в исследование идут все монеты из «Все».'}
+async function applyIntake(){var key=$('intakeKey').value.trim(),msg=$('intakeMsg');
+  if(!controlEndpoint||!researchMeta){msg.textContent='Сервер управления недоступен';return}
+  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){msg.textContent='Введи пароль';return}
+  var it=intakeFromUI();if(!it.manual.enabled&&!it.modules.enabled&&!window.confirm('Оба входа выключены — исследование перестанет набирать монеты. Продолжить?'))return;
+  var st=researchMeta.settings,cfg={hours:st.hours,decisionMinutes:st.decisionMinutes,minActive:st.minActive,maxIdle:st.maxIdle,minCoverage:st.minCoverage,intake:it};
+  $('intakeApply').disabled=true;msg.textContent='Отправка…';
+  try{var r=await fetch(controlEndpoint+'/api/research-one',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(cfg)});
+    $('intakeKey').value='';msg.textContent=r.ok?'✓ Принято. Сервер применит в течение пары минут.':'Сервер отклонил: HTTP '+r.status+(r.status===401?' (неверный пароль)':'');if(r.ok)INTAKE_DIRTY=false}
+  catch(e){msg.textContent='Ошибка связи: '+String(e.message||e)}finally{$('intakeApply').disabled=false}}
 function renderModules(){
   var html='';
   for(var phase of ['before','after']){
@@ -855,7 +874,7 @@ function removeEditor(){
 }
 function refresh(){
   analyze();
-  renderAll();renderServerModules();renderModules();renderLocalPreview();renderPassed();renderR1();renderR2();renderLibrary();
+  renderAll();renderServerModules();renderIntake();renderModules();renderLocalPreview();renderPassed();renderR1();renderR2();renderLibrary();
 }
 function preparedServerConfig(){
   // Include all library definitions so the server can evaluate background
@@ -917,7 +936,7 @@ async function publishResearchLevel(level){
       decisionMinutes:researchMeta.settings.decisionMinutes,
       minActive:Number($('r1Activity').value),
       maxIdle:Number($('r1Idle').value),
-      minCoverage:researchMeta.settings.minCoverage};
+      minCoverage:researchMeta.settings.minCoverage,...(researchMeta.settings.intake?{intake:researchMeta.settings.intake}:{})};
     if(!Number.isInteger(cfg.hours)||cfg.hours<1||cfg.hours>24||
        !Number.isInteger(cfg.maxIdle)||cfg.maxIdle<5||cfg.maxIdle>1440||
        !Number.isFinite(cfg.minActive)||cfg.minActive<0||cfg.minActive>100){
@@ -1114,6 +1133,10 @@ function bind(){
   $('publishServerConfig').addEventListener('click',publishServerConfig);
   $('publishSourceAge').addEventListener('click',publishSourceAge);
   $('publishResearchOne').addEventListener('click',function(){publishResearchLevel('1')});
+  document.querySelectorAll('#mineStreams button').forEach(function(b){b.addEventListener('click',function(){MINE_STREAM=b.dataset.mstream;document.querySelectorAll('#mineStreams button').forEach(function(x){x.classList.toggle('active',x===b)});renderServerModules()})});
+  ['inManual','inModules','inPhaseOn','inPhase','inBuyOn','inBuy','inSolOn','inSol','inSampleOn','inSample'].forEach(function(id){$(id).addEventListener('input',function(){INTAKE_DIRTY=true;renderIntake()})});
+  $('intakeApply').addEventListener('click',applyIntake);
+  $('mineAdd').addEventListener('click',function(){var b=document.querySelector('#tabs [data-page="library"]');if(b)b.click()});
   $('publishResearchTwo').addEventListener('click',function(){publishResearchLevel('2')});
   $('tabs').addEventListener('click',function(e){
     var b=e.target.closest('button[data-page]');if(!b)return;
