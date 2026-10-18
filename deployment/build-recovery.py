@@ -1,46 +1,22 @@
-"""Reproduce the explicitly staged recovery build; never deploys anything."""
+"""Build the single authoritative server source and verify its manifest."""
 from pathlib import Path
-import hashlib
-import json
-import subprocess
-
-ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / 'work' / 'recovery-build'
-BASE = '48cb0f8621e3a822cc65e0a7c23ba485ad3a574e'
-SUPPORT = '8df8c12d47ed6334333088a8680c8998f9306bcc'
-
-
-def blob(ref, name):
-    return subprocess.check_output(['git', 'show', ref + ':' + name], cwd=ROOT)
-
-
+import ast, hashlib, json, re
+ROOT=Path(__file__).resolve().parents[1]
+def runtime_names():
+    source=(ROOT/'server/collector.js').read_text(encoding='utf-8')
+    modules=ast.literal_eval(re.search(r"const MODULES=(\[[\s\S]*?\]);",source).group(1))
+    names=['collector.js',*modules]
+    if len(set(names))!=len(names) or any(not re.fullmatch(r'[a-z0-9-]+\.js',n) for n in names):
+        raise RuntimeError('Invalid runtime module inventory')
+    return names
 def main():
-    target = OUT / 'server'
-    target.mkdir(parents=True, exist_ok=True)
-    names = ['collector.js', 'admission.js', 'source-runtime.js', 'pump-pre.js',
-             'pre-watcher.js', 'research-v2.js', 'research-runtime.js',
-             'research-config.js', 'pass-runtime.js', 'research-two-runtime.js',
-             'auto-research-v2.js', 'filter-audit.js']
+    target=ROOT/'work/recovery-build/server';target.mkdir(parents=True,exist_ok=True)
+    manifest=json.loads((ROOT/'deployment/recovery-manifest.json').read_text())
+    names=runtime_names()
+    if set(names)!=set(manifest['files']):raise RuntimeError('Manifest inventory differs from collector modules')
     for name in names:
-        (target / name).write_bytes(blob(BASE, 'server/' + name))
-    (target / 'pre-watcher.js').write_bytes(blob(SUPPORT, 'server/pre-watcher.js'))
-    for helper in ['filter-audit.js', 'pass-runtime.js', 'research-v2.js', 'pump-pre.js', 'event-clock.js', 'source-runtime.js', 'pre-watcher.js', 'resource-budget.js', 'runtime-health.js', 'stream-json.js', 'observation-contract.js', 'packed-observations.js', 'completed-coins.js', 'seed-completed.js']:
-        (target / helper).write_bytes((ROOT / 'server' / helper).read_bytes().replace(b'\r\n', b'\n'))
-    (OUT / 'lab-core.js').write_bytes(blob(BASE, 'lab-core.js'))
-    patch = (ROOT / 'deployment/recovery-48cb0f8-helius.patch').read_bytes().replace(b'\r\n', b'\n')
-    subprocess.run(['git', 'apply', '--directory=work/recovery-build', '-'],
-                   input=patch, cwd=ROOT, check=True)
-    overlay = (ROOT / 'deployment/recovery-live-budget.patch').read_bytes().replace(b'\r\n', b'\n')
-    subprocess.run(['git', 'apply', '--directory=work/recovery-build', '-'], input=overlay, cwd=ROOT, check=True)
-    collector = target / 'collector.js'
-    collector.write_bytes(collector.read_bytes().replace(b'\r\n', b'\n'))
-    manifest = json.loads((ROOT / 'deployment/recovery-manifest.json').read_text())
-    for name, expected in manifest['files'].items():
-        actual = hashlib.sha256((target / name).read_bytes()).hexdigest()
-        if actual != expected:
-            raise RuntimeError('Recovery hash mismatch: ' + name)
-    print('Recovery build hashes verified:', target)
-
-
-if __name__ == '__main__':
-    main()
+        body=(ROOT/'server'/name).read_bytes().replace(b'\r\n',b'\n')
+        if hashlib.sha256(body).hexdigest()!=manifest['files'][name]:raise RuntimeError('Runtime hash mismatch: '+name)
+        (target/name).write_bytes(body)
+    print('Canonical runtime verified:',len(names),'files')
+if __name__=='__main__':main()

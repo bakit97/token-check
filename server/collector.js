@@ -9,13 +9,8 @@ const fs=require('fs'),zlib=require('zlib');
 let HEALTH=null;
 let COMPLETED=null;
 const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:30000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0,pendingWork:0,cancelledGT:0};
-const gzip=require('node:util').promisify(zlib.gzip);
-let RESOURCE=null,PUBLICATIONS=null;
-const RESOURCE_STATS={lagMs:0,maxLagMs:0,memoryPressure:false};
-let loopExpected=Date.now()+1000;
-setInterval(()=>{const t=Date.now(),lag=Math.max(0,t-loopExpected);loopExpected=t+1000;RESOURCE_STATS.lagMs=lag;RESOURCE_STATS.maxLagMs=Math.max(RESOURCE_STATS.maxLagMs,lag);RESOURCE_STATS.memoryPressure=process.memoryUsage().rss>=360*1024*1024},1000).unref();
-const resourcePressure=()=>process.memoryUsage().rss>=360*1024*1024||RESOURCE_STATS.lagMs>200;
-const canAddCandidate=()=>!resourcePressure()&&C.size<5000; // never evict active observations
+let RESOURCE=null;
+const resourcePressure=()=>process.memoryUsage().rss>=360*1024*1024;
 const BUCKET='sol-scan-511718-data',DIR=process.env.SOLSCAN_DIR||'/var/solscan',TZ=5*3600e3;
 const GT='https://api.geckoterminal.com/api/v2/networks/solana',DS='https://api.dexscreener.com';
 const VERSION=(process.env.CODE_GEN||'dev').replace(/[^0-9a-z]/g,'')||'dev';
@@ -71,10 +66,9 @@ const gtQ=[];let gtPause=0,gtOK=0,gtFail=0,gtSp=6500,gtRun=0;
 const GT_BACKGROUND_LIMIT=24; // keep slow multi-hour charts from burying early trading evidence
 const gtBackgroundBusy=()=>gtQ.filter(x=>x.prio===3).length>=GT_BACKGROUND_LIMIT;const gtLog=[]; // gtLog: [время, 1=ок/0=429/2=ошибка, задержка в очереди мс]
 function gtPending(key){return gtQ.some(x=>x.key===key)}
-function gt(path,prio,key){if((prio>=2&&gtQ.filter(x=>x.prio>=2).length>=96)||gtQ.length>=160)return Promise.reject(new Error('GT bounded queue: deferred'));key=key||path;const ex=gtQ.find(x=>x.key===key);if(ex)return ex.p;
+function gt(path,prio,key){key=key||path;const ex=gtQ.find(x=>x.key===key);if(ex)return ex.p;
   let res,rej;const p=new Promise((a,b)=>{res=a;rej=b});gtQ.push({path,prio,res,rej,t:Date.now(),key,p});gtQ.sort((a,b)=>a.prio-b.prio||a.t-b.t);return p}
 (async function gtLoop(){for(;;){if(gtQ.length&&Date.now()>gtPause){const t=gtQ.shift();
-    if(Date.now()-t.t>(t.prio===0?90000:10*60e3)){t.rej(new Error('GT task expired'));continue}
     try{const j=await getJSON(GT+t.path);gtOK++;gtLog.push([Date.now(),1,Date.now()-t.t]);if(++gtRun>=20){gtRun=0;gtSp=Math.max(6000,gtSp-250)}t.res(j)}
     catch(e){gtFail++;gtLog.push([Date.now(),e.rl?0:2,Date.now()-t.t]);if(e.rl){gtPause=Date.now()+30e3;gtSp=Math.min(15000,gtSp+500);gtRun=0;
         if(t.prio<=2&&!t.retry){t.retry=1;gtQ.unshift(t);continue}}t.rej(e)}
@@ -92,7 +86,7 @@ const RPC_CACHE=new Map();
 async function rpc(method,params,options={}){
   if(!RESOURCE)throw Object.assign(new Error('Helius accounting unavailable'),{code:'BUDGET_DEFERRED'});
   const context=options.context||CTX,priority=options.priority??({'миграция':'migration','кривые':'migration','сверка':'reconcile','пулы':'pools','держатели':'holders','контракт':'metadata','новые до миграции':'pre'}[context]||'background'),source=options.source||context;
-  const cacheable=['getTransaction','getSignaturesForAddress'].includes(method);
+  const cacheable=['getTransaction','getSignaturesForAddress','getProgramAccounts','getSlot'].includes(method);
   const cacheKey=cacheable?method+JSON.stringify(params):null,cached=RPC_CACHE.get(cacheKey);
   if(cached&&cached.until>Date.now())return cached.value;
   const key=await heliusKey();if(!key)throw new Error('нет ключа Helius');
@@ -323,7 +317,7 @@ const MIGNAME={pump:'pump.fun → PumpSwap',dbc:'Meteora DBC → Meteora',launch
 // кривые: раз в 10 минут одним запросом на 100 монет читаем флаг «кривая завершена» (монеты на кривой и ручные пулы монет с кривой);
 // флаг сменился — полная перепроверка
 function curveDone(acc){const u=b64(acc.data?.[0]);if(acc.owner===PUMP)return !!u[48];if(acc.owner===LAUNCH)return u[17]!==0;if(acc.owner===DBC)return !!u[305];return true}
-async function curveSweep(){const now=Date.now();const list=[...C.values()].filter(c=>c.mg?.v===MGV&&c.mg.watch&&c.mg.k==='manual-pump'&&now-c.mg.lastAt>=10*60e3&&now-c.t<24*3600e3); // Meteora и LaunchLab — по подписке
+async function curveSweep(){const now=Date.now();const list=[...C.values()].filter(c=>c.mg?.v===MGV&&c.mg.watch&&c.mg.k==='manual-pump'&&now-c.mg.lastAt>=115e3&&now-c.t<24*3600e3); // Meteora и LaunchLab — по подписке
   for(let i=0;i<list.length;i+=100){const part=list.slice(i,i+100);try{const v=(await rpc('getMultipleAccounts',[part.map(c=>c.mg.watch),{encoding:'base64',dataSlice:{offset:0,length:320}}],{priority:'migration',context:'кривые'}))?.value||[];
     part.forEach((c,j)=>{if(!v[j]||curveDone(v[j]))c.mg.force=1;else c.mg.lastAt=now})}catch(e){err('sweep '+e.message)}}}
 function queueMigrationSignal(c,now){if(c.mg?.st==='ok')return;
@@ -360,8 +354,8 @@ function migrationQueueSummary(now=Date.now()){
 function needMig(c,now){if(c.proofExpiredAt)return false;if(now-proofQueuedAt(c)>2*3600e3&&c.mg)return false;if(!c.mg||c.mg.v!==MGV||c.mg.force)return true;
   if(c.mg.st==='unk'&&!c.mg.final&&proofAgeBand(c,now)===0)return now-c.mg.lastAt>=2000;
   const BACK=[2,5,10,20,40];const n=c.mg.n||1;return c.mg.st==='unk'&&!c.mg.final&&n<=BACK.length&&now-c.mg.lastAt>=BACK[n-1]*60e3&&now-proofQueuedAt(c)<2*3600e3}
-async function chainLoop(){let lastSweep=0;for(;;){const now=Date.now();
-  if(!resourcePressure()&&now-lastSweep>10*60e3){lastSweep=now;CTX='кривые';await curveSweep()}
+async function chainLoop(){let lastSweep=0;for(;;){const now=Date.now();expireProofs(now);
+  if(now-lastSweep>120e3){lastSweep=now;CTX='кривые';await curveSweep()}
   for(const c of C.values())rejectOldProof(c,now);
   const candidates=[...C.values()].filter(c=>!c.chTry&&(!c.proofRetryAt||now>=c.proofRetryAt)&&((!c.ct&&isOk(c)&&now-c.t<6*3600e3)||needMig(c,now)));RESOURCE.migrationPending=[...C.values()].some(c=>needMig(c,now));
   const c=candidates.sort((a,b)=>compareProofTasks(a,b,now))[0];
@@ -408,16 +402,7 @@ function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await t
   return MODULES_OK}
 async function initSource() {
   await ensureModules();
-  const names=['admission.js','source-runtime.js','pump-pre.js','pre-watcher.js'];
-  const auth=await token();
-  for(const name of names){
-    const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
-      {headers:{Authorization:'Bearer '+auth},signal:AbortSignal.timeout(30000)});
-    if(!r.ok)throw new Error('source module '+name+' HTTP '+r.status);
-    const out=DIR+'/'+name,tmp=out+'.tmp';
-    fs.writeFileSync(tmp,await r.text());
-    fs.renameSync(tmp,out);
-  }
+
   // Отсутствующий/повреждённый журнал НЕ очищать; источник лучше отключить,
   // чем повторно занести монеты после рестарта.
   SOURCE=new (require(DIR+'/source-runtime.js').SourceRuntime)({dir:DIR});
@@ -425,13 +410,15 @@ async function initSource() {
   await EVENT_CLOCK.refresh();
   setInterval(()=>{EVENT_CLOCK.refresh().catch(()=>{})},10000);
   const PumpPreWatcher=require(DIR+'/pre-watcher.js').PumpPreWatcher;
-  PRE=new PumpPreWatcher({canObserve:canAddCandidate,rpc:(method,params)=>rpc(method,params,{priority:'pre',context:'новые до миграции',source:'pre'}),decode58:b58dec,deriveCurve:bondingCurveOf,source:SOURCE,slotClock:EVENT_CLOCK,telemetry:new (require(DIR+'/resource-budget.js').PumpTelemetry)({dir:DIR}),
+  PRE=new PumpPreWatcher({canObserve:()=>!resourcePressure()&&C.size<12000,rpc:(method,params)=>rpc(method,params,{priority:'pre',context:'новые до миграции',source:'pre'}),decode58:b58dec,deriveCurve:bondingCurveOf,source:SOURCE,slotClock:EVENT_CLOCK,telemetry:new (require(DIR+'/resource-budget.js').PumpTelemetry)({dir:DIR}),
     onAdmitted:admitVerifiedPublicLaunch,log:msg=>err(msg)});
   // Journal is durable even if the VM was restarted before candidate-state save.
-  for(const item of SOURCE.records.values())if(C.size<5000&&item.acceptedAt>Date.now()-50*3600e3&&item.phase==='before'&&!C.has(item.mint)&&item.proof?.curve) {
+  for(const item of SOURCE.records.values())if(item.phase==='before'&&!C.has(item.mint)&&item.proof?.curve) {
+    if(Date.now()-item.acceptedAt>26*3600e3)continue;
+    if(COMPLETED?.metadata(item.mint)){const archived=COMPLETED.readCoin(item.mint);if(archived){archived.preTradingAt=archived.preTradingAt||item.eventAt;C.set(item.mint,archived);continue;}}
     C.set(item.mint,{a:item.mint,n:item.proof.name||'',s:item.proof.symbol||'',i:'',
       p:item.proof.curve,d:'pump-fun',q:item.proof.quote||WSOL,t:item.eventAt,
-      tSrc:'pre',seen:item.acceptedAt,disc:'pre-ws',preCurve:1,firstPostSeenAt:null,
+      tSrc:'pre',preTradingAt:item.eventAt,seen:item.acceptedAt,disc:'pre-ws',preCurve:1,firstPostSeenAt:null,
       pools:[item.proof.curve],mg:{v:MGV,st:'curve',k:'curve-pump',final:1,
       lastAt:item.acceptedAt},fv:FV});
   }
@@ -489,16 +476,7 @@ async function initResearchV2() {
   await ensureModules();
   // Separate initialization: invalid research settings must never stop
   // the authoritative token source or the on-chain listeners.
-  const names=['research-v2.js','research-runtime.js','research-config.js'];
-  const auth=await token();
-  for(const name of names) {
-    const res=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
-      {headers:{Authorization:'Bearer '+auth},signal:AbortSignal.timeout(30000)});
-    if(!res.ok)throw new Error('research module '+name+' HTTP '+res.status);
-    const target=DIR+'/'+name,tmp=target+'.tmp';
-    fs.writeFileSync(tmp,await res.text());
-    fs.renameSync(tmp,target);
-  }
+
   const {ResearchRuntime,settings}=require(DIR+'/research-runtime.js');
   const {ResearchEpoch}=require(DIR+'/research-config.js');
   const requested=await getObj('config/research-one.json')||settings();
@@ -517,17 +495,7 @@ async function initResearchV2() {
 }
 async function initPathsV2(){
   await ensureModules();
-  const names=['pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js'];
-  const auth=await token();
-  for(const name of names){
-    const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+
-      encodeURIComponent('code/'+name)+'?alt=media',{
-      headers:{Authorization:'Bearer '+auth},signal:AbortSignal.timeout(30000)
-    });
-    if(!r.ok)throw Error('path module '+name+' HTTP '+r.status);
-    const target=DIR+'/'+name,tmp=target+'.tmp';
-    fs.writeFileSync(tmp,await r.text());fs.renameSync(tmp,target);
-  }
+
   // A malformed control object fails closed. Never trust a phone-side
   // localStorage setting as permission to create an authoritative alert.
   const config=await getObj('config/pass-filters.json');
@@ -606,12 +574,12 @@ function admitVerifiedMigration(c){
   }catch(e){SOURCE_ERR='ошибка записи источника: '+e.message;err('source '+e.message)}
 }
 
-const OBS_KEYS=['ds','k10','path','hold','bx','lq','gx','vaults','vmint','vdec','vaultIdentityAt','legacy','raw','tr','rawUp','trDone'],OBS_TMP=['tr','raw','dsAt','dsTryAt','tokAt','gxAt','lastTrade','kTry','pTry','trTry','trDone','lqAt','rawUp','vTry'];
+const OBS_KEYS=['ds','k10','path','hold','bx','lq','gx','vaults','vmint','vdec','vaultIdentityAt','legacy','raw','tr','rawUp','trDone','archiveRefs'],OBS_TMP=['tr','raw','dsAt','dsTryAt','tokAt','gxAt','lastTrade','kTry','pTry','trTry','trDone','lqAt','rawUp','vTry'];
 function takeObs(c){const o={};for(const k of OBS_KEYS){if(c[k]!=null)o[k]=c[k];delete c[k]}for(const k of OBS_TMP)delete c[k];return o}
-function load(){try{if(fs.existsSync(DIR+'/state.json')&&fs.statSync(DIR+'/state.json').size>64*1024*1024)throw Error('Candidate snapshot exceeds safe replay size');require(DIR+'/stream-json.js').loadRows(DIR+'/state.json',c=>{
+function load(){try{require(DIR+'/stream-json.js').loadRows(DIR+'/state.json',c=>{
     for(const key of ['chTry','kTry','pTry','trTry','vTry'])delete c[key]; // in-flight locks belong to the old process
     if(c.fv!==FV){c.legacy={snap:c.snap,act:c.act,k:c.k};for(const k of ['snap','act','k','o','cur','cn','orig'])delete c[k];c.fv=FV}
-    if(c.t<Date.now()-50*3600e3||C.size>=5000)return;if(c.disc==='ws'&&c.d==='pumpswap')return;require(DIR+'/packed-observations.js').compactCoin(c);C.set(c.a,c)},HEALTH);log('загружено монет',C.size)}catch(e){if(e.code!=='ENOENT'){err('state restore '+e.message);throw e}}
+    if(c.disc==='ws'&&c.d==='pumpswap')return;require(DIR+'/packed-observations.js').compactCoin(c);C.set(c.a,c)},HEALTH);log('загружено монет',C.size)}catch(e){if(e.code!=='ENOENT')throw e}
   try{RC=JSON.parse(fs.readFileSync(DIR+'/recon.json','utf8'))}catch{}}
 function save(){try{require(DIR+'/stream-json.js').saveRows(DIR+'/state.json',C.values(),HEALTH);
   fs.writeFileSync(DIR+'/recon.json',JSON.stringify(RC));RETENTION.stateBytes=fs.statSync(DIR+'/state.json').size;return true}catch(e){err('save '+e.message);return false}}
@@ -633,7 +601,6 @@ async function addFromGT(r){const inc={};(r.included||[]).forEach(x=>inc[x.id]=x
     if(ex){ex.pools=ex.pools||[ex.p];if(!ex.pools.includes(a.address)){queueMigrationSignal(ex,Date.now());if(!ex.firstPostSeenAt)ex.firstPostSeenAt=Date.now();if(ex.pools.length<12)ex.pools.push(a.address);
         if(ex.mg&&ex.mg.st!=='ok'&&ex.mg.st!=='other')ex.mg.force=1} // у монеты новый пул — возможно, это миграция
       continue}
-    if(!canAddCandidate())continue;
     const tk=inc[bid]?.attributes||{};
     C.set(addr,{a:addr,n:(tk.name||(a.name||'').split(' / ')[0]||'').slice(0,40),s:(tk.symbol||'').slice(0,16),i:tk.image_url&&tk.image_url!=='missing.png'?tk.image_url:'',
       p:a.address,d:dex,q,t,tSrc:'gt',seen:Date.now(),pools:[a.address],fv:FV});n++}
@@ -703,12 +670,12 @@ async function pollDS(){const now=Date.now(),pins=collectionPins(now);
   const ok=chooseDue(need.filter(observedEligible),{now,limit:1200,earlyShare:.3});
   const rest=chooseDue(need.filter(c=>!observedEligible(c)),{now,limit:600,earlyShare:.3});
   const tokFirst=ok.filter(c=>!c.tokAt).slice(0,300);
-  for(let i=0;i<ok.length;i+=30){if(resourcePressure())return;const part=ok.slice(i,i+30);
+  for(let i=0;i<ok.length;i+=30){const part=ok.slice(i,i+30);
     const attempted=Date.now();for(const c of part)c.dsTryAt=attempted;
     try{const j=await getJSON(`${DS}/latest/dex/pairs/solana/${part.map(c=>c.p).join(',')}`);const at=Date.now(),by={};(j.pairs||[]).forEach(p=>by[p.pairAddress]=p);
       for(const c of part){c.dsAt=at;const p=by[c.p];if(p)dsApply(c,p,at)}}catch(e){err('ds '+e.message);await sleep(5000)}
     await sleep(300)}
-  for(const [list,isTok] of [[tokFirst,1],[rest,0]])for(let i=0;i<list.length;i+=30){if(resourcePressure())return;const part=list.slice(i,i+30);
+  for(const [list,isTok] of [[tokFirst,1],[rest,0]])for(let i=0;i<list.length;i+=30){const part=list.slice(i,i+30);
     if(!isTok){const attempted=Date.now();for(const c of part)c.dsTryAt=attempted}
     try{const ps=await getJSON(`${DS}/tokens/v1/solana/${part.map(c=>c.a).join(',')}`);const at=Date.now(),by={};
       ps.forEach(p=>{const a=p.baseToken?.address;if(a)(by[a]=by[a]||[]).push(p)});
@@ -720,8 +687,8 @@ async function pollDS(){const now=Date.now(),pins=collectionPins(now);
 const kRow=x=>[x[0],+(+x[1]).toPrecision(6),+(+x[2]).toPrecision(6),+(+x[3]).toPrecision(6),+(+x[4]).toPrecision(6),Math.round(+x[5])];
 const kList=r=>(r.data?.attributes?.ohlcv_list||[]).map(kRow).sort((a,b)=>a[0]-b[0]);
 function mergeK(a,b){const m=new Map();for(const x of [...(a||[]),...b])m.set(x[0],x);return [...m.values()].sort((x,y)=>x[0]-y[0])}
-function candleTasks(){if(resourcePressure())return;const now=Date.now();
-  for(const c of C.values()){if(!observedEligible(c))continue;const a=ageMin(c,now),pool=c.p,ts=Math.floor;
+function candleTasks(){const now=Date.now(),pins=collectionPins(now);
+  for(const c of C.values()){if(!observedEligible(c)||!collectionActive(c,now,pins))continue;const a=ageMin(c,now),pool=c.p,ts=Math.floor;
     // первые 10 минут: запрос на 11-й минуте, чтобы минута с 10-й отметкой была закрыта
     if(!c.k10&&!c.kTry&&c.trDone&&a>=11&&a<6*60){c.kTry=1;gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=15&before_timestamp=${ts((c.t+11*60e3)/1000)}&currency=usd`,2,'k10:'+pool)
       .then(r=>{if(c.p===pool)c.k10={at:Date.now(),c:kList(r)}}).catch(e=>{if(e.code!=='OBSERVATION_COMPLETE')err('k10 '+e.message)}).finally(()=>{c.kTry=0})}
@@ -754,6 +721,7 @@ function tradeTasks(now,pins=collectionPins(now)){gxTasks(now);for(const c of C.
         tr.f.push([at,(r.data||[]).length,isFinite(lo)?lo:null,hi||null]);
         if(at>=c.t+10*60e3+10e3)finishTrades(c,null)})
       .catch(e=>{if(e.code!=='OBSERVATION_COMPLETE')err('trades '+e.message)}).finally(()=>{c.trTry=0})}}
+function rawArchiveName(c,kind){return `observations-v2/raw/${dayKey(c.t)}/${c.a}/${c.p}-${c.t}-${kind}.json`}
 function finishTrades(c,why){const tr=c.tr;c.trDone=1;if(!tr||!tr.f.length){c.bx={miss:why||'нет запросов'};return}
   const t0=Math.floor(c.t/1000),end=t0+600;
   // покрытие: первый запрос дошёл до начала торговли (или в пуле меньше 300 сделок), каждый следующий перекрывает предыдущий
@@ -769,7 +737,7 @@ function finishTrades(c,why){const tr=c.tr;c.trDone=1;if(!tr||!tr.f.length){c.bx
   if(cov&&!c.k10){const M=new Map();for(const x of Object.values(tr.x).filter(x=>x[0]>=t0-60&&x[0]<end+60&&x[4]).sort((a,b)=>a[0]-b[0])){const m=Math.floor(x[0]/60)*60;const k=M.get(m);
       if(!k)M.set(m,[m,x[4],x[4],x[4],x[4],x[2]]);else{k[2]=Math.max(k[2],x[4]);k[3]=Math.min(k[3],x[4]);k[4]=x[4];k[5]+=x[2]}}
     if(M.size)c.k10={at:lastAt,src:'trades',c:[...M.values()].map(k=>[k[0],k[1],k[2],k[3],k[4],Math.round(k[5])])}}
-  uploadLater(`raw/${dayKey(c.t)}/${c.a}-trades.json`,{a:c.a,p:c.p,t:c.t,f:tr.f,x:tr.x}).then(()=>{c.tr={f:tr.f}}).catch(e=>err('trade archive retained '+e.message))}
+  const name=rawArchiveName(c,'trades');c.archiveRefs={...(c.archiveRefs||{}),trades:name};uploadLater(name,{a:c.a,p:c.p,t:c.t,f:tr.f,x:tr.x});c.tr={f:tr.f}}
 
 /* ---------- 4. блокчейн в моменте: держатели (3/5/10 мин), состояние пула и хранилищ (ключевые моменты + каждые 5 минут) ---------- */
 const VAULT_OFF={[PUMP_AMM]:[139,171],[CPMM]:[72,104],[DAMM2]:[232,264],[AMM4]:[336,368]};
@@ -852,7 +820,7 @@ async function chainObsLoop(){for(;;){const now=Date.now();
           c.hold[m]={at:Date.now(),miss:'ошибка'};err('hold '+e.message)}}}
     for(const c of C.values())if(isOk(c)&&c.vmint&&!c.vdec){c.vdec=await Promise.all(c.vmint.map(async mt=>{if(mt===c.a)return c.ct?.dec??null;if(qDec.has(mt))return qDec.get(mt);
       const v=(await rpc('getAccountInfo',[mt,{encoding:'jsonParsed'}],{priority:'holders',context:'держатели'}))?.value;const d=v?.data?.parsed?.info?.decimals;if(d!=null)qDec.set(mt,+d);return d??null}))}
-    for(const c of C.values())if(c.raw&&ageMin(c,now)>24*60+20&&!c.rawUp){uploadLater(`raw/${dayKey(c.t)}/${c.a}-state.json`,{a:c.a,p:c.p,t:c.t,vaults:c.vaults,raw:c.raw});c.rawUp=1;
+    for(const c of C.values())if(c.raw&&ageMin(c,now)>24*60+20&&!c.rawUp){const name=rawArchiveName(c,'state');c.archiveRefs={...(c.archiveRefs||{}),rawStates:name};uploadLater(name,{a:c.a,p:c.p,t:c.t,vaults:c.vaults,raw:c.raw});c.rawUp=1;
       c.raw=Object.fromEntries(Object.entries(c.raw).map(([m,x])=>[m,{at:x.at,slot:x.slot,miss:x.miss}]))}
   }catch(e){if(e.code!=='BUDGET_DEFERRED')err('chainobs '+e.message)}
   await sleep(10000)}}
@@ -887,9 +855,8 @@ async function reconcileBody(){const now=Date.now();const rpc=(method,params)=>g
    Meteora DBC: кривые с флагом «мигрировала»; LaunchLab: кривые со статусом 2; PumpSwap: аккаунты пулов с index = 0 (создаются один раз).
    Это только кандидаты — миграция всё равно доказывается транзакцией. */
 const WS={on:false,preOn:false,preSub:false,connected:{dbc:false,ll:false},preBudgetPauses:0,prePausedAt:0,preGapMs:0,bytes:0,msgs:{},cand:{},err:0,since:0};const wsSeen=new Map();
-function wsCandidate(kind,acc,u,slot,owner){if(resourcePressure())return;const now=Date.now();if(wsSeen.has(acc)&&now-wsSeen.get(acc)<6*3600e3)return;wsSeen.set(acc,now);
-  if(wsSeen.size>10000)for(const [k,t] of wsSeen)if(now-t>6*3600e3)wsSeen.delete(k);
-  while(wsSeen.size>20000)wsSeen.delete(wsSeen.keys().next().value);
+function wsCandidate(kind,acc,u,slot,owner){const now=Date.now();if(wsSeen.has(acc)&&now-wsSeen.get(acc)<6*3600e3)return;wsSeen.set(acc,now);
+  if(wsSeen.size>20000)for(const [k,t] of wsSeen)if(now-t>6*3600e3)wsSeen.delete(k);
   let mint=null,quote=null,pool=acc;
   if(kind==='dbc'){mint=pk(u,136)}
   else if(kind==='ll'){mint=pk(u,205);quote=pk(u,237)}
@@ -897,7 +864,6 @@ function wsCandidate(kind,acc,u,slot,owner){if(resourcePressure())return;const n
   if(!mint)return;SOURCE?.observe({mint,phase:'after'});WS.cand[kind]=(WS.cand[kind]||0)+1;let c=C.get(mint);if(!c&&typeof COMPLETED!=='undefined'&&COMPLETED){const old=COMPLETED.metadata(mint);if(old?.poolKeys.includes(pool))return;if(old){c=COMPLETED.readCoin(mint);C.set(mint,c)}}
   const snapshot=((kind==='dbc'&&owner===DBC&&u.length===424&&u[305]===1)||(kind==='ll'&&owner===LAUNCH&&u.length>268&&u[17]===2))?{address:acc,owner,at:now,slot:slot||null,data:Buffer.from(u).toString('base64')}:null;
   if(c){if(snapshot)c.wsMigrationSnapshot=snapshot;c.migrationSlot=slot||c.migrationSlot;c.migrationSignalAt=now;queueMigrationSignal(c,now);c.discoverySource=kind;if(!isOk(c)&&c.mg)c.mg.force=1;c.wsSeen=c.wsSeen||now;c.firstPostSeenAt=c.firstPostSeenAt||now;return}
-  if(!canAddCandidate()){WS.capacityDrop=(WS.capacityDrop||0)+1;return}
   C.set(mint,{a:mint,n:'',s:'',i:'',p:pool,d:kind==='pump'?'pumpswap':kind==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'ws',wsMigrationSnapshot:snapshot,migrationSlot:slot||null,migrationSignalAt:now,seen:now,disc:'ws',discoverySource:kind,proofEnqueuedAt:now,wsSeen:now,firstPostSeenAt:now,pools:[pool],fv:FV})}
 function chainWatch(){
   const connect=async(channel)=>{const key=await heliusKey();if(!key||(channel==='pre'&&(!PRE||!RESOURCE?.streamAllowed('pre')))){setTimeout(()=>connect(channel),10000);return}
@@ -934,10 +900,7 @@ function chainWatch(){
 
 /* ---------- 6. выгрузка ---------- */
 const dayKey=t=>new Date(t+TZ).toISOString().slice(0,10);
-const UPQ=[];function uploadLater(name,obj){
-  // Serialize immediately into a bounded disk spool, never retain raw payloads in RAM.
-  return upload(name,obj);
-}
+const UPQ=[];function uploadLater(name,obj){if(typeof COMPLETED!=='undefined'&&COMPLETED){COMPLETED.enqueueRaw(name,obj);if(!UPQ.some(x=>x[0]===name))UPQ.push([name,null])}else UPQ.push([name,obj])}
 async function flushUploads(){
   // A restored raw backlog must not hold source/status/heartbeat publication hostage.
   // Keep the unsent tail intact; never drain a producer-fed queue without a bound.
@@ -947,34 +910,26 @@ async function flushUploads(){
     try{await upload(n,o===null&&typeof COMPLETED!=='undefined'&&COMPLETED?COMPLETED.readRaw(n):o);if(typeof COMPLETED!=='undefined'&&COMPLETED)COMPLETED.completeRaw(n)}catch(e){err('up '+e.message);UPQ.push([n,o]);break}
   }
 }
-function rec(c,full){const mg=c.mg||{};
+function coinMetadata(c){const mg=c.mg||{};
   const r={a:c.a,n:c.n,s:c.s,i:c.i,p:c.p,d:c.d,q:c.q,t:c.t,tSrc:c.tSrc||'gt',t0:c.t0||null,seen:c.seen,disc:c.disc||null,rcSeen:c.rcSeen||null,wsSeen:c.wsSeen||null,firstPostSeenAt:c.firstPostSeenAt||null,preCurve:!!c.preCurve,preTradingAt:c.preTradingAt||null,ty:launchType(c),
     mk:mg.k||null,mst:mg.st||null,mw:mg.why||'',mT:mg.mT||null,mSig:mg.sig||null,mSeen:mg.seenAt||null,mCr:mg.creator??null,mH:c.mgH||[],mk0:c.mg0?.k||null,
     origs:(c.origs||[]).map(o=>({p:o.p,t:o.t,d:o.d,movedAt:o.movedAt})),
     preObs:c.preCurve?((c.origs||[]).find(o=>o.d==='pump-fun')||null):null,ct:c.ct||null,soc:c.soc||0,tk:c.tk&&isFinite(c.tk)?c.tk:null,tkAt:c.tkAt||null,
     live:c.lastTrade?Date.now()-c.lastTrade<30*60e3:false,lastTrade:c.lastTrade||null,legacy:c.legacy?1:0};
-  if(observedEligible(c)){r.k10=c.k10||null;r.hold=c.hold||{};r.bx=c.bx||null;r.gx=c.gx||[];r.vdec=c.vdec||null;r.vmint=c.vmint||null;
-    r.raw=c.raw?Object.fromEntries(Object.entries(c.raw).map(([m,x])=>[m,{at:x.at,slot:x.slot,miss:x.miss}])):{};
-    const lim=Math.floor(c.t/1000)+20*60;r.ds=full?(c.ds||[]):(c.ds||[]).filter(x=>x[0]<=lim);r.lq=full?(c.lq||[]):(c.lq||[]).filter(x=>x[0]<=lim);
-    if(full)r.path=c.path?{at:c.path.at,upto:c.path.upto,c:c.path.c}:null;else r.pathUpto=c.path?.upto||0}
-  else r.ds=c.ds||[];
   return r}
 async function token(){const r=await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',{headers:{'Metadata-Flavor':'Google'}});return (await r.json()).access_token}
-async function sendPublication(name,body,contentType){
-  const tk=await token(),boundary='solscan-'+require('crypto').randomBytes(12).toString('hex');
-  const metadata=JSON.stringify({name,contentType,contentEncoding:'gzip',cacheControl:'no-cache, max-age=0'});
-  const data=Buffer.concat([Buffer.from('--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+metadata+'\r\n--'+boundary+'\r\nContent-Type: '+contentType+'\r\n\r\n'),body,Buffer.from('\r\n--'+boundary+'--\r\n')]);
-  const r=await fetch(`https://storage.googleapis.com/upload/storage/v1/b/${BUCKET}/o?uploadType=multipart`,
-    {method:'POST',signal:AbortSignal.timeout(30000),headers:{Authorization:'Bearer '+tk,'Content-Type':'multipart/related; boundary='+boundary},body:data});
-  if(!r.ok)throw new Error('upload '+r.status); // one Class A operation, no metadata PATCH
-}
 async function upload(name,obj){
-  if(!PUBLICATIONS)throw Error('Publication accounting unavailable');
-  if(obj.coins&&!Array.isArray(obj.coins)&&typeof obj.coins[Symbol.iterator]==='function'){const payload=await require(DIR+'/stream-json.js').gzipJson({dir:DIR,value:obj,health:HEALTH,name});try{const body=fs.readFileSync(payload.file),hash=require('crypto').createHash('sha256').update(body).digest('hex');await PUBLICATIONS.enqueue(name,body,hash);return}finally{await payload.dispose()}}
-  const json=JSON.stringify(obj),stable=JSON.stringify(obj,(key,value)=>key==='updated'?undefined:value);
-  const hash=require('crypto').createHash('sha256').update(stable).digest('hex');
-  await PUBLICATIONS.enqueue(name,await gzip(Buffer.from(json)),hash);
+  if(HEALTH)HEALTH.activeUploads++;
+  let payload,multipart;try{
+    const stream=require(DIR+'/stream-json.js');payload=await stream.gzipJson({dir:DIR,value:obj,health:HEALTH,name});
+    const tk=await token();multipart=stream.multipartGzip(payload,name);
+    const r=await fetch(`https://storage.googleapis.com/upload/storage/v1/b/${BUCKET}/o?uploadType=multipart`,
+      {method:'POST',duplex:'half',signal:AbortSignal.timeout(60000),headers:{Authorization:'Bearer '+tk,'Content-Type':multipart.contentType,'Content-Length':String(multipart.length)},body:multipart.body});
+    if(!r.ok)throw new Error('upload '+r.status+' '+(await r.text()).slice(0,120));await r.arrayBuffer();
+    HEALTH?.uploadsHour.push(Date.now());
+  }finally{await multipart?.close();await payload?.dispose();if(HEALTH)HEALTH.activeUploads--;HEALTH?.capture('upload:complete',{name})}
 }
+
 let lastYest=0,lastObs=0;
 async function exportSource(now) {
   if(!SOURCE)return;
@@ -1056,24 +1011,20 @@ async function exportPathsV2(now){
     });
     TWO_BANK_UPLOADED=now;
   }
-  if(!resourcePressure()&&process.memoryUsage().rss<280*1024*1024&&AUTO_V2&&RESEARCH_V2&&now-AUTO_UPLOADED>=60*60e3){
+  if(AUTO_V2&&RESEARCH_V2&&(p.added||result.added||now-AUTO_UPLOADED>20*60e3)){
     const levelOne=RESEARCH_V2.select({limit:10000}).map(x=>({
       ...x,time:x.acceptedAt
     }));
     const levelTwo=RESEARCH_TWO.select({limit:10000});
-    AUTO_UPLOADED=now; // failed jobs also wait an hour, never retry every export
-    const {researchJob}=require(DIR+'/resource-budget.js');
-    const one=await researchJob({dir:DIR,kind:'discover',rows:levelOne,options:{level:'1'}});
-    await sleep(25);
-    const two=await researchJob({dir:DIR,kind:'discover',rows:levelTwo,options:{level:'2'}});
-    await sleep(25);
+    const one=AUTO_V2.discover(levelOne,{level:'1'});
+    const two=AUTO_V2.discover(levelTwo,{level:'2'});
     await upload('research-v2/auto-1.json',{updated:now,epochStart:RESEARCH_V2.cohortStart,...one});
     await upload('research-v2/auto-2.json',{updated:now,epochStart:RESEARCH_TWO.cohortStart,...two});
     if(FILTER_AUDIT){
-      const audit=await researchJob({dir:DIR,kind:'audit',options:{
+      const audit=FILTER_AUDIT.report({
         config:PASS_V2.config,one:levelOne,two:levelTwo,
         oneHours:RESEARCH_V2.config.hours,now
-      }});
+      });
       await upload('research-v2/filter-audit.json',audit);
     }
     await upload('research-v2/epochs.json',{
@@ -1122,10 +1073,10 @@ async function fastPassedLoop(){
     await sleep(15000);
   }
 }
-const OBS_CONTRACT={schema:2,mode:'mirror',days:{}};
+const OBS_CONTRACT={schema:2,mode:'primary',legacyWriters:false,historicalArchiveGaps:{raw:77,trades:65,scope:'already absent before cutover; no fabricated backfill'},days:{}};
 async function exportObservationContract(name,list,now){
   const contract=require(DIR+'/observation-contract.js'),{rowStream}=require(DIR+'/stream-json.js');
-  await upload(name,{schema:2,updated:now,receiptTimeUnit:'unix-ms',count:list.length,coins:rowStream(function*(){for(const c of list)yield contract.project(c,{metadata:rec(c,false),admission:SOURCE?.get(c.a)||null})})});
+  await upload(name,{schema:2,updated:now,receiptTimeUnit:'unix-ms',count:list.length,coins:rowStream(function*(){for(const c of list)yield contract.project(c,{metadata:coinMetadata(c),admission:SOURCE?.get(c.a)||null})})});
   return {path:name,at:now,coins:list.length,...(list.metrics||{rawStates:list.reduce((n,c)=>n+Object.keys(c.raw||{}).length,0),dsRows:list.reduce((n,c)=>n+(c.ds?.length||0),0),vaultRows:list.reduce((n,c)=>n+(c.lq?.length||0),0)})};
 }
 function retentionPins(now){return require(DIR+'/completed-coins.js').researchPins({source:SOURCE,passes:PASS_V2,one:[RESEARCH_V2,...OLD_RESEARCH_ONE.map(x=>x.runtime)],two:[RESEARCH_TWO,...OLD_RESEARCH_TWO.map(x=>x.runtime)],now})}
@@ -1142,18 +1093,15 @@ async function seedCompletedDays(now){
       fs.renameSync(tmp,file);return file;
     }catch(e){for(const p of [raw,tmp])try{fs.unlinkSync(p)}catch{}throw e}
   };
-  const archive=async name=>{const r=await fetchObject(name);if(!r)return null;const chunks=[];let bytes=0;for await(const chunk of Readable.fromWeb(r.body)){bytes+=chunk.length;if(bytes>2*1024*1024)throw Error('Raw archive seed exceeds bound');chunks.push(chunk)}
-    let body=Buffer.concat(chunks);if(body[0]===31&&body[1]===139)body=zlib.gunzipSync(body,{maxOutputLength:2*1024*1024});return JSON.parse(body.toString('utf8'));
-  };
-  for(const day of days)await require(DIR+'/seed-completed.js').seedDay({store:COMPLETED,day,hot:C,download,archive});
+  for(const day of days)await require(DIR+'/seed-completed.js').seedObservationDay({store:COMPLETED,day,hot:C,download});
 }
 function collectionPins(now){return typeof COMPLETED!=='undefined'&&COMPLETED?retentionPins(now):new Map()}
 function collectionActive(c,now,pins){return typeof COMPLETED==='undefined'||!COMPLETED||!require(DIR+'/completed-coins.js').retirementDue(c,{now,pins})}
-function retirementBlocked(c){return !!(c.chTry||c.kTry||c.pTry||c.trTry||UPQ.some(([name])=>name.includes('/'+c.a+'-')))}
+function retirementBlocked(c){return !!(c.chTry||c.kTry||c.pTry||c.trTry||UPQ.some(([name])=>(name.includes('/'+c.a+'-')||name.includes('/'+c.a+'/'))))}
 async function stageCompleted(now){
   if(!COMPLETED)return;const pins=retentionPins(now),{retirementDue}=require(DIR+'/completed-coins.js');RETENTION.protectedResearch=pins.size;RETENTION.pendingRaw=0;RETENTION.pendingWork=0;
   const cancelled=typeof gtQ==='undefined'?0:require(DIR+'/completed-coins.js').cancelRetiredGT(gtQ,C,{now,pins});RETENTION.cancelledGT+=cancelled;if(cancelled)await new Promise(r=>setImmediate(r));
-  const candidates=[];for(const c of C.values())if(retirementDue(c,{now,pins})){if(retirementBlocked(c)){if(UPQ.some(([name])=>name.includes('/'+c.a+'-')))RETENTION.pendingRaw++;else RETENTION.pendingWork++;continue}candidates.push(c)}
+  const candidates=[];for(const c of C.values())if(retirementDue(c,{now,pins})){if(retirementBlocked(c)){if(UPQ.some(([name])=>(name.includes('/'+c.a+'-')||name.includes('/'+c.a+'/'))))RETENTION.pendingRaw++;else RETENTION.pendingWork++;continue}candidates.push(c)}
   await COMPLETED.stage(candidates);RETENTION.lastSweepAt=now;
 }
 async function retireConfirmed(day,list,now){
@@ -1165,7 +1113,7 @@ async function retireConfirmed(day,list,now){
 }
 async function exportObservationSummary(name,list,now){
   const contract=require(DIR+'/observation-contract.js'),{rowStream}=require(DIR+'/stream-json.js');
-  await upload(name,{schema:2,updated:now,scope:'admitted-latest-observations-only',coins:rowStream(function*(){for(const c of list){const admission=SOURCE?.get(c.a);if(admission)yield contract.projectSummary(c,{metadata:rec(c,false),admission});}})});
+  await upload(name,{schema:2,updated:now,scope:'admitted-latest-observations-only',coins:rowStream(function*(){for(const c of list){const admission=SOURCE?.get(c.a);if(admission)yield contract.projectSummary(c,{metadata:coinMetadata(c),admission});}})});
 }
 const LAST_DAY_EXPORT=new Map();
 let DAY_EXPORT_BUSY=false;
@@ -1177,12 +1125,9 @@ async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayK
     const force=COMPLETED&&(COMPLETED.needsConfirmation(d)||live.some(c=>require(DIR+'/completed-coins.js').retirementDue(c,{now,pins})&&!retirementBlocked(c)));if(d!==today&&!force&&now-(LAST_DAY_EXPORT.get(d)||0)<30*60e3)continue;
     if(COMPLETED?.sealed.has(d)){if(live.length)err('retention: sealed day has unexpected active records '+d);continue}
     const list=COMPLETED?COMPLETED.view(d,live):live;if(!list.length)continue;
-    await upload(`day/${d}.json`,{day:d,tz:'Asia/Almaty',fv:FV,updated:now,count:list.length,coins:rowStream(function*(){for(const c of list)yield rec(c,false)})});
-    let obsWritten=false;
-    if(force||d!==today||now-lastObs>=10*60e3){await upload(`obs/${d}.json`,{day:d,updated:now,coins:rowStream(function*(){for(const c of list)if(observedEligible(c))yield {a:c.a,t:c.t,ds:c.ds||[],lq:c.lq||[],path:c.path||null,preObs:c.preCurve?((c.origs||[]).find(o=>o.d==='pump-fun')||null):null}})});obsWritten=true;if(d===today)lastObs=now}
     OBS_CONTRACT.days[d]=await exportObservationContract('observations-v2/'+d+'.json',list,now);
     await exportObservationSummary('observations-v2/summary/day/'+d+'.json',list,now);
-    if(obsWritten&&COMPLETED){COMPLETED.confirm(d,list);await retireConfirmed(d,live,Date.now());completedDays.push(d)}
+    if(COMPLETED){COMPLETED.confirm(d,list);await retireConfirmed(d,live,Date.now());completedDays.push(d)}
     LAST_DAY_EXPORT.set(d,now);while(LAST_DAY_EXPORT.size>4)LAST_DAY_EXPORT.delete(LAST_DAY_EXPORT.keys().next().value);if(d===yest)lastYest=now;
   }
   const stateCommitted=completedDays.length&&save();
@@ -1195,78 +1140,20 @@ async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayK
 let STATUS_BUSY=false;
 async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const now=Date.now(),today=dayKey(now);
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,memory,retention:{...RETENTION,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,resources:{...RESOURCE_STATS,rssMB:Math.round(process.memoryUsage().rss/1048576),heapMB:Math.round(process.memoryUsage().heapUsed/1048576),helius:RESOURCE?.summary(),gcs:{...RESOURCE?.storageSummary(),...PUBLICATIONS?.summary()}},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
-      fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,queuedAt:FAST_PASS_PUBLISH_AT,publishedAt:PUBLICATIONS?.sent['passed-v2/live.json']?.at||0},
+      fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,publishedAt:FAST_PASS_PUBLISH_AT},
       summary:PASS_V2?.summary(now)||null},
     researchTwo:{active:!!RESEARCH_TWO,error:TWO_ERR,summary:RESEARCH_TWO?.summary()||null},
     coins:C.size,today:[...C.values()].filter(c=>dayKey(c.t)===today).length,okToday:[...C.values()].filter(c=>dayKey(c.t)===today&&isOk(c)).length,
-    gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),creditsBy:crLog.reduce((o,x)=>(o[x[2]]=(o[x[2]]||0)+x[1],o),{}),rpcCtx:RPCCTX,poolObservations:poolCoverage(now),pumpPre:PRE?.telemetry?.summary(EVENT_CLOCK?.anchor?.slot)||null,budgetEvents:budgetEventSummary(now),helius:!!HKEY,recon:RC.log.slice(-12),research:RSTAT,legacyResearch:{enabled:false,reason:'old-results-invalid'},ws:{...WS,preGapEventsUnknown:true,preGapCurrentMs:WS.prePausedAt?Date.now()-WS.prePausedAt:0,since:WS.since,kb:Math.round(WS.bytes/1024),credits:+(WS.bytes/1e6*20).toFixed(1),msgs:WS.msgs,cand:WS.cand,err:WS.err},mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})
+    gt:gtStats(),gtOK,gtFail,queue:gtQ.length,rpcN,rpcFail,credits:rpcCredits,creditsHour:crLog.reduce((s,x)=>s+x[1],0),creditsBy:crLog.reduce((o,x)=>(o[x[2]]=(o[x[2]]||0)+x[1],o),{}),rpcCtx:RPCCTX,poolObservations:poolCoverage(now),pumpPre:PRE?.telemetry?.summary(EVENT_CLOCK?.anchor?.slot)||null,budgetEvents:budgetEventSummary(now),helius:!!HKEY,recon:RC.log.slice(-12),legacyResearch:{enabled:false,reason:'old-results-invalid'},ws:{...WS,preGapEventsUnknown:true,preGapCurrentMs:WS.prePausedAt?Date.now()-WS.prePausedAt:0,since:WS.since,kb:Math.round(WS.bytes/1024),credits:+(WS.bytes/1e6*20).toFixed(1),msgs:WS.msgs,cand:WS.cand,err:WS.err},mem:Math.round(process.memoryUsage().rss/1e6),errors:ERR.slice(-10),startedAt:STARTED})
 }finally{STATUS_BUSY=false}}
 
 // живая лента для «Прошли»: монеты витрины младше 40 минут, раз в 30 секунд
 async function exportLive(){const now=Date.now();const list=[...C.values()].filter(c=>observedEligible(c)&&now-c.t<40*60e3);
-  await upload('live.json',{updated:now,coins:list.map(c=>rec(c,true))});
   await exportObservationSummary('observations-v2/summary/live.json',list,now)}
 function prune(){const now=Date.now();const {compactCoin}=require(DIR+'/packed-observations.js');for(const c of C.values())compactCoin(c,now)}
-
-/* ---------- 7. автоисследование: сервер сам считает живых/мёртвых, ищет признаки и проверяет их на следующих днях ----------
-   Расчёт — тем же кодом, что и сайт (lab-core.js). Правило ищется на прошлых днях (до 3) и проверяется на следующем дне —
-   так видно, что работает устойчиво, а что совпало случайно. Определение «живой» — research/config.json (по умолчанию +50% за 5 ч, стоп −30%, вход на 12-й мин). */
-let LCm=null,LCgen=null;
-async function loadCore(){const tk=await token();const m=await fetch(`https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/code%2Flab-core.js?fields=generation`,{headers:{Authorization:'Bearer '+tk}});
-  if(!m.ok)throw new Error('нет lab-core.js');const g=(await m.json()).generation;if(LCm&&g===LCgen)return LCm;
-  const src=await (await fetch(`https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/code%2Flab-core.js?alt=media`,{headers:{Authorization:'Bearer '+tk}})).text();
-  const box={};require('vm').runInNewContext(src,box);LCm=box.LC;LCgen=g;return LCm}
-async function getObj(name){const tk=await token();const r=await fetch(`https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/${encodeURIComponent(name)}?alt=media`,{headers:{Authorization:'Bearer '+tk}});
-  if(r.status===404)return null;if(!r.ok)throw new Error('get '+name+' '+r.status);return r.json()}
-const RDEF={win:300,up:50,dn:30,dec:12};
-function rowsFromCoins(LC,coins,G,now){LC.markClones(coins);
-  return coins.filter(c=>c.mst==='ok').map(c=>{const o=LC.outcome(c,G,now);const F={};
-    for(const [k] of LC.FKEYS){const v=o.F[k];if(v!=null&&(typeof v!=='number'||isFinite(v)))F[k]=typeof v==='number'?+v.toPrecision(4):v}
-    let x30=null,x60=null;if(o.entry){const pts=LC.pathAfter(c,o.T,G).pts;x30=LC.xAfter({entry:o.entry,T:o.T,pts},30);x60=LC.xAfter({entry:o.entry,T:o.T,pts},60)}
-    return{a:c.a,n:c.n,s:c.s,t:c.t,st:o.st,ex:o.exact?1:0,F,x30:x30!=null?+x30.toFixed(3):null,x60:x60!=null?+x60.toFixed(3):null,pk:o.peak!=null&&isFinite(o.peak)?+o.peak.toFixed(3):null}})}
-const dayEnd=d=>Date.parse(d+'T00:00:00Z')-TZ+864e5;
-async function researchRun(){if(resourcePressure())return;const now=Date.now();const LC=await loadCore();const cfg=Object.assign({},RDEF,(await getObj('research/config.json').catch(()=>null))||{});
-  const ck=JSON.stringify([cfg.win,cfg.up,cfg.dn,cfg.dec,LCgen]);const days=[];
-  for(let o=13;o>=0;o--){await sleep(25);if(resourcePressure())return;const d=dayKey(now-o*864e5);let rows=null;
-    const mem=[...C.values()].filter(c=>dayKey(c.t)===d);
-    const cached=await getObj(`research/rows/${d}.json`).catch(()=>null);
-    if(cached&&cached.ck===ck)rows=cached.rows;
-    else if(mem.length){rows=rowsFromCoins(LC,mem.map(c=>rec(c,true)),cfg,now);
-      if(now>dayEnd(d)+cfg.dec*60e3+cfg.win*60e3+40*60e3)await upload(`research/rows/${d}.json`,{d,ck,at:now,rows})}
-    if(rows&&rows.length)days.push({d,rows})}
-  const lab=r=>r.st==='live'||r.st==='dead',rate=a=>a.length?a.filter(r=>r.st==='live').length/a.length:null;
-  const qs=[.1,.2,.3,.4,.5,.6,.7,.8,.9];
-  function bestRule(train,k,type){const base=rate(train);if(!base)return null;const vals=train.map(r=>r.F[k]).filter(v=>v!=null).sort((a,b)=>a-b);if(vals.length<20)return null;
-    const cands=type==='b'?[[k,'=',true],[k,'=',false]]:[...new Set(qs.map(q=>vals[Math.floor(q*(vals.length-1))]))].flatMap(v=>[[k,'>=',v],[k,'<=',v]]);
-    let best=null;for(const rule of cands){const p=train.filter(r=>LC.passes(r.F,[rule]));if(p.length<15||p.length<train.length*0.1)continue;
-      const rt=(p.filter(r=>r.st==='live').length+1)/(p.length+2),lift=rt/base;if(!best||lift>best.lift)best={rule,lift,n:p.length,rate:rt}}return best}
-  const L=days.map(x=>({d:x.d,rows:x.rows.filter(lab)}));
-  const dayStat=days.map(x=>{const l=x.rows.filter(lab);const c={};x.rows.forEach(r=>c[r.st]=(c[r.st]||0)+1);return{d:x.d,all:x.rows.length,live:c.live||0,dead:c.dead||0,amb:c.amb||0,early:c.early||0,nodata:c.nodata||0,late:c.late||0,base:rate(l)}});
-  const feats=[],auto=[1,2,3].map(k=>({k,days:[]}));
-  for(let i=1;i<L.length;i++){await sleep(25);if(resourcePressure())return;const train=L.slice(Math.max(0,i-3),i).flatMap(x=>x.rows),test=L[i].rows;if(train.length<40||test.length<10)continue;const tb=rate(test);
-    const per=[];for(const [k,type] of LC.FKEYS){await sleep(10);const b=bestRule(train,k,type);if(!b)continue;const p=test.filter(r=>LC.passes(r.F,[b.rule]));
-      per.push({k,type,b});let f=feats.find(x=>x.k===k);if(!f){f={k,type,tests:[]};feats.push(f)}f.tests.push({d:L[i].d,rule:b.rule,trainLift:+b.lift.toFixed(2),n:p.length,live:p.filter(r=>r.st==='live').length,base:tb})}
-    per.sort((a,b)=>b.b.lift-a.b.lift);
-    for(const A of auto){const top=per.filter(x=>x.b.lift>=1.1).slice(0,A.k);if(top.length<A.k)continue;const rules=top.map(x=>x.b.rule);
-      const p=test.filter(r=>LC.passes(r.F,rules));const allP=days[i].rows.filter(r=>LC.passes(r.F,rules));const x60=allP.map(r=>r.x60).filter(v=>v!=null).sort((a,b)=>a-b);
-      A.days.push({d:L[i].d,rules,n:p.length,live:p.filter(r=>r.st==='live').length,base:tb,sig:allP.length,x60:x60.length?x60[x60.length>>1]:null})}}
-  for(const f of feats){const n=f.tests.reduce((s,x)=>s+x.n,0),lv=f.tests.reduce((s,x)=>s+x.live,0);const bn=f.tests.reduce((s,x)=>s+x.base*x.n,0);
-    f.n=n;f.rate=n?lv/n:null;f.lift=n&&bn?lv/bn:null;f.daysUp=f.tests.filter(x=>x.n>=5&&x.base&&x.live/x.n>x.base).length;f.days=f.tests.length;
-    f.stable=f.days>=3&&f.n>=30&&f.lift>=1.15&&f.daysUp/f.days>=0.7;}
-  feats.sort((a,b)=>(b.stable-a.stable)||((b.lift||0)-(a.lift||0)));
-  // текущие правила (на последних 3 днях) — для живого использования
-  const lastTrain=L.slice(-3).flatMap(x=>x.rows);const cur={};for(const [k,type] of LC.FKEYS){await sleep(10);const b=bestRule(lastTrain,k,type);if(b)cur[k]={rule:b.rule,lift:+b.lift.toFixed(2),n:b.n,rate:+b.rate.toFixed(3)}}
-  for(const f of feats)f.cur=cur[f.k]||null;
-  const inSample=Object.entries(cur).map(([k,v])=>({k,...v})).sort((a,b)=>b.lift-a.lift).slice(0,12);
-  for(const A of auto){const n=A.days.reduce((s,x)=>s+x.n,0),lv=A.days.reduce((s,x)=>s+x.live,0),bn=A.days.reduce((s,x)=>s+x.base*x.n,0);A.n=n;A.rate=n?lv/n:null;A.lift=n&&bn?lv/bn:null;
-    const ranked=Object.entries(cur).filter(([,v])=>v.lift>=1.1).sort((a,b)=>b[1].lift-a[1].lift).slice(0,A.k);A.rulesNow=ranked.length===A.k?ranked.map(([,v])=>v.rule):null}
-  await upload('research/report.json',{updated:now,cfg,days:dayStat,labeledDays:L.filter(x=>x.rows.length).length,feats:feats.map(f=>({k:f.k,type:f.type,days:f.days,daysUp:f.daysUp,n:f.n,rate:f.rate,lift:f.lift,stable:f.stable,cur:f.cur,tests:f.tests.slice(-14)})),
-    auto,inSample});
-  RSTAT={at:now,days:days.length,labeled:L.reduce((s,x)=>s+x.rows.length,0)}}
-let RSTAT=null;
 
 /* ---------- самообновление: новая версия кода в бакете → перезапуск ---------- */
 async function codeGen(){const tk=await token();const r=await fetch(`https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/code%2Fcollector.js?fields=generation`,{headers:{Authorization:'Bearer '+tk}});return (await r.json()).generation}
@@ -1277,23 +1164,24 @@ let diagGen=null;async function diagCheck(){try{const tk=await token();const r=a
   const src=await (await fetch(`https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/code%2Fdiag.js?alt=media`,{headers:{Authorization:'Bearer '+tk}})).text();
   fs.writeFileSync(DIR+'/diag.js',src);const out=await new Promise(res=>{const ch=require('child_process').execFile('node',[DIR+'/diag.js'],{timeout:600000,maxBuffer:4e6,env:{...process.env,HELIUS:HKEY||''},encoding:'utf8'},(e,stdout,stderr)=>res({stdout,stderr:stderr||(e?String(e.message):'')}))});
   const txt=(out.stdout||'')+(out.stderr?'\n--- stderr ---\n'+out.stderr:'');const body=Buffer.from(txt.replaceAll(HKEY||'@@','***'));
-  await PUBLICATIONS.enqueue('diag/out.txt',await gzip(body),require('crypto').createHash('sha256').update(body).digest('hex'),'text/plain')}catch(e){err('diag '+e.message)}}
+  await fetch(`https://storage.googleapis.com/upload/storage/v1/b/${BUCKET}/o?uploadType=media&name=diag%2Fout.txt`,{method:'POST',headers:{Authorization:'Bearer '+(await token()),'Content-Type':'text/plain'},body})}catch(e){err('diag '+e.message)}}
 
 /* ---------- старт ---------- */
+function startDiscoveryBootstrap(){
+  // Discovery backfill cannot delay live migration proofs or code-version monitoring.
+  (async()=>{for(const pg of [1,2,3])try{await addFromGT(await gt(`/new_pools?page=${pg}&include=base_token,quote_token,dex`,0,'boot'+pg))}catch(e){err('boot '+e.message)}})().catch(e=>err('boot '+e.message));
+}
 const STARTED=Date.now();
-(async()=>{fs.mkdirSync(DIR,{recursive:true});
-  await ensureModules();
-  const {ResourceBudget,PublicationQueue}=require(DIR+'/resource-budget.js');
-  RESOURCE=new ResourceBudget({dir:DIR});
-  PUBLICATIONS=new PublicationQueue({dir:DIR,budget:RESOURCE,send:sendPublication});
-  setInterval(()=>PUBLICATIONS.flush().catch(e=>err('publication '+e.message)),15000);
+(async()=>{fs.mkdirSync(DIR,{recursive:true});await ensureModules();
+  RESOURCE=new (require(DIR+'/resource-budget.js').ResourceBudget)({dir:DIR,env:{...process.env,HELIUS_USED_CREDITS:process.env.HELIUS_USED_CREDITS||'185000'}});
   HEALTH=new (require(DIR+'/runtime-health.js').RuntimeHealth)();let expected=Date.now()+1000;setInterval(()=>{const at=Date.now();HEALTH.lagMs=Math.max(0,at-expected);HEALTH.maxLagMs=Math.max(HEALTH.maxLagMs,HEALTH.lagMs);expected=at+1000;HEALTH.capture()},1000).unref();
-  load();HEALTH.capture('load:complete');log('старт, версия',VERSION);
+  COMPLETED=new (require(DIR+'/completed-coins.js').CompletedCoins)(DIR);UPQ.push(...COMPLETED.rawQueue());
+  load();if(fs.existsSync(DIR+'/state.json'))RETENTION.stateBytes=fs.statSync(DIR+'/state.json').size;HEALTH.capture('load:complete');log('старт, версия',VERSION);
   try{await initSource();await reloadSourceAgeConfig()}catch(e){SOURCE_ERR=e.message;err('главный источник не запустился: '+e.message)}
   try{await initResearchV2()}catch(e){RESEARCH_V2_ERR=e.message;err('исследование v2 не запустилось: '+e.message)}
   try{await initPathsV2()}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('серверные пути не запустились: '+e.message)}
   chainWatch();setInterval(()=>exportStatus().catch(e=>err('status '+e.message)),60000);exportStatus().catch(e=>err('status '+e.message));
-  for(const pg of [1,2,3])try{await addFromGT(await gt(`/new_pools?page=${pg}&include=base_token,quote_token,dex`,0,'boot'+pg))}catch(e){err('boot '+e.message)}
+  startDiscoveryBootstrap();
   setInterval(pollNew,90000);
   (async()=>{for(;;){try{await pollDS()}catch(e){err('dsloop '+e.message)}await sleep(15000)}})();
   setInterval(()=>{try{candleTasks()}catch(e){err('candles '+e.message)}},15000);
@@ -1303,7 +1191,7 @@ const STARTED=Date.now();
   setInterval(()=>{prune();save()},120000);
   fastPassedLoop().catch(e=>err('fast pass loop '+e.message));
   (async()=>{for(;;){await sleep(120000);try{await exportDays()}catch(e){err('export '+e.message)}}})();
-  (async()=>{await sleep(45000);for(;;){try{await exportLive()}catch(e){err('live '+e.message)}await sleep(60000)}})();
+  (async()=>{await sleep(45000);for(;;){try{await exportLive()}catch(e){err('live '+e.message)}await sleep(30000)}})();
   setTimeout(()=>exportDays().catch(e=>err('export '+e.message)),30000);
   setInterval(async()=>{try{const g=await codeGen();if(g&&VERSION!=='dev'&&g!==VERSION){log('новая версия кода',g,'— перезапуск');save();process.exit(0)}}catch{}},60000);
 })();

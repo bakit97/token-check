@@ -9,7 +9,7 @@ function setup(t,fail){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'sol-uploa
  vm.createContext(ctx);vm.runInContext(code.slice(code.indexOf('async function upload(name,obj)'),code.indexOf('let lastYest='))+'\nthis.send=upload;',ctx);return {ctx,calls,dir};}
 test('real recovery sender streams gzip with a correct content length and cleans its disk payload',{skip},async t=>{
  const {ctx,calls,dir}=setup(t,false),obj={at:12,coins:[{at:11,ds:[[10,1]]}]};await ctx.send('obs/day.json',obj);
- assert.equal(calls.length,1);assert.match(calls[0].url,/uploadType=multipart/);assert.match(calls[0].metadata,/"cacheControl":"no-cache, max-age=0"/);assert.equal(calls[0].bytes,+calls[0].options.headers['Content-Length']);assert.equal(calls[0].wire,JSON.stringify(obj));assert.equal(calls[0].options.duplex,'half');assert.ok(+calls[0].options.headers['Content-Length']>0);assert.equal(fs.readdirSync(path.join(dir,'publish-tmp')).length,0);
+ assert.equal(calls.length,1);assert.match(calls[0].url,/uploadType=multipart/);assert.match(calls[0].metadata,/"cacheControl":"no-cache, max-age=0"/);assert.match(calls[0].metadata,/"contentEncoding":"gzip"/);assert.equal(calls[0].bytes,+calls[0].options.headers['Content-Length']);assert.equal(calls[0].wire,JSON.stringify(obj));assert.equal(calls[0].options.duplex,'half');assert.ok(+calls[0].options.headers['Content-Length']>0);assert.equal(fs.readdirSync(path.join(dir,'publish-tmp')).length,0);
 });
 test('failed streamed upload rejects and removes its temporary payload for a retained retry',{skip},async t=>{
  const {ctx,dir}=setup(t,true);await assert.rejects(ctx.send('obs/day.json',{coins:[{a:'mint'}]}),/upload 500/);assert.equal(fs.readdirSync(path.join(dir,'publish-tmp')).length,0);

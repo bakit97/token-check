@@ -10,7 +10,7 @@ function poolRecord(c,mint){
   candles10:c.k10||null,holders10:c.hold?.['10']||null,holders:c.hold||{},rawStates:raw,
   tradeCoverage:c.bx||null,tradeFetches:(tr?.f||[]).map(f=>({at:f[0],count:f[1],marketMinAt:f[2]==null?null:f[2]*1000,marketMaxAt:f[3]==null?null:f[3]*1000})),tradeRows:tr?.x||null,tradeRowMarketTimeUnit:'unix-seconds',tradeRowReceiptTime:'fetch-coverage-only',
   activity:series(c.gx,'ds'),path:c.path||null,
-  archives:{rawStates:c.rawUp?'raw/'+archiveDay+'/'+mint+'-state.json':null,trades:c.trDone&&tr?.f?.length?'raw/'+archiveDay+'/'+mint+'-trades.json':null,verification:'legacy-reference-not-reconciled'}};
+  archives:c.archiveRefs?{...c.archiveRefs}:{rawStates:c.rawUp?'raw/'+archiveDay+'/'+mint+'-state.json':null,trades:c.trDone&&tr?.f?.length?'raw/'+archiveDay+'/'+mint+'-trades.json':null,verification:'legacy-reference-not-reconciled'}};
 }
 function project(c,{metadata={},admission=null}={}){
  const out={};for(const [key,value] of Object.entries(metadata))if(META.has(key))out[key]=value;
@@ -26,7 +26,7 @@ function projectSummary(c,options={}){
  row.observations.readScope='latest-observations-only';return row;
 }
 function restorePool(p,cutoff){const valid=x=>Number.isFinite(x?.at)&&x.at<=cutoff;
- return {p:p.address,t:p.marketAt,d:p.kind,q:p.quoteMint,movedAt:p.movedAt,
+ return {p:p.address,t:p.marketAt,d:p.kind,q:p.quoteMint,movedAt:p.movedAt,archiveRefs:p.archives||null,rawUp:p.archives?.rawStates?1:0,trDone:p.archives?.trades?1:0,
   ds:(p.ds||[]).filter(valid).map(x=>[x.at/1000,...x.values]),lq:(p.vaults?.samples||[]).filter(valid).map(x=>[x.at/1000,x.slot,...x.balances]),
   vaults:p.vaults?.addresses,vmint:p.vaults?.mints,vdec:p.vaults?.decimals,vaultIdentityAt:p.vaults?.identityAt,
   k10:valid(p.candles10)?p.candles10:null,hold:Object.fromEntries(Object.entries(p.holders||{}).filter(([,x])=>valid(x))),
@@ -35,7 +35,7 @@ function restorePool(p,cutoff){const valid=x=>Number.isFinite(x?.at)&&x.at<=cuto
   tr:{f:(p.tradeFetches||[]).filter(valid).map(x=>[x.at,x.count,x.marketMinAt==null?null:x.marketMinAt/1000,x.marketMaxAt==null?null:x.marketMaxAt/1000]),x:(p.tradeFetches||[]).length>0&&(p.tradeFetches||[]).every(valid)?p.tradeRows||{}:{}}};
 }
 function toLegacy(row,cutoff=Infinity){if(row?.schema!==2||row.observations?.schema!==2)throw Error('Unsupported observation contract');
- const out={...row};delete out.observations;delete out.schema;const [current,...previous]=row.observations.pools.map(p=>restorePool(p,cutoff));
+ const out={...row};const proof=row.observations.migrationProof;if(proof?.sourceState)out.mg={...proof.sourceState};if(proof?.previousState)out.mg0={...proof.previousState};delete out.observations;delete out.schema;const [current,...previous]=row.observations.pools.map(p=>restorePool(p,cutoff));
  Object.assign(out,current);if(out.ct&&(!Number.isFinite(out.ct.at)||out.ct.at>cutoff))out.ct=null;out.origs=previous;out.preObs=previous.find(p=>p.d==='pump-fun')||null;return out;
 }
 function chainDrain(row,cutoff=Infinity){

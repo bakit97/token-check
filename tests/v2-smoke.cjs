@@ -6,8 +6,14 @@ const vm = require('node:vm');
 const path = require('node:path');
 
 const root = path.join(__dirname, '..');
-const html = fs.readFileSync(path.join(root,'v2.html'),'utf8');
-const js = fs.readFileSync(path.join(root,'v2.js'),'utf8');
+const html = fs.readFileSync(path.join(root,'index.html'),'utf8');
+const js = fs.readFileSync(path.join(root,'server/observation-contract.js'),'utf8')+'\n'+fs.readFileSync(path.join(root,'v2.js'),'utf8');
+// The mock transport serializes existing coin fixtures through the published schema-2 protocol.
+function schemaFetch(fetch){return async function(url,...args){
+  if(/sol-scan-511718-data\/(?:day\/|obs\/|live\.json)/.test(url))throw Error('Legacy observation endpoint requested');
+  const r=await fetch(url,...args);if(!url.includes('observations-v2/')||!r?.json)return r;
+  return {...r,json:async()=>{const data=await r.json();if(!data)return data;return {...data,schema:2,coins:(data.coins||[]).map(c=>require('../server/observation-contract').project({...c,t:c.t??c.mT??Date.now()-600000,p:c.p||'fixturePool'},{metadata:c}))};}};
+};}
 
 test('Server daily counters show zero only for healthy current-day feeds; missing, stale and stopped feeds show no data',()=>{
  const nodes=new Map(),at=Date.UTC(2026,9,17,18,59,59),date=t=>new Date(t+5*3600000).toISOString().slice(0,10);
@@ -36,7 +42,8 @@ test('все шесть разделов имеют правильные ID',()=
     assert.match(html,new RegExp('id="'+id+'"'));
   }
   assert.match(html,/v2\.js/);
-  assert.match(html,/classic\.html/);
+  assert.doesNotMatch(html,/classic\.html/);
+  assert.match(html,/server\/observation-contract\.js/);
 });
 test('все статические ID, используемые JS, существуют в HTML',()=>{
   const ids = new Set([...html.matchAll(/id="([^"]+)"/g)].map(m=>m[1]));
@@ -73,7 +80,7 @@ test('JS синтаксис и загрузка настоящего режим�
   });
   const memory=new Map();
   const localStorage={getItem:k=>memory.get(k)||null,setItem:(k,v)=>memory.set(k,v)};
-  const sandbox={window:{addEventListener(){}},document,localStorage,fetch,
+  const sandbox={window:{addEventListener(){}},document,localStorage,fetch:schemaFetch(fetch),
     AbortController,URL,console,Date,Intl,Math,Number,Map,Set,Array,String,Object,JSON,Error,
     setInterval:()=>0,setTimeout:(fn)=>{fn();return 0},clearTimeout:()=>{}};
   // Deferred loading completes while the VM is still alive.
@@ -101,7 +108,7 @@ test('главный источник authoritative: только принято
   const coins=[{a:good,n:'Допущена',mst:'ok',mT:now-20*60e3,mSeen:now-19*60e3,
     ds:[[Math.floor(now/1000),0.0001,5000,10000,4,3,100]]},
     {a:other,n:'Не допущена',mst:'ok',mT:now-20*60e3,mSeen:now-19*60e3}];
-  const src={updated:now,mode:'verified-post-only',today:1,
+  const src={updated:now,mode:'verified-post-only',today:1,total:1,
     settings:{beforeMinutes:2,afterMinutes:2}};
   const admitted={a:good,phase:'after',eventAt:now-20*60e3,acceptedAt:now-19*60e3};
   const fetch=async url=>({ok:true,status:200,json:async()=>{
@@ -112,7 +119,7 @@ test('главный источник authoritative: только принято
     return {coins};
   }});
   const localStorage={getItem(){return null},setItem(){}};
-  const sandbox={window:{addEventListener(){}},document,localStorage,fetch,
+  const sandbox={window:{addEventListener(){}},document,localStorage,fetch:schemaFetch(fetch),
     AbortController,URL,console,Date,Intl,Math,Number,Map,Set,Array,String,Object,JSON,Error,
     setInterval:()=>0,setTimeout:(fn)=>{fn();return 0},clearTimeout:()=>{}};
   vm.runInNewContext(js,sandbox,{timeout:2000});
@@ -165,7 +172,7 @@ test('полигон сервера: неопределённые показат
     filters:[{id:'001',level:'1',name:'Покупатели',key:'buyers',op:'>=',value:20,version:1}],
     modules:[]};
   const localStorage={getItem:k=>k==='solscan_v2_state_20261017'?JSON.stringify(prefs):null,setItem(){}};
-  const ctx={window:{addEventListener(){}},document,localStorage,fetch:fakeFetch,
+  const ctx={window:{addEventListener(){}},document,localStorage,fetch:schemaFetch(fakeFetch),
     AbortController,URL,console,Date,Intl,Math,Number,Map,Set,Array,String,Object,JSON,Error,
     setInterval:()=>0,setTimeout:()=>0,clearTimeout:()=>{}};
   vm.runInNewContext(js,ctx,{timeout:4000});
@@ -211,7 +218,7 @@ test('после пропадания сервера старые карточк
     }};
   };
   const env={window:{addEventListener(){}},document,localStorage:{getItem(){return null},setItem(){}},
-    fetch,AbortController,URL,console,Date,Intl,Math,Number,Map,Set,Array,String,Object,JSON,Error,
+    fetch:schemaFetch(fetch),AbortController,URL,console,Date,Intl,Math,Number,Map,Set,Array,String,Object,JSON,Error,
     setInterval:fn=>(intervals.push(fn),intervals.length),
     setTimeout:()=>0,clearTimeout:()=>{}};
   vm.runInNewContext(js,env,{timeout:2000});
@@ -284,7 +291,7 @@ test('Passed journal preserves original version, deadline and detection after di
   const document={readyState:'complete',getElementById:el,
     querySelectorAll(){return []},addEventListener(){}};
   function run(){
-    vm.runInNewContext(js,{window:{addEventListener(){}},document,fetch,localStorage:storage,
+    vm.runInNewContext(js,{window:{addEventListener(){}},document,fetch:schemaFetch(fetch),localStorage:storage,
       AbortController,URL,console,Date,Intl,Math,Number,Map,Set,Array,String,Object,JSON,Error,
       setInterval:()=>0,setTimeout:()=>0,clearTimeout:()=>{}},{timeout:3000});
   }
@@ -340,10 +347,33 @@ test('Expired historical coins never create fresh Passed signals on a late visit
   vm.runInNewContext(js,{window:{addEventListener(){}},
     document:{readyState:'complete',getElementById:el,querySelectorAll(){return[]},addEventListener(){}},
     localStorage:{getItem:k=>memory.get(k)||null,setItem:(k,v)=>memory.set(k,v)},
-    fetch,AbortController,URL,console,Date,Intl,Math,Number,Map,Set,Array,String,Object,JSON,Error,
+    fetch:schemaFetch(fetch),AbortController,URL,console,Date,Intl,Math,Number,Map,Set,Array,String,Object,JSON,Error,
     setInterval:()=>0,setTimeout:()=>0,clearTimeout:()=>{}},{timeout:3000});
   await new Promise(resolve=>setTimeout(resolve,80));
   assert.equal(memory.has('solscan_v2_verified_passes_20261017'),false);
   assert.doesNotMatch(el('passedList').innerHTML,/Старый токен/);
   assert.equal(el('passedArchiveCount').textContent,'0');
 });
+
+test('Unknown or zero placeholder volume is a dash in cards and detail; positive observed volume is shown',()=>{
+ const scope={Number,fmt:String,safeImg:()=>'',ageM:()=>'',esc:String,mint:c=>c.a,spark:()=>'',price:()=>'',time:()=>''};
+ const start=js.indexOf('function observedMoney('),end=js.indexOf('function showCoinDetail(',start);
+ vm.runInNewContext(js.slice(start,end),scope);
+ for(const value of [null,undefined,0,NaN,'0']){
+  const c={a:'mint',_entry:{eventAt:1,phase:'after'},ds:[[1,1,null,1,1,1,value]]};
+  assert.match(scope.coinHtml(c),/5м —/);assert.doesNotMatch(scope.coinHtml(c),/5м \$0/);
+  assert.match(scope.detail(c),/Объём 5 мин<\/span><strong[^>]*>—/);
+ }
+ assert.equal(scope.observedMoney(1234),'$1234');
+ assert.match(html,/Всего допущено · за всё время/);assert.doesNotMatch(html,/На витрине сейчас/);
+ assert.match(js,/fmt\(sourceMeta.total\)/);
+});
+
+
+test('compound owner publication preserves contract and SOL guards',()=>{
+ const body=fs.readFileSync(path.join(root,'v2.js'),'utf8'),from=body.indexOf('function preparedServerConfig('),to=body.indexOf('function ',from+12);
+ const cfg=require('../server/pass-filters.json'),context={s:{filters:cfg.filters,modules:cfg.modules,decision:15},moduleDraft:new Map(),note:()=>{},now:()=>2000000};
+ vm.createContext(context);vm.runInContext(body.slice(from,to)+';this.config=preparedServerConfig();',context);
+ assert.equal(context.config.filters[0].conditions.length,2);assert.equal(context.config.filters[0].conditions[1].key,'quoteSol');
+});
+

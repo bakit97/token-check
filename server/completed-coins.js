@@ -21,7 +21,7 @@ function researchPins({source,passes,one=[],two=[],now=Date.now()}={}){
 }
 function retirementDue(c,{now=Date.now(),pins=new Map()}={}){
  if(!Number.isFinite(c.t)||pins.get(c.a)>now)return false;
- const ok=c.mg?.st==='ok',at=ok?c.t:Math.max(c.t,c.proofEnqueuedAt||0);
+ const ok=c.mg?.st==='ok'||!!(c.preCurve&&Number.isFinite(c.preTradingAt)),at=ok?c.t:Math.max(c.t,c.proofEnqueuedAt||0);
  return now-at>(ok?26:2)*HOUR;
 }
 function cancelRetiredGT(queue,coins,{now=Date.now(),pins=new Map()}={}){

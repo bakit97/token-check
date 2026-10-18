@@ -28,11 +28,3 @@ test('failed fetch is still accounted, while a deferred request does not touch n
   await assert.rejects(ctx.call('getTransaction',['other'],{priority:0}),{code:'BUDGET_DEFERRED'});
   assert.equal(requests.length,0);
 });
-test('GCS multipart sender sets metadata in the same counted request',{skip:!!process.env.SOLSCAN_TEST_COLLECTOR},async()=>{
-  const calls=[],ctx={require,Buffer,JSON,AbortSignal,BUCKET:'fake',token:async()=>'<mock-token>',fetch:async(...a)=>{calls.push(a);return {ok:true}}};
-  vm.createContext(ctx);vm.runInContext(code.slice(code.indexOf('async function sendPublication('),code.indexOf('async function upload(name,obj)'))+'\nthis.send=sendPublication;',ctx);
-  await ctx.send('live.json',Buffer.from('compressed'),'application/json');
-  assert.equal(calls.length,1);assert.match(calls[0][0],/uploadType=multipart/);
-  assert.match(calls[0][1].body.toString(),/"cacheControl":"no-cache, max-age=0"/);
-  assert.match(calls[0][1].body.toString(),/"contentEncoding":"gzip"/);
-});

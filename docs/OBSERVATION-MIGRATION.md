@@ -5,7 +5,7 @@ coverage. Each absent sample remains absent. No old research outcome, label,
 auto-discovered rule or evaluation statistic is imported into the new research.
 `day/`, `obs/` and `raw/` must remain available until replacements are verified.
 
-Mirror deployed and verified: collector generation `1792268659649883`.
+Full schema-2 contracts are the canonical observation format; legacy snapshots were compared before cutover.
 Each coin lives at `observations-v2/YYYY-MM-DD.json -> coins[]`; the current
 and previous pools are separate entries in `observations.pools[]`.
 
@@ -27,9 +27,8 @@ Fixtures additionally verify holders, raw bytes, candles, prior pools and
 cutoff filtering. Existing historical gaps remain gaps.
 
 `source/day/*` and `source/live.json` retain admission identity. The mirror
-includes its admission record, but old research results are excluded. New
-research and UI consumers have NOT switched to this contract yet.
-`day/`, `obs/` and `raw/` remain active. Legacy day serialization truncates
+includes its admission record, but old research results are excluded. Server research and Passed read the full contract; the phone reads its lightweight projections.
+Legacy `day/`, `obs/` and root `live.json` writers are retired after the verified cutover. Legacy day serialization truncates
 DS/vault series to twenty minutes, so it cannot substitute for full obs files.
 
 Additional points that must survive migration:
@@ -84,6 +83,30 @@ samples per pool, metadata and original receipt times. Its explicit
 Server research and Passed read the canonical full observation contract one coin
 at a time, including cold lookup; old research labels are not transferred.
 
-Legacy writers and the phone cutover remain gated on a fresh comparison and
-successful deployment checks. Archive movement must preserve verified copies and
+The fresh pre-cutover comparison matched all 27,076 DS rows, 501 vault rows,
+282 raw receipt records, 45 holder records and 53 candle records across 2,261
+current-day coins, with no missing compared observations. Deployment checks
+remain mandatory for each subsequent step. Archive movement must preserve verified copies and
 resolve old raw references at their archived location before original deletion.
+
+
+The single collector no longer contains the classic research calculation or the
+old day/obs/live serializers. Canonical recovery reads `observations-v2` directly,
+preserves complete migration proof state and previous pools, and never imports
+old research labels. Completed-coin retirement waits for acknowledged full
+contract and phone-summary uploads; pending raw archives remain on disk until
+acknowledged. Admitted Pump pre coins retain 26 hours like admitted migrations;
+unadmitted candidates retain two hours, with active research protection.
+
+New raw archives use
+`observations-v2/raw/YYYY-MM-DD/MINT/POOL-MARKET_AT-state.json` (or `-trades.json`).
+The full pool identity prevents overwriting an earlier pool of the same mint.
+`archiveRefs` travel with previous-pool observations. Old logical `raw/` references
+can resolve under `archive/legacy/raw/` after verified archival copying.
+`archiveCandidates` provides that compatibility without changing receipt times.
+
+The live release source is `server/` alone. The build verifies a frozen hash
+manifest of exactly the collector's module inventory; it no longer reconstructs
+a different collector from an old commit and patches. Only changed module files
+are published, with the collector last and object-generation leases. An identical
+release does not cause another restart.

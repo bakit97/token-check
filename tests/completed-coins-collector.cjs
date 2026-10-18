@@ -6,7 +6,7 @@ function coin(a,age,ok=true){return {a,p:a+'pool',t:clock-age*H,mg:{st:ok?'ok':'
 function setup(t,coins,{failMirror=false,saveOk=true}={}){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'retire-collector-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const store=new CompletedCoins(dir),sent=new Map(),C=new Map(coins.map(c=>[c.a,c]));
  const ctx={C,COMPLETED:store,RETENTION:{removed:0},DIR:'mock',Date:{now:()=>clock},UPQ:[],RESEARCH_V2:null,RESEARCH_TWO:null,PASS_V2:null,OLD_RESEARCH_ONE:[],OLD_RESEARCH_TWO:[],SOURCE:{records:new Map(),get:()=>null},
-  dayKey:day,lastYest:0,lastObs:0,FV:2,OBS_CONTRACT:{days:{}},setImmediate,err:()=>{},rec:c=>({a:c.a,t:c.t,ds:c.ds,n:c.n}),observedEligible:c=>c.mg?.st==='ok',
+  dayKey:day,lastYest:0,lastObs:0,FV:2,OBS_CONTRACT:{days:{}},setImmediate,err:()=>{},coinMetadata:c=>({a:c.a,t:c.t,ds:c.ds,n:c.n}),observedEligible:c=>c.mg?.st==='ok',
   reloadSourceAgeConfig:async()=>{},reloadResearchConfig:async()=>{},flushUploads:async()=>{},exportSource:async()=>{},exportResearchV2:async()=>{},exportPathsV2:async()=>{},
   save:()=>{if(!saveOk)return false;fs.writeFileSync(path.join(dir,'state.json'),JSON.stringify([...C.values()]));return true},
   require:p=>p.endsWith('completed-coins.js')?require('../server/completed-coins'):p.endsWith('observation-contract.js')?contract:stream,

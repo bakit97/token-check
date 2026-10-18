@@ -1,1 +1,144 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="0;url=./v2.html"><meta name="theme-color" content="#0b0d14"><title>SOL·СКАН · новая версия</title><style>body{background:#0b0d14;color:#f0f1fa;font:16px system-ui;padding:24px}a{color:#baa3ff}main{max-width:560px;margin:20vh auto}p{line-height:1.6}</style><script>location.replace('./v2.html'+location.search+location.hash)</script></head><body><main><h1>SOL·СКАН v2</h1><p>Открывается обновлённая версия… <a href="./v2.html">Перейти</a></p><p><a href="./classic.html">Вернуться к предыдущей версии</a></p></main></body></html>
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0d14">
+<title>SOL·СКАН · v2</title>
+<link rel="stylesheet" href="./v2.css?v=20261017-2">
+</head>
+<body>
+<header><div class="app">
+<div class="bar"><div class="brand">SOL·СКАН <span class="badge">v2</span></div><span id="net" class="live">● Подключение…</span></div>
+<nav class="tabs" id="tabs" aria-label="Разделы">
+<button class="active" data-page="all">Все <span id="todayTab"></span></button>
+<button data-page="mine">Мои фильтры</button>
+<button data-page="passed">Прошли <span id="passedTab"></span></button>
+<button data-page="r1">Исследование 1</button>
+<button data-page="r2">Исследование 2</button>
+<button data-page="library">Библиотека</button>
+</nav></div></header>
+<main class="app">
+<div id="dataState" role="status">Загрузка данных настоящего сервера…</div>
+<section class="page" id="p-all">
+<h1>Все</h1><p class="muted">Главный источник. Монета входит один раз: либо до, либо после миграции. Ни один другой раздел не может добавить её сюда.</p>
+<div class="chips" id="allStreams"><button class="active" data-stream="all">Общие</button><button data-stream="before">🌱 До миграции</button><button data-stream="after">🎓 После миграции</button></div>
+<div class="card daily-source" aria-label="Суточные счётчики источника">
+<div class="row"><strong>Потоки за сутки</strong><span class="hint">Сброс в 00:00 UTC+5</span></div>
+<p id="dailyBefore">До миграции: нет данных</p>
+<p id="dailyAfter">После миграции: нет данных</p>
+<p class="hint" id="dailySourceNote">Счётчики рассчитывает сервер.</p>
+</div>
+<details class="card"><summary>⚙ Фильтры возраста и лента</summary>
+<div class="controls" style="margin-top:13px">
+<label class="control"><span>🌱 Возраст до миграции</span><select class="input" id="ageBefore"></select></label>
+<label class="control"><span>🎓 Возраст после миграции</span><select class="input" id="ageAfter"></select></label>
+<label class="control"><span>Последних карточек</span><select class="input" id="cardLimit"><option>10</option><option>20</option><option>30</option><option>50</option><option>100</option></select></label>
+</div><button class="primary" id="applySource" style="margin-top:12px">Применить</button>
+<p class="hint">Возраст проверяется при первом появлении монеты на публичной витрине. Обычная кнопка «Применить» меняет только число карточек. Новые возрастные границы требуют отдельного подтверждения владельца и применяются сервером только к будущим событиям.</p>
+<div class="controls" style="margin-top:10px">
+<label class="control"><span>Ключ владельца (не сохраняется)</span><input type="password" class="input" id="ageOwnerKey" autocomplete="off" spellcheck="false" placeholder="Только после подключения защищённого сервиса"></label>
+</div>
+<label class="hint" style="display:block;margin:10px 0"><input type="checkbox" id="confirmAgePublish"> Подтверждаю изменение серверных возрастов до/после миграции</label>
+<button type="button" id="publishSourceAge" class="primary" disabled>Изменить возраст на сервере</button>
+<p id="sourceAgeControlState" class="hint">Защищённый канал управления пока не включён.</p>
+</details>
+<div class="statgrid"><div class="stat"><span>Допущено за сегодня · доступная выгрузка</span><strong id="admitCount">—</strong></div><div class="stat"><span>Всего допущено · за всё время</span><strong id="visibleCount">—</strong></div></div>
+<div id="sourceNote" class="notice">Источник до миграции ещё подключается. Не показываем непроверенные данные.</div>
+<div id="coinList" class="list"><div class="empty-state">Получение новых событий…</div></div>
+</section>
+<section class="page" id="p-mine" hidden>
+<h1>Мои фильтры</h1><p class="muted">Два потока. В каждом отдельные кнопки «+» для модулей первого и второго уровня. Модули работают независимо.</p>
+<div class="card"><div class="row"><h2>Активно на сервере</h2><span class="badge" id="serverModuleCount">—</span></div><div id="serverModules" class="muted">Конфигурация серверных модулей ещё не опубликована.</div></div>
+<div class="grid2" id="moduleGrid"></div>
+<details class="card"><summary>👁 Предпросмотр локальных фильтров</summary>
+<p class="hint">Только кандидаты из главного источника, наблюдавшиеся пока страница открыта. Это не серверный журнал и не исторический результат.</p>
+<div id="localPreview" class="list"><p class="muted">Нужно включить модуль 1-го уровня.</p></div>
+</details>
+<div id="filterPicker" class="card" hidden><div class="row"><h2 id="pickerTitle">Добавить модуль</h2><button id="pickerClose">Закрыть</button></div><div id="pickerItems"></div></div>
+<div class="card"><div class="row"><span>Включено модулей</span><strong id="activeModules" class="accent">0</strong></div><p class="hint">Новые фильтры создавай и проверяй во вкладке «Библиотека», затем подключай здесь.</p></div>
+<details class="card"><summary>⚙ Подготовить фильтры для сервера</summary>
+<p class="hint">Локальные изменения не включают фоновую фильтрацию. Подготовь конфигурацию из текущих фильтров и модулей. Её нужно отдельно опубликовать на сервере через репозиторий. Публикация будет происходить после этапа разработки и проверок.</p>
+<button type="button" id="exportServerConfig" class="primary">Сохранить конфигурацию сервера</button>
+<p class="hint" id="controlState">Безопасный канал прямого управления ещё не включён. Пока можно сохранить файл конфигурации.</p>
+<label class="control" style="margin-top:9px"><span>Ключ владельца (не сохраняется)</span><input type="password" class="input" id="ownerControlKey" autocomplete="off" spellcheck="false" placeholder="Только после запуска защищённого сервиса"></label>
+<label class="hint" style="display:block;margin-top:10px"><input type="checkbox" id="confirmControlPublish"> Подтверждаю публикацию серверных правил и таймера</label>
+<button type="button" id="publishServerConfig" class="primary" style="margin-top:10px" disabled>Опубликовать на сервере</button>
+<p class="hint">В готовом файле нет ключей или паролей. Монеты, обнаруженные до активации новой версии на сервере, задним числом не добавляются.</p></details>
+</section>
+<section class="page" id="p-passed" hidden>
+<h1>Прошли</h1><p class="muted">Монеты из главного источника, прошедшие условия. Серверные сигналы фиксируются независимо от телефона; локальные правила — только черновики до синхронизации с сервером.</p>
+<details class="card" id="decisionSettings"><summary>⚙ Настроить таймер решения <span class="badge" id="decisionCurrent">10 мин</span></summary><div style="padding-top:14px"><div class="row"><label for="decisionMins">Время на решение</label><b id="decisionValue">10 минут</b></div><input type="range" min="1" max="30" step="1" id="decisionMins"><div class="row" style="margin-top:10px"><button type="button" class="primary" id="applyDecision">Применить</button><span class="muted">От 1 до 30 минут</span></div><p class="hint">Локальный таймер изменяется кнопкой «Применить». Для серверных сигналов значение фиксирует серверная конфигурация; точка 0 остаётся неизменной при последующем редактировании.</p></div></details>
+<div id="passedStats" class="muted"></div><div class="list" id="passedList"></div>
+<details class="card" id="passedArchive"><summary>История сигналов · <span id="passedArchiveCount">0</span></summary><p class="hint">В серверном режиме: журнал продолжается при закрытом телефоне. В предварительном режиме: история остаётся только в этом браузере. Все версии правил и исходное время решения сохраняются.</p><div id="passedArchiveList" class="list"></div>
+<div class="controls" style="margin-top:16px">
+<label class="control"><span>Посмотреть архив сервера за день (Казахстан)</span><select class="input" id="passedDay"></select></label>
+</div>
+<button class="primary" type="button" id="loadPassedDay" style="margin-top:9px">Показать выбранный день</button>
+<p class="hint" id="passedDayStatus">Архивный запрос выполняется только по кнопке, чтобы не расходовать мобильный интернет.</p>
+<div class="list" id="passedDayList"></div></details>
+</section>
+<section class="page" id="p-r1" hidden>
+<h1>Исследование 1-го уровня</h1><p class="muted">Из главного источника, через собственный путь. Живые и мёртвые определяются торговой активностью, а НЕ ростом цены.</p>
+<div class="card"><h2>Наблюдение и разметка</h2>
+<div class="row"><label for="r1Hours">Период от обнаружения</label><b id="r1HoursValue">5 часов</b></div><input id="r1Hours" type="range" min="1" max="24" step="1">
+<div class="row" style="margin-top:8px"><label for="r1Activity">Минимум времени с реальными сделками</label><b id="r1ActivityValue">70%</b></div><input id="r1Activity" type="range" min="0" max="100" step="5">
+<div class="row" style="margin-top:8px"><label for="r1Idle">Допустимый непрерывный простой</label><b id="r1IdleValue">60 минут</b></div><input id="r1Idle" type="range" min="5" max="120" step="5">
+<button class="primary" id="applyR1">Применить локально</button>
+<div class="controls" style="margin-top:12px"><label class="control"><span>Ключ владельца — исследование 1</span><input id="ownerResearchOneKey" type="password" class="input" autocomplete="off" spellcheck="false" placeholder="Не сохраняется"></label></div>
+<label class="hint" style="display:block;margin:10px 0"><input id="confirmResearchOne" type="checkbox"> Подтверждаю запуск новой серверной исследовательской версии</label>
+<button id="publishResearchOne" class="primary" type="button" disabled>Применить на сервере · уровень 1</button>
+<p id="researchOneControlState" class="hint">Изменённые правила создают новую группу наблюдений. Старые результаты не переписываются.</p>
+<p class="hint">Зелёная зона — подробные данные до конца решения; дальше достаточно цены, времени и реальных сделок. При плохом покрытии — «недостаточно данных».</p></div>
+<div class="statgrid"><div class="stat"><span>🟢 Живые, подтверждены данными</span><strong id="r1Live">—</strong></div><div class="stat"><span>🔴 Мёртвые, подтверждены данными</span><strong id="r1Dead">—</strong></div></div>
+<div class="card"><h2>Автоматическое исследование</h2><div class="muted" id="r1Auto">Нужно минимум 100 живых и 40 мёртвых в обучении; ещё 100 наблюдений позже для отдельной проверки.</div><div class="meter" style="margin-top:10px"><div id="r1Meter" style="width:0"></div></div><div id="r1Suggestions"></div></div>
+<div id="r1Rows" class="card"><div class="muted">Нет завершённых наблюдений.</div></div>
+</section>
+<section class="page" id="p-r2" hidden>
+<h1>Исследование 2-го уровня</h1><p class="muted">Источник: «Прошли». Одна общая кривая, точка 0 — окончание таймера решения, следующие 300 минут — только для оценки результата.</p>
+<div class="chips" id="r2Streams"><button class="active" data-stream="after">🎓 После</button><button data-stream="before">🌱 До</button></div>
+<div class="card"><div class="row"><h2>Фильтры второго уровня</h2><span class="badge">После «Прошли»</span></div><div id="r2Matched" class="muted">Ожидание размеченных монет серверного второго уровня.</div><p class="hint">Условия фиксируются при появлении монеты в «Прошли» и считаются по данным не позже точки 0. Они не добавляют новых монет в главный источник и не меняют старые сигналы.</p></div>
+<div class="card"><h2>Среднее изменение цены</h2><div id="r2Graph" class="graph"><div class="empty-state">Ожидание полной пятчасовой истории после точки 0</div></div>
+<div class="row" style="margin-top:12px"><span class="muted">Шаг таблицы</span><select id="r2Step" class="input" style="width:135px"><option value="5">5 минут</option><option value="1">1 минута</option><option value="10">10 минут</option><option value="15">15 минут</option><option value="30">30 минут</option><option value="60">60 минут</option></select></div>
+<div class="tablewrap"><table><thead><tr><th>Мин от 0</th><th>Средняя цена</th><th>Монет с данными</th></tr></thead><tbody id="r2Table"></tbody></table></div>
+<div class="row"><span class="muted" id="r2Paging"></span><div class="action-bar"><button id="r2Prev">←</button><button id="r2Next">→</button></div></div></div>
+<div class="card"><h2>Ручная классификация</h2><div class="row"><label for="r2Strong">Доля 300 минут выше цены в точке 0</label><b id="r2StrongValue">70%</b></div><input type="range" id="r2Strong" min="1" max="100" value="70">
+<button id="applyR2" class="primary">Применить локально</button>
+<div class="controls" style="margin-top:12px"><label class="control"><span>Ключ владельца — исследование 2</span><input id="ownerResearchTwoKey" type="password" class="input" autocomplete="off" spellcheck="false" placeholder="Не сохраняется"></label></div>
+<label class="hint" style="display:block;margin:10px 0"><input id="confirmResearchTwo" type="checkbox"> Подтверждаю запуск новой серверной исследовательской версии</label>
+<button id="publishResearchTwo" class="primary" type="button" disabled>Применить на сервере · уровень 2</button>
+<p id="researchTwoControlState" class="hint">Изменение порога не размечает заново старую историю.</p>
+<div id="r2Stats" class="muted" style="margin-top:10px"></div></div>
+<div class="card"><h2>Непрерывное автоисследование</h2><p class="muted" id="r2AutoText">Требуется 40 сильных + 40 слабых для обучения, затем отдельные 100 размеченных монет для более поздней проверки. Неполное наблюдение не считается слабой монетой.</p><div id="r2Suggestions"></div></div>
+</section>
+<section class="page" id="p-library" hidden>
+<h1>Библиотека фильтров</h1><p class="muted">Сохраняй правила, изменяй версии и проверяй каждый уровень на своём полигоне. Локальные редакции правил сохраняются в браузере; серверный журнал работает только с отдельно опубликованной серверной конфигурацией.</p>
+<div class="chips" id="levels"><button class="active" data-level="1">Первый уровень</button><button data-level="2">Второй уровень</button></div>
+<div class="card"><div class="row"><h2>🧪 Полигон <span id="polyTitle">Живые / мёртвые</span></h2><span class="badge">до 5 000 каждой</span></div>
+<div class="row"><label id="polyNameA" for="polyA">Живые</label><b id="polyAValue">2 000</b></div><input type="range" min="500" max="5000" value="2000" step="100" id="polyA">
+<div class="row"><label id="polyNameB" for="polyB">Мёртвые</label><b id="polyBValue">2 000</b></div><input type="range" min="500" max="5000" value="2000" step="100" id="polyB">
+<button class="primary" id="polyApply">Применить</button>
+<div id="polyProgress" style="margin-top:12px"></div>
+<button id="testAll" class="primary" style="width:100%;margin-top:12px">Проверить все фильтры</button>
+<div class="hint">Полигон 1 заполняется серверной классификацией активности, полигон 2 — серверной классификацией после «Прошли», когда эти журналы активны. Локальные черновики не меняют серверные сигналы.</div>
+<div id="testResults"></div></div>
+<div class="row" style="margin:20px 0 8px"><h2>Сохранённые фильтры</h2><button id="createFilter" class="primary">+ Создать</button></div>
+<div id="libraryList"></div>
+<details class="card" id="serverRuleHistory"><summary>Архив версий фильтров на сервере · <span id="serverRuleHistoryCount">0</span></summary>
+<p class="hint">Первый результат каждой версии не изменяется после редактирования фильтра. Фоновая статистика хранится отдельно; недостающие данные не считаются успешной проверкой.</p>
+<div id="serverRuleHistoryRows" class="list"><p class="muted">Пока нет сохранённых серверных версий.</p></div>
+</details>
+<form id="editor" class="card" hidden>
+<div class="row"><h2 id="editorTitle">Новый фильтр</h2><button type="button" id="closeEditor">Закрыть</button></div>
+<label class="control" style="margin-top:10px"><span>Название</span><input type="text" class="input" id="filterName" maxlength="64" required></label>
+<div class="controls" style="margin-top:11px"><label class="control"><span>Показатель</span><select id="filterKey" class="input"><option value="buyers10">Покупатели первых 10 мин</option><option value="quoteSol">Реальные SOL в пуле</option><option value="safeContract">Безопасные права контракта (1/0)</option><option value="buyers">Покупатели 5м</option><option value="trades">Сделки за 5 мин</option><option value="volume">Объём за 5 мин ($)</option><option value="liq">Ликвидность ($)</option><option value="mc">Капитализация ($)</option><option value="buys">Покупки за 5 мин</option><option value="sells">Продажи за 5 мин</option><option value="buySellRatio">Покупки / продажи</option></select></label>
+<label class="control"><span>Условие</span><select class="input" id="filterOp"><option value=">=">Не меньше ≥</option><option value="<=">Не больше ≤</option></select></label></div>
+<label class="control" style="margin-top:11px"><span>Значение</span><input class="input" type="number" min="0" max="1000000000000" step="any" id="filterValue" value="20" required></label>
+<div class="action-bar"><button class="primary" type="submit">Сохранить</button><button id="deleteFilter" type="button" class="dangerbtn">Удалить</button></div><p class="hint" id="editorNote">Для изменённых условий результаты прошлой версии не переписываются.</p></form>
+</section>
+<p id="toast" role="status" aria-live="polite"></p>
+<footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — разделены серверные записи и локальные черновики; неполные наблюдения не выдаются за результат.</footer>
+</main>
+<script src="./server/observation-contract.js?v=20261018-contract-1" defer></script>
+<script src="./v2.js?v=20261018-contract-1" defer></script>
+</body></html>

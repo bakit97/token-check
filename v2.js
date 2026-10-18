@@ -80,6 +80,7 @@ function dataMetrics(c,cutoff){
     buys,sells,buySellRatio:ratio};
 }
 function ruleStatus(features,f){
+  if(f.conditions){const r=f.conditions.map(function(c){return ruleStatus(features,c)});if(r.includes('reject'))return 'reject';if(r.includes('unknown'))return 'unknown';}
   const v=features?.[f.key];
   if(typeof v!=='number'||!Number.isFinite(v))return 'unknown';
   return f.op==='>='?(v>=f.value?'pass':'reject'):(v<=f.value?'pass':'reject');
@@ -261,10 +262,11 @@ function spark(c){
   var up=points.at(-1)>=points[0];
   return '<svg viewBox="0 0 62 28" class="spark" role="img" aria-label="График цены"><path d="'+d+'" fill="none" stroke="'+(up?'#38d996':'#fc6b83')+'" stroke-width="2.3" stroke-linecap="round"/></svg>';
 }
+function observedMoney(value){return typeof value==='number'&&Number.isFinite(value)&&value>0?'$'+fmt(value):'—'}
 function coinHtml(c,extra){
   var e=c._entry,p=(c.ds||[]).at(-1),img=safeImg(c.i);
   var age=ageM(e.eventAt),name=esc(c.n||c.s||'Токен'),symbol=esc(c.s||'');
-  var metric=p?'L $'+fmt(p[2]||0)+' · 5м $'+fmt(p[6]||0):'Нет последних снимков';
+  var metric=p?'L '+observedMoney(p[2])+' · 5м '+observedMoney(p[6]):'Нет последних снимков';
   return '<button type="button" class="coin" data-coin="'+esc(mint(c))+'">'+
     (img?'<img class="avatar" src="'+esc(img)+'" alt="" loading="lazy">':'<span class="avatar empty">'+esc((c.s||'?').slice(0,2))+'</span>')+
     '<span class="body"><span class="name">'+name+' <small>'+symbol+'</small></span><span class="detail">'+age+' · '+(e.phase==='before'?'🌱 до':'🎓 после')+'</span><span class="detail">'+metric+'</span>'+
@@ -277,7 +279,7 @@ function detail(c){
     '<div class="statgrid"><div class="stat"><span>Начало потока</span><strong style="font-size:15px">'+time(e.eventAt)+'</strong></div>'+
     '<div class="stat"><span>Первое подтверждение</span><strong style="font-size:15px">'+time(e.acceptedAt)+'</strong></div>'+
     '<div class="stat"><span>Цена последняя</span><strong style="font-size:15px">'+price(p[1])+'</strong></div>'+
-    '<div class="stat"><span>Объём 5 мин</span><strong style="font-size:15px">$'+fmt(p[6]||0)+'</strong></div></div>'+
+    '<div class="stat"><span>Объём 5 мин</span><strong style="font-size:15px">'+observedMoney(p[6])+'</strong></div></div>'+
     '<p class="hint">Источники проверки: '+esc(c.mk||c.d||'нет данных')+'. Допуск подтверждается главным серверным журналом. Недостающие торговые данные отображаются как неизвестные.</p></div>';
 }
 function showCoinDetail(c,anchorId){
@@ -293,7 +295,7 @@ function renderAll(){
   renderDailySource();
   var count=sourceActive?sourceMeta.today:0;
   $('admitCount').textContent=sourceActive?fmt(count):'—';
-  $('visibleCount').textContent=sourceActive?fmt(lastVisible.length):'—';
+  $('visibleCount').textContent=sourceActive&&Number.isSafeInteger(sourceMeta?.total)?fmt(sourceMeta.total):'—';
   $('todayTab').textContent=count?' '+fmt(count):'';
   $('sourceNote').textContent=sourceActive?
     (sourceMeta?.preConnected?'✓ Главный источник: журнал сервера. До миграции — публичные торговые кривые Pump.fun; после — подтверждённые миграции. Дублей нет.':'⚠ Источник до миграции пока не подтвердил связь с сетью. Постмиграционные события продолжают проверяться.')+' Возраст проверяется при ВХОДЕ, карточка не исчезает через 2 минуты.':
@@ -350,6 +352,11 @@ function renderLocalPreview(){
     }).join(''):
     '<p class="muted">Сейчас нет совпадений. Старые монеты не пересчитываются задним числом.</p>';
 }
+function ruleLabel(f){
+  const labels={buyers:'Покупатели 5м',buyers10:'Покупатели за первые 10 мин',safeContract:'Контракт без опасных прав',quoteSol:'Реальные SOL в пуле',trades:'Сделки 5м',volume:'Объём $',liq:'Ликвидность $',mc:'Капитализация $',buys:'Покупки 5м',sells:'Продажи 5м',buySellRatio:'Покупки/продажи'};
+  const one=function(r){return (labels[r.key]||r.key)+' '+r.op+' '+fmt(r.value)};
+  return [one(f)].concat((f.conditions||[]).map(one)).join(' · и ');
+}
 function renderServerModules(){
   const meta=serverPassActive&&passMeta||null;
   const cfg=meta&&meta.serverConfig;
@@ -371,8 +378,7 @@ function renderServerModules(){
     const f=filters.get(m.filterId);
     return '<div class="filter-row"><b>'+esc(m.phase==='before'?'🌱 До':'🎓 После')+
       ' · '+esc(m.level)+'-й уровень · '+esc(f.name)+'</b>'+
-      '<p class="muted">v'+esc(f.version)+' · '+esc(f.key)+' '+
-      esc(f.op)+' '+fmt(f.value)+'</p></div>';
+      '<p class="muted">v'+esc(f.version)+' · '+esc(ruleLabel(f))+'</p></div>';
   }).join(''):'<p class="muted">Серверная версия включена, но активных модулей нет.</p>';
 }
 function renderModules(){
@@ -644,7 +650,7 @@ function renderLibrary(){
         ' · пропуски '+fmt(p.background?.missing||0)+'</p>';
     }).join('');
     return '<div class="filter-row"><div class="row"><b>№'+esc(x.id)+' · '+esc(x.name)+'</b><button type="button" class="pbtn" data-edit="'+esc(x.id)+'">Открыть</button></div>'+
-      '<p class="muted">'+esc(({buyers:'Покупатели',trades:'Сделки',volume:'Объём $',liq:'Ликвидность $',mc:'Капитализация $',buys:'Покупки 5м',sells:'Продажи 5м',buySellRatio:'Покупки/продажи'})[x.key])+' '+esc(x.op)+' '+fmt(x.value)+' · версия '+fmt(x.version)+'</p>'+
+      '<p class="muted">'+esc(ruleLabel(x))+' · версия '+fmt(x.version)+'</p>'+
       (audits?'<p class="hint">Серверная история сравнения по версиям:</p>'+audits:
       '<div class="numbers"><span class="badge">На телефоне: '+orig+'</span>'+
       '<span class="badge">Серверная фоновая проверка: ожидает настройки</span></div>')+'</div>';
@@ -681,13 +687,13 @@ function openEditor(id){
   $('filterKey').value=f?f.key:'buyers';$('filterOp').value=f?f.op:'>=';
   $('filterValue').value=f?f.value:20;
   $('deleteFilter').hidden=!f;
-  $('editorNote').textContent='Сохраняется только в этом браузере. Изменение условия создаёт новую версию.';
+  $('editorNote').textContent='Изменение условия создаёт новую версию. '+(f?.conditions?.length?'Дополнительные условия сохраняются: '+f.conditions.map(ruleLabel).join(' · '):'');
   $('editor').scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 function saveEditor(e){
   e.preventDefault();
   var name=$('filterName').value.trim(),key=$('filterKey').value,op=$('filterOp').value,value=Number($('filterValue').value);
-  if(!name||!['buyers','trades','volume','liq','mc','buys','sells','buySellRatio'].includes(key)||!['>=','<='].includes(op)||!Number.isFinite(value)||value<0||value>1e12){note('Проверь название и значение');return}
+  if(!name||!['buyers','trades','volume','liq','mc','buys','sells','buySellRatio','buyers10','safeContract','quoteSol'].includes(key)||!['>=','<='].includes(op)||!Number.isFinite(value)||value<0||value>1e12){note('Проверь название и значение');return}
   var same=s.filters.find(function(f){return f.id!==editorId&&f.level===s.level&&f.key===key&&f.op===op&&f.value===value});
   if(same){note('Такие же правила уже есть: №'+same.id);return}
   if(editorId){
@@ -723,7 +729,7 @@ function preparedServerConfig(){
   }
   const filters=s.filters.map(function(f){
     return {id:String(f.id),name:String(f.name),level:String(f.level),
-      key:f.key,op:f.op,value:Number(f.value),version:Number(f.version)};
+      key:f.key,op:f.op,value:Number(f.value),version:Number(f.version),...(f.conditions?{conditions:f.conditions.map(function(c){return {key:c.key,op:c.op,value:c.value}})}:{})};
   });
   const ids=new Set(filters.map(function(f){return f.id}));
   const modules=s.modules.filter(function(m){return ids.has(m.filterId)})
@@ -1070,17 +1076,24 @@ function bind(){
   $('deleteFilter').addEventListener('click',removeEditor);
   $('editor').addEventListener('submit',saveEditor);
 }
+const jsonCache=new Map();
 async function getJSON(path){
+  const ttl=path.startsWith('observations-v2/summary/day/')?(path.includes(day(now()))?120000:600000):path.startsWith('source/day/')?300000:0,cached=jsonCache.get(path);
+  if(ttl&&cached&&now()-cached.at<ttl)return cached.data;
   var ctl=new AbortController(),timer=setTimeout(function(){ctl.abort()},20000);
   try{var r=await fetch(BASE+path+'?v='+now(),{signal:ctl.signal,cache:'no-store'});
     if(r.status===404||r.status===403)return null;
     if(!r.ok)throw new Error(path+' HTTP '+r.status);
-    return await r.json();
+    const data=await r.json();if(ttl&&data){jsonCache.set(path,{at:now(),data});while(jsonCache.size>12)jsonCache.delete(jsonCache.keys().next().value);}return data;
   }finally{clearTimeout(timer)}
+}
+function observationCoins(file){
+  if(!file)return [];if(file.schema!==2||!Array.isArray(file.coins))throw Error('Неверный формат наблюдений сервера');
+  return file.coins.map(function(row){return SolObservations.toLegacy(row)});
 }
 async function loadInternal(){
   var today=day(now()),yesterday=day(now()-864e5);
-  var names=['status.json','day/'+today+'.json','day/'+yesterday+'.json','obs/'+today+'.json','obs/'+yesterday+'.json','live.json',
+  var names=['status.json','observations-v2/summary/day/'+today+'.json','observations-v2/summary/day/'+yesterday+'.json',null,null,'observations-v2/summary/live.json',
     'source/status.json','source/day/'+today+'.json','source/day/'+yesterday+'.json','source/live.json',
     'research-v2/status.json','research-v2/polygon-1.json',
     'passed-v2/status.json','passed-v2/live.json',
@@ -1089,6 +1102,7 @@ async function loadInternal(){
     'research-v2/auto-1.json','research-v2/auto-2.json','control/endpoint.json',
     'research-v2/curve-two.json','research-v2/filter-audit.json'];
   var fetched=await Promise.allSettled(names.map(function(name,i){
+    if(!name)return Promise.resolve(null);
     if(i===11&&lastResearchBankRead&&now()-lastResearchBankRead<300000)return Promise.resolve(null);
     if(i===17&&lastSecondBankRead&&now()-lastSecondBankRead<300000)return Promise.resolve(null);
     return getJSON(name);
@@ -1161,6 +1175,7 @@ async function loadInternal(){
     ['server-observational','disabled-no-server-rules'].includes(vals[12].status)&&
     vals[12].serverOnly===true?vals[12]:null;
   serverPassActive=!!passMeta;
+  if(passMeta?.serverConfig?.enabled&&!s.filters.length){s.filters=clone(passMeta.serverConfig.filters||[]);s.modules=clone(passMeta.serverConfig.modules||[]);s.decision=passMeta.serverConfig.decisionMinutes;save();}
   if(serverPassActive){
     const verified=new Map();
     for(const source of [vals[15],vals[14],vals[13]]){
@@ -1239,16 +1254,10 @@ async function loadInternal(){
   }
   if(!sourceActive){serverPassActive=false;serverPassRows=[];}
   var by=new Map();
-  for(var dayObj of [vals[2],vals[1]])for(var c of dayObj&&dayObj.coins||[]){
+  for(var dayObj of [vals[2],vals[1]])for(var c of observationCoins(dayObj)){
     if(mint(c))by.set(mint(c),Object.assign({},by.get(mint(c))||{},c));
   }
-  for(var o of [vals[4],vals[3]])for(var d of o&&o.coins||[]){
-    var existing=by.get(mint(d));if(!existing)continue;
-    if(Array.isArray(d.ds)&&d.ds.length>=(existing.ds||[]).length)existing.ds=d.ds;
-    if(d.path)existing.path=d.path;
-    if(d.lq)existing.lq=d.lq;
-  }
-  for(var c2 of vals[5]&&vals[5].coins||[]){
+  for(var c2 of observationCoins(vals[5])){
     var prior=by.get(mint(c2));by.set(mint(c2),Object.assign({},prior||{},c2));
   }
   dataset=[...by.values()];

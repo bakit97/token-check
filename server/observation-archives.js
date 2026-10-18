@@ -5,7 +5,8 @@ const day=at=>new Date(at+5*3600000).toISOString().slice(0,10);
 const fetches=f=>(f||[]).map(x=>({at:x[0],count:x[1],marketMinAt:x[2]==null?null:x[2]*1000,marketMaxAt:x[3]==null?null:x[3]*1000}));
 function validateArchive(row,pool,kind,name,body){
  const suffix=kind==='rawStates'?'state':'trades';
- if(!Number.isFinite(pool.marketAt)||name!==`raw/${day(pool.marketAt)}/${row.a}-${suffix}.json`||!body||body.a!==row.a||body.p!==pool.address||body.t!==pool.marketAt)return {status:'identity-mismatch'};
+ const legacy=`raw/${day(pool.marketAt)}/${row.a}-${suffix}.json`,current=`observations-v2/raw/${day(pool.marketAt)}/${row.a}/${pool.address}-${pool.marketAt}-${suffix}.json`;
+ if(!Number.isFinite(pool.marketAt)||![legacy,'archive/legacy/'+legacy,current].includes(name)||!body||body.a!==row.a||body.p!==pool.address||body.t!==pool.marketAt)return {status:'identity-mismatch'};
  if(kind==='rawStates'){
   if(!body.raw||typeof body.raw!=='object'||Array.isArray(body.raw))return {status:'invalid-payload'};
   let bytes=0;
@@ -41,4 +42,5 @@ async function hydrateArchives(row,load){
  }
  return {row:{...row,observations:{...row.observations,pools}},checks,okay:checks.every(c=>c.status==='verified')};
 }
-module.exports={validateArchive,hydrateArchives};
+function archiveCandidates(name){return name.startsWith('raw/')?[name,'archive/legacy/'+name]:[name];}
+module.exports={validateArchive,hydrateArchives,archiveCandidates};

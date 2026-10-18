@@ -22,3 +22,12 @@ test('an interrupted seed never permits publishing a partial day as complete',as
  const dir=fixture(t),store=new CompletedCoins(dir),d=path.join(dir,'day.json');fs.writeFileSync(d,'{"coins":[{"a":"m","t":100000000},');
  await assert.rejects(seedDay({store,day,hot:new Map(),download:async p=>p==='day'?d:null,archive:async()=>null}),/Incomplete/);assert.equal(store.seeded.has(day),false);assert.equal(store.index.size,0);
 });
+
+
+test('canonical recovery seeds cold history and original proof without reading day, obs or raw',async t=>{
+ const dir=fixture(t),store=new CompletedCoins(dir),file=path.join(dir,'canonical.json'),c={a:'new',p:'pool',t:at,mg:{st:'ok',v:3,owner:'program',sig:'proof',mT:at},ds:[[1,2]],archiveRefs:{rawStates:'archive/legacy/raw/day/new-state.json'}};
+ fs.writeFileSync(file,JSON.stringify({schema:2,coins:[project(c,{metadata:c})]}));let requested=[];
+ const {seedObservationDay}=require('./seed-completed');await seedObservationDay({store,day,hot:new Map(),download:async prefix=>{requested.push(prefix);return file}});
+ const r=store.readCoin('new');assert.deepEqual(requested,['observations-v2']);assert.deepEqual(r.mg,c.mg);assert.deepEqual(r.ds,c.ds);assert.equal(r.archiveRefs.rawStates,c.archiveRefs.rawStates);
+ assert.equal(new CompletedCoins(dir).seeded.has(day),true);
+});

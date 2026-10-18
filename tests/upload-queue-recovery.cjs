@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
 const src=fs.readFileSync(path.join(__dirname,'../server/collector.js'),'utf8');
-const body=src.slice(src.indexOf('async function flushUploads()'),src.indexOf('function rec(c,full)'));
+const body=src.slice(src.indexOf('async function flushUploads()'),src.indexOf('function coinMetadata(c)'));
 function setup(upload){const q=Array.from({length:12},(_,i)=>['raw/'+i,{i}]),errors=[];
   const ctx={UPQ:q,upload,err:e=>errors.push(e),Date};vm.createContext(ctx);vm.runInContext(body+';this.flush=flushUploads;',ctx);return {ctx,q,errors};}
 test('raw backlog yields after four sends and retains every unsent observation',async()=>{

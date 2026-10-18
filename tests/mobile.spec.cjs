@@ -29,7 +29,8 @@ test('Six panels, age admission, safe settings and local filter management work 
     else if(pathname.endsWith('/research-v2/status.json'))response=research;
     else if(pathname.endsWith('/research-v2/polygon-1.json'))response={counts:research.counts,coins:[]};
     else if(pathname.endsWith('/status.json'))response={updated:now};
-    else if(pathname.includes('/obs/'))response={coins:[]};
+    else if(pathname.includes('/observations-v2/'))response={schema:2,coins:[require('../server/observation-contract').projectSummary(c,{metadata:c})]};
+    else if(pathname.includes('/obs/'))throw Error('Legacy observation request');
     else if(pathname.includes('/day/')||pathname.endsWith('/live.json'))response={coins:[c]};
     return route.fulfill({status:200,contentType:'application/json',
       headers:{'access-control-allow-origin':'*'},body:JSON.stringify(response)});

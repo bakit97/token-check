@@ -49,4 +49,22 @@ async function seedDay({store,day,hot,download,archive}){
  },true));
  store.markSeeded(day,stats);for(const file of [dayFile,obsFile])if(file)fs.unlinkSync(file);return stats;
 }
-module.exports={seedDay,legacyCoin,unionRows};
+// Canonical recovery never depends on the retired day/obs formats.
+async function seedObservationDay({store,day,hot,download}){
+ if(store.seeded.has(day)||store.sealed.has(day))return;
+ const file=await download('observations-v2',day),stats={contractRows:0,coldRows:0,hotRowsRecovered:0,archiveReferences:0};
+ const {toLegacy}=require('./observation-contract');
+ function preserve(current,old){
+  for(const key of ['ds','lq','gx']){const rows=current[key]||[],merged=unionRows(rows,old[key]);stats.hotRowsRecovered+=merged.length-rows.length;current[key]=merged;}
+  for(const key of ['ct','bx','k10','path','vmint','vdec','vaults','vaultIdentityAt','archiveRefs'])if(current[key]==null&&old[key]!=null)current[key]=old[key];
+  for(const key of ['hold','raw']){current[key]=current[key]||{};for(const [minute,value] of Object.entries(old[key]||{})){const existing=current[key][minute];if(!existing)current[key][minute]=value;else if(existing.at===value.at&&existing.slot===value.slot)current[key][minute]={...value,...existing};}}
+  current.origs=current.origs||[];for(const prior of old.origs||[]){const found=current.origs.find(o=>o.p===prior.p&&o.t===prior.t);if(found)preserve(found,prior);else current.origs.push(prior);}
+ }
+ async function* rows(){let count=0;for(const row of readRows(file,null,{field:'coins'})){
+  stats.contractRows++;const c=toLegacy(row),current=hot.get(c.a);for(const p of row.observations.pools)for(const kind of ['rawStates','trades'])if(p.archives?.[kind])stats.archiveReferences++;
+  if(current&&current.p===c.p&&current.t===c.t)preserve(current,c);else{stats.coldRows++;yield c;}
+  if(++count%32===0)await new Promise(r=>setImmediate(r));
+ }}
+ if(file){await store.stage(rows());fs.unlinkSync(file);}store.markSeeded(day,stats);return stats;
+}
+module.exports={seedDay,seedObservationDay,legacyCoin,unionRows};

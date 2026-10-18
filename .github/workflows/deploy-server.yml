@@ -2,7 +2,7 @@ name: deploy-server
 on:
   push:
     branches: [main]
-    paths: ['server/collector.js', 'lab-core.js', 'server/source-runtime.js', 'server/admission.js', 'server/pump-pre.js', 'server/pre-watcher.js', 'server/research-v2.js', 'server/research-runtime.js', 'server/research-config.js', 'server/pass-runtime.js', 'server/research-two-runtime.js', 'server/auto-research-v2.js', 'server/filter-audit.js', 'server/resource-budget.js']
+    paths: ['server/**', 'deployment/**', '.github/workflows/deploy-server.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,68 +10,26 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: check syntax
-        run: node --check server/resource-budget.js && node --test server/resource-budget.test.js tests/resource-collector-smoke.cjs && node --check server/collector.js && node --check lab-core.js && node --check server/source-runtime.js && node --check server/admission.js && node --check server/pump-pre.js && node --check server/pre-watcher.js && node --check server/research-v2.js && node --check server/research-runtime.js && node --check server/research-config.js && node --check server/pass-runtime.js && node --check server/research-two-runtime.js && node --check server/auto-research-v2.js && node --check server/filter-audit.js && node --test server/admission.test.js server/source-runtime.test.js server/pump-pre.test.js server/pre-watcher.test.js server/research-v2.test.js server/research-runtime.test.js server/v2-paths.test.js tests/research-collector-smoke.cjs
+      - name: Verify canonical source, contracts and publication plan
+        run: |
+          for file in server/*.js; do node --check "$file"; done
+          python3 deployment/build-recovery.py
+          python3 deployment/test-publish-runtime.py
+          node --test server/*.test.js tests/resource-collector-smoke.cjs tests/research-collector-smoke.cjs tests/completed-coins-collector.cjs tests/observation-contract-collector.cjs
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: projects/421351476653/locations/global/workloadIdentityPools/github/providers/github
           service_account: helper-ai@sol-scan-511718.iam.gserviceaccount.com
       - uses: google-github-actions/setup-gcloud@v2
-      - name: upload
+      - name: Publish changed modules before collector
+        run: python3 deployment/publish-runtime.py --bucket sol-scan-511718-data --result runtime-result.json
+      - name: Verify deployed health and resource limits
         run: |
-          gcloud storage cp server/admission.js gs://sol-scan-511718-data/code/admission.js
-          gcloud storage cp server/source-runtime.js gs://sol-scan-511718-data/code/source-runtime.js
-          gcloud storage cp server/pump-pre.js gs://sol-scan-511718-data/code/pump-pre.js
-          gcloud storage cp server/pre-watcher.js gs://sol-scan-511718-data/code/pre-watcher.js
-          gcloud storage cp server/research-v2.js gs://sol-scan-511718-data/code/research-v2.js
-          gcloud storage cp server/research-runtime.js gs://sol-scan-511718-data/code/research-runtime.js
-          gcloud storage cp server/research-config.js gs://sol-scan-511718-data/code/research-config.js
-          gcloud storage cp server/pass-runtime.js gs://sol-scan-511718-data/code/pass-runtime.js
-          gcloud storage cp server/research-two-runtime.js gs://sol-scan-511718-data/code/research-two-runtime.js
-          gcloud storage cp server/auto-research-v2.js gs://sol-scan-511718-data/code/auto-research-v2.js
-          gcloud storage cp server/resource-budget.js gs://sol-scan-511718-data/code/resource-budget.js
-          gcloud storage cp server/filter-audit.js gs://sol-scan-511718-data/code/filter-audit.js
-          # Never overwrite an owner-published configuration during code deployment.
-          gcloud storage cp -n server/pass-filters.json gs://sol-scan-511718-data/config/pass-filters.json
-          gcloud storage cp -n server/source-age.json gs://sol-scan-511718-data/config/source-age.json
-          gcloud storage cp -n server/research-one.json gs://sol-scan-511718-data/config/research-one.json
-          gcloud storage cp -n server/research-two.json gs://sol-scan-511718-data/config/research-two.json
-          gcloud storage cp lab-core.js gs://sol-scan-511718-data/code/lab-core.js
-          gcloud storage cp server/collector.js gs://sol-scan-511718-data/code/collector.js
-      - name: verify running collector
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Collector itself restarts after noticing a changed GCS object generation.
-          expect=$(gcloud storage objects describe gs://sol-scan-511718-data/code/collector.js --format="value(generation)")
-          echo "Expect running version: $expect"
-          for n in {1..10}; do
-            sleep 30
-            url="https://storage.googleapis.com/sol-scan-511718-data/status.json?verify=$(date +%s%N)"
-            data=$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' "$url" || true)
-            if [[ -n "$data" ]] && jq -e --arg v "$expect" --argjson now "$(date +%s%3N)" \
-              '.version == $v and (.updated | type == "number" and . > $now - 180000) and (.startedAt | type == "number" and . > $now - 900000)' <<< "$data" >/dev/null; then
-              echo "Collector is running expected version with a fresh heartbeat."
-              src=$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' "https://storage.googleapis.com/sol-scan-511718-data/source/status.json?verify=$(date +%s%N)" || true)
-              if [[ -n "$src" ]] && jq -e --argjson now "$(date +%s%3N)" \
-                '(.mode == "verified-pre-post") and (.preConnected == true) and (.updated | type == "number" and . > $now - 180000) and (.settings.beforeMinutes >= 1) and (.settings.afterMinutes >= 1)' <<< "$src" >/dev/null; then
-                echo "Authoritative source feed is fresh and running."
-                research=$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' "https://storage.googleapis.com/sol-scan-511718-data/research-v2/status.json?verify=$(date +%s%N)" || true)
-                if [[ -n "$research" ]] && jq -e --argjson now "$(date +%s%3N)" \
-                  '(.status == "observational") and (.updated | type == "number" and . > $now - 180000) and (.settings.hours >= 1) and (.settings.hours <= 24) and (.bankCapacityPerClass == 5000)' <<< "$research" >/dev/null; then
-                  echo "Research v2 observational engine is fresh and active."
-                  exit 0
-                fi
-                echo "Source fresh, research v2 not yet ready."
-              fi
-              echo "Collector heartbeat valid, source feed not ready yet."
-            fi
-            echo "Still waiting for fresh collector heartbeat: attempt $n/10"
-          done
-          echo "::error::Collector did not confirm a fresh heartbeat for the deployed version."
-          exit 1
+          generation=$(python3 -c "import json; print(json.load(open('runtime-result.json'))['collectorGeneration'])")
+          python3 deployment/check-runtime-health.py --bucket sol-scan-511718-data --generation "$generation" --tries 16

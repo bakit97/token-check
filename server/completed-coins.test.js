@@ -43,3 +43,9 @@ test('completed GT work is cancelled explicitly while fresh/research cohorts and
  assert.equal(cancelRetiredGT(queue,new Map([['old',expired],['research',pinned],['fresh',fresh]]),{now,pins:new Map([['research',now+H]])}),2);
  assert.deepEqual(queue.map(x=>x.key),['p5:researchpool','tr:freshpool','new']);assert.ok(errors.every(e=>e.code==='OBSERVATION_COMPLETE'));
 });
+
+
+test('admitted Pump pre observations retain the full 26-hour window instead of the unadmitted two-hour window',()=>{
+ const now=Date.now(),c={a:'pre',t:now-6*3600000,preCurve:1,preTradingAt:now-6*3600000,mg:{st:'curve'}};
+ assert.equal(retirementDue(c,{now}),false);assert.equal(retirementDue({...c,t:now-27*3600000},{now}),true);
+});

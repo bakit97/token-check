@@ -8,7 +8,7 @@ test('pool migration retains raw account data and fetched trades with their orig
 });
 test('new contract export uses lazy rows and preserves DS, vault, raw counts for validation',async()=>{
  let sent;const coin={a:'mint',p:'pool',t:1000000,d:'pumpswap',ds:[[1001,2]],lq:[[1002,1,1,2]],raw:{1:{at:1003000,b:['state']}}};
- const ctx={DIR:'mock',SOURCE:{get:()=>({phase:'after',acceptedAt:1001000})},rec:c=>({a:c.a,n:'coin'}),require:p=>p.endsWith('observation-contract.js')?require('../server/observation-contract'):require('../server/stream-json'),upload:async(name,obj)=>{sent={name,...obj,coins:[...obj.coins]}}};
+ const ctx={DIR:'mock',SOURCE:{get:()=>({phase:'after',acceptedAt:1001000})},coinMetadata:c=>({a:c.a,n:'coin'}),require:p=>p.endsWith('observation-contract.js')?require('../server/observation-contract'):require('../server/stream-json'),upload:async(name,obj)=>{sent={name,...obj,coins:[...obj.coins]}}};
  vm.createContext(ctx);vm.runInContext(code.slice(code.indexOf('async function exportObservationContract('),code.indexOf('async function exportDays(){'))+'\nthis.send=exportObservationContract;',ctx);
  const result=await ctx.send('observations-v2/day.json',[coin],1100000);assert.equal(result.dsRows,1);assert.equal(result.vaultRows,1);assert.equal(result.rawStates,1);assert.equal(sent.coins[0].observations.pools[0].ds[0].at,1001000);assert.equal(sent.coins[0].observations.pools[0].rawStates[1].b[0],'state');assert.equal(sent.schema,2);
 });
