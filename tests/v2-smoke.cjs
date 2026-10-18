@@ -377,3 +377,13 @@ test('compound owner publication preserves contract and SOL guards',()=>{
  assert.equal(context.config.filters[0].conditions.length,2);assert.equal(context.config.filters[0].conditions[1].key,'quoteSol');
 });
 
+
+test('fresh canonical summaries expose exact Source admissions before slower source/day publication',()=>{
+ const at=2000000,mint='Mint'.padEnd(44,'a'),context={};vm.createContext(context);vm.runInContext(js.slice(js.indexOf('function canonicalAdmissions('),js.indexOf('async function loadInternal('))+';this.read=canonicalAdmissions;',context);
+ const admission={v:1,mint,phase:'before',eventAt:at-15000,acceptedAt:at-10000,proof:{signature:'signed-create',family:'pump'}},row=require('../server/observation-contract').projectSummary({a:mint,p:'curve',t:admission.eventAt},{metadata:{n:'New'},admission}),file={schema:2,updated:at-1000,coins:[row]};
+ assert.equal(context.read([file],at)[0].acceptedAt,admission.acceptedAt);assert.equal(context.read([file],at)[0].proofSig,'signed-create');
+ assert.equal(context.read([{...file,updated:at-8*60000}],at).length,0);
+ for(const change of [a=>delete a.proof,a=>a.mint='Other'.padEnd(44,'b'),a=>a.acceptedAt=at+1000,a=>a.eventAt=at+1000]){const copy=JSON.parse(JSON.stringify(file));change(copy.coins[0].observations.admission);assert.equal(context.read([copy],at).length,0);}
+ const raw=require('../server/observation-contract').projectSummary({a:mint,p:'pool',t:at-15000});assert.equal(context.read([{schema:2,updated:at,coins:[raw]}],at).length,0,'third-party candidates without Source records never become admissions');
+ assert.match(js,/if\(vals\[6\][\s\S]*canonicalAdmissions\(\[vals\[1\],vals\[2\],vals\[5\]\]/,'fresh Source heartbeat remains mandatory');
+});

@@ -1092,6 +1092,16 @@ function observationCoins(file){
   if(!file)return [];if(file.schema!==2||!Array.isArray(file.coins))throw Error('Неверный формат наблюдений сервера');
   return file.coins.map(function(row){return SolObservations.toLegacy(row)});
 }
+function canonicalAdmissions(files,at){
+  const rows=[];
+  for(const file of files){if(file?.schema!==2||!Number.isFinite(file.updated)||at-file.updated>7*60000||file.updated>at+30000||!Array.isArray(file.coins))continue;
+    for(const row of file.coins){const a=row.observations?.admission;
+      if(a?.v!==1||a.mint!==row.a||typeof a.mint!=='string'||a.mint.length<32||!['before','after'].includes(a.phase)||!Number.isSafeInteger(a.eventAt)||a.eventAt<=0||!Number.isSafeInteger(a.acceptedAt)||a.acceptedAt<a.eventAt||a.acceptedAt>file.updated||!a.proof||typeof a.proof.signature!=='string'||!a.proof.signature)continue;
+      rows.push({a:a.mint,phase:a.phase,eventAt:a.eventAt,acceptedAt:a.acceptedAt,n:row.n||'',s:row.s||'',i:row.i||'',proofSig:a.proof.signature,family:a.proof.family||null});
+    }
+  }
+  return rows;
+}
 async function loadInternal(){
   var today=day(now()),yesterday=day(now()-864e5);
   var names=['status.json','observations-v2/summary/day/'+today+'.json','observations-v2/summary/day/'+yesterday+'.json',null,null,'observations-v2/summary/live.json',
@@ -1244,6 +1254,9 @@ async function loadInternal(){
     for(var item of (vals[8]?.coins||[]).concat(vals[7]?.coins||[],vals[9]?.coins||[])) {
       if(item.a&&item.phase&&Number.isSafeInteger(item.eventAt)&&Number.isSafeInteger(item.acceptedAt))unique.set(item.a,item);
     }
+    // Exact server journal records embedded in the 30-second summary.
+    // This copies admissions; it never runs the admission gate on the phone.
+    for(const item of canonicalAdmissions([vals[1],vals[2],vals[5]],now()))if(!unique.has(item.a))unique.set(item.a,item);
     sourceRecords=[...unique.values()];
     s.ageBefore=sourceMeta.settings.beforeMinutes;
     s.ageAfter=sourceMeta.settings.afterMinutes;
