@@ -331,9 +331,9 @@ function loadLogos(){document.querySelectorAll('.avatar.empty[data-uri]').forEac
 var OWNER_KEY_NAME='solscan-owner-key';
 function ownerKey(){try{return localStorage.getItem(OWNER_KEY_NAME)||''}catch(e){return ''}}
 function setOwnerKey(k){try{if(k)localStorage.setItem(OWNER_KEY_NAME,k);else localStorage.removeItem(OWNER_KEY_NAME)}catch(e){}renderKeyUI()}
-function renderKeyUI(){var has=!!ownerKey();document.querySelectorAll('.ownerkey').forEach(function(el){el.classList.toggle('hide',has)});
+function renderKeyUI(){var has=!!ownerKey();document.querySelectorAll('.ownerkey').forEach(function(el){el.classList.add('hide')});
   var b=document.getElementById('keyBtn');if(b)b.textContent=has?'🔑':'🔒'}
-function keyFrom(id){var v=(document.getElementById(id)||{}).value;v=(v||'').trim();return v||ownerKey()}
+function keyFrom(id){var v=(document.getElementById(id)||{}).value;v=(v||'').trim()||ownerKey();if(!v&&typeof window!=='undefined'&&window.prompt){v=(window.prompt('Ключ владельца (один раз)')||'').trim()}return v}
 async function ownerFetch(url,opts){var r=await fetch(url,opts);var a=opts&&opts.headers&&opts.headers.Authorization||'';rememberIfOk(r,a.replace(/^Bearer /,''));return r}
 function rememberIfOk(r,key){if(r&&r.ok&&key)setOwnerKey(key);else if(r&&r.status===401)setOwnerKey('')}
 function coinHtml(c,extra){
@@ -538,7 +538,7 @@ function modClick(e){var t=e.target,d=draft();if(!d)return;
   else if(t.dataset.del!=null){d.modules.splice(+t.dataset.del,1);MOD_DIRTY=true;renderServerModules()}}
 async function applyModules(){var key=keyFrom('modKey'),d=draft();
   if(!controlEndpoint){$('modMsg').textContent='Сервер управления недоступен';return}
-  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){$('modMsg').textContent='Нажми 🔒 вверху и введи пароль';return}
+  if(!key){$('modMsg').textContent='Нужен ключ';return}
   $('modApply').disabled=true;$('modMsg').textContent='Отправка…';
   try{var r=await ownerFetch(controlEndpoint+'/api/filter-config',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(d)});
     $('modKey').value='';rememberIfOk(r,key);if(r.ok){MOD_DIRTY=false;$('modMsg').textContent='✓ Принято, сервер применит за пару минут'}else $('modMsg').textContent='Отклонено: HTTP '+r.status+(r.status===401?' (пароль)':'')}
@@ -568,7 +568,7 @@ function renderIntake(){if(!$('intakeBox'))return;var st=researchMeta&&researchM
   var ar=$('intakeApplyRow');if(ar&&ar.classList)ar.classList.toggle('hide',!(INTAKE_DIRTY||MOD_DIRTY))}
 async function applyIntake(){var key=keyFrom('intakeKey'),msg=$('intakeMsg');
   if(!controlEndpoint){msg.textContent='Сервер управления недоступен';return}if(!researchMeta){msg.textContent='Сервер ещё загружается, попробуй через минуту';return}
-  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){msg.textContent='Нажми 🔒 вверху и введи пароль';return}
+  if(!key){msg.textContent='Нужен ключ';return}
   var it=intakeFromUI(),anyMarked=!!((serverCfg()||{}).r1&&((serverCfg().r1.before)||(serverCfg().r1.after)));if(!it.manual.enabled&&!anyMarked&&!window.confirm('В И1 ничего не пойдёт. Продолжить?'))return;
   var st=researchMeta.settings,cfg={hours:st.hours,decisionMinutes:st.decisionMinutes,minActive:st.minActive,maxIdle:st.maxIdle,minCoverage:st.minCoverage,intake:it};
   if(MOD_DIRTY)applyModules();
@@ -965,7 +965,7 @@ async function publishResearchLevel(level){
   if(!controlEndpoint||!current){note('Серверное исследование ещё недоступно');return}
   if(!$(checkField).checked){note('Подтверди изменение серверного исследования');return}
   const key=keyFrom(keyField);
-  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
+  if(!key){
     note('Требуется отдельный ключ владельца');return;
   }
   let cfg;
@@ -1025,7 +1025,7 @@ async function publishSourceAge(){
     note('Возраст до и после миграции должен быть от 1 до 10 минут');return;
   }
   const key=keyFrom('ageOwnerKey');
-  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
+  if(!key){
     note('Для изменения порога нужен отдельный ключ владельца');return;
   }
   const button=$('publishSourceAge');
@@ -1060,7 +1060,7 @@ async function publishServerConfig(){
   }
   const config=preparedServerConfig();if(!config)return;
   const key=keyFrom('ownerControlKey');
-  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
+  if(!key){
     note('Нужен действительный ключ владельца, не пароль от GitHub');return;
   }
   const button=$('publishServerConfig');
@@ -1182,7 +1182,7 @@ function bind(){
   $('intakeApply').addEventListener('click',applyIntake);
   $('inManualSw').addEventListener('click',function(e){e.preventDefault();e.stopPropagation();$('inManual').checked=!$('inManual').checked;INTAKE_DIRTY=true;renderIntake()});
   $('inWinSw').addEventListener('click',function(){var d=draft();if(!d)return;var v=!(d.r1&&(d.r1.before||d.r1.after));d.r1={before:v,after:v};MOD_DIRTY=true;renderIntake();renderServerModules()});
-  $('keyBtn').addEventListener('click',function(){if(ownerKey()){if(window.confirm('Забыть пароль на этом телефоне?'))setOwnerKey('')}else{var k=window.prompt('Пароль владельца');if(k&&/^[a-zA-Z0-9_-]{32,256}$/.test(k.trim())){setOwnerKey(k.trim());note('Пароль сохранён. Проверится при первом «Применить».')}else if(k)note('Неверный формат пароля')}});
+  $('keyBtn').addEventListener('click',function(){if(ownerKey()){if(window.confirm('Забыть пароль на этом телефоне?'))setOwnerKey('')}else{var k=window.prompt('Пароль владельца');if(k&&k.trim()){setOwnerKey(k.trim());note('Пароль сохранён. Проверится при первом «Применить».')}else if(k)note('Неверный формат пароля')}});
   renderKeyUI();
 
   $('publishResearchTwo').addEventListener('click',function(){publishResearchLevel('2')});
