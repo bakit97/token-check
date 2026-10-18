@@ -896,8 +896,26 @@ function preFlowing(){const at=PRE?.summary?.()?.lastAt;return !!PRE&&Number.isF
 const CURVE2MINT=new Map();
 function rememberCurve(ev){if(!ev||!ev.curve||!ev.mint)return;CURVE2MINT.set(ev.curve,{mint:ev.mint,q:ev.quote||WSOL,n:ev.name||'',s:ev.symbol||'',t:ev.blockAt||ev.observedAt||Date.now()});
   if(CURVE2MINT.size>80000){const cut=Date.now()-30*3600e3;for(const [k,v] of CURVE2MINT){if(v.t<cut)CURVE2MINT.delete(k);if(CURVE2MINT.size<=70000)break}}}
+/* Неизвестная кривая (create пришёл во время паузы потока): монету берём из последних транзакций кривой.
+   Инструкция pump (buy/sell/migrate): accounts[2]=mint, accounts[3]=кривая. Подтверждение — PDA кривой из mint. ~2 кредита. */
+const CURVE_RESOLVING=new Set(),CURVE_FAILED=new Map();
+async function resolveCurve(curve,slot){if(CURVE_RESOLVING.has(curve)||(CURVE_FAILED.get(curve)||0)>Date.now()||CURVE_RESOLVING.size>5)return;CURVE_RESOLVING.add(curve);
+  try{const opt={priority:'migration',context:'миграция',source:'pump-complete'};
+    const sigs=(await rpc('getSignaturesForAddress',[curve,{limit:3,commitment:'confirmed'}],opt))||[];
+    for(const sg of sigs){if(sg.err)continue;const tx=await rpc('getTransaction',[sg.signature,{encoding:'json',maxSupportedTransactionVersion:0,commitment:'confirmed'}],opt);if(!tx)continue;
+      const keys=[...(tx.transaction?.message?.accountKeys||[]),...(tx.meta?.loadedAddresses?.writable||[]),...(tx.meta?.loadedAddresses?.readonly||[])];
+      const ixs=[...(tx.transaction?.message?.instructions||[]),...(tx.meta?.innerInstructions||[]).flatMap(x=>x.instructions||[])];
+      for(const ix of ixs){if(keys[ix.programIdIndex]!==PUMP||!Array.isArray(ix.accounts)||ix.accounts.length<4)continue;
+        const mint=keys[ix.accounts[2]];if(keys[ix.accounts[3]]!==curve||!mint)continue;
+        if(await bondingCurveOf(mint)!==curve)continue;
+        WS.pcResolved=(WS.pcResolved||0)+1;rememberCurve({curve,mint,quote:WSOL,observedAt:Date.now()});
+        const acc=(await rpc('getAccountInfo',[curve,{encoding:'base64',dataSlice:{offset:0,length:49}}],opt))?.value;
+        if(acc)pumpCurveComplete(curve,b64(acc.data?.[0]),slot);return}}
+    CURVE_FAILED.set(curve,Date.now()+30*60e3);WS.pcUnresolved=(WS.pcUnresolved||0)+1}
+  catch(e){CURVE_FAILED.set(curve,Date.now()+(e.code==='BUDGET_DEFERRED'?60e3:10*60e3));if(e.code!=='BUDGET_DEFERRED')err('pump curve '+e.message)}
+  finally{CURVE_RESOLVING.delete(curve)}}
 function pumpCurveComplete(curve,u,slot){const now=Date.now();if(!u||u.length<49||!u[48])return;
-  const info=CURVE2MINT.get(curve);if(!info){WS.pcUnknown=(WS.pcUnknown||0)+1;return}
+  const info=CURVE2MINT.get(curve);if(!info){WS.pcUnknown=(WS.pcUnknown||0)+1;resolveCurve(curve,slot);return}
   WS.pcKnown=(WS.pcKnown||0)+1;let c=C.get(info.mint);
   if(c&&isOk(c))return;
   if(!c){c={a:info.mint,n:info.n,s:info.s,i:'',p:curve,d:'pump-fun',q:info.q,t:info.t,tSrc:'pre',preTradingAt:info.t,seen:now,disc:'ws-pump-complete',
