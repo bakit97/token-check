@@ -521,7 +521,7 @@ function renderServerModules(){var d=draft();if(!$('mods1'))return;
   if(!d){$('mods1').innerHTML=$('mods2').innerHTML='<p class="hint">нет данных сервера</p>';return}
   var byId={};d.filters.forEach(function(f){byId[f.id]=f});var today=day(now());
   ['1','2'].forEach(function(l){var h='';d.modules.forEach(function(m,i){if(m.level===l&&m.phase===MINE_STREAM)h+=modRow(m,i,byId,today)});$('mods'+l).innerHTML=h||'<p class="hint">пусто</p>'});
-  var on=!!(d.r1&&d.r1[MINE_STREAM]);$('winR1').classList.toggle('on',on);$('winR1').querySelector('.tg').classList.toggle('on',on);
+  var on=!!(d.r1&&(d.r1.before||d.r1.after));$('winR1').classList.toggle('on',on);$('winR1').querySelector('.tg').classList.toggle('on',on);
   $('modApplyRow').hidden=!MOD_DIRTY}
 function showModPicker(level){PICK_LEVEL=level;var d=draft();if(!d)return;var have={};d.modules.forEach(function(m){if(m.phase===MINE_STREAM&&m.level===level)have[m.filterId]=1});
   var pool={};d.filters.concat(s.filters||[]).forEach(function(f){if(String(f.level)===level&&!have[f.id])pool[f.id]=f});
@@ -559,7 +559,7 @@ function renderIntake(){if(!$('intakeBox'))return;var st=researchMeta&&researchM
   $('inManualBox').classList.toggle('dim',!$('inManual').checked);
   var parts=[];if($('inPhaseOn').checked)parts.push({before:'до',after:'после',both:'оба'}[$('inPhase').value]);if($('inBuyOn').checked)parts.push('пок. ≥ '+$('inBuy').value);if($('inSolOn').checked)parts.push('SOL ≥ '+$('inSol').value);if($('inSampleOn').checked)parts.push($('inSample').value+'%');
   $('inManualSum').textContent=$('inManual').checked?(parts.join(' · ')||'без условий'):'выкл.';
-  var c=serverCfg(),r=c&&c.r1||{};$('inModSum').textContent='🌱 До: '+(r.before?'вкл':'выкл')+' · 🎓 После: '+(r.after?'вкл':'выкл');
+  var c=serverCfg(),r=c&&c.r1||{};$('inModSum').textContent=(r.before||r.after)?'вкл':'выкл';
   var acc=researchMeta&&researchMeta.intakeAccepted||{},rej=researchMeta&&researchMeta.intakeRejected||{};
   var a=Object.values(acc).reduce(function(p,v){return p+v},0),r=Object.values(rej).reduce(function(p,v){return p+v},0);
   $('intakeStats').textContent=x?'вошло '+a+' · не вошло '+r+(r?' ('+Object.keys(rej).map(function(k){return ({phase:'поток','no-buyers10':'нет данных о покупателях',buyers10:'мало покупателей','no-quoteSol':'нет данных SOL',quoteSol:'мало SOL',sample:'жребий','not-matched':'не прошли','modules-only-not-passed':'не в «Прошли»'})[k]+' '+rej[k]}).join(', ')+')':''):''}
@@ -1172,7 +1172,7 @@ function bind(){
   document.querySelectorAll('[data-addlev]').forEach(function(b){b.addEventListener('click',function(){showModPicker(b.dataset.addlev)})});
   $('modPickerX').addEventListener('click',function(){$('modPicker').hidden=true});
   $('modPickerList').addEventListener('click',function(e){var b=e.target.closest('[data-pick]');if(b)pickFilter(b.dataset.pick)});
-  $('winR1').addEventListener('click',function(){var d=draft();if(!d)return;d.r1=d.r1||{before:false,after:false};d.r1[MINE_STREAM]=!d.r1[MINE_STREAM];MOD_DIRTY=true;renderServerModules()});
+  $('winR1').addEventListener('click',function(){var d=draft();if(!d)return;var v=!(d.r1&&(d.r1.before||d.r1.after));d.r1={before:v,after:v};MOD_DIRTY=true;renderServerModules()});
   $('mods1').addEventListener('click',modClick);$('mods2').addEventListener('click',modClick);$('modApply').addEventListener('click',applyModules);
   ['inManual','inModules','inPhaseOn','inPhase','inBuyOn','inBuy','inSolOn','inSol','inSampleOn','inSample'].forEach(function(id){$(id).addEventListener('input',function(){INTAKE_DIRTY=true;renderIntake()})});
   $('intakeApply').addEventListener('click',applyIntake);
