@@ -46,7 +46,7 @@
  const b64=s=>Uint8Array.from(Buffer.from(s||'','base64'));
  const pk=(u,o)=>b58enc(u.slice(o,o+32));
  // метаданные Metaplex: можно ли менять название/картинку
-@@ -142,37 +145,85 @@
+@@ -142,37 +145,114 @@
    return out}
  const MIG_PROG={pump:PUMP,launch:LAUNCH,'launch-v4':LAUNCH,dbc:DBC};
  // первая успешная транзакция пула (листаем подписи до самой старой, максимум 60 страниц)
@@ -96,14 +96,13 @@
 +  return instructions.some(ix=>{const prog=ix.programId||keys[ix.programIdIndex];if(!MIG_IX[prog])return false;
 +    try{return MIG_IX[prog].has(Buffer.from(b58dec(ix.data||'1')).subarray(0,8).toString('hex'))}catch{return false}});
 +}
-+async function proveMig(pool,fam,curve,rpc,slot){
-+  if(Number.isSafeInteger(slot)&&slot>0){
++async function migrationBlock(slot,rpc){
 +    let block=MIG_BLOCKS.get(slot);
 +    if(block)PROOF_FAST.slotCacheHits++;
 +    else{
 +      PROOF_FAST.slotBlocks++;
 +      const full=await rpc('getBlock',[slot,{encoding:'json',transactionDetails:'full',rewards:false,maxSupportedTransactionVersion:1,commitment:'confirmed'}]);
-+      if(!full?.transactions)return {why:'блок сигнала пока недоступен'};
++      if(!full?.transactions)return null;
 +      const transactions=[];
 +      for(let i=0;i<full.transactions.length;i++){
 +        if(hasMigrationInstruction(full.transactions[i])){if(transactions.length<128)transactions.push(full.transactions[i]);else PROOF_FAST.blockFilterOverflow++;}
@@ -112,6 +111,12 @@
 +      block={blockTime:full.blockTime,transactions};MIG_BLOCKS.set(slot,block);
 +      while(MIG_BLOCKS.size>4)MIG_BLOCKS.delete(MIG_BLOCKS.keys().next().value);
 +    }
++    return block;
++}
++async function proveMig(pool,fam,curve,rpc,slot){
++  if(Number.isSafeInteger(slot)&&slot>0){
++    const block=await migrationBlock(slot,rpc);
++    if(!block)return {why:'блок сигнала пока недоступен'};
 +    for(const tx of block.transactions){const sig=tx.transaction?.signatures?.[0];if(!sig)continue;
 +      const proof=verifyMigTransaction(pool,fam,curve,tx,sig,block.blockTime,slot);
 +      if(proof.ok){PROOF_FAST.verified++;return {...proof,method:'signal-slot-block'}};
@@ -125,6 +130,30 @@
 +  const t=await rpc('getTransaction',[first.signature,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}]);
 +  const proof=verifyMigTransaction(pool,fam,curve,t,first.signature,first.blockTime,first.slot);
 +  if(proof.ok)PROOF_FAST.verified++;return proof;
++}
++async function launchAmmPoolsAtSlot(mint,quote,curve,slot,rpc){
++  const block=await migrationBlock(slot,rpc);if(!block)return [];
++  const addresses=new Set();
++  for(const tx of block.transactions){const keys=[...(tx.transaction.message.accountKeys||[]).map(k=>typeof k==='string'?k:k.pubkey),...(tx.meta?.loadedAddresses?.writable||[]),...(tx.meta?.loadedAddresses?.readonly||[])];
++    const ci=keys.indexOf(curve);if(ci<0)continue;
++    const ixes=[...(tx.transaction.message.instructions||[])];for(const g of tx.meta?.innerInstructions||[])ixes.push(...(g.instructions||[]));
++    for(const ix of ixes){if((ix.programId||keys[ix.programIdIndex])!==LAUNCH||!ix.accounts?.includes(ci))continue;
++      let d;try{d=Buffer.from(b58dec(ix.data||'1')).subarray(0,8).toString('hex')}catch{continue}
++      if(!MIG_IX[LAUNCH].has(d))continue;
++      for(const index of ix.accounts)if(tx.meta?.preBalances?.[index]===0&&tx.meta?.postBalances?.[index]>0)addresses.add(keys[index]);
++    }
++  }
++  const pools=[...addresses].filter(Boolean).slice(0,32);if(!pools.length)return [];
++  const values=(await rpc('getMultipleAccounts',[pools,{encoding:'base64'}]))?.value||[],found=[];
++  for(let i=0;i<pools.length;i++){
++    const account=values[i];if(account?.owner!==AMM4)continue;
++    const u=b64(account.data?.[0]);if(u.length<560||pair2(u,400,432,mint)!==quote)continue;
++    // Official Raydium associated AMM PDA; marketId at offset 528.
++    // raydium-io/raydium-sdk-v1/src/liquidity/liquidity.ts: getAssociatedId.
++    const expected=await findPDA([b58dec(AMM4),b58dec(pk(u,528)),new TextEncoder().encode('amm_associated_seed')],AMM4);
++    if(expected===pools[i])found.push(pools[i]);
++  }
++  return found;
 +}
  function pair2(u,o1,o2,mint){const x=pk(u,o1),y=pk(u,o2);return x===mint?y:y===mint?x:null}
  async function exists(list,rpc){if(!list.length)return[];const v=(await rpc('getMultipleAccounts',[list,{encoding:'base64',dataSlice:{offset:0,length:0}}]))?.value||[];return list.filter((x,i)=>v[i])}
@@ -149,7 +178,7 @@
        if(proof.ok){
          moveTo(c,p,'pump',proof);
          setMg(c,'ok','pump','',{pool:p,sig:proof.sig,mT:proof.t,ix:proof.ix});
-@@ -185,7 +236,8 @@
+@@ -185,7 +265,8 @@
      return;
    }
    if(c.tSrc==='gt'&&c.d&&!/pump|meteora|dbc|raydium|launch|bags|stonk|believe|moon|heaven|jup/i.test(c.d)){setMg(c,'other','other:'+c.d.slice(0,12),'площадка '+c.d);return}
@@ -159,7 +188,12 @@
    const owner=pv.owner,u=b64(pv.data?.[0]),mint=c.a;
    let fam=null,quote=null,cands=[],curve=null,base='manual',baseK='other',why='',creator=null,watch=null;
    if(owner===PUMP_AMM){fam='pump';baseK='manual-pump';quote=pair2(u,43,75,mint)||c.q||WSOL;curve=await bondingCurveOf(mint);cands=await officialPools('pump',mint,quote);why='не официальный адрес пула pump.fun';
-@@ -218,39 +270,74 @@
+@@ -214,43 +295,78 @@
+     if(st===0){base='curve';baseK='curve-launch';why='торгуется на кривой LaunchLab';watch=c.p}
+     else{base='unk';baseK='unk-launch';why=st===1?'LaunchLab в процессе миграции':'LaunchLab завершила, пул миграции ещё не найден';
+       if(st===2&&mt===1)cands=await officialPools('launch',mint,quote);
+-      if(st===2&&mt===0){fam='launch-v4';const g=await rpc('getProgramAccounts',[AMM4,{encoding:'base64',dataSlice:{offset:0,length:0},filters:[{memcmp:{offset:400,bytes:mint}}]}]);cands=(g||[]).map(x=>x.pubkey).slice(0,5)}}}
++      if(st===2&&mt===0){fam='launch-v4';if(c.migrationSlot)cands=await launchAmmPoolsAtSlot(mint,quote,curve,c.migrationSlot,rpc);else{const g=await rpc('getProgramAccounts',[AMM4,{encoding:'base64',dataSlice:{offset:0,length:0},filters:[{memcmp:{offset:400,bytes:mint}}]}]);cands=(g||[]).map(x=>x.pubkey).slice(0,5)}}}}
    else{setMg(c,'other','other:'+owner.slice(0,6),'',{owner});return}
    const x={owner,creator,watch};
    // 1) этот пул — официальный?
@@ -248,7 +282,7 @@
  let SOURCE=null, SOURCE_ERR='', SOURCE_CFG_ERR='', PRE=null;
  let RESEARCH_V2=null, RESEARCH_V2_ERR='', RESEARCH_BANK_UPLOADED=0;
  let PASS_V2=null, RESEARCH_TWO=null, AUTO_V2=null, FILTER_AUDIT=null;
-@@ -271,8 +358,8 @@
+@@ -271,8 +387,8 @@
  }
  // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
  // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
@@ -259,7 +293,7 @@
  let MODULES_OK=null;
  function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
    for(const name of MODULES){const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
-@@ -295,11 +382,15 @@
+@@ -295,11 +411,15 @@
    // Отсутствующий/повреждённый журнал НЕ очищать; источник лучше отключить,
    // чем повторно занести монеты после рестарта.
    SOURCE=new (require(DIR+'/source-runtime.js').SourceRuntime)({dir:DIR});
@@ -276,7 +310,7 @@
      C.set(item.mint,{a:item.mint,n:item.proof.name||'',s:item.proof.symbol||'',i:'',
        p:item.proof.curve,d:'pump-fun',q:item.proof.quote||WSOL,t:item.eventAt,
        tSrc:'pre',seen:item.acceptedAt,disc:'pre-ws',preCurve:1,firstPostSeenAt:null,
-@@ -470,25 +561,28 @@
+@@ -470,25 +590,28 @@
  function admitVerifiedMigration(c){
    if(!SOURCE)return;
    try{
@@ -311,7 +345,7 @@
  const ageMin=(c,now)=>(now-c.t)/60000;
  
  /* ---------- 1. новые пулы (GeckoTerminal) ---------- */
-@@ -496,9 +590,9 @@
+@@ -496,9 +619,9 @@
    for(const d of r.data||[]){const a=d.attributes||{},dex=d.relationships?.dex?.data?.id||'';if(isCurve(dex))continue;
      let bid=d.relationships?.base_token?.data?.id||'',addr=bid.replace(/^solana_/,''),q=(d.relationships?.quote_token?.data?.id||'').replace(/^solana_/,'');
      if(SKIP.has(addr)){q=addr;bid=d.relationships?.quote_token?.data?.id||'';addr=bid.replace(/^solana_/,'')}
@@ -324,7 +358,7 @@
          if(ex.mg&&ex.mg.st!=='ok'&&ex.mg.st!=='other')ex.mg.force=1} // у монеты новый пул — возможно, это миграция
        continue}
      const tk=inc[bid]?.attributes||{};
-@@ -562,8 +656,8 @@
+@@ -562,8 +685,8 @@
    const cv=arr.filter(p=>isCurve(p.dexId)||/dbc|launch/i.test(p.dexId||'')).map(p=>p.pairCreatedAt).filter(Boolean);
    const all=arr.map(p=>p.pairCreatedAt).filter(Boolean);const born=Math.min(...(cv.length?cv:all));if(isFinite(born)&&born<c.t-60e3){const nt=Math.min(c.tk||Infinity,born);if(nt!==c.tk){c.tk=nt;c.tkAt=at}}
    c.soc=Math.max(c.soc||0,(arr[0].info?.socials||[]).length+(arr[0].info?.websites||[]).length);if(!c.i&&arr[0].info?.imageUrl)c.i=arr[0].info.imageUrl}
@@ -335,7 +369,7 @@
    // A newest-first truncation permanently starved older, admitted cohorts:
    // reserve a fixed share of each pass for the first 12 minutes and rotate
    // everyone else by last actual attempt, independent of migration phase.
-@@ -587,21 +681,21 @@
+@@ -587,21 +710,21 @@
  const kRow=x=>[x[0],+(+x[1]).toPrecision(6),+(+x[2]).toPrecision(6),+(+x[3]).toPrecision(6),+(+x[4]).toPrecision(6),Math.round(+x[5])];
  const kList=r=>(r.data?.attributes?.ohlcv_list||[]).map(kRow).sort((a,b)=>a[0]-b[0]);
  function mergeK(a,b){const m=new Map();for(const x of [...(a||[]),...b])m.set(x[0],x);return [...m.values()].sort((x,y)=>x[0]-y[0])}
@@ -363,7 +397,7 @@
  // сделки: последние 300 сделок пула; чаще, если монета активная. Покрытие проверяется по перекрытию запросов.
  function gxTasks(now){if(gtPending('gx'))return;const list=[...C.values()].filter(c=>observedEligible(c)&&ageMin(c,now)>=2&&ageMin(c,now)<16&&now-(c.gxAt||0)>=55e3).sort((a,b)=>a.t-b.t).slice(0,30);
    if(!list.length)return;const pools=list.map(c=>c.p);
-@@ -609,7 +703,7 @@
+@@ -609,7 +732,7 @@
      for(const c of list){if(!pools.includes(c.p))continue;c.gxAt=at;const x=by[c.p];if(!x)continue;const T=x.transactions||{},V=x.volume_usd||{};
        const e=[Math.round(at/1000),T.m5?.buys??null,T.m5?.sells??null,T.m5?.buyers??null,T.m5?.sellers??null,T.m15?.buys??null,T.m15?.sells??null,T.m15?.buyers??null,T.m15?.sellers??null,
          V.m5!=null?Math.round(+V.m5):null,V.m15!=null?Math.round(+V.m15):null];(c.gx=c.gx||[]).push(e)}}).catch(e=>err('gx '+e.message))}
@@ -372,7 +406,7 @@
      const tr=c.tr=c.tr||{f:[],x:{}},last=tr.f[tr.f.length-1];
      if(a>40&&!last){finishTrades(c,'не успели (очередь)');continue}
      const busy=last&&last[1]>=250,since=last?(now-last[0])/1000:1e9;
-@@ -620,7 +714,7 @@
+@@ -620,7 +743,7 @@
            const pr=+(x.kind==='buy'?x.price_to_in_usd:x.price_from_in_usd)||0;tr.x[d.id||x.tx_hash]=[ts,x.kind==='buy'?1:0,+(+x.volume_in_usd||0).toFixed(2),(x.tx_from_address||'').slice(0,12),pr?+pr.toPrecision(6):null]}
          tr.f.push([at,(r.data||[]).length,isFinite(lo)?lo:null,hi||null]);
          if(at>=c.t+10*60e3+10e3)finishTrades(c,null)})
@@ -381,7 +415,7 @@
  function finishTrades(c,why){const tr=c.tr;c.trDone=1;if(!tr||!tr.f.length){c.bx={miss:why||'нет запросов'};return}
    const t0=Math.floor(c.t/1000),end=t0+600;
    // покрытие: первый запрос дошёл до начала торговли (или в пуле меньше 300 сделок), каждый следующий перекрывает предыдущий
-@@ -643,7 +737,7 @@
+@@ -643,7 +766,7 @@
  const qDec=new Map([[WSOL,9],[USDC,6],[USDT,6]]);
  const HOLD_M=[10],RAW_M=[1,3,5,10,15,30,60,120,240,480,720,1440];
  const u64=(u,o)=>{let x=0n;for(let i=7;i>=0;i--)x=(x<<8n)+BigInt(u[o+i]);return Number(x)};
@@ -390,7 +424,7 @@
    const v=parseVaults(c,pv.owner,b64(pv.data?.[0]));if(!v)return;const ch=(await rpc('getMultipleAccounts',[v,{encoding:'base64'}]))?.value||[];
    const mints=ch.map(x=>x?pk(b64(x.data?.[0]),0):null);if(mints.includes(c.a)&&ch.every(Boolean)){c.vaults=v;c.vmint=mints}}
  async function holdersSnap(c,m){const rpc=rpcFor(c,'держатели');const sup=c.ct?.supply;await ensureVaults(c);const r=await rpc('getTokenLargestAccounts',[c.a,{commitment:'confirmed'}]);const at=Date.now();
-@@ -654,37 +748,81 @@
+@@ -654,37 +777,81 @@
    const sh=n=>+(arr.slice(0,n).reduce((s,x)=>s+x[1],0)/sup).toFixed(4);
    c.hold[m]={at,slot:r.context?.slot,slot2:own?.context?.slot,top1:sh(1),top5:sh(5),top10:sh(10),pda:+(pda/sup).toFixed(4),poolEx:ex,vaultsKnown:!!c.vaults}}
  function parseVaults(c,owner,u){const off=VAULT_OFF[owner];if(!off||u.length<off[1]+32)return null;return off.map(o=>pk(u,o))}
@@ -492,7 +526,7 @@
    if(key==='ll'){const r=await rpc('getProgramAccounts',[LAUNCH,{encoding:'base64',dataSlice:{offset:0,length:0},filters:[{memcmp:{offset:17,bytes:'3'}}],withContext:true}]);return (r?.value||[]).map(x=>x.pubkey)}
    // DBC: все пулы слишком велики для одного запроса — берём только кривые с точкой активации (слот или unix-время, u64 @296) в двух последних окнах по 65536
    const slot=await rpc('getSlot',[]),nowS=Math.floor(Date.now()/1000),out=new Set();
-@@ -693,71 +831,76 @@
+@@ -693,71 +860,76 @@
    return [...out]}
  let RECON_BUSY=false,RECON_RETRY=null;
  async function reconcile(){if(RECON_BUSY)return;RECON_BUSY=true;try{await reconcileBody()}finally{RECON_BUSY=false}}
@@ -610,7 +644,7 @@
    }
  }
  function rec(c,full){const mg=c.mg||{};
-@@ -773,36 +916,44 @@
+@@ -773,36 +945,44 @@
    else r.ds=c.ds||[];
    return r}
  async function token(){const r=await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',{headers:{'Metadata-Flavor':'Google'}});return (await r.json()).access_token}
@@ -665,7 +699,7 @@
      catch(e){err('research old 1 '+item.epoch.hash+' '+e.message)}
    }
    await upload('research-v2/status.json',result);
-@@ -836,9 +987,9 @@
+@@ -836,9 +1016,9 @@
        day:d,updated:now,origin:'server-journal',count:rows.length,coins:rows
      });
    }
@@ -677,7 +711,7 @@
      catch(e){err('research old 2 '+item.epoch.hash+' '+e.message)}
    }
    TWO_ERR='';
-@@ -920,30 +1071,88 @@
+@@ -920,30 +1100,88 @@
      await sleep(15000);
    }
  }
@@ -777,7 +811,7 @@
  
  /* ---------- 7. автоисследование: сервер сам считает живых/мёртвых, ищет признаки и проверяет их на следующих днях ----------
     Расчёт — тем же кодом, что и сайт (lab-core.js). Правило ищется на прошлых днях (до 3) и проверяется на следующем дне —
-@@ -1017,17 +1226,20 @@
+@@ -1017,17 +1255,20 @@
  const STARTED=Date.now();
  (async()=>{fs.mkdirSync(DIR,{recursive:true});await ensureModules();
    RESOURCE=new (require(DIR+'/resource-budget.js').ResourceBudget)({dir:DIR,env:{...process.env,HELIUS_USED_CREDITS:process.env.HELIUS_USED_CREDITS||'185000'}});

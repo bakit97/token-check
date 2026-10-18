@@ -183,14 +183,13 @@ function hasMigrationInstruction(t){
   return instructions.some(ix=>{const prog=ix.programId||keys[ix.programIdIndex];if(!MIG_IX[prog])return false;
     try{return MIG_IX[prog].has(Buffer.from(b58dec(ix.data||'1')).subarray(0,8).toString('hex'))}catch{return false}});
 }
-async function proveMig(pool,fam,curve,rpc,slot){
-  if(Number.isSafeInteger(slot)&&slot>0){
+async function migrationBlock(slot,rpc){
     let block=MIG_BLOCKS.get(slot);
     if(block)PROOF_FAST.slotCacheHits++;
     else{
       PROOF_FAST.slotBlocks++;
       const full=await rpc('getBlock',[slot,{encoding:'json',transactionDetails:'full',rewards:false,maxSupportedTransactionVersion:1,commitment:'confirmed'}]);
-      if(!full?.transactions)return {why:'блок сигнала пока недоступен'};
+      if(!full?.transactions)return null;
       const transactions=[];
       for(let i=0;i<full.transactions.length;i++){
         if(hasMigrationInstruction(full.transactions[i])){if(transactions.length<128)transactions.push(full.transactions[i]);else PROOF_FAST.blockFilterOverflow++;}
@@ -199,6 +198,12 @@ async function proveMig(pool,fam,curve,rpc,slot){
       block={blockTime:full.blockTime,transactions};MIG_BLOCKS.set(slot,block);
       while(MIG_BLOCKS.size>4)MIG_BLOCKS.delete(MIG_BLOCKS.keys().next().value);
     }
+    return block;
+}
+async function proveMig(pool,fam,curve,rpc,slot){
+  if(Number.isSafeInteger(slot)&&slot>0){
+    const block=await migrationBlock(slot,rpc);
+    if(!block)return {why:'блок сигнала пока недоступен'};
     for(const tx of block.transactions){const sig=tx.transaction?.signatures?.[0];if(!sig)continue;
       const proof=verifyMigTransaction(pool,fam,curve,tx,sig,block.blockTime,slot);
       if(proof.ok){PROOF_FAST.verified++;return {...proof,method:'signal-slot-block'}};
@@ -212,6 +217,30 @@ async function proveMig(pool,fam,curve,rpc,slot){
   const t=await rpc('getTransaction',[first.signature,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}]);
   const proof=verifyMigTransaction(pool,fam,curve,t,first.signature,first.blockTime,first.slot);
   if(proof.ok)PROOF_FAST.verified++;return proof;
+}
+async function launchAmmPoolsAtSlot(mint,quote,curve,slot,rpc){
+  const block=await migrationBlock(slot,rpc);if(!block)return [];
+  const addresses=new Set();
+  for(const tx of block.transactions){const keys=[...(tx.transaction.message.accountKeys||[]).map(k=>typeof k==='string'?k:k.pubkey),...(tx.meta?.loadedAddresses?.writable||[]),...(tx.meta?.loadedAddresses?.readonly||[])];
+    const ci=keys.indexOf(curve);if(ci<0)continue;
+    const ixes=[...(tx.transaction.message.instructions||[])];for(const g of tx.meta?.innerInstructions||[])ixes.push(...(g.instructions||[]));
+    for(const ix of ixes){if((ix.programId||keys[ix.programIdIndex])!==LAUNCH||!ix.accounts?.includes(ci))continue;
+      let d;try{d=Buffer.from(b58dec(ix.data||'1')).subarray(0,8).toString('hex')}catch{continue}
+      if(!MIG_IX[LAUNCH].has(d))continue;
+      for(const index of ix.accounts)if(tx.meta?.preBalances?.[index]===0&&tx.meta?.postBalances?.[index]>0)addresses.add(keys[index]);
+    }
+  }
+  const pools=[...addresses].filter(Boolean).slice(0,32);if(!pools.length)return [];
+  const values=(await rpc('getMultipleAccounts',[pools,{encoding:'base64'}]))?.value||[],found=[];
+  for(let i=0;i<pools.length;i++){
+    const account=values[i];if(account?.owner!==AMM4)continue;
+    const u=b64(account.data?.[0]);if(u.length<560||pair2(u,400,432,mint)!==quote)continue;
+    // Official Raydium associated AMM PDA; marketId at offset 528.
+    // raydium-io/raydium-sdk-v1/src/liquidity/liquidity.ts: getAssociatedId.
+    const expected=await findPDA([b58dec(AMM4),b58dec(pk(u,528)),new TextEncoder().encode('amm_associated_seed')],AMM4);
+    if(expected===pools[i])found.push(pools[i]);
+  }
+  return found;
 }
 function pair2(u,o1,o2,mint){const x=pk(u,o1),y=pk(u,o2);return x===mint?y:y===mint?x:null}
 async function exists(list,rpc){if(!list.length)return[];const v=(await rpc('getMultipleAccounts',[list,{encoding:'base64',dataSlice:{offset:0,length:0}}]))?.value||[];return list.filter((x,i)=>v[i])}
@@ -272,7 +301,7 @@ async function migCheck(c){if(rejectOldProof(c))return;const rpc=rpcFor(c,'ми�
     if(st===0){base='curve';baseK='curve-launch';why='торгуется на кривой LaunchLab';watch=c.p}
     else{base='unk';baseK='unk-launch';why=st===1?'LaunchLab в процессе миграции':'LaunchLab завершила, пул миграции ещё не найден';
       if(st===2&&mt===1)cands=await officialPools('launch',mint,quote);
-      if(st===2&&mt===0){fam='launch-v4';const g=await rpc('getProgramAccounts',[AMM4,{encoding:'base64',dataSlice:{offset:0,length:0},filters:[{memcmp:{offset:400,bytes:mint}}]}]);cands=(g||[]).map(x=>x.pubkey).slice(0,5)}}}
+      if(st===2&&mt===0){fam='launch-v4';if(c.migrationSlot)cands=await launchAmmPoolsAtSlot(mint,quote,curve,c.migrationSlot,rpc);else{const g=await rpc('getProgramAccounts',[AMM4,{encoding:'base64',dataSlice:{offset:0,length:0},filters:[{memcmp:{offset:400,bytes:mint}}]}]);cands=(g||[]).map(x=>x.pubkey).slice(0,5)}}}}
   else{setMg(c,'other','other:'+owner.slice(0,6),'',{owner});return}
   const x={owner,creator,watch};
   // 1) этот пул — официальный?
