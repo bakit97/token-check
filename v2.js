@@ -638,6 +638,8 @@ function renderPassed(){
 }
 var MLAB={buyers10:'Покупатели 10 мин',quoteSol:'SOL в пуле',top1:'Топ-1 держатель %',top10:'Топ-10 держателей %',buyers:'Покупатели',trades:'Сделки',volume:'Объём $',liq:'Ликвидность $',mc:'Капитализация $',buys:'Покупки',sells:'Продажи',buySellRatio:'Покупки/продажи'};
 var MODS={};
+var MSHORT={buyers10:'Спрос',buyers:'Покупатели',quoteSol:'SOL',top1:'Топ1',top10:'Топ10',trades:'Сделки',volume:'Объём',liq:'Ликв',mc:'Кап',buys:'Покупки',sells:'Продажи',buySellRatio:'Пок/прод'};
+function modAutoName(c){return c.map(function(x){return (MSHORT[x.key]||x.key)+' '+(x.op==='<='?'≤':'≥')+fmt(x.value)}).join(' · ')}
 function modSig(m){return JSON.stringify([m.dm,m.conds])}
 function modLoad(){try{return JSON.parse(localStorage.getItem('r1mods')||'{}')}catch(e){return {}}}
 function modSave(m){var all=modLoad();all[m.id]=m;try{localStorage.setItem('r1mods',JSON.stringify(all))}catch(e){}}
@@ -674,7 +676,7 @@ function renderAutoSuggestions(report){
     createdAt:Date.now()-3*864e5,eval:{train:{positiveRecall:.7,negativeRejection:.9,totalPositive:60,totalNegative:250},holdout:{positiveRecall:.65,negativeRejection:.88,totalPositive:40,totalNegative:100},live:{positiveRecall:.62,negativeRejection:.86,totalPositive:34,totalNegative:51}}};
   demo.evalSig=modSig(demo);list.push([saved.demo||demo,'']);
   var dm=(report&&report.decisionMinutes)||(researchMeta&&researchMeta.settings&&researchMeta.settings.decisionMinutes)||15;
-  ((report&&report.rules)||[]).slice(0,8).forEach(function(x,i){var id='a'+(report.level||1)+'-'+i,m={id:id,name:'М'+(report.level||1)+'-'+(i+1),dm:dm,createdAt:Date.parse(report.generatedAt||report.updatedAt||'')||null,conds:[{key:x.rule.key,op:x.rule.op,value:x.rule.value}],eval:{train:x.train,holdout:x.holdout}};m.evalSig=modSig(m);list.push([saved[id]||m,report.level+':'+i])});
+  ((report&&report.rules)||[]).slice(0,8).forEach(function(x,i){var id='a'+(report.level||1)+'-'+i,m={id:id,name:modAutoName([{key:x.rule.key,op:x.rule.op,value:x.rule.value}]),dm:dm,createdAt:Date.parse(report.generatedAt||report.updatedAt||'')||null,conds:[{key:x.rule.key,op:x.rule.op,value:x.rule.value}],eval:{train:x.train,holdout:x.holdout}};m.evalSig=modSig(m);list.push([saved[id]||m,report.level+':'+i])});
   list.forEach(function(p){MODS[p[0].id]=JSON.parse(JSON.stringify(p[0]));MOD_AUTO[p[0].id]=p[1]});
   var T=r1T();return '<div class="modgrid">'+list.map(function(p){return modTile(MODS[p[0].id])}).join('')+'</div>'+(list.length<2?'<p class="hint">Настоящие модули появятся, когда наберётся 🟢 '+T.l+' и 🔴 '+T.d+'.</p>':'');
 }
