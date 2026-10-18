@@ -652,7 +652,7 @@ function modBlk(t,cls,title){var l='—',d='';if(t&&t.positiveRecall!=null){var 
     l='🟢 '+modPc(t.positiveRecall)+(tp!=null?' <span>'+pp+' из '+tp+'</span>':'');d='<br>🔴 '+modPc(1-t.negativeRejection)+(tn!=null?' <span>'+pn+' из '+tn+'</span>':'')}
   return '<div class="mblk '+cls+'"><i>'+title+'</i>'+l+d+'</div>'}
 function modTile(m){var stale=modSig(m)!==m.evalSig,ev=m.eval||{},age=m.createdAt?Math.max(0,Math.floor((Date.now()-m.createdAt)/864e5)):null;
-  return '<button type="button" class="modtile" data-mopen="'+esc(m.id)+'"><b>'+esc(m.name)+'</b><span class="hint">⏱ '+m.dm+' мин'+(age!=null?' · '+age+' дн':'')+'</span>'+
+  return '<button type="button" class="modtile" data-mopen="'+esc(m.id)+'">'+(age!=null?'<span class="mage">'+age+' дн</span>':'')+'<b>'+esc(m.name)+'</b><span class="hint">вердикт '+m.dm+' мин</span>'+
     (stale?'<div class="mblk"><i>⚠ нужен перетест</i></div>':modBlk(ev.train,'mold','при создании')+modBlk(ev.live,'mnow','сейчас'))+'</button>'}
 function openModSheet(id){var m=JSON.parse(JSON.stringify(MODS[id])),old=document.getElementById('modSheet');if(old)old.remove();
   var el=document.createElement('div');el.id='modSheet';el.className='sheet';
