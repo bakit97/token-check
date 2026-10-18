@@ -948,8 +948,9 @@ async function flushUploads(){
   UPQ.sort((a,b)=>Number(b[0].startsWith('raw/'))-Number(a[0].startsWith('raw/')));
   // A restored raw backlog must not hold source/status/heartbeat publication hostage.
   // Keep the unsent tail intact; never drain a producer-fed queue without a bound.
-  const limit=Math.min(4,UPQ.length),started=Date.now();
-  for(let i=0;i<limit&&UPQ.length&&Date.now()-started<10000;i++){
+  // Большой хвост архива (тысячи файлов) блокирует выгрузку монет из памяти: разбираем быстрее, но с лимитом времени.
+  const limit=Math.min(UPQ.length>200?20:6,UPQ.length),started=Date.now();
+  for(let i=0;i<limit&&UPQ.length&&Date.now()-started<20000;i++){
     const [n,o]=UPQ.shift();
     try{await upload(n,o===null&&typeof COMPLETED!=='undefined'&&COMPLETED?COMPLETED.readRaw(n):o);if(typeof COMPLETED!=='undefined'&&COMPLETED)COMPLETED.completeRaw(n)}catch(e){err('up '+e.message);UPQ.push([n,o]);break}
   }
