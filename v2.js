@@ -810,7 +810,7 @@ function lineGraph2(r){var ls=(r.lines||[]).filter(function(x){return Array.isAr
   return out+'</svg>'}
 function researchTwoDataset(){
   if(serverR2Active){
-    const lines=serverR2Rows.filter(function(x){return s.r2Stream==='all'||x.phase===s.r2Stream});
+    const lines=serverR2Rows.filter(function(x){return s.r2Stream==='all'||x.phase===s.r2Stream}).map(function(x){return Object.assign({},x,{curve:(x.curve||[]).map(function(p){return Array.isArray(p)?{min:p[0],pct:p[1]}:p})})});
     const valid=lines.length;
     const strong=lines.filter(function(x){return x.label==='strong'}).length;
     const weak=lines.filter(function(x){return x.label==='weak'}).length;
@@ -836,10 +836,10 @@ function researchTwoDataset(){
   return {curve:curve,valid:valid,pending:pending,strong:strong,weak:weak,lines:lines,fromServer:false};
 }
 var R2F='all',R2N=10;
-function r2T(){try{var t=JSON.parse(localStorage.getItem('r2targets_'+s.r2Stream)||'{}');return {l:t.l||40,d:t.d||40,m:t.m||5}}catch(e){return {l:40,d:40,m:5}}}
+function r2T(){var c=onePhaseSettings(twoMeta&&twoMeta.settings,s.r2Stream);return {l:c.targetStrong||40,d:c.targetWeak||40,m:c.decisionMinutes||5}}
 function renderR2(){
   if($('r2Suggestions'))$('r2Suggestions').innerHTML=renderAutoSuggestions(autoTwo,2);
-  var r=researchTwoDataset(),thr=(twoMeta&&twoMeta.settings&&twoMeta.settings.minAbove)||s.r2Strong,T2=r2T();
+  var r=researchTwoDataset(),thr=onePhaseSettings(twoMeta&&twoMeta.settings,s.r2Stream).minAbove??s.r2Strong,T2=r2T();
   var ar2=$('r2ApplyRow').classList;if(!ar2.contains||ar2.contains('hide')){$('r2Strong').value=thr;$('r2StrongValue').textContent=thr+'%'}
   $('r2Sum').textContent='≥ '+thr+'% из 300 мин';$('r2AllN').textContent=r.strong+r.weak;$('r2SN').textContent=r.strong;$('r2WN').textContent=r.weak;$('r2Wait').textContent=r.pending;
   $('r2ResSum').textContent='🟢 '+r.strong+'/'+T2.l+' · 🔴 '+r.weak+'/'+T2.d+' · '+T2.m+' мин';
@@ -1110,13 +1110,13 @@ async function publishResearchLevel(level){
       note('Неверные параметры первого исследования');return;
     }
   }else{
-    cfg={minAbove:Number($('r2Strong').value),
-      minCoverage:twoMeta.settings.minCoverage};
+    cfg={minAbove:Number($('r2Strong').value),decisionMinutes:Number($('r2Dec').value),targetStrong:Number($('r2TL').value),targetWeak:Number($('r2TD').value),minCoverage:twoMeta.settings.minCoverage};
     if(!Number.isFinite(cfg.minAbove)||cfg.minAbove<0||cfg.minAbove>100){
       note('Неверный порог второго исследования');return;
     }
   }
   if(one){var base=JSON.parse(JSON.stringify(researchMeta.settings)),phases=base.phases||{before:Object.assign({},base),after:Object.assign({},base)};var update=cfg;['before','after'].forEach(function(phase){if(R1P==='all'||R1P===phase)phases[phase]=Object.assign({},phases[phase],update);delete phases[phase].phases});cfg=Object.assign({},base,{phases:phases})}
+  if(!one){var base2=JSON.parse(JSON.stringify(twoMeta.settings));delete base2.hours;var phases2=base2.phases||{before:Object.assign({},base2),after:Object.assign({},base2)},update2=cfg;['before','after'].forEach(function(phase){if(s.r2Stream==='all'||s.r2Stream===phase)phases2[phase]=Object.assign({},phases2[phase],update2);delete phases2[phase].phases});cfg=Object.assign({},base2,{phases:phases2})}
   $(buttonField).disabled=true;
   $(statusField).textContent='Отправка серверной версии…';
   const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
@@ -1265,8 +1265,8 @@ function stageAutoRule(e){
   var btn=e.target.closest('[data-stage-auto]');if(!btn)return;
   var parts=btn.dataset.stageAuto.split(':'),level=parts[0],report=level==='1'?autoOne:autoTwo,item=report&&report.rules&&report.rules[Number(parts[1])];
   if(!item||!item.rule){note('Нет серверного модуля');return}
-  var r=item.rule,conds=r.conds||[r].concat(r.conditions||[]),keys=['buyers','trades','volume','liq','mc','buys','sells','buySellRatio','buyers10','safeContract','quoteSol','top1','top10','token2022','hasImage','hasDescription','sellShare','averageTrade'];
-  if(!conds.length||conds.length>8||conds.some(function(c){return !keys.includes(c.key)||!['>=','<='].includes(c.op)||!Number.isFinite(c.value)||c.value<0})){note('Неподдерживаемые условия модуля');return}
+  var r=item.rule,conds=r.conds||[r].concat(r.conditions||[]),keys=['buyers','trades','volume','liq','mc','buys','sells','buySellRatio','buyers10','safeContract','quoteSol','top1','top10','token2022','hasImage','hasDescription','sellShare','averageTrade','chg1m','chg3m','chg5m','fromPeak','drawdown','buyerAccel','volAccel','bigBuyShare','repeatBuys','avgBuy','sellShare1m','bigHolderSell','devSold','top10Drift','holderGrowth','poolGrowth','toMigration','ageMin','hourOfDay','solTrend','launchRate'];
+  if(!conds.length||conds.length>8||conds.some(function(c){return !keys.includes(c.key)||!['>=','<='].includes(c.op)||!Number.isFinite(c.value)||c.value < -1e12})){note('Неподдерживаемые условия модуля');return}
   var d=draft();if(!d){note('Нет данных сервера');return}
   var phase=item.phase||r.phase;if(!['before','after'].includes(phase)){note('У модуля не указан поток');return}
   var id=String(item.id||r.id||('auto'+level+'_'+Date.now())).replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,64),f={id:id,name:String(item.name||r.name||ruleLabel(r)).slice(0,64),level:level,phase:phase,version:item.version||1,verdictMinutes:item.verdictMinutes||r.verdictMinutes||d.decisionMinutes,conds:conds.map(function(c){return {key:c.key,op:c.op,value:c.value}})};
@@ -1335,7 +1335,7 @@ function bind(){
   $('r2N').addEventListener('click',function(e){var b=e.target.closest('[data-r2n]');if(!b)return;R2N=+b.dataset.r2n;document.querySelectorAll('#r2N [data-r2n]').forEach(function(x){x.classList.toggle('active',x===b)});renderR2()});
   $('r2Strong').addEventListener('input',function(){$('r2StrongValue').textContent=$('r2Strong').value+'%';$('r2ApplyRow').classList.remove('hide')});
   [['r2TL','r2TLv',''],['r2TD','r2TDv',''],['r2Dec','r2DecV',' мин']].forEach(function(a){$(a[0]).addEventListener('input',function(){$(a[1]).textContent=$(a[0]).value+a[2];$('r2ResApplyRow').classList.remove('hide')})});
-  $('r2ResApply').addEventListener('click',function(){try{localStorage.setItem('r2targets_'+s.r2Stream,JSON.stringify({l:+$('r2TL').value,d:+$('r2TD').value,m:+$('r2Dec').value}))}catch(e){}$('r2ResApplyRow').classList.add('hide');renderR2()});
+  $('r2ResApply').addEventListener('click',function(){publishResearchLevel('2')});
   $('r2Suggestions').addEventListener('click',function(e){var t=e.target.closest('[data-mopen]');if(t)openModSheet(t.dataset.mopen)});
   $('r2Rows').addEventListener('click',function(e){var b=e.target.closest('[data-coin]');if(!b)return;showCoinDetail(coinOf(((researchTwoDataset().lines)||[]).find(function(x){return x.mint===b.dataset.coin})||b.dataset.coin),'r2Rows')});
   $('r1Ph').addEventListener('click',function(e){var b=e.target.closest('[data-r1p]');if(!b)return;R1P=b.dataset.r1p;document.querySelectorAll('#r1Ph [data-r1p]').forEach(function(x){x.classList.toggle('active',x===b)});$('r1ResApplyRow').classList.add('hide');renderR1()});

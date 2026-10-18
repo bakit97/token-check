@@ -12,7 +12,7 @@ function syncDirectory(dir){
   let fd;try{fd=fs.openSync(dir,'r');fs.fsyncSync(fd)}catch(e){if(process.platform!=='win32'||!['EPERM','EISDIR','EACCES'].includes(e.code))throw e}finally{if(fd!=null)fs.closeSync(fd)}
 }
 function kzDay(at){return new Date(at+TZ).toISOString().slice(0,10)}
-const KEYS=new Set(['buyers','trades','volume','liq','mc','buys','sells','buySellRatio','buyers10','safeContract','quoteSol','top1','top10','token2022','hasImage','hasDescription','sellShare','averageTrade']);
+const KEYS=new Set([...require('./research-v2').LEVEL2_KEYS,'buyers','trades','volume','liq','mc','buys','sells','buySellRatio','buyers10','safeContract','quoteSol','top1','top10','token2022','hasImage','hasDescription','sellShare','averageTrade']);
 const PHASES=new Set(['before','after']);
 
 function configOf(raw={}){
@@ -39,10 +39,10 @@ function configOf(raw={}){
     if(!f||typeof f.id!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(f.id)||ids.has(f.id)||
        typeof f.name!=='string'||!f.name.trim()||f.name.length>64||
        !['1','2'].includes(f.level)||!KEYS.has(f.key)||!['>=','<='].includes(f.op)||
-       typeof f.value!=='number'||!Number.isFinite(f.value)||f.value<0||f.value>1e12||
+       typeof f.value!=='number'||!Number.isFinite(f.value)||f.value<(require('./research-v2').LEVEL2_KEYS.includes(f.key)?-1e12:0)||f.value>1e12||
        !Number.isInteger(f.version)||f.version<1)
       throw new TypeError('Invalid filter in pass configuration');
-    if(f.conditions!=null&&(!Array.isArray(f.conditions)||f.conditions.length>8||f.conditions.some(c=>!c||!KEYS.has(c.key)||!['>=','<='].includes(c.op)||!Number.isFinite(c.value)||c.value<0||c.value>1e12||c.conditions!=null)))throw new TypeError('Invalid compound filter');
+    if(f.conditions!=null&&(!Array.isArray(f.conditions)||f.conditions.length>8||f.conditions.some(c=>!c||!KEYS.has(c.key)||!['>=','<='].includes(c.op)||!Number.isFinite(c.value)||c.value<(require('./research-v2').LEVEL2_KEYS.includes(c.key)?-1e12:0)||c.value>1e12||c.conditions!=null)))throw new TypeError('Invalid compound filter');
     if(f.verdictMinutes!=null&&(!Number.isInteger(f.verdictMinutes)||f.verdictMinutes<1||f.verdictMinutes>30))throw new TypeError('Invalid module verdictMinutes');
     if(f.phase!=null&&!PHASES.has(f.phase))throw new TypeError('Invalid filter phase');
     ids.add(f.id);
@@ -242,7 +242,7 @@ class PassRuntime {
         considered++;const coin=coins.get(row.mint);if(!coin){missingFeatures++;continue}
         const verdicts=rules.map(({filter:f})=>{
           const at=row.acceptedAt+(f.verdictMinutes||cfg.decisionMinutes)*MIN;
-          const features=featuresAt(coin,at,{eventAt:row.acceptedAt,phase:row.phase});
+          const features=f.level==='2'?require('./research-v2').levelTwoFeaturesAt(coin,at,{entryAt:row.acceptedAt,acceptedAt:row.acceptedAt,phase:row.phase}):featuresAt(coin,at,{eventAt:row.acceptedAt,phase:row.phase});
           return {filter:f,at,features,result:evaluation(features,f)};
         });
         if(verdicts.some(x=>x.result==='unknown')){missingFeatures++;continue}

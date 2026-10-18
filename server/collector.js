@@ -568,7 +568,7 @@ async function reloadResearchConfig(){
         recoverSupersededStudies();
         TWO_BANK_UPLOADED=0;AUTO_UPLOADED=0;
         log('второй исследовательский полигон переключён на новую эпоху',x.hash);
-      }
+      }else RESEARCH_TWO.config=RESEARCH_TWO_EPOCH.current.config;
     }
     RESEARCH_CONFIG_ERR='';
   }catch(e){
@@ -1118,7 +1118,7 @@ async function exportPathsV2(now){
     const levelTwoRows=RESEARCH_TWO.select({limit:10000});
     await upload('research-v2/polygon-2.json',{
       updated:now,epochStart:result.cohortStart,settings:result.settings,counts:result.counts,
-      coins:levelTwoRows.map(({curve,minuteCurve,minuteCurvePacked,...row})=>row),
+      coins:levelTwoRows.map(({minuteCurve,minuteCurvePacked,...row})=>row),
       note:'Only fully observed server Passed stream; no orders'
     });
     await upload('research-v2/curve-two.json',{
@@ -1133,7 +1133,7 @@ async function exportPathsV2(now){
     }));
     const levelTwo=RESEARCH_TWO.select({limit:10000});
     const one=AUTO_STUDIES.report(levelOne,{level:'1',settings:RESEARCH_V2.config,now});
-    const two=AUTO_V2.discover(levelTwo,{level:'2'});
+    const two=AUTO_STUDIES.reportParents(levelTwo,{settings:RESEARCH_TWO.config,now});
     await upload('research-v2/auto-1.json',{updated:now,epochStart:RESEARCH_V2.cohortStart,...one});
     await upload('research-v2/auto-2.json',{updated:now,epochStart:RESEARCH_TWO.cohortStart,...two});
     if(FILTER_AUDIT){

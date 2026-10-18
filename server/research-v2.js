@@ -4,7 +4,8 @@
 // Outcomes are measured LATER; incomplete/missing coverage remains "pending".
 const MIN=60_000, FIVE=5*MIN;
 const KEYS=['buyers','trades','volume','liq','mc','buys','sells','buySellRatio'];
-const RULE_KEYS=[...KEYS,'buyers10','quoteSol','safeContract','top1','top10','token2022','hasImage','hasDescription','sellShare','averageTrade'];
+const LEVEL2_KEYS=['chg1m','chg3m','chg5m','fromPeak','drawdown','buyerAccel','volAccel','bigBuyShare','repeatBuys','avgBuy','sellShare1m','bigHolderSell','devSold','top10Drift','holderGrowth','poolGrowth','toMigration','ageMin','hourOfDay','solTrend','launchRate'];
+const RULE_KEYS=[...KEYS,'buyers10','quoteSol','safeContract','top1','top10','token2022','hasImage','hasDescription','sellShare','averageTrade',...LEVEL2_KEYS];
 const inRange=(x,a,b)=>Number.isFinite(x)&&x>=a&&x<=b;
 function samples(coin) {
   const src=[coin?.preObs,...(coin?.origs||[]),coin].filter(Boolean);
@@ -166,6 +167,26 @@ function starterFeaturesAt(coin,decisionAt,context={}){
  if(top10){top1=top10.v1;top10=top10.v}
  return {safeContract,quoteSol,buyers10,top1,top10,...(lower?{buyers10LowerBound:true,buyers10At:buyerAt,buyers10Source:buyerSource}:{})};
 }
+function levelTwoFeaturesAt(coin,decisionAt,{entryAt,acceptedAt,phase}={}){
+ const out=Object.fromEntries(LEVEL2_KEYS.map(k=>[k,null]));
+ const history=samples(coin).filter(x=>x.at<=decisionAt),prices=history.filter(x=>x.price>0);
+ const point=t=>latestBefore(prices,t,2*MIN,x=>x.at),last=point(decisionAt);
+ for(const minutes of [1,3,5]){const prior=point(decisionAt-minutes*MIN);if(last&&prior)out['chg'+minutes+'m']=(last.price/prior.price-1)*100}
+ const segment=prices.filter(x=>x.at>=entryAt);if(segment.length&&last){let peak=segment[0].price,worst=0;for(const x of segment){peak=Math.max(peak,x.price);worst=Math.max(worst,(peak-x.price)/peak*100)}out.fromPeak=(last.price/peak-1)*100;out.drawdown=worst}
+ const volumes=t=>latestBefore(history,t,2*MIN,x=>x.at),v0=volumes(decisionAt-5*MIN),v1=volumes(decisionAt);
+ if(v0&&v1&&v0.at-5*MIN>=entryAt&&v0.volume>0&&v1.volume!=null)out.volAccel=(v1.volume/v0.volume-1)*100;
+ const gx=[...(coin.gx||[])].filter(x=>x[0]*1000<=decisionAt).sort((a,b)=>a[0]-b[0]);
+ const g0=latestBefore(gx,decisionAt-5*MIN,2*MIN,x=>x[0]*1000),g1=latestBefore(gx,decisionAt,2*MIN,x=>x[0]*1000);
+ if(g0&&g1&&g0[0]*1000-5*MIN>=entryAt&&g0[3]>0&&Number.isFinite(g1[3]))out.buyerAccel=(g1[3]/g0[3]-1)*100;
+ const pool0=starterFeaturesAt(coin,entryAt,{eventAt:acceptedAt,phase}),pool1=starterFeaturesAt(coin,decisionAt,{eventAt:acceptedAt,phase});
+ if(pool0.quoteSol>0&&pool1.quoteSol!=null)out.poolGrowth=(pool1.quoteSol/pool0.quoteSol-1)*100;
+ if(pool0.top10!=null&&pool1.top10!=null)out.top10Drift=pool1.top10-pool0.top10;
+ if(Number.isSafeInteger(coin.createdAt)&&coin.createdAt<=decisionAt)out.ageMin=(decisionAt-coin.createdAt)/MIN;
+ if(Number.isSafeInteger(entryAt))out.hourOfDay=new Date(entryAt+5*3600000).getUTCHours();
+ // Trade rows lack individual receipt times and full wallet identities. Do not
+ // infer bot/repeat/developer sales or one-minute flow from rolling m5 counts.
+ return {...featuresAt(coin,decisionAt,{eventAt:acceptedAt,phase}),...out};
+}
 function evaluation(F,rule){
   if(rule?.conds){if(!Array.isArray(rule.conds)||!rule.conds.length||rule.conds.length>8)return 'unknown';const results=rule.conds.map(c=>evaluation(F,{key:c?.key,op:c?.op,value:c?.value}));return results.includes('reject')?'reject':results.includes('unknown')?'unknown':'pass'}
   if(!F||!rule||!RULE_KEYS.includes(rule.key)||
@@ -262,5 +283,5 @@ function capBank(rows,labelFn=it=>it.label,positive='live',negative='dead',max=5
   const n=dedup.filter(x=>labelFn(x)===negative).slice(0,max);
   return [...p,...n].sort((a,b)=>a.time-b.time);
 }
-module.exports={KEYS,RULE_KEYS,samples,candles,featuresAt,starterFeaturesAt,activityOutcome,
+module.exports={KEYS,RULE_KEYS,LEVEL2_KEYS,levelTwoFeaturesAt,samples,candles,featuresAt,starterFeaturesAt,activityOutcome,
   strengthOutcome,evaluation,passes,ruleKey,ruleStats,proposeRules,capBank};
