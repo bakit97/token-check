@@ -627,7 +627,7 @@ function renderPassed(){
   $('passedTab').textContent=win.length?' '+fmt(win.length):'';
   var sel=win.filter(function(q){return PF==='all'||ph(q)===PF});
   $('passedList').innerHTML=sel.length?sel.map(function(q){var left=Math.max(0,(q.firstSeenAt||q.deadline)+W*60000-now()),sec=Math.ceil(left/1000);
-    return coinHtml(q.coin,'<span class="badge warn mono">⏳ '+Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')+'</span><span class="hint" style="margin:0">'+q.matches.map(function(f){return esc(f.name)}).join(', ')+'</span>')}).join(''):'<div class="empty-state">Пока нет</div>';
+    return '<div class="pwrap"><div class="pstrip '+(ph(q)==='after'?'post':'pre')+'"><b class="mono">⏳ '+Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')+'</b> · '+q.matches.map(function(f){return esc(f.name)}).join(' · ')+'</div>'+coinHtml(q.coin)+'</div>'}).join(''):'<div class="empty-state">Пока нет</div>';
   var history=(serverPassActive?serverPassRows:signalLog).slice(0);
   if(!serverPassActive)history=history.reverse();
   history=history.slice(0,40);
