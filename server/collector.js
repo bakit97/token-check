@@ -993,7 +993,7 @@ function aiCoin(mint,extra={}){const c=C.get(mint)||{},d=(c.ds||[]).at(-1),cs=(c
   return {mint,name:c.n||'',symbol:c.s||'',...extra,priceUsd:d?.[1]??null,liqUsd:d?.[2]??null,mcUsd:d?.[3]??null,buys5m:d?.[4]??null,sells5m:d?.[5]??null,vol5mUsd:d?.[6]??null,
     marketAt:d?new Date(d[0]*1000).toISOString():null,curveSol:cs?+(cs[1]/1e9).toFixed(2):null,safeContract:c.ct?!(c.ct.mint||c.ct.freeze||c.ct.fee>0||c.ct.hook||c.ct.deleg||c.ct.pause||c.ct.nontr||c.ct.defFrozen):null}}
 async function exportAiSummary(now){if(now-AI_LAST<5*60e3||!SOURCE)return;AI_LAST=now;
-  const t=x=>x?new Date(x+TZ).toISOString().slice(11,19):'—',ago=x=>x?Math.round((now-x)/60000)+' мин':'—',n=v=>v==null||!Number.isFinite(+v)?'—':(+v>=1e6?(+v/1e6).toFixed(2)+'M':+v>=1e3?(+v/1e3).toFixed(1)+'K':(+v).toFixed(+v<1?6:0));
+  const t=x=>x?new Date(x+TZ).toISOString().slice(11,19):'—',ago=x=>x?Math.round((now-x)/60000)+' мин':'—',n=v=>v==null||!Number.isFinite(+v)?'—':(+v>=1e6?(+v/1e6).toFixed(2)+'M':+v>=1e3?(+v/1e3).toFixed(1)+'K':+v>=1?(+v).toFixed(0):+v>0?(+v).toPrecision(3):'0');
   const daily=AI_SNAP.source?.daily||{},hel=RESOURCE?.summary?.()||{};
   const recent=SOURCE.latest(30).map(x=>aiCoin(x.mint,{phase:x.phase,eventAt:new Date(x.eventAt).toISOString(),ageMin:Math.round((now-x.eventAt)/60000)}));
   const passed=(PASS_V2?.day(dayKey(now))||[]).slice(-40).map(x=>aiCoin(x.mint,{phase:x.phase,ageMin:Math.round((now-x.eventAt)/60000),acceptedAt:new Date(x.acceptedAt).toISOString(),zeroAt:new Date(x.zeroAt).toISOString(),
