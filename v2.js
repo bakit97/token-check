@@ -262,6 +262,7 @@ function liveOf(c){return LIVE[mint(c)]||null}
 function agoText(t){if(!t)return '—';var sec=Math.max(0,Math.floor((now()-t)/1000));
   if(sec<3600)return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')+' назад';
   var h=Math.floor(sec/3600),m=Math.floor(sec%3600/60);return h+' ч '+m+' мин назад'}
+function spd(ms){if(ms<10000)return (Math.max(0,ms)/1000).toFixed(1)+' с';var sec=Math.round(ms/1000);return sec<60?sec+' с':sec<3600?Math.floor(sec/60)+' м '+(sec%60)+' с':Math.floor(sec/3600)+' ч'}
 function agoShort(t){if(!t)return '—';var sec=Math.max(0,Math.floor((now()-t)/1000));if(sec<60)return sec+' с';if(sec<3600)return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0');var h=Math.floor(sec/3600);return h<48?h+' ч '+Math.floor(sec%3600/60)+' м':Math.floor(h/24)+' дн'}
 function tickAges(){document.querySelectorAll('.ago[data-t]').forEach(function(el){el.textContent=el.classList&&el.classList.contains('sh')?agoShort(+el.dataset.t):agoText(+el.dataset.t)})}
 function usd(v){var n=Number(v);if(!Number.isFinite(n)||n<=0)return '—';if(n>=1e6)return '$'+(n/1e6).toFixed(2)+'M';if(n>=1e3)return '$'+(n/1e3).toFixed(1)+'K';return '$'+n.toFixed(0)}
@@ -279,11 +280,12 @@ async function pollMarket(){if(liveBusy||document.hidden)return;var mints=visibl
           img:p.info&&p.info.imageUrl,at:now()};
         var h=LIVE_HIST[m]=LIVE_HIST[m]||[];if(LIVE[m].price)h.push(LIVE[m].price);if(h.length>40)h.shift()})}
     patchCards();updateDetailStats()}catch(e){}finally{liveBusy=false}}
+function mlHtml(t){return esc(t).replace('\u0001','<b class="bu">').replace('\u0002','↑</b> <b class="sl">').replace('\u0003','↓</b>')}
 function marketLine(c){var L=liveOf(c),p=(c.ds||[]).at(-1),out=[],sol=solInPool(c);
   var mc=L&&L.mc||null;if(mc)out.push('MC '+usd(mc));if(sol!=null)out.push('SOL '+(sol>=10?Math.round(sol):(+sol).toFixed(1)));else if(L&&L.liq)out.push('ликв. '+usd(L.liq));
-  if(L&&(L.b5!=null||L.s5!=null))out.push('🟢'+(L.b5||0)+' 🔴'+(L.s5||0));else if(p&&p[6])out.push('5м '+observedMoney(p[6]));return out.join(' · ')}
+  if(L&&(L.b5!=null||L.s5!=null))out.push('\u0001'+(L.b5||0)+'\u0002'+(L.s5||0)+'\u0003');else if(p&&p[6])out.push('5м '+observedMoney(p[6]));return out.join(' · ')}
 function patchCards(){document.querySelectorAll('[data-coin]').forEach(function(b){var m=b.dataset.coin,L=LIVE[m];if(!L)return;
-  var ml=b.querySelector('.mline');if(ml){var cm=lastAccepted.find(function(x){return mint(x)===m})||{a:m};var t=marketLine(cm);ml.textContent=t?' · '+t:''}
+  var ml=b.querySelector('.mline');if(ml){var cm=lastAccepted.find(function(x){return mint(x)===m})||{a:m};var t=marketLine(cm);ml.innerHTML=t?' · '+mlHtml(t):''}
   var pr=b.querySelector('.price');if(pr&&L.price)pr.textContent=price(L.price);
   var sp=b.querySelector('.sparkbox');if(sp)sp.innerHTML=spark({a:m});
   var gb=b.querySelector('.growbox');if(gb){var cc=lastAccepted.find(function(x){return mint(x)===m})||{a:m};gb.innerHTML=growthHtml(cc)}
@@ -292,7 +294,7 @@ function spark(c){
   var points=(c.ds||[]).slice(-12).map(function(x){return Number(x[1])}).filter(function(x){return x>0});
   if(points.length<2)points=(LIVE_HIST[mint(c)]||[]).slice(-20);
   if(points.length<2)return '';
-  var low=Math.min.apply(null,points),high=Math.max.apply(null,points),span=high-low||high*.01||1;
+  var low=Math.min.apply(null,points),high=Math.max.apply(null,points);if(high===low)return '';var span=high-low;
   var d=points.map(function(p,i){return (i===0?'M':'L')+(i/(points.length-1)*59).toFixed(1)+' '+(24-20*(p-low)/span).toFixed(1)}).join(' ');
   var up=points.at(-1)>=points[0];
   return '<svg viewBox="0 0 62 28" class="spark" role="img" aria-label="График цены"><path d="'+d+'" fill="none" stroke="'+(up?'#38d996':'#fc6b83')+'" stroke-width="2.3" stroke-linecap="round"/></svg>';
@@ -343,7 +345,7 @@ function coinHtml(c,extra){
   var nm=c.n||c.s||'Токен',sy=c.s||'',name=esc(nm),symbol=sy&&sy.toLowerCase()!==nm.toLowerCase()?' <small>'+esc(sy)+'</small>':'';
   return '<button type="button" class="coin '+(e.phase==='before'?'pre':'post')+'" data-coin="'+esc(mint(c))+'">'+
     (img?'<img class="avatar" src="'+esc(img)+'" alt="" loading="lazy">':'<span class="avatar empty"'+(c._uri?' data-uri="'+esc(c._uri)+'"':'')+'>'+esc((sy||nm||'?').slice(0,2))+'</span>')+
-    '<span class="body"><span class="name">'+name+symbol+'</span><span class="detail">'+(e.phase==='before'?'🌱 ':'🎓 миграция ')+'<b class="ago sh" data-t="'+(+e.eventAt||0)+'">'+agoShort(e.eventAt)+'</b> · 👁 <b class="ago sh" data-t="'+(+e.acceptedAt||0)+'">'+agoShort(e.acceptedAt)+'</b><span class="mline">'+(ml?' · '+esc(ml):'')+'</span></span>'+
+    '<span class="body"><span class="name">'+name+symbol+'</span><span class="detail">'+(e.phase==='before'?'🌱 ':'🎓 миграция ')+'<b class="ago sh" data-t="'+(+e.eventAt||0)+'">'+agoShort(e.eventAt)+'</b> · 👁 '+(e.acceptedAt&&e.eventAt?spd(e.acceptedAt-e.eventAt):'—')+'<span class="mline">'+(ml?' · '+esc(ml):'')+'</span></span>'+
     (extra?'<span class="detail">'+(extra.charAt(0)==='<'?extra:esc(extra))+'</span>':'')+'</span><span class="right"><span class="price">'+price(L&&L.price||p&&p[1])+'</span><span class="growbox">'+growthHtml(c)+'</span><span class="sparkbox">'+spark(c)+'</span></span></button>';
 }
 function pc(v){return v==null||!Number.isFinite(+v)?'—':(v>0?'+':'')+Number(v).toFixed(Math.abs(v)>=10?0:1)+'%'}
