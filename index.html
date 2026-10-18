@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b0d14">
 <title>SOL·СКАН · v2</title>
-<link rel="stylesheet" href="./v2.css?v=20261018-in-3">
+<link rel="stylesheet" href="./v2.css?v=20261018-r1-1">
 </head>
 <body>
 <header><div class="app">
@@ -103,20 +103,16 @@
 <div class="list" id="passedDayList"></div></details>
 </section>
 <section class="page" id="p-r1" hidden>
-<h1>Исследование 1-го уровня</h1><p class="muted">Из главного источника, через собственный путь. Живые и мёртвые определяются торговой активностью, а НЕ ростом цены.</p>
-<div class="card"><h2>Наблюдение и разметка</h2>
-<div class="row"><label for="r1Hours">Период от обнаружения</label><b id="r1HoursValue">5 часов</b></div><input id="r1Hours" type="range" min="1" max="24" step="1">
-<div class="row" style="margin-top:8px"><label for="r1Activity">Минимум времени с реальными сделками</label><b id="r1ActivityValue">70%</b></div><input id="r1Activity" type="range" min="0" max="100" step="5">
-<div class="row" style="margin-top:8px"><label for="r1Idle">Допустимый непрерывный простой</label><b id="r1IdleValue">60 минут</b></div><input id="r1Idle" type="range" min="5" max="120" step="5">
-<button class="primary" id="applyR1">Применить локально</button>
-<div class="controls" style="margin-top:12px"><label class="control ownerkey"><span>Ключ владельца — исследование 1</span><input id="ownerResearchOneKey" type="password" class="input" autocomplete="off" spellcheck="false" placeholder="Не сохраняется"></label></div>
-<label class="hint" style="display:block;margin:10px 0"><input id="confirmResearchOne" type="checkbox"> Подтверждаю запуск новой серверной исследовательской версии</label>
-<button id="publishResearchOne" class="primary" type="button" disabled>Применить на сервере · уровень 1</button>
-<p id="researchOneControlState" class="hint">Изменённые правила создают новую группу наблюдений. Старые результаты не переписываются.</p>
-<p class="hint">Зелёная зона — подробные данные до конца решения; дальше достаточно цены, времени и реальных сделок. При плохом покрытии — «недостаточно данных».</p></div>
-<div class="statgrid"><div class="stat"><span>🟢 Живые, подтверждены данными</span><strong id="r1Live">—</strong></div><div class="stat"><span>🔴 Мёртвые, подтверждены данными</span><strong id="r1Dead">—</strong></div></div>
-<div class="card"><h2>Автоматическое исследование</h2><div class="muted" id="r1Auto">Нужно минимум 100 живых и 40 мёртвых в обучении; ещё 100 наблюдений позже для отдельной проверки.</div><div class="meter" style="margin-top:10px"><div id="r1Meter" style="width:0"></div></div><div id="r1Suggestions"></div></div>
-<div id="r1Rows" class="card"><div class="muted">Нет завершённых наблюдений.</div></div>
+<details class="frow" id="r1Fold"><summary><span class="fname">Фильтр <span class="hint" id="r1Sum"></span></span></summary>
+<div class="prow"><label for="r1Hours">Окно наблюдения <b id="r1HoursValue">5 ч</b></label><input id="r1Hours" type="range" min="1" max="12" step="1"></div>
+<div class="prow"><label for="r1Activity">Сделки не меньше <b id="r1ActivityValue">70%</b> времени</label><input id="r1Activity" type="range" min="0" max="100" step="5"></div>
+<div class="prow"><label for="r1Idle">Простой не больше <b id="r1IdleValue">60 мин</b></label><input id="r1Idle" type="range" min="5" max="120" step="5"></div>
+<div class="row applyrow hide" id="r1ApplyRow"><button type="button" class="primary pbtn" id="publishResearchOne" style="margin-left:auto">Применить</button></div>
+<p class="hint" id="researchOneControlState" style="margin:4px 0 0"></p></details>
+<div class="chips seg" id="r1Seg"><button class="active" data-r1f="all">Все <span class="cnt" id="r1AllN"></span></button><button data-r1f="live">🟢 <span id="r1Live">—</span></button><button data-r1f="dead">🔴 <span id="r1Dead">—</span></button><span class="cnt" style="align-self:center">⏳ <span id="r1Wait">—</span></span></div>
+<div class="chips seg" id="r1N"><button class="active" data-r1n="10">10</button><button data-r1n="20">20</button><button data-r1n="50">50</button><button data-r1n="100">100</button></div>
+<div class="list" id="r1Rows"></div>
+<div hidden><button id="applyR1"></button><input id="ownerResearchOneKey" class="ownerkey"><input id="confirmResearchOne" type="checkbox" checked><div id="r1Auto"></div><div id="r1Meter"></div><div id="r1Suggestions"></div></div>
 </section>
 <section class="page" id="p-r2" hidden>
 <h1>Исследование 2-го уровня</h1><p class="muted">Источник: «Прошли». Одна общая кривая, точка 0 — окончание таймера решения, следующие 300 минут — только для оценки результата.</p>
@@ -164,6 +160,6 @@
 <footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — разделены серверные записи и локальные черновики; неполные наблюдения не выдаются за результат.</footer>
 </main>
 <script src="./server/observation-contract.js?v=20261018-admission-3" defer></script>
-<script src="./v2.js?v=20261018-in-3" defer></script>
+<script src="./v2.js?v=20261018-r1-1" defer></script>
 <noscript>Текстовая сводка для ИИ: https://storage.googleapis.com/sol-scan-511718-data/ai/summary.md (JSON: ai/summary.json)</noscript>
 </body></html>

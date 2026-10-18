@@ -660,6 +660,7 @@ function renderAutoSuggestions(report){
         ':'+i+'">Открыть в редакторе</button></div>';
     }).join('');
 }
+var R1F='all',R1N=10;
 function renderR1(){
   if($('r1Suggestions'))$('r1Suggestions').innerHTML=renderAutoSuggestions(autoOne);
   if(researchMeta){
@@ -679,13 +680,13 @@ function renderR1(){
         'Накопление обучающих живых и мёртвых.';
       $('r1Auto').textContent+=' '+text+' Предложено условий: '+fmt(autoOne.rules.length)+'.';
     }
-    const rows=bank['1'].slice(-10).reverse();
-    $('r1Rows').innerHTML=rows.length?'<h2>Размечено на сервере</h2>'+rows.map(function(x){
-      const positive=x.activity>=cfg.minActive&&x.idle<=cfg.maxIdle;
-      return '<div class="vrow"><div class="row"><b class="mono">'+esc(x.mint.slice(0,11))+'…</b>'+
-        '<span class="badge '+(positive?'good':'bad')+'">'+(positive?'🟢 Живая':'🔴 Мёртвая')+'</span></div>'+
-        '<p class="muted">Активность '+x.activity.toFixed(1)+'% · пауза '+x.idle+' мин · данные сохранены на сервере</p></div>';
-    }).join(''):'<div class="muted">Пока нет монет с завершённым и достаточно полным наблюдением. Сервер продолжает сбор.</div>';
+    var r1ar=$('r1ApplyRow').classList;if(!r1ar.contains||r1ar.contains('hide')){$('r1Hours').value=cfg.hours;$('r1HoursValue').textContent=cfg.hours+' ч';$('r1Activity').value=cfg.minActive;$('r1ActivityValue').textContent=cfg.minActive+'%';$('r1Idle').value=cfg.maxIdle;$('r1IdleValue').textContent=cfg.maxIdle+' мин'}
+    var all=bank['1'],isLive=function(x){return x.activity>=cfg.minActive&&x.idle<=cfg.maxIdle};
+    $('r1AllN').textContent=fmt(all.length);$('r1Wait').textContent=fmt(p['not-yet-finished']||0);
+    $('r1Sum').textContent=cfg.hours+' ч · '+cfg.minActive+'% · '+cfg.maxIdle+' мин';
+    var sel=all.filter(function(x){return R1F==='all'||(R1F==='live')===isLive(x)}).slice(-R1N).reverse();
+    $('r1Rows').innerHTML=sel.length?sel.map(function(x){var lv=isLive(x),c=dataset.find(function(d){return mint(d)===x.mint}),bd='<span class="badge '+(lv?'good':'bad')+'">'+(lv?'🟢':'🔴')+'</span>';
+      return c?coinHtml(c,bd):'<div class="coin" data-coin="'+esc(x.mint)+'"><div class="body"><div class="name mono">'+esc(x.mint.slice(0,11))+'…</div><div class="detail">сделки '+x.activity.toFixed(0)+'% · простой '+x.idle+' мин</div></div>'+bd+'</div>'}).join(''):'<div class="empty-state">Пока нет</div>';
     return;
   }
   const provisionalLive=lastR1.filter(function(x){return x.result.label==='live'}).length;
@@ -1002,7 +1003,7 @@ async function publishResearchLevel(level){
       return;
     }
     $(keyField).value='';$(checkField).checked=false;
-    $(statusField).textContent='Версия принята. Для неё сервер создаст отдельную группу наблюдений.';
+    $(statusField).textContent='✓ Принято, сервер применит через 2–3 мин';
     note('Сервер переключится на новые правила без переписывания старой истории.');
   }catch(e){
     $(statusField).textContent='Ошибка связи: '+String(e.message||e);
@@ -1204,6 +1205,10 @@ function bind(){
     }
     save();refresh();
   });
+  $('r1Seg').addEventListener('click',function(e){var b=e.target.closest('[data-r1f]');if(!b)return;R1F=b.dataset.r1f;document.querySelectorAll('#r1Seg [data-r1f]').forEach(function(x){x.classList.toggle('active',x===b)});renderR1()});
+  $('r1N').addEventListener('click',function(e){var b=e.target.closest('[data-r1n]');if(!b)return;R1N=+b.dataset.r1n;document.querySelectorAll('#r1N [data-r1n]').forEach(function(x){x.classList.toggle('active',x===b)});renderR1()});
+  ['r1Hours','r1Activity','r1Idle'].forEach(function(id){$(id).addEventListener('input',function(){$('r1ApplyRow').classList.remove('hide')})});
+  $('r1Rows').addEventListener('click',function(e){var b=e.target.closest('[data-coin]');if(!b)return;var c=dataset.find(function(d){return mint(d)===b.dataset.coin});if(c)showCoinDetail(c,'r1Rows')});
   $('coinList').addEventListener('click',function(e){
     const button=e.target.closest('[data-coin]');if(!button)return;
     showCoinDetail(lastAccepted.find(function(c){return mint(c)===button.dataset.coin}),'coinList');
