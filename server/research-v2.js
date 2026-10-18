@@ -4,6 +4,7 @@
 // Outcomes are measured LATER; incomplete/missing coverage remains "pending".
 const MIN=60_000, FIVE=5*MIN;
 const KEYS=['buyers','trades','volume','liq','mc','buys','sells','buySellRatio'];
+const RULE_KEYS=[...KEYS,'buyers10','quoteSol','safeContract','top1','top10'];
 const inRange=(x,a,b)=>Number.isFinite(x)&&x>=a&&x<=b;
 function samples(coin) {
   const src=[coin?.preObs,...(coin?.origs||[]),coin].filter(Boolean);
@@ -197,7 +198,8 @@ function proposeRules(rows,{positive='live',negative='dead',minPos=100,minNeg=1,
   const sorted=[...rows].sort((a,b)=>a.time-b.time);
   const out=[];
   const seenRules=new Set();
-  for(const key of KEYS){
+  // Перебираем и базовые, и стартовые признаки (покупатели 10 мин, SOL, контракт, держатели).
+  for(const key of RULE_KEYS){
     const vals=sorted.map(r=>r.features?.[key]).filter(v=>typeof v==='number'&&Number.isFinite(v)).sort((a,b)=>a-b);
     if(vals.length<Math.max(12,Math.floor(rows.length*.4)))continue;
     for(const p of [.05,.1,.2,.3,.4,.5,.6,.7,.8,.9,.95]){
@@ -228,5 +230,5 @@ function capBank(rows,labelFn=it=>it.label,positive='live',negative='dead',max=5
   const n=dedup.filter(x=>labelFn(x)===negative).slice(0,max);
   return [...p,...n].sort((a,b)=>a.time-b.time);
 }
-module.exports={KEYS,samples,candles,featuresAt,starterFeaturesAt,activityOutcome,
+module.exports={KEYS,RULE_KEYS,samples,candles,featuresAt,starterFeaturesAt,activityOutcome,
   strengthOutcome,evaluation,passes,ruleKey,ruleStats,proposeRules,capBank};
