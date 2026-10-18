@@ -887,6 +887,18 @@ function renderServerRuleHistory(){
   }).join(''):'<p class="muted">Нет архивных версий для выбранного уровня.</p>';
 }
 var LP='all',LIB_SEL=false,LIBSET={},LIB_RANK=[];
+var LIB_STORE=false,STORE_N={};
+var STORE_KINDS=[['live','🟢 Живые','1',0],['dead','🔴 Мёртвые','1',1],['strong','💪 Сильные','2',0],['weak','🪫 Слабые','2',1]];
+function storeCfg(){try{return JSON.parse(localStorage.getItem('storeCfg')||'{}')}catch(e){return {}}}
+function storeTarget(ph,k){var c=storeCfg();return (c[ph]&&c[ph][k])||2000}
+function renderStore(){var box=$('storeBox');if(!box)return;var open={};if(box.querySelectorAll)box.querySelectorAll('details[open]').forEach(function(d){open[d.dataset.sk]=1});
+  var phs=LP==='all'?['before','after']:[LP];
+  box.innerHTML=STORE_KINDS.map(function(K){var g=classified(K[2])[K[3]].filter(function(x){var p=r1Phase(x);return LP==='all'||p===LP}),tg=phs.reduce(function(a,ph){return a+storeTarget(ph,K[0])},0),n=STORE_N[K[0]]||20;
+    var rows=g.slice(-n).reverse().map(function(x){var c=lastAccepted.find(function(d){return mint(d)===x.mint});return c?coinHtml(c):'<div class="coin" data-coin="'+esc(x.mint)+'"><div class="body"><div class="name mono">'+esc(x.mint.slice(0,11))+'…</div></div></div>'}).join('');
+    return '<details class="frow" data-sk="'+K[0]+'" style="margin-top:6px"'+(open[K[0]]?' open':'')+'><summary><span class="fname">'+K[1]+' <span class="hint">'+fmt(g.length)+'/'+fmt(tg)+'</span></span></summary>'+
+      '<div class="meter" style="margin:6px 0"><div style="width:'+Math.min(100,100*g.length/tg)+'%"></div></div>'+
+      (LP==='all'?'<p class="hint" style="margin:4px 0">Цель задаётся отдельно в 🌱 До и 🎓 После</p>':'<div class="prow"><label>Хранить <b class="stv">'+storeTarget(LP,K[0])+'</b> монет</label><input type="range" min="50" max="5000" step="50" value="'+storeTarget(LP,K[0])+'" data-st="'+K[0]+'"></div><div class="row applyrow hide"><button type="button" class="primary pbtn" data-stapply="'+K[0]+'" style="margin-left:auto">Применить</button></div>')+
+      '<div class="list">'+(rows||'<div class="empty-state">Пока нет</div>')+'</div>'+(g.length>n?'<button type="button" class="add1" data-stmore="'+K[0]+'">Показать ещё</button>':'')+'</details>'}).join('')}
 function libRender(){var lvl=+s.level||1,rep=lvl===1?autoOne:autoTwo,h=renderAutoSuggestions(rep,lvl,LP);
   var box=$('libMods');if(!box)return;box.innerHTML=h;box.classList.toggle('libsel',LIB_SEL);
   if(box.querySelectorAll)box.querySelectorAll('[data-mopen]').forEach(function(t){t.classList.toggle('picked',!!LIBSET[t.dataset.mopen])});
@@ -894,6 +906,7 @@ function libRender(){var lvl=+s.level||1,rep=lvl===1?autoOne:autoTwo,h=renderAut
 function modScore(m){var e=m.eval||{},t=e.poly||e.train;return t&&t.positiveRecall!=null?Math.round((t.positiveRecall-(1-t.negativeRejection))*100):null}
 function renderLibrary(){
   renderServerRuleHistory();
+  $('storeBox').classList.toggle('hide',!LIB_STORE);$('libLevelBox').classList.toggle('hide',LIB_STORE);if(LIB_STORE){renderStore();return}
   var names=s.level==='1'?['Живые','Мёртвые']:['Сильные','Слабые'],target=s.poly[s.level],groups=classified(s.level),lenA=groups[0].length,lenB=groups[1].length;
   $('polyTitle').textContent='🟢 '+fmt(lenA)+'/'+fmt(target[0])+' · 🔴 '+fmt(lenB)+'/'+fmt(target[1]);
   libRender();
@@ -1286,7 +1299,10 @@ function bind(){
   $('pSeg').addEventListener('click',function(e){var b=e.target.closest('[data-pf]');if(!b)return;PF=b.dataset.pf;document.querySelectorAll('#pSeg [data-pf]').forEach(function(x){x.classList.toggle('active',x===b)});renderPassed()});
   $('pwMin').addEventListener('input',function(){$('pwV').textContent=$('pwMin').value;$('pwApplyRow').classList.remove('hide')});
   $('pwApply').addEventListener('click',function(){try{localStorage.setItem('passWin',$('pwMin').value)}catch(e){}$('pwApplyRow').classList.add('hide');renderPassed();note('Применено')});
-  $('libPh').addEventListener('click',function(e){var b=e.target.closest('[data-lp]');if(!b)return;LP=b.dataset.lp;document.querySelectorAll('#libPh [data-lp]').forEach(function(x){x.classList.toggle('active',x===b)});libRender()});
+  $('libPh').addEventListener('click',function(e){var b=e.target.closest('[data-lp]');if(!b)return;LP=b.dataset.lp;document.querySelectorAll('#libPh [data-lp]').forEach(function(x){x.classList.toggle('active',x===b)});LIB_STORE?renderStore():libRender()});
+  $('storeBox').addEventListener('input',function(e){var t=e.target;if(!t.dataset.st)return;var d=t.closest('details');d.querySelector('.stv').textContent=t.value;d.querySelector('.applyrow').classList.remove('hide')});
+  $('storeBox').addEventListener('click',function(e){var t=e.target,k;if((k=t.dataset.stapply)){var c=storeCfg();c[LP]=c[LP]||{};c[LP][k]=+t.closest('details').querySelector('[data-st]').value;try{localStorage.setItem('storeCfg',JSON.stringify(c))}catch(x){}renderStore();note('Применено');return}
+    if((k=t.dataset.stmore)){STORE_N[k]=(STORE_N[k]||20)+20;renderStore();return}var b=t.closest('[data-coin]');if(b){var c2=lastAccepted.find(function(d){return mint(d)===b.dataset.coin});if(c2)showCoinDetail(c2,'storeBox')}});
   $('libSelect').addEventListener('click',function(){LIB_SEL=!LIB_SEL;LIBSET={};this.textContent=LIB_SEL?'Отмена':'Выбрать';$('libBar').classList.toggle('hide',!LIB_SEL);$('libMsg').textContent=LIB_SEL?'Нажимай на модули, чтобы отметить':'';libRender()});
   $('libMods').addEventListener('click',function(e){var t=e.target.closest('[data-mopen]');if(!t)return;var id=t.dataset.mopen;if(LIB_SEL){LIBSET[id]=!LIBSET[id];t.classList.toggle('picked',!!LIBSET[id]);$('libMsg').textContent='Отмечено: '+Object.keys(LIBSET).filter(function(k){return LIBSET[k]}).length}else openModSheet(id)});
   $('libTest').addEventListener('click',function(){var ids=Object.keys(LIBSET).filter(function(k){return LIBSET[k]});if(ids.length<2){$('libMsg').textContent='Отметь хотя бы 2 модуля';return}
@@ -1382,7 +1398,7 @@ function bind(){
   $('r2Step').addEventListener('change',function(){s.r2Step=+this.value;s.r2Page=0;save();renderR2()});
   $('r2Prev').addEventListener('click',function(){s.r2Page--;save();renderR2()});
   $('r2Next').addEventListener('click',function(){s.r2Page++;save();renderR2()});
-  $('levels').addEventListener('click',function(e){var b=e.target.closest('[data-level]');if(!b)return;s.level=b.dataset.level;testHtml='';$('editor').hidden=true;this.querySelectorAll('button').forEach(function(x){x.classList.toggle('active',x===b)});save();renderLibrary()});
+  $('levels').addEventListener('click',function(e){var st=e.target.closest('[data-store]');if(st){LIB_STORE=true;this.querySelectorAll('button').forEach(function(x){x.classList.toggle('active',x===st)});renderLibrary();return}var b=e.target.closest('[data-level]');if(!b)return;LIB_STORE=false;s.level=b.dataset.level;testHtml='';$('editor').hidden=true;this.querySelectorAll('button').forEach(function(x){x.classList.toggle('active',x===b)});save();renderLibrary()});
   for(var id2 of ['polyA','polyB'])$(id2).addEventListener('input',function(){$(this.id+'Value').textContent=fmt(+this.value)});
   $('polyApply').addEventListener('click',function(){s.poly[s.level]=[+$('polyA').value,+$('polyB').value];testHtml='';save();renderLibrary();note('Размеры полигона сохранены')});
   $('testAll').addEventListener('click',testAll);
