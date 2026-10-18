@@ -1,5 +1,5 @@
 """Publish only changed runtime files with generation leases, collector last."""
-import argparse,base64,hashlib,json,pathlib,shutil,subprocess
+import argparse,base64,hashlib,json,pathlib,shutil,subprocess,re
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 def upload_plan(files,metadata):
     changed=[name for name,body in files.items() if metadata[name].get('md5_hash')!=base64.b64encode(hashlib.md5(body).digest()).decode()]
@@ -12,13 +12,16 @@ def main():
     files={name:(ROOT/'work/recovery-build/server'/name).read_bytes() for name in manifest['files']}
     for name,body in files.items():
         if hashlib.sha256(body).hexdigest()!=manifest['files'][name]:raise RuntimeError('Unverified build: '+name)
-    def run(args):
+    def run(args,allow_missing=False):
         r=subprocess.run([a.gcloud,*args],capture_output=True,text=True)
-        if r.returncode:raise RuntimeError('Cloud operation failed: '+args[1]+' (no credentials logged)')
+        if r.returncode:
+            if allow_missing and re.search(r'404|not found|does not exist|no urls matched',r.stderr,re.I):return None
+            raise RuntimeError('Cloud operation failed: '+args[1]+' (no credentials logged)')
         return r.stdout
     metadata={}
     for name in files:
-        metadata[name]=json.loads(run(['storage','objects','describe','gs://'+a.bucket+'/code/'+name,'--format=json(generation,md5_hash)']))
+        described=run(['storage','objects','describe','gs://'+a.bucket+'/code/'+name,'--format=json(generation,md5_hash)'],allow_missing=True)
+        metadata[name]=json.loads(described) if described else {'generation':'0','md5_hash':None}
     before=str(metadata['collector.js']['generation'])
     if a.expected_generation and before!=a.expected_generation:raise RuntimeError('Collector generation changed; publication aborted')
     changed=upload_plan(files,metadata)

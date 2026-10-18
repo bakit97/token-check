@@ -1,7 +1,7 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "40380315a8988761bf5c681de326c1a035bde7b829146b4d4e67ae8b17a75cac",
+    "collector.js": "24f27f7e128b9d433353d6eb5ba1c3776096142468899ac9cbc966b6bb95201a",
     "event-clock.js": "ae835ddd6a280ae888d1b264a4e2acf665bdd62d895a3ea42c255339e793e2ad",
     "admission.js": "99feba0f235ce8e262f01b1e517a9373c906fb6c51353a2951a184ef5bfacde8",
     "source-runtime.js": "089dc694373e09fea9cd0598d9697c4f441b04c374006f677caab0502cde4e21",
@@ -19,7 +19,8 @@
     "stream-json.js": "b212a8cabdb25f9f8ef5fe7e7c081d04dbda3e4218e6c3df6adfb453d6a48461",
     "observation-contract.js": "5822bacc8be4e9d4e50b81543e02411df646f26fb16076a9f856e817a2b75124",
     "packed-observations.js": "6e2622a57f6d8939411b9884ec1f9c80bd8e091b8d734c8276465789128204e4",
-    "completed-coins.js": "15a53c35d28977496b0f8580aa53ec735ea2981af7aa3a5ec064913c937e5af4",
-    "seed-completed.js": "01522182858aba7faab6cd85a5badd7552795cecbac2c12f00755a8ce985e1a4"
+    "completed-coins.js": "69be3bcd323fe849755d64ac97eedcc4dc0301b4969410d84379418ca52b6796",
+    "seed-completed.js": "01522182858aba7faab6cd85a5badd7552795cecbac2c12f00755a8ce985e1a4",
+    "active-history.js": "5492de7925391b7cd8bea9a28b518405515bca75c979be9ba2512d505f87886b"
   }
 }
