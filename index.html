@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b0d14">
 <title>SOL·СКАН · v2</title>
-<link rel="stylesheet" href="./v2.css?v=20261018-mine-4">
+<link rel="stylesheet" href="./v2.css?v=20261018-key-1">
 </head>
 <body>
 <header><div class="app">
-<div class="bar"><div class="brand">SOL·СКАН <span class="badge">v2</span></div><span id="net" class="live">● Подключение…</span><a class="legacy" href="https://storage.googleapis.com/sol-scan-511718-data/ai/summary.md" target="_blank" rel="noopener" title="Текстовая сводка, которую может прочитать любой ИИ">Сводка для ИИ</a></div>
+<div class="bar"><div class="brand">SOL·СКАН <span class="badge">v2</span></div><span id="net" class="live">● Подключение…</span><button type="button" id="keyBtn" class="keybtn" title="Пароль владельца">🔒</button><a class="legacy" href="https://storage.googleapis.com/sol-scan-511718-data/ai/summary.md" target="_blank" rel="noopener" title="Текстовая сводка, которую может прочитать любой ИИ">Сводка для ИИ</a></div>
 <nav class="tabs" id="tabs" aria-label="Разделы">
 <button class="active" data-page="all">Все <span id="todayTab"></span></button>
 <button data-page="mine">Мои фильтры</button>
@@ -28,7 +28,7 @@
 <label class="control"><span>Последних карточек</span><select class="input" id="cardLimit"><option>10</option><option>20</option><option>30</option><option>50</option><option>100</option></select></label>
 </div><button class="primary" id="applySource" style="margin-top:12px">Применить</button><p class="hint">Возраст задаёт сервер. Менять его с телефона можно будет после подключения управления.</p>
 <div class="hide" id="ageOwnerBlock"><div class="controls" style="margin-top:10px">
-<label class="control"><span>Ключ владельца (не сохраняется)</span><input type="password" class="input" id="ageOwnerKey" autocomplete="off" spellcheck="false" placeholder="Только после подключения защищённого сервиса"></label>
+<label class="control ownerkey"><span>Ключ владельца (не сохраняется)</span><input type="password" class="input" id="ageOwnerKey" autocomplete="off" spellcheck="false" placeholder="Только после подключения защищённого сервиса"></label>
 </div>
 <label class="hint" style="display:block;margin:10px 0"><input type="checkbox" id="confirmAgePublish"> Подтверждаю изменение серверных возрастов до/после миграции</label>
 <button type="button" id="publishSourceAge" class="primary" disabled>Изменить возраст на сервере</button>
@@ -53,7 +53,7 @@
 <div class="card compact"><div class="row"><b>1 уровень</b><button type="button" class="pbtn add1" data-addlev="1">+ модуль</button></div><div id="mods1" class="flist"></div></div>
 <div class="card compact"><div class="row"><b>2 уровень</b><button type="button" class="pbtn add1" data-addlev="2">+ модуль</button></div><div id="mods2" class="flist"></div></div>
 <div id="modPicker" class="card compact" hidden><div class="row"><b id="modPickerT">Добавить</b><button type="button" class="pbtn" id="modPickerX">✕</button></div><div id="modPickerList" class="flist"></div></div>
-<div class="row applyrow" id="modApplyRow" hidden><input type="password" class="input sm" id="modKey" placeholder="пароль" autocomplete="off"><button type="button" class="primary pbtn" id="modApply">Применить</button></div>
+<div class="row applyrow" id="modApplyRow" hidden><input type="password" class="input sm ownerkey" id="modKey" placeholder="пароль" autocomplete="off"><button type="button" class="primary pbtn" id="modApply">Применить</button></div>
 <p class="hint" id="modMsg"></p>
 <span id="serverModuleCount" hidden></span><span id="serverModules" hidden></span>
 </div>
@@ -68,7 +68,7 @@
 </div></details>
 <div class="frow"><label class="swl"><input type="checkbox" id="inModules"> Модули из Окна возможностей</label><div class="hint" id="inModSum"></div></div>
 <p class="hint" id="intakeStats"></p>
-<div class="row applyrow"><input type="password" class="input sm" id="intakeKey" placeholder="пароль" autocomplete="off"><button type="button" class="primary pbtn" id="intakeApply">Применить</button></div>
+<div class="row applyrow"><input type="password" class="input sm ownerkey" id="intakeKey" placeholder="пароль" autocomplete="off"><button type="button" class="primary pbtn" id="intakeApply">Применить</button></div>
 <p class="hint" id="intakeMsg"></p></div>
 </div>
 <details class="card compact hide" id="oldDrafts"><summary>⚙ Черновики и публикация</summary>
@@ -83,7 +83,7 @@
 <p class="hint">Локальные изменения не включают фоновую фильтрацию. Подготовь конфигурацию из текущих фильтров и модулей. Её нужно отдельно опубликовать на сервере через репозиторий. Публикация будет происходить после этапа разработки и проверок.</p>
 <button type="button" id="exportServerConfig" class="primary">Сохранить конфигурацию сервера</button>
 <p class="hint" id="controlState">Безопасный канал прямого управления ещё не включён. Пока можно сохранить файл конфигурации.</p>
-<label class="control" style="margin-top:9px"><span>Ключ владельца (не сохраняется)</span><input type="password" class="input" id="ownerControlKey" autocomplete="off" spellcheck="false" placeholder="Только после запуска защищённого сервиса"></label>
+<label class="control ownerkey" style="margin-top:9px"><span>Ключ владельца (не сохраняется)</span><input type="password" class="input" id="ownerControlKey" autocomplete="off" spellcheck="false" placeholder="Только после запуска защищённого сервиса"></label>
 <label class="hint" style="display:block;margin-top:10px"><input type="checkbox" id="confirmControlPublish"> Подтверждаю публикацию серверных правил и таймера</label>
 <button type="button" id="publishServerConfig" class="primary" style="margin-top:10px" disabled>Опубликовать на сервере</button>
 <p class="hint">В готовом файле нет ключей или паролей. Монеты, обнаруженные до активации новой версии на сервере, задним числом не добавляются.</p></details>
@@ -108,7 +108,7 @@
 <div class="row" style="margin-top:8px"><label for="r1Activity">Минимум времени с реальными сделками</label><b id="r1ActivityValue">70%</b></div><input id="r1Activity" type="range" min="0" max="100" step="5">
 <div class="row" style="margin-top:8px"><label for="r1Idle">Допустимый непрерывный простой</label><b id="r1IdleValue">60 минут</b></div><input id="r1Idle" type="range" min="5" max="120" step="5">
 <button class="primary" id="applyR1">Применить локально</button>
-<div class="controls" style="margin-top:12px"><label class="control"><span>Ключ владельца — исследование 1</span><input id="ownerResearchOneKey" type="password" class="input" autocomplete="off" spellcheck="false" placeholder="Не сохраняется"></label></div>
+<div class="controls" style="margin-top:12px"><label class="control ownerkey"><span>Ключ владельца — исследование 1</span><input id="ownerResearchOneKey" type="password" class="input" autocomplete="off" spellcheck="false" placeholder="Не сохраняется"></label></div>
 <label class="hint" style="display:block;margin:10px 0"><input id="confirmResearchOne" type="checkbox"> Подтверждаю запуск новой серверной исследовательской версии</label>
 <button id="publishResearchOne" class="primary" type="button" disabled>Применить на сервере · уровень 1</button>
 <p id="researchOneControlState" class="hint">Изменённые правила создают новую группу наблюдений. Старые результаты не переписываются.</p>
@@ -127,7 +127,7 @@
 <div class="row"><span class="muted" id="r2Paging"></span><div class="action-bar"><button id="r2Prev">←</button><button id="r2Next">→</button></div></div></div>
 <div class="card"><h2>Ручная классификация</h2><div class="row"><label for="r2Strong">Доля 300 минут выше цены в точке 0</label><b id="r2StrongValue">70%</b></div><input type="range" id="r2Strong" min="1" max="100" value="70">
 <button id="applyR2" class="primary">Применить локально</button>
-<div class="controls" style="margin-top:12px"><label class="control"><span>Ключ владельца — исследование 2</span><input id="ownerResearchTwoKey" type="password" class="input" autocomplete="off" spellcheck="false" placeholder="Не сохраняется"></label></div>
+<div class="controls" style="margin-top:12px"><label class="control ownerkey"><span>Ключ владельца — исследование 2</span><input id="ownerResearchTwoKey" type="password" class="input" autocomplete="off" spellcheck="false" placeholder="Не сохраняется"></label></div>
 <label class="hint" style="display:block;margin:10px 0"><input id="confirmResearchTwo" type="checkbox"> Подтверждаю запуск новой серверной исследовательской версии</label>
 <button id="publishResearchTwo" class="primary" type="button" disabled>Применить на сервере · уровень 2</button>
 <p id="researchTwoControlState" class="hint">Изменение порога не размечает заново старую историю.</p>
@@ -163,6 +163,6 @@
 <footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — разделены серверные записи и локальные черновики; неполные наблюдения не выдаются за результат.</footer>
 </main>
 <script src="./server/observation-contract.js?v=20261018-admission-3" defer></script>
-<script src="./v2.js?v=20261018-mine-4" defer></script>
+<script src="./v2.js?v=20261018-key-1" defer></script>
 <noscript>Текстовая сводка для ИИ: https://storage.googleapis.com/sol-scan-511718-data/ai/summary.md (JSON: ai/summary.json)</noscript>
 </body></html>

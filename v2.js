@@ -326,6 +326,16 @@ function loadLogos(){document.querySelectorAll('.avatar.empty[data-uri]').forEac
   fetch(ipfsHttp(u),{cache:'force-cache'}).then(function(r){return r.ok?r.json():null}).then(function(j){var im=j&&typeof j.image==='string'?ipfsHttp(j.image):'';
     if(im&&/^https:\/\//.test(im)){IMG[m]=im;document.querySelectorAll('[data-coin="'+m+'"] .avatar.empty').forEach(function(a){a.outerHTML='<img class="avatar" src="'+esc(im)+'" alt="" loading="lazy">'})}})
   .catch(function(){}).finally(function(){IMG_BUSY--})})}
+
+// ---- Пароль владельца: вводится один раз и запоминается на этом телефоне ----
+var OWNER_KEY_NAME='solscan-owner-key';
+function ownerKey(){try{return localStorage.getItem(OWNER_KEY_NAME)||''}catch(e){return ''}}
+function setOwnerKey(k){try{if(k)localStorage.setItem(OWNER_KEY_NAME,k);else localStorage.removeItem(OWNER_KEY_NAME)}catch(e){}renderKeyUI()}
+function renderKeyUI(){var has=!!ownerKey();document.querySelectorAll('.ownerkey').forEach(function(el){el.classList.toggle('hide',has)});
+  var b=document.getElementById('keyBtn');if(b)b.textContent=has?'🔑':'🔒'}
+function keyFrom(id){var v=(document.getElementById(id)||{}).value;v=(v||'').trim();return v||ownerKey()}
+async function ownerFetch(url,opts){var r=await fetch(url,opts);var a=opts&&opts.headers&&opts.headers.Authorization||'';rememberIfOk(r,a.replace(/^Bearer /,''));return r}
+function rememberIfOk(r,key){if(r&&r.ok&&key)setOwnerKey(key);else if(r&&r.status===401)setOwnerKey('')}
 function coinHtml(c,extra){
   var e=c._entry,p=(c.ds||[]).at(-1),L=liveOf(c),img=imgOf(c);
   var name=esc(c.n||c.s||'Токен'),symbol=esc(c.s||'');
@@ -525,12 +535,12 @@ function modClick(e){var t=e.target,d=draft();if(!d)return;
   if(t.dataset.tg!=null){e.preventDefault();var m=d.modules[+t.dataset.tg];m.enabled=!m.enabled;MOD_DIRTY=true;renderServerModules()}
   else if(t.dataset.r1!=null){e.preventDefault();var m2=d.modules[+t.dataset.r1];if(m2.toR1)delete m2.toR1;else m2.toR1=true;MOD_DIRTY=true;renderServerModules()}
   else if(t.dataset.del!=null){d.modules.splice(+t.dataset.del,1);MOD_DIRTY=true;renderServerModules()}}
-async function applyModules(){var key=$('modKey').value.trim(),d=draft();
+async function applyModules(){var key=keyFrom('modKey'),d=draft();
   if(!controlEndpoint){$('modMsg').textContent='Сервер управления недоступен';return}
-  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){$('modMsg').textContent='Введи пароль';return}
+  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){$('modMsg').textContent='Нажми 🔒 вверху и введи пароль';return}
   $('modApply').disabled=true;$('modMsg').textContent='Отправка…';
-  try{var r=await fetch(controlEndpoint+'/api/filter-config',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(d)});
-    $('modKey').value='';if(r.ok){MOD_DIRTY=false;$('modMsg').textContent='✓ Принято, сервер применит за пару минут'}else $('modMsg').textContent='Отклонено: HTTP '+r.status+(r.status===401?' (пароль)':'')}
+  try{var r=await ownerFetch(controlEndpoint+'/api/filter-config',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(d)});
+    $('modKey').value='';rememberIfOk(r,key);if(r.ok){MOD_DIRTY=false;$('modMsg').textContent='✓ Принято, сервер применит за пару минут'}else $('modMsg').textContent='Отклонено: HTTP '+r.status+(r.status===401?' (пароль)':'')}
   catch(e){$('modMsg').textContent='Ошибка связи'}finally{$('modApply').disabled=false}}
 // ---- Вход в Исследование 1 ----
 function intakeFromUI(){return {manual:{enabled:$('inManual').checked,phase:$('inPhaseOn').checked?$('inPhase').value:'both',
@@ -553,14 +563,14 @@ function renderIntake(){if(!$('intakeBox'))return;var st=researchMeta&&researchM
   var acc=researchMeta&&researchMeta.intakeAccepted||{},rej=researchMeta&&researchMeta.intakeRejected||{};
   var a=Object.values(acc).reduce(function(p,v){return p+v},0),r=Object.values(rej).reduce(function(p,v){return p+v},0);
   $('intakeStats').textContent=x?'вошло '+a+' · не вошло '+r+(r?' ('+Object.keys(rej).map(function(k){return ({phase:'поток','no-buyers10':'нет данных о покупателях',buyers10:'мало покупателей','no-quoteSol':'нет данных SOL',quoteSol:'мало SOL',sample:'жребий','not-matched':'не прошли','modules-only-not-passed':'не в «Прошли»'})[k]+' '+rej[k]}).join(', ')+')':''):''}
-async function applyIntake(){var key=$('intakeKey').value.trim(),msg=$('intakeMsg');
+async function applyIntake(){var key=keyFrom('intakeKey'),msg=$('intakeMsg');
   if(!controlEndpoint){msg.textContent='Сервер управления недоступен';return}if(!researchMeta){msg.textContent='Сервер ещё загружается, попробуй через минуту';return}
-  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){msg.textContent='Введи пароль';return}
+  if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){msg.textContent='Нажми 🔒 вверху и введи пароль';return}
   var it=intakeFromUI();if(!it.manual.enabled&&!it.modules.enabled&&!window.confirm('Оба входа выключены — исследование перестанет набирать монеты. Продолжить?'))return;
   var st=researchMeta.settings,cfg={hours:st.hours,decisionMinutes:st.decisionMinutes,minActive:st.minActive,maxIdle:st.maxIdle,minCoverage:st.minCoverage,intake:it};
   $('intakeApply').disabled=true;msg.textContent='Отправка…';
-  try{var r=await fetch(controlEndpoint+'/api/research-one',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(cfg)});
-    $('intakeKey').value='';msg.textContent=r.ok?'✓ Принято':'Сервер отклонил: HTTP '+r.status+(r.status===401?' (неверный пароль)':'');if(r.ok)INTAKE_DIRTY=false}
+  try{var r=await ownerFetch(controlEndpoint+'/api/research-one',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(cfg)});
+    $('intakeKey').value='';rememberIfOk(r,key);msg.textContent=r.ok?'✓ Принято':'Сервер отклонил: HTTP '+r.status+(r.status===401?' (неверный пароль)':'');if(r.ok)INTAKE_DIRTY=false}
   catch(e){msg.textContent='Ошибка связи: '+String(e.message||e)}finally{$('intakeApply').disabled=false}}
 function renderModules(){
   var html='';
@@ -950,7 +960,7 @@ async function publishResearchLevel(level){
   const current=one?researchMeta:twoMeta;
   if(!controlEndpoint||!current){note('Серверное исследование ещё недоступно');return}
   if(!$(checkField).checked){note('Подтверди изменение серверного исследования');return}
-  const key=$(keyField).value.trim();
+  const key=keyFrom(keyField);
   if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
     note('Требуется отдельный ключ владельца');return;
   }
@@ -977,7 +987,7 @@ async function publishResearchLevel(level){
   $(statusField).textContent='Отправка серверной версии…';
   const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
   try{
-    const r=await fetch(controlEndpoint+endpoint,{
+    const r=await ownerFetch(controlEndpoint+endpoint,{
       method:'POST',cache:'no-store',signal:abort.signal,
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
       body:JSON.stringify(cfg)
@@ -1010,7 +1020,7 @@ async function publishSourceAge(){
   })){
     note('Возраст до и после миграции должен быть от 1 до 10 минут');return;
   }
-  const key=$('ageOwnerKey').value.trim();
+  const key=keyFrom('ageOwnerKey');
   if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
     note('Для изменения порога нужен отдельный ключ владельца');return;
   }
@@ -1019,7 +1029,7 @@ async function publishSourceAge(){
   $('sourceAgeControlState').textContent='Отправка новых возрастных порогов…';
   const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
   try{
-    const r=await fetch(controlEndpoint+'/api/source-age',{
+    const r=await ownerFetch(controlEndpoint+'/api/source-age',{
       method:'POST',cache:'no-store',signal:abort.signal,
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
       body:JSON.stringify(cfg)
@@ -1045,7 +1055,7 @@ async function publishServerConfig(){
     note('Отметь подтверждение публикации серверной версии');return;
   }
   const config=preparedServerConfig();if(!config)return;
-  const key=$('ownerControlKey').value.trim();
+  const key=keyFrom('ownerControlKey');
   if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){
     note('Нужен действительный ключ владельца, не пароль от GitHub');return;
   }
@@ -1053,7 +1063,7 @@ async function publishServerConfig(){
   button.disabled=true;$('controlState').textContent='Отправка настроек на сервер…';
   const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
   try{
-    const r=await fetch(controlEndpoint+'/api/filter-config',{
+    const r=await ownerFetch(controlEndpoint+'/api/filter-config',{
       method:'POST',cache:'no-store',signal:abort.signal,
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
       body:JSON.stringify(config)
@@ -1165,6 +1175,8 @@ function bind(){
   $('mods1').addEventListener('click',modClick);$('mods2').addEventListener('click',modClick);$('modApply').addEventListener('click',applyModules);
   ['inManual','inModules','inPhaseOn','inPhase','inBuyOn','inBuy','inSolOn','inSol','inSampleOn','inSample'].forEach(function(id){$(id).addEventListener('input',function(){INTAKE_DIRTY=true;renderIntake()})});
   $('intakeApply').addEventListener('click',applyIntake);
+  $('keyBtn').addEventListener('click',function(){if(ownerKey()){if(window.confirm('Забыть пароль на этом телефоне?'))setOwnerKey('')}else{var k=window.prompt('Пароль владельца');if(k&&/^[a-zA-Z0-9_-]{32,256}$/.test(k.trim())){setOwnerKey(k.trim());note('Пароль сохранён. Проверится при первом «Применить».')}else if(k)note('Неверный формат пароля')}});
+  renderKeyUI();
 
   $('publishResearchTwo').addEventListener('click',function(){publishResearchLevel('2')});
   $('tabs').addEventListener('click',function(e){
