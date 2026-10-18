@@ -50,7 +50,7 @@ function featuresAt(coin,decisionAt){
     volume:finite(d?.volume??null),liq:finite(d?.liq??null),
     mc:finite(d?.mc??null),buys:finite(buys),sells:finite(sells),
     buySellRatio:finite(ratio)};
-  return F;
+  return {...F,...starterFeaturesAt(coin,decisionAt)};
 }
 function activityOutcome(coin,entryAt,{hours=5,minActive=70,maxIdle=60,minCoverage=.8}={},now=Date.now()){
   if(!inRange(hours,1,24)||!inRange(minActive,0,100)||!inRange(maxIdle,5,1440))
@@ -117,9 +117,28 @@ function strengthOutcome(coin,zeroAt,{minAbove=70,minCoverage=.9}={},now=Date.no
   return {label:above/300*100>=minAbove?'strong':'weak',
     above,covered,pctAbove:above/300*100,p0,curve,minuteCurve};
 }
+// Starter rules use confirmed account rights and native on-chain balances, never USD proxies.
+function starterFeaturesAt(coin,decisionAt){
+ const WSOL='So11111111111111111111111111111111111111112',ct=coin?.ct;
+ let safeContract=null,quoteSol=null,buyers10=null;
+ if(ct&&ct.safetyVersion===1&&Array.isArray(ct.unknownExtensions)&&Number.isFinite(ct.at)&&ct.at<=decisionAt&&['token','token2022'].includes(ct.prog)){
+  const flags=['mint','freeze','hook','deleg','nontr','defFrozen','pause','feeAuthority'];
+  if(flags.every(k=>typeof ct[k]==='boolean')&&Number.isFinite(ct.fee))safeContract=flags.some(k=>ct[k])||ct.fee>0||ct.unknownExtensions.length>0?0:1;
+ }
+ const bx=coin?.bx;
+ if(bx?.cov===true&&Number.isFinite(bx.at)&&bx.at<=decisionAt&&bx.at>=coin.t+10*MIN+5000&&Number.isFinite(bx.payers)&&decisionAt-bx.at<=7*MIN)buyers10=bx.payers;
+ const qi=coin?.vmint?.indexOf(WSOL);
+ if(qi>=0&&coin.vmint.length===2&&coin.vmint[1-qi]===coin.a&&Number.isFinite(coin.vaultIdentityAt)&&coin.vaultIdentityAt<=decisionAt){
+  const row=latestBefore([...(coin.lq||[])].sort((a,b)=>a[0]-b[0]),decisionAt,7*MIN,x=>x[0]*1000);
+  if(row&&Number.isFinite(row[2+qi])&&row[2+qi]>=0)quoteSol=row[2+qi]/1e9;
+ }
+ return {safeContract,quoteSol,buyers10};
+}
 function evaluation(F,rule){
-  if(!F||!rule||!KEYS.includes(rule.key)||
+  if(!F||!rule||![...KEYS,'safeContract','quoteSol','buyers10'].includes(rule.key)||
       !['>=','<='].includes(rule.op)||!Number.isFinite(rule.value))return 'unknown';
+  if(rule.conditions){if(!Array.isArray(rule.conditions)||rule.conditions.length>8)return 'unknown';const results=rule.conditions.map(c=>evaluation(F,c));
+    if(results.includes('reject'))return 'reject';if(results.includes('unknown'))return 'unknown';}
   const v=F[rule.key];
   if(typeof v!=='number'||!Number.isFinite(v))return 'unknown';
   return rule.op==='>='?(v>=rule.value?'pass':'reject'):(v<=rule.value?'pass':'reject');
@@ -184,5 +203,5 @@ function capBank(rows,labelFn=it=>it.label,positive='live',negative='dead',max=5
   const n=dedup.filter(x=>labelFn(x)===negative).slice(0,max);
   return [...p,...n].sort((a,b)=>a.time-b.time);
 }
-module.exports={KEYS,samples,candles,featuresAt,activityOutcome,
+module.exports={KEYS,samples,candles,featuresAt,starterFeaturesAt,activityOutcome,
   strengthOutcome,evaluation,passes,ruleKey,ruleStats,proposeRules,capBank};

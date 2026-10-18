@@ -1,6 +1,6 @@
 {
   "hours": 5,
-  "decisionMinutes": 10,
+  "decisionMinutes": 15,
   "minActive": 70,
   "maxIdle": 60,
   "minCoverage": 0.8

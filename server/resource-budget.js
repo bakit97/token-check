@@ -18,7 +18,7 @@ class ResourceBudget{
       baselineCredits:Number(env.HELIUS_USED_CREDITS||174302),since:at,buckets:[],gcsMonth:new Date(at).toISOString().slice(0,7),
       gcsUsed:Number(env.GCS_CLASS_A_USED||0),gcsNext:at,gcsHour:[],gcsSuccessHour:[],reconcileAt:at,reconcileSpent:0,deferred:0};
     if(fs.existsSync(this.file)){this.state=JSON.parse(fs.readFileSync(this.file,'utf8'));}
-    const s=this.state;s.sources=s.sources||{};s.meteringSince=s.meteringSince||at;s.gcsSuccessHour=s.gcsSuccessHour||[];s.reconcileAt=s.reconcileAt??at;s.reconcileSpent=s.reconcileSpent??0;
+    const s=this.state;s.sources=s.sources||{};s.meteringSince=s.meteringSince||at;s.usageSamples=s.usageSamples||[[at,s.used]];s.gcsSuccessHour=s.gcsSuccessHour||[];s.reconcileAt=s.reconcileAt??at;s.reconcileSpent=s.reconcileSpent??0;
     if(s.schema!==1||!Number.isFinite(s.used)||s.used<0||!Number.isFinite(s.resetAt)||
        !Array.isArray(s.buckets)||!Array.isArray(s.gcsHour)||!Number.isFinite(s.gcsUsed)||
        !Number.isFinite(s.gcsNext)||!Number.isFinite(s.since)||!Number.isFinite(this.perMinute)||this.perMinute<=0||
@@ -42,6 +42,7 @@ class ResourceBudget{
       rpcCreditsHour:h.rpc,wsCreditsHour:h.ws,targetCreditsMinute:Math.min(this.target,this.rate()),sources:this.state.sources,
       accountingVersion:'helius-exact-ws-bytes-20261018',historicalEstimatesRetained:true,
       wsMetering:{billingVerified:false,creditsPerMB:this.wsPerMB,bytesPerMB:1000000,rounding:'none',since:this.state.meteringSince,source:'https://www.helius.dev/blog/laserstream-websockets',bytesHour:this.state.buckets.filter(b=>b.at>this.now()-60*MIN).reduce((n,b)=>n+(b.wsBytes||0),0),bytesHourComplete:this.now()-this.state.meteringSince>=60*MIN},
+      usageSamples:this.state.usageSamples.filter(x=>x[0]>=this.now()-6*3600000),usageSampleIntervalMs:60000,usageSampleScope:'cumulative local estimate; latest charge in each minute; six-hour view',
       hourlyWindows:this.billingWindows(),
       comparisonWindow:{from:this.now()-60*MIN,to:this.now(),rpcCredits:h.rpc,wsCredits:h.ws,estimatedCredits:h.rpc+h.ws,providerCredits:null},
       allocation:{migration:'fresh first; up to 10 RPC credits/min reserved',pools:'4 RPC credits/min; batched, 5 min before 2h / 30 min thereafter',holdersCreditsHour:60,preCreditsHour:0,preWS:'residual after migration/pool reserves; no fixed hourly cap',preMaxBudgetPauseMs:90000,wsHeadroomCredits:3.5},
@@ -67,7 +68,7 @@ class ResourceBudget{
   charge(cost,type,lane=type,source=lane,bytes=0){this.trim();const at=Math.floor(this.now()/1000)*1000;let b=this.state.buckets.find(b=>b.at===at);
     if(!b)this.state.buckets.push(b={at,rpc:0,ws:0,lanes:{}});b.lanes=b.lanes||{};b[type]+=cost;b.lanes[lane]=(b.lanes[lane]||0)+cost;
     if(type==='ws'){b.wsBytes=(b.wsBytes||0)+bytes;const entry=this.source(source);entry.wsBytes=(entry.wsBytes||0)+bytes;}
-    this.source(source)[type==='rpc'?'rpcCredits':'wsCredits']+=cost;this.state.used+=cost;this.persist();}
+    this.source(source)[type==='rpc'?'rpcCredits':'wsCredits']+=cost;this.state.used+=cost;const samples=this.state.usageSamples,last=samples.at(-1),point=[this.now(),this.state.used];if(last&&Math.floor(last[0]/MIN)===Math.floor(point[0]/MIN))samples[samples.length-1]=point;else samples.push(point);while(samples.length&&samples[0][0]<this.now()-48*3600000)samples.shift();this.persist();}
   reserveRPC(method,priority,source=this.lane(priority)){const cost=rpcCost(method),lane=this.lane(priority);
     if(!this.allow(cost,priority)){this.deferred(source);throw new BudgetDeferred()}
     this.charge(cost,'rpc',lane,source);return cost;
@@ -143,13 +144,13 @@ class PumpTelemetry {
     if(!flags)d.seenCount=(d.seenCount||0)+1;d.seen[mint]=flags|bit;d[kind==='accepted'?'accepted':'uniqueCreates']++;atomic(this.file,d);
   }
   summary(slot=this.lastSlot){const at=this.now();this.roll(at);this.flushInterval(at,slot);atomic(this.file,this.data);
-    const d=this.data,enough=d.activeSlots>=150&&d.uniqueCreates>=10&&!d.dedupOverflow;
-    const estimate=enough?Math.round(d.uniqueCreates/d.activeSlots*d.budgetPausedSlots):null;
+    const d=this.data,enough=d.activeMs>=60000&&d.uniqueCreates>=10&&!d.dedupOverflow;
+    const estimate=enough?Math.round(d.uniqueCreates/d.activeMs*d.budgetPausedMs):null,slotEstimate=d.activeSlots>=150&&d.budgetPausedSlots>0?Math.round(d.uniqueCreates/d.activeSlots*d.budgetPausedSlots):null;
     return {day:d.day,timezone:d.timezone,since:d.since,partialDay:d.partialDay,createReceived:d.createNotifications,
       uniqueCreates:d.uniqueCreates,accepted:d.accepted,activeMs:d.activeMs,activeSlots:d.activeSlots,
       budgetPausedMs:d.budgetPausedMs,budgetPausedSlots:d.budgetPausedSlots,otherGapMs:d.otherGapMs,
       pauseCount:d.gaps,currentGapMs:d.open?at-(d.gapStartedAt||d.open.at):0,
-      lostDuringBudgetPauses:{exact:null,estimate,method:'observed-unique-creates-per-active-slot times budget-paused-slot-span',
+      lostDuringBudgetPauses:{exact:null,estimate,slotEstimate,method:'observed-create-rate times budget-pause-duration; context.slot cross-check when anchors available',
         confidence:enough?'low':'insufficient-data',slotCountIsNotEventCount:true,stationaryRateAssumption:true},
       firstSlot:d.firstSlot,lastSlot:d.lastSlot,dedupOverflow:d.dedupOverflow,restartGap:!!d.restartGap};
   }

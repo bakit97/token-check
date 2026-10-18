@@ -121,7 +121,8 @@ function metaMutable(u){try{let o=1+32+32;for(let i=0;i<3;i++){const n=u[o]|(u[o
 async function ctCheck(c){
   const rpc=rpcFor(c,'контракт');
   const mi=await rpc('getAccountInfo',[c.a,{encoding:'jsonParsed'}]);const v=mi?.value;if(!v)throw new Error('токен не найден');
-  const info=v.data?.parsed?.info||{},ct={prog:v.owner===T22?'token2022':'token',mint:!!info.mintAuthority,freeze:!!info.freezeAuthority,dec:+info.decimals,
+  if(![T22,'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'].includes(v.owner)||v.data?.parsed?.type!=='mint')throw Error('Unverified mint account');
+  const info=v.data.parsed.info,ct={prog:v.owner===T22?'token2022':'token',mint:!!info.mintAuthority,freeze:!!info.freezeAuthority,dec:+info.decimals,
     supply:(+info.supply||0)/10**(+info.decimals||0),fee:0,hook:false,deleg:false,nontr:false,defFrozen:false,pause:false,metaMut:null};
   (info.extensions||[]).forEach(e=>{const s=e.state||{};
     if(e.extension==='transferFeeConfig')ct.fee=Math.max(+(s.newerTransferFee?.transferFeeBasisPoints||0),+(s.olderTransferFee?.transferFeeBasisPoints||0))/100;
@@ -129,6 +130,9 @@ async function ctCheck(c){
     if(e.extension==='nonTransferable')ct.nontr=true;if(e.extension==='defaultAccountState'&&/frozen/i.test(s.accountState||''))ct.defFrozen=true;
     if(/pausable/i.test(e.extension))ct.pause=true;if(e.extension==='tokenMetadata')ct.metaMut=!!s.updateAuthority});
   if(ct.metaMut==null){const mv=(await rpc('getAccountInfo',[await metadataOf(c.a),{encoding:'base64'}]))?.value;if(mv)ct.metaMut=metaMutable(b64(mv.data?.[0]))}
+  ct.feeAuthority=(info.extensions||[]).some(e=>e.extension==='transferFeeConfig'&&!!e.state?.transferFeeConfigAuthority);
+  const benign=new Set(['transferFeeConfig','transferHook','permanentDelegate','nonTransferable','defaultAccountState','pausableConfig','pausable','tokenMetadata','metadataPointer','groupPointer','groupMemberPointer','tokenGroup','tokenGroupMember']);
+  ct.unknownExtensions=(info.extensions||[]).filter(e=>!benign.has(e.extension)).map(e=>e.extension);ct.safetyVersion=1;
   ct.at=Date.now();c.ct=ct}
 
 /* ---------- миграция. Доказательство = 2 условия вместе:

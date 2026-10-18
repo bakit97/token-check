@@ -1,8 +1,8 @@
 {
   "baseCommit": "48cb0f8621e3a822cc65e0a7c23ba485ad3a574e",
   "files": {
-    "collector.js": "8b73b1bbed30419893f407521ff93eb76e39d40b6b605cf8484a08964042b773",
-    "resource-budget.js": "288b765e434f5ad81bfce51ca9069c941f18b48e072c668d77a475400ff5a5fe",
+    "collector.js": "b043151a05e494e1441e43e11550a0a013840b7c6f3fcaa292e57692d21ab914",
+    "resource-budget.js": "f8fb9ad2134047f19abc4eb9daca0c09be83c3014d0269bba7e0b5dadecc320d",
     "pre-watcher.js": "1ed498a40298e36776f0fc632656a5066f1d05206998736ff4dc90a5dbc46f97",
     "runtime-health.js": "001b44ef3198e679008fd58aa3e9f90f7843303775cbc74b3a21eda745a9ba84",
     "stream-json.js": "b212a8cabdb25f9f8ef5fe7e7c081d04dbda3e4218e6c3df6adfb453d6a48461",
@@ -12,6 +12,9 @@
     "seed-completed.js": "a15b26a2b38ff3aaba954b28c07c1a1fc69a5e9fb6b474907351d21ecece09f7",
     "source-runtime.js": "089dc694373e09fea9cd0598d9697c4f441b04c374006f677caab0502cde4e21",
     "event-clock.js": "ae835ddd6a280ae888d1b264a4e2acf665bdd62d895a3ea42c255339e793e2ad",
-    "pump-pre.js": "e53d3be957329ef94e2889e109f5c84ef07ddf2f6ce853ae4d0e4bfe7f9bf27c"
+    "pump-pre.js": "e53d3be957329ef94e2889e109f5c84ef07ddf2f6ce853ae4d0e4bfe7f9bf27c",
+    "pass-runtime.js": "3db6089a41de2b74ab678552042d2348eb64c30ae8b95253c1be176acc81e511",
+    "research-v2.js": "2eabe999de51b5927658b4735f0eec6405031800116b70edb31eb9267ca6543a",
+    "filter-audit.js": "035d44e9d6a527fc349dbcca2d45c5a7b6dbcfa48924281e619c80ac30ce27ae"
   }
 }

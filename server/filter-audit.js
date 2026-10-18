@@ -57,13 +57,14 @@ class FilterAudit{
     for(const m of config.modules){
       const f=catalog.get(m.filterId);
       if(!f||f.level!==m.level||!['before','after'].includes(m.phase))continue;
-      const key=[m.level,m.phase,f.id,f.version,f.key,f.op,f.value].join('|');
+      const base=[m.level,m.phase,f.id,f.version,f.key,f.op,f.value].join('|');
+      const key=f.conditions?.length?base+'|'+JSON.stringify(f.conditions):base;
       if(selected.has(key))continue;
       selected.set(key,!!config.enabled&&!!m.enabled);
       let row=this.versions.get(key);
       if(!row){
         row={key,id:f.id,name:f.name,version:f.version,level:m.level,phase:m.phase,
-          rule:{key:f.key,op:f.op,value:f.value},
+          rule:{key:f.key,op:f.op,value:f.value,...(f.conditions?{conditions:f.conditions.map(c=>({...c}))}:{})},
           firstPublishedAt:activeAt>0?activeAt:null,
           firstSeenAt:now,original:null,background:null,backgroundUpdated:null};
         if(this.legacyBaselines.has(key))
