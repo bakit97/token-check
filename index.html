@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b0d14">
 <title>SOL·СКАН · v2</title>
-<link rel="stylesheet" href="./v2.css?v=20261019-mod-2">
+<link rel="stylesheet" href="./v2.css?v=20261019-mod-3">
 </head>
 <body>
 <header><div class="app">
@@ -173,7 +173,7 @@
 <div class="prow"><label id="polyNameB" for="polyB">Мёртвые</label><b id="polyBValue">2 000</b><input type="range" min="500" max="5000" value="2000" step="100" id="polyB"></div>
 <div id="polyProgress"></div>
 <div class="row applyrow"><button class="primary pbtn" id="polyApply" style="margin-left:auto">Применить</button></div></details>
-<div class="row" style="margin:12px 0 4px"><b style="font-size:14px">Модули <span class="hint" id="libCount"></span></b><button type="button" class="add1" id="libSelect">Тест</button></div>
+<div class="row" style="margin:12px 0 4px"><b style="font-size:14px">Модули <span class="hint" id="libCount"></span></b><span class="row" style="gap:6px"><button type="button" class="add1" id="libNew">+ Создать</button><button type="button" class="add1" id="libSelect">Тест</button></span></div>
 <div class="row hide" id="libBar" style="gap:6px"><button type="button" class="primary pbtn" id="libTest" style="margin-left:auto">Далее</button><select hidden id="libKeep"></select><button hidden id="libKeepBtn"></button></div>
 <p class="hint" id="libMsg" style="margin:4px 0"></p>
 <div id="libMods"></div>
@@ -198,6 +198,6 @@
 <footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — разделены серверные записи и локальные черновики; неполные наблюдения не выдаются за результат.</footer>
 </main>
 <script src="./server/observation-contract.js?v=20261018-admission-3" defer></script>
-<script src="./v2.js?v=20261019-mod-2" defer></script>
+<script src="./v2.js?v=20261019-mod-3" defer></script>
 <noscript>Текстовая сводка для ИИ: https://storage.googleapis.com/sol-scan-511718-data/ai/summary.md (JSON: ai/summary.json)</noscript>
 </body></html>
