@@ -105,3 +105,12 @@ test('Production Pump pre never falls back to RPC for stale, malformed, failed, 
   assert.equal(x.source.records.size,0,kind);assert.equal(x.worker.stats.rpcCalls,0,kind);
  }
 });
+
+test('Slot clock remains the public event clock when Pump timestamp is slightly ahead; original timestamp is preserved',async t=>{
+ const x=setup(t);x.worker.allowRPCFallback=false;x.worker.slotClock={estimate:()=>({at:at+900,ageMs:100})};
+ x.worker.rpc=async()=>{throw Error('Unexpected RPC')};
+ x.worker.onLog(logLaunch('clock-skew',at+2000),at+1000,1234);
+ while(x.worker.busy)await new Promise(r=>setImmediate(r));
+ assert.equal(x.source.get(M).eventAt,at+900);assert.equal(x.source.get(M).proof.timeSource,'slot-estimate');
+ assert.equal(x.source.get(M).proof.reportedEventAt,at+2000);assert.equal(x.worker.stats.rpcCalls,0);
+});

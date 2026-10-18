@@ -3,7 +3,7 @@
   "files": {
     "collector.js": "62c94dbe19ac7ec8711c79453755a77869aed386289adfe8b28f6632c749add1",
     "resource-budget.js": "c4697d2a9cce6898b290960699c20fc544b9fa5d9fe65016e91f57295b1f8dd4",
-    "pre-watcher.js": "8a873574983c11a5aeccc784f769071888d91c60ced4c57ee7c1d352499a431d",
+    "pre-watcher.js": "d3495b6f7519d53ca7a0513169d4d521e0215fb87c8e12ef2144a42a2298e0b4",
     "runtime-health.js": "001b44ef3198e679008fd58aa3e9f90f7843303775cbc74b3a21eda745a9ba84",
     "stream-json.js": "b212a8cabdb25f9f8ef5fe7e7c081d04dbda3e4218e6c3df6adfb453d6a48461",
     "observation-contract.js": "5a5c20b1dacfe4ffca3cfefc2f1d847c12d5043e885570ee8e1b95822b871464",
