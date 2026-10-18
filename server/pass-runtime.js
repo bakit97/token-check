@@ -182,7 +182,7 @@ class PassRuntime {
         considered++;
         const coin=coins.get(row.mint);
         if(!coin)continue;
-        const F=featuresAt(coin,now);
+        const F=featuresAt(coin,now,{eventAt:row.eventAt,phase:row.phase});
         const matches=[];
         for(const r of rules){
           if(r.phase!==row.phase)continue;
@@ -200,7 +200,7 @@ class PassRuntime {
           .map(f=>({...f}));
         const item={
           schema:1,mint:row.mint,phase:row.phase,
-          acceptedAt:row.acceptedAt,firstSeenAt:now,
+          acceptedAt:row.acceptedAt,eventAt:row.eventAt,firstSeenAt:now,
           zeroAt:row.acceptedAt+cfg.decisionMinutes*MIN,
           configHash:this.configHash,features:F,matches,secondLevelRules,
           name:String(coin.n||coin.s||'').slice(0,64),

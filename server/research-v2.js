@@ -35,7 +35,7 @@ function latestBefore(list,t,maxAge,read) {
   for(const x of list){const at=read(x);if(at>t)break;if(t-at<=maxAge)out=x}
   return out;
 }
-function featuresAt(coin,decisionAt){
+function featuresAt(coin,decisionAt,context={}){
   const d=latestBefore(samples(coin),decisionAt,7*MIN,x=>x.at);
   const gx=[...(coin?.preObs?.gx||[]),...(coin?.gx||[])]
     .sort((a,b)=>a[0]-b[0]);
@@ -50,7 +50,7 @@ function featuresAt(coin,decisionAt){
     volume:finite(d?.volume??null),liq:finite(d?.liq??null),
     mc:finite(d?.mc??null),buys:finite(buys),sells:finite(sells),
     buySellRatio:finite(ratio)};
-  return {...F,...starterFeaturesAt(coin,decisionAt)};
+  return {...F,...starterFeaturesAt(coin,decisionAt,context)};
 }
 function activityOutcome(coin,entryAt,{hours=5,minActive=70,maxIdle=60,minCoverage=.8}={},now=Date.now()){
   if(!inRange(hours,1,24)||!inRange(minActive,0,100)||!inRange(maxIdle,5,1440))
@@ -118,21 +118,33 @@ function strengthOutcome(coin,zeroAt,{minAbove=70,minCoverage=.9}={},now=Date.no
     above,covered,pctAbove:above/300*100,p0,curve,minuteCurve};
 }
 // Starter rules use confirmed account rights and native on-chain balances, never USD proxies.
-function starterFeaturesAt(coin,decisionAt){
+function starterFeaturesAt(coin,decisionAt,context={}){
  const WSOL='So11111111111111111111111111111111111111112',ct=coin?.ct;
  let safeContract=null,quoteSol=null,buyers10=null;
  if(ct&&ct.safetyVersion===1&&Array.isArray(ct.unknownExtensions)&&Number.isFinite(ct.at)&&ct.at<=decisionAt&&['token','token2022'].includes(ct.prog)){
   const flags=['mint','freeze','hook','deleg','nontr','defFrozen','pause','feeAuthority'];
   if(flags.every(k=>typeof ct[k]==='boolean')&&Number.isFinite(ct.fee))safeContract=flags.some(k=>ct[k])||ct.fee>0||ct.unknownExtensions.length>0?0:1;
  }
- const bx=coin?.bx;
- if(bx?.cov===true&&Number.isFinite(bx.at)&&bx.at<=decisionAt&&bx.at>=coin.t+10*MIN+5000&&Number.isFinite(bx.payers)&&decisionAt-bx.at<=7*MIN)buyers10=bx.payers;
+ const eventAt=Number.isFinite(context.eventAt)?context.eventAt:coin.t;
+ // Never let buyers of a later migrated pool stand in for the original admission.
+ const pools=[coin,...(coin.origs||[]),coin.preObs].filter(Boolean);
+ const pool=pools.find(p=>Number.isFinite(p.t)&&Math.abs(p.t-eventAt)<=30000);
+ let lower=false,buyerAt=null,buyerSource=null;
+ const bx=pool?.bx;
+ if(pool?.t===eventAt&&bx?.cov===true&&Number.isFinite(bx.at)&&bx.at<=decisionAt&&bx.at>=pool.t+10*MIN+5000&&Number.isFinite(bx.payers)&&decisionAt-bx.at<=7*MIN)buyers10=bx.payers;
+ if(buyers10==null&&pool&&pool.t>=eventAt){
+  const proofs=[];
+  for(const g of pool.gx||[]){const at=g[0]*1000;if(at<pool.t||at>pool.t+10*MIN||at>eventAt+10*MIN||at>decisionAt)continue;
+   const n=Number.isFinite(g[7])?g[7]:g[3];if(Number.isInteger(n)&&n>=0)proofs.push({n,at,source:'gt-unique-buyers-prefix'});}
+  if(pool.t===eventAt&&bx&&Number.isFinite(bx.at)&&bx.at<=decisionAt&&bx.at>=pool.t+10*MIN&&Number.isInteger(bx.payers)&&bx.payers>=0&&bx.n>=bx.payers&&bx.buys>=bx.payers)proofs.push({n:bx.payers,at:bx.at,source:'recorded-first-ten-minute-trades'});
+  const best=proofs.sort((a,b)=>b.n-a.n||a.at-b.at)[0];if(best){buyers10=best.n;lower=true;buyerAt=best.at;buyerSource=best.source;}
+ }
  const qi=coin?.vmint?.indexOf(WSOL);
  if(qi>=0&&coin.vmint.length===2&&coin.vmint[1-qi]===coin.a&&Number.isFinite(coin.vaultIdentityAt)&&coin.vaultIdentityAt<=decisionAt){
   const row=latestBefore([...(coin.lq||[])].sort((a,b)=>a[0]-b[0]),decisionAt,7*MIN,x=>x[0]*1000);
   if(row&&Number.isFinite(row[2+qi])&&row[2+qi]>=0)quoteSol=row[2+qi]/1e9;
  }
- return {safeContract,quoteSol,buyers10};
+ return {safeContract,quoteSol,buyers10,...(lower?{buyers10LowerBound:true,buyers10At:buyerAt,buyers10Source:buyerSource}:{})};
 }
 function evaluation(F,rule){
   if(!F||!rule||![...KEYS,'safeContract','quoteSol','buyers10'].includes(rule.key)||
@@ -141,6 +153,7 @@ function evaluation(F,rule){
     if(results.includes('reject'))return 'reject';if(results.includes('unknown'))return 'unknown';}
   const v=F[rule.key];
   if(typeof v!=='number'||!Number.isFinite(v))return 'unknown';
+  if(rule.key==='buyers10'&&F.buyers10LowerBound===true)return rule.op==='>='?(v>=rule.value?'pass':'unknown'):(v>rule.value?'reject':'unknown');
   return rule.op==='>='?(v>=rule.value?'pass':'reject'):(v<=rule.value?'pass':'reject');
 }
 function passes(F,rule){return evaluation(F,rule)==='pass'}

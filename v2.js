@@ -83,6 +83,7 @@ function ruleStatus(features,f){
   if(f.conditions){const r=f.conditions.map(function(c){return ruleStatus(features,c)});if(r.includes('reject'))return 'reject';if(r.includes('unknown'))return 'unknown';}
   const v=features?.[f.key];
   if(typeof v!=='number'||!Number.isFinite(v))return 'unknown';
+  if(f.key==='buyers10'&&features.buyers10LowerBound===true)return f.op==='>='?(v>=f.value?'pass':'unknown'):(v>f.value?'reject':'unknown');
   return f.op==='>='?(v>=f.value?'pass':'reject'):(v<=f.value?'pass':'reject');
 }
 function ruleMatch(features,f){return ruleStatus(features,f)==='pass'}

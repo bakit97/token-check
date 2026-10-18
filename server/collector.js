@@ -66,9 +66,9 @@ const gtQ=[];let gtPause=0,gtOK=0,gtFail=0,gtSp=6500,gtRun=0;
 const GT_BACKGROUND_LIMIT=24; // keep slow multi-hour charts from burying early trading evidence
 const gtBackgroundBusy=()=>gtQ.filter(x=>x.prio===3).length>=GT_BACKGROUND_LIMIT;const gtLog=[]; // gtLog: [время, 1=ок/0=429/2=ошибка, задержка в очереди мс]
 function gtPending(key){return gtQ.some(x=>x.key===key)}
-function gt(path,prio,key){key=key||path;const ex=gtQ.find(x=>x.key===key);if(ex)return ex.p;
-  let res,rej;const p=new Promise((a,b)=>{res=a;rej=b});gtQ.push({path,prio,res,rej,t:Date.now(),key,p});gtQ.sort((a,b)=>a.prio-b.prio||a.t-b.t);return p}
-(async function gtLoop(){for(;;){if(gtQ.length&&Date.now()>gtPause){const t=gtQ.shift();
+function gt(path,prio,key,windowEnd){key=key||path;const ex=gtQ.find(x=>x.key===key);if(ex)return ex.p;
+  let res,rej;const p=new Promise((a,b)=>{res=a;rej=b});gtQ.push({path,prio,res,rej,t:Date.now(),key,p,windowEnd});gtQ.sort((a,b)=>a.prio-b.prio||a.t-b.t);return p}
+(async function gtLoop(){for(;;){if(gtQ.length&&Date.now()>gtPause){for(const q of gtQ)if(q.windowEnd&&Date.now()>q.windowEnd)q.prio=3;gtQ.sort((a,b)=>a.prio-b.prio||a.t-b.t);const t=gtQ.shift();
     try{const j=await getJSON(GT+t.path);gtOK++;gtLog.push([Date.now(),1,Date.now()-t.t]);if(++gtRun>=20){gtRun=0;gtSp=Math.max(6000,gtSp-250)}t.res(j)}
     catch(e){gtFail++;gtLog.push([Date.now(),e.rl?0:2,Date.now()-t.t]);if(e.rl){gtPause=Date.now()+30e3;gtSp=Math.min(15000,gtSp+500);gtRun=0;
         if(t.prio<=2&&!t.retry){t.retry=1;gtQ.unshift(t);continue}}t.rej(e)}
@@ -690,7 +690,7 @@ function mergeK(a,b){const m=new Map();for(const x of [...(a||[]),...b])m.set(x[
 function candleTasks(){const now=Date.now(),pins=collectionPins(now);
   for(const c of C.values()){if(!observedEligible(c)||!collectionActive(c,now,pins))continue;const a=ageMin(c,now),pool=c.p,ts=Math.floor;
     // первые 10 минут: запрос на 11-й минуте, чтобы минута с 10-й отметкой была закрыта
-    if(!c.k10&&!c.kTry&&c.trDone&&a>=11&&a<6*60){c.kTry=1;gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=15&before_timestamp=${ts((c.t+11*60e3)/1000)}&currency=usd`,2,'k10:'+pool)
+    if(!c.k10&&!c.kTry&&c.trDone&&!gtBackgroundBusy()&&a>=11&&a<6*60){c.kTry=1;gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=15&before_timestamp=${ts((c.t+11*60e3)/1000)}&currency=usd`,3,'k10:'+pool)
       .then(r=>{if(c.p===pool)c.k10={at:Date.now(),c:kList(r)}}).catch(e=>{if(e.code!=='OBSERVATION_COMPLETE')err('k10 '+e.message)}).finally(()=>{c.kTry=0})}
     // график: 5 ч (одним запросом) и 24 ч (двумя)
     const upto=c.path?.upto||0;
@@ -703,19 +703,21 @@ function candleTasks(){const now=Date.now(),pins=collectionPins(now);
         .catch(e=>{if(e.code!=='OBSERVATION_COMPLETE')err('path24 '+e.message)}).finally(()=>{c.pTry=0})}}
   tradeTasks(now,pins)}
 // сделки: последние 300 сделок пула; чаще, если монета активная. Покрытие проверяется по перекрытию запросов.
-function gxTasks(now){if(gtPending('gx'))return;const list=[...C.values()].filter(c=>observedEligible(c)&&ageMin(c,now)>=2&&ageMin(c,now)<16&&now-(c.gxAt||0)>=55e3).sort((a,b)=>a.t-b.t).slice(0,30);
-  if(!list.length)return;const pools=list.map(c=>c.p);
-  gt(`/pools/multi/${pools.join(',')}`,1,'gx').then(r=>{const at=Date.now(),by={};(r.data||[]).forEach(d=>by[d.attributes?.address]=d.attributes);
-    for(const c of list){if(!pools.includes(c.p))continue;c.gxAt=at;const x=by[c.p];if(!x)continue;const T=x.transactions||{},V=x.volume_usd||{};
-      const e=[Math.round(at/1000),T.m5?.buys??null,T.m5?.sells??null,T.m5?.buyers??null,T.m5?.sellers??null,T.m15?.buys??null,T.m15?.sells??null,T.m15?.buyers??null,T.m15?.sellers??null,
-        V.m5!=null?Math.round(+V.m5):null,V.m15!=null?Math.round(+V.m15):null];(c.gx=c.gx||[]).push(e)}}).catch(e=>err('gx '+e.message))}
+function sourceDecisionEnd(c){const row=SOURCE?.get(c.a);return row?row.acceptedAt+(PASS_V2?.config?.decisionMinutes||15)*60e3:0}
+function gxTasks(now){if(gtPending('gx'))return;const list=[...C.values()].filter(c=>observedEligible(c)&&ageMin(c,now)>=2&&ageMin(c,now)<16&&now-(c.gxAt||0)>=(c.gxMiss?Math.min(10,2**c.gxMiss)*60e3:55e3)).sort((a,b)=>{
+ const rank=c=>sourceDecisionEnd(c)>now?(isOk(c)?0:1):2;return rank(a)-rank(b)||b.t-a.t}).slice(0,30);
+ if(!list.length)return;const requested=new Map(list.map(c=>[c.a,c.p])),pools=list.map(c=>c.p);
+ gt(`/pools/multi/${pools.join(',')}`,1,'gx').then(r=>{const at=Date.now(),by={};(r.data||[]).forEach(d=>by[d.attributes?.address]=d.attributes);
+  for(const c of list){if(c.p!==requested.get(c.a))continue;c.gxAt=at;const x=by[c.p];if(!x){c.gxMiss=(c.gxMiss||0)+1;continue}c.gxMiss=0;const T=x.transactions||{},V=x.volume_usd||{};
+   const e=[Math.round(at/1000),T.m5?.buys??null,T.m5?.sells??null,T.m5?.buyers??null,T.m5?.sellers??null,T.m15?.buys??null,T.m15?.sells??null,T.m15?.buyers??null,T.m15?.sellers??null,
+    V.m5!=null?Math.round(+V.m5):null,V.m15!=null?Math.round(+V.m15):null];(c.gx=c.gx||[]).push(e)}}).catch(e=>err('gx '+e.message))}
 function tradeTasks(now,pins=collectionPins(now)){gxTasks(now);for(const c of C.values()){if(!observedEligible(c)||!collectionActive(c,now,pins)||c.trDone||c.trTry)continue;const a=ageMin(c,now);if(a<1)continue;
     const tr=c.tr=c.tr||{f:[],x:{}},last=tr.f[tr.f.length-1];
     if(a>40&&!last){finishTrades(c,'не успели (очередь)');continue}
     const busy=last&&last[1]>=250,since=last?(now-last[0])/1000:1e9;
     const due=!last&&a>=10.25;
-    if(!due)continue;const pool=c.p;c.trTry=1;
-    gt(`/pools/${pool}/trades`,2,'tr:'+pool).then(r=>{if(c.p!==pool)return;const at=Date.now();let lo=Infinity,hi=0;
+    if(!due)continue;if(c.d==='pump-fun'&&!c.gx?.length){if(now>sourceDecisionEnd(c))finishTrades(c,'GT не подтвердил наличие пула');continue}const end=sourceDecisionEnd(c),fresh=end>now;if(!fresh&&gtBackgroundBusy())continue;const pool=c.p;c.trTry=1;
+    gt(`/pools/${pool}/trades`,fresh?1:3,'tr:'+pool,fresh?end:0).then(r=>{if(c.p!==pool)return;const at=Date.now();let lo=Infinity,hi=0;
         for(const d of r.data||[]){const x=d.attributes||{};const ts=Math.floor(Date.parse(x.block_timestamp)/1000);if(!ts)continue;lo=Math.min(lo,ts);hi=Math.max(hi,ts);
           const pr=+(x.kind==='buy'?x.price_to_in_usd:x.price_from_in_usd)||0;tr.x[d.id||x.tx_hash]=[ts,x.kind==='buy'?1:0,+(+x.volume_in_usd||0).toFixed(2),(x.tx_from_address||'').slice(0,12),pr?+pr.toPrecision(6):null]}
         tr.f.push([at,(r.data||[]).length,isFinite(lo)?lo:null,hi||null]);
