@@ -262,7 +262,8 @@ function liveOf(c){return LIVE[mint(c)]||null}
 function agoText(t){if(!t)return '—';var sec=Math.max(0,Math.floor((now()-t)/1000));
   if(sec<3600)return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')+' назад';
   var h=Math.floor(sec/3600),m=Math.floor(sec%3600/60);return h+' ч '+m+' мин назад'}
-function tickAges(){document.querySelectorAll('.ago[data-t]').forEach(function(el){el.textContent=agoText(+el.dataset.t)})}
+function agoShort(t){if(!t)return '—';var sec=Math.max(0,Math.floor((now()-t)/1000));if(sec<60)return sec+' с';if(sec<3600)return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0');var h=Math.floor(sec/3600);return h<48?h+' ч '+Math.floor(sec%3600/60)+' м':Math.floor(h/24)+' дн'}
+function tickAges(){document.querySelectorAll('.ago[data-t]').forEach(function(el){el.textContent=el.classList&&el.classList.contains('sh')?agoShort(+el.dataset.t):agoText(+el.dataset.t)})}
 function usd(v){var n=Number(v);if(!Number.isFinite(n)||n<=0)return '—';if(n>=1e6)return '$'+(n/1e6).toFixed(2)+'M';if(n>=1e3)return '$'+(n/1e3).toFixed(1)+'K';return '$'+n.toFixed(0)}
 function visibleMints(){var out=[];document.querySelectorAll('[data-coin]').forEach(function(b){var m=b.dataset.coin;if(m&&out.indexOf(m)<0)out.push(m)});
   var d=document.getElementById('openCoinDetail');if(d&&d.dataset.mint&&out.indexOf(d.dataset.mint)<0)out.unshift(d.dataset.mint);return out.slice(0,60)}
@@ -278,11 +279,11 @@ async function pollMarket(){if(liveBusy||document.hidden)return;var mints=visibl
           img:p.info&&p.info.imageUrl,at:now()};
         var h=LIVE_HIST[m]=LIVE_HIST[m]||[];if(LIVE[m].price)h.push(LIVE[m].price);if(h.length>40)h.shift()})}
     patchCards();updateDetailStats()}catch(e){}finally{liveBusy=false}}
-function marketLine(c){var L=liveOf(c),p=(c.ds||[]).at(-1);
-  if(L)return 'MC '+usd(L.mc)+' · ликв. '+usd(L.liq)+' · 5м '+usd(L.v5)+' · '+(L.b5==null?'—':L.b5)+'/'+(L.s5==null?'—':L.s5)+' сд.';
-  if(p)return 'L '+observedMoney(p[2])+' · 5м '+observedMoney(p[6]);var e=c._entry;return e&&now()-e.eventAt<120000?'ждём DexScreener…':'нет данных DexScreener'}
+function marketLine(c){var L=liveOf(c),p=(c.ds||[]).at(-1),out=[],sol=solInPool(c);
+  var mc=L&&L.mc||null;if(mc)out.push('MC '+usd(mc));if(sol!=null)out.push('SOL '+(sol>=10?Math.round(sol):(+sol).toFixed(1)));else if(L&&L.liq)out.push('ликв. '+usd(L.liq));
+  if(L&&(L.b5!=null||L.s5!=null))out.push('🟢'+(L.b5||0)+' 🔴'+(L.s5||0));else if(p&&p[6])out.push('5м '+observedMoney(p[6]));return out.join(' · ')}
 function patchCards(){document.querySelectorAll('[data-coin]').forEach(function(b){var m=b.dataset.coin,L=LIVE[m];if(!L)return;
-  var ml=b.querySelector('.mline');if(ml)ml.textContent=marketLine({a:m});
+  var ml=b.querySelector('.mline');if(ml){var cm=lastAccepted.find(function(x){return mint(x)===m})||{a:m};var t=marketLine(cm);ml.textContent=t?' · '+t:''}
   var pr=b.querySelector('.price');if(pr&&L.price)pr.textContent=price(L.price);
   var sp=b.querySelector('.sparkbox');if(sp)sp.innerHTML=spark({a:m});
   var gb=b.querySelector('.growbox');if(gb){var cc=lastAccepted.find(function(x){return mint(x)===m})||{a:m};gb.innerHTML=growthHtml(cc)}
@@ -305,7 +306,7 @@ function basePrice(c){var m=mint(c);if(LIVE_BASE[m])return LIVE_BASE[m];var e=c.
   var h=LIVE_HIST[m];if(h&&h.length){LIVE_BASE[m]=h[0];return h[0]}return null}
 function growthHtml(c){var L=liveOf(c),p=(c.ds||[]).at(-1),m=mint(c),h=LIVE_HIST[m],cur,b;
   if(L&&L.price&&h&&h.length){cur=L.price;b=h[0]}else{cur=p&&+p[1];var e=c._entry||{},t=(e.eventAt||0)/1000,r=(c.ds||[]).find(function(x){return x[0]>=t&&+x[1]>0});b=r&&+r[1]}
-  if(!cur||!b||cur/b>1000||cur/b<0.001)return '';var g=(cur/b-1)*100;return '<span class="grow '+(g>=0?'up':'down')+'">'+(g>=0?'+':'')+(Math.abs(g)>=1000?Math.round(g):g.toFixed(Math.abs(g)<10?1:0))+'%</span>'}
+  if(!cur||!b||cur/b>1000||cur/b<0.001)return '';var g=(cur/b-1)*100;if(Math.abs(g)<0.05)return '';return '<span class="grow '+(g>=0?'up':'down')+'">'+(g>=0?'+':'')+(Math.abs(g)>=1000?Math.round(g):g.toFixed(Math.abs(g)<10?1:0))+'%</span>'}
 // Список без мигания: существующие карточки обновляются на месте, новые плавно появляются, ушедшие плавно исчезают.
 function updateList(box,items,keyFn,htmlFn,emptyHtml){if(!box)return;
   if(!items.length){box.innerHTML=emptyHtml;return}
@@ -338,11 +339,11 @@ function keyFrom(id){var v=(document.getElementById(id)||{}).value;v=(v||'').tri
 async function ownerFetch(url,opts){var r=await fetch(url,opts);var a=opts&&opts.headers&&opts.headers.Authorization||'';rememberIfOk(r,a.replace(/^Bearer /,''));return r}
 function rememberIfOk(r,key){if(r&&r.ok&&key)setOwnerKey(key);else if(r&&r.status===401)setOwnerKey('')}
 function coinHtml(c,extra){
-  var e=c._entry,p=(c.ds||[]).at(-1),L=liveOf(c),img=imgOf(c);
-  var name=esc(c.n||c.s||'Токен'),symbol=esc(c.s||'');
+  var e=c._entry||{},p=(c.ds||[]).at(-1),L=liveOf(c),img=imgOf(c),ml=marketLine(c);
+  var nm=c.n||c.s||'Токен',sy=c.s||'',name=esc(nm),symbol=sy&&sy.toLowerCase()!==nm.toLowerCase()?' <small>'+esc(sy)+'</small>':'';
   return '<button type="button" class="coin '+(e.phase==='before'?'pre':'post')+'" data-coin="'+esc(mint(c))+'">'+
-    (img?'<img class="avatar" src="'+esc(img)+'" alt="" loading="lazy">':'<span class="avatar empty"'+(c._uri?' data-uri="'+esc(c._uri)+'"':'')+'>'+esc((c.s||'?').slice(0,2))+'</span>')+
-    '<span class="body"><span class="name">'+name+' <small>'+symbol+'</small></span><span class="detail">'+(e.phase==='before'?'🌱 создана ':'🎓 миграция ')+'<b class="ago" data-t="'+(+e.eventAt||0)+'">'+agoText(e.eventAt)+'</b></span><span class="detail mline">'+esc(marketLine(c))+'</span>'+
+    (img?'<img class="avatar" src="'+esc(img)+'" alt="" loading="lazy">':'<span class="avatar empty"'+(c._uri?' data-uri="'+esc(c._uri)+'"':'')+'>'+esc((sy||nm||'?').slice(0,2))+'</span>')+
+    '<span class="body"><span class="name">'+name+symbol+'</span><span class="detail">'+(e.phase==='before'?'🌱 ':'🎓 миграция ')+'<b class="ago sh" data-t="'+(+e.eventAt||0)+'">'+agoShort(e.eventAt)+'</b> · 👁 <b class="ago sh" data-t="'+(+e.acceptedAt||0)+'">'+agoShort(e.acceptedAt)+'</b><span class="mline">'+(ml?' · '+esc(ml):'')+'</span></span>'+
     (extra?'<span class="detail">'+(extra.charAt(0)==='<'?extra:esc(extra))+'</span>':'')+'</span><span class="right"><span class="price">'+price(L&&L.price||p&&p[1])+'</span><span class="growbox">'+growthHtml(c)+'</span><span class="sparkbox">'+spark(c)+'</span></span></button>';
 }
 function pc(v){return v==null||!Number.isFinite(+v)?'—':(v>0?'+':'')+Number(v).toFixed(Math.abs(v)>=10?0:1)+'%'}
