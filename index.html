@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b0d14">
 <title>SOL·СКАН · v2</title>
-<link rel="stylesheet" href="./v2.css?v=20261018-mine-3">
+<link rel="stylesheet" href="./v2.css?v=20261018-mine-4">
 </head>
 <body>
 <header><div class="app">
@@ -59,13 +59,14 @@
 </div>
 <div id="paneR1" hidden>
 <div class="card compact" id="intakeBox"><div class="row"><b>Вход в Исследование 1</b><span class="badge" id="intakeState">—</span></div>
-<div class="sw"><label><input type="checkbox" id="inManual"> Ручной фильтр</label><label><input type="checkbox" id="inModules"> Отмеченные модули</label></div>
+<details class="frow" id="inManualFold"><summary><label class="swl"><input type="checkbox" id="inManual"> Ручной фильтр</label><span class="hint" id="inManualSum"></span></summary>
 <div id="inManualBox">
 <div class="prow"><label><input type="checkbox" id="inPhaseOn"> Поток <select class="input sm inl" id="inPhase"><option value="both">оба</option><option value="before">до</option><option value="after">после</option></select></label></div>
 <div class="prow"><label><input type="checkbox" id="inBuyOn"> Покупатели 10 мин ≥ <b id="inBuyV">3</b></label><input type="range" id="inBuy" min="0" max="100" step="1" value="3"></div>
 <div class="prow"><label><input type="checkbox" id="inSolOn"> SOL в пуле ≥ <b id="inSolV">0.5</b></label><input type="range" id="inSol" min="0" max="50" step="0.5" value="0.5"></div>
 <div class="prow"><label><input type="checkbox" id="inSampleOn"> Случайно <b id="inSampleV">100</b>%</label><input type="range" id="inSample" min="5" max="100" step="5" value="100"></div>
-</div>
+</div></details>
+<div class="frow"><label class="swl"><input type="checkbox" id="inModules"> Модули из Окна возможностей</label><div class="hint" id="inModSum"></div></div>
 <p class="hint" id="intakeStats"></p>
 <div class="row applyrow"><input type="password" class="input sm" id="intakeKey" placeholder="пароль" autocomplete="off"><button type="button" class="primary pbtn" id="intakeApply">Применить</button></div>
 <p class="hint" id="intakeMsg"></p></div>
@@ -162,6 +163,6 @@
 <footer class="muted" style="border-top:1px solid var(--border);padding:14px 0;margin-top:24px">SOL·СКАН v2 — разделены серверные записи и локальные черновики; неполные наблюдения не выдаются за результат.</footer>
 </main>
 <script src="./server/observation-contract.js?v=20261018-admission-3" defer></script>
-<script src="./v2.js?v=20261018-mine-3" defer></script>
+<script src="./v2.js?v=20261018-mine-4" defer></script>
 <noscript>Текстовая сводка для ИИ: https://storage.googleapis.com/sol-scan-511718-data/ai/summary.md (JSON: ai/summary.json)</noscript>
 </body></html>

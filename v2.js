@@ -504,7 +504,7 @@ function draft(){if(!MOD_DIRTY||!MOD_DRAFT){var c=serverCfg();MOD_DRAFT=c?JSON.p
 function modRow(m,i,byId,today){var f=byId[m.filterId];if(!f)return '';
   var n=serverPassRows.filter(function(r){return r.phase===m.phase&&day(r.acceptedAt)===today&&(r.matches||[]).some(function(x){return x.id===f.id})}).length;
   return '<details class="frow"><summary><span class="fname">'+esc(f.name)+'</span><span class="fcnt">'+n+'</span>'+
-    (m.level==='1'?'<span class="r1b'+(m.toR1?' on':'')+'" data-r1="'+i+'" title="в Исследование 1">И1</span>':'')+
+    (m.level==='1'?'<span class="r1b'+(m.toR1?' on':'')+'" data-r1="'+i+'" title="в Исследование 1">→И1</span>':'')+
     '<span class="tg'+(m.enabled?' on':'')+'" data-tg="'+i+'"></span></summary><div class="tags">'+ruleTags(f)+'</div>'+
     '<div class="row" style="margin-top:6px"><span class="hint">v'+esc(f.version)+' · сегодня '+n+'</span><button type="button" class="pbtn del" data-del="'+i+'">убрать</button></div></details>'}
 function renderServerModules(){var d=draft();if(!$('mods1'))return;
@@ -546,11 +546,15 @@ function renderIntake(){if(!$('intakeBox'))return;var st=researchMeta&&researchM
     $('inSampleOn').checked=m.sample.on;$('inSample').value=m.sample.pct}
   $('inBuyV').textContent=$('inBuy').value;$('inSolV').textContent=$('inSol').value;$('inSampleV').textContent=$('inSample').value;
   $('inManualBox').classList.toggle('dim',!$('inManual').checked);
+  var parts=[];if($('inPhaseOn').checked)parts.push({before:'до',after:'после',both:'оба'}[$('inPhase').value]);if($('inBuyOn').checked)parts.push('пок. ≥ '+$('inBuy').value);if($('inSolOn').checked)parts.push('SOL ≥ '+$('inSol').value);if($('inSampleOn').checked)parts.push($('inSample').value+'%');
+  $('inManualSum').textContent=$('inManual').checked?(parts.join(' · ')||'без условий'):'выкл.';
+  var c=serverCfg(),byId={};(c&&c.filters||[]).forEach(function(f){byId[f.id]=f});var marked=(c&&c.modules||[]).filter(function(m){return m.toR1&&m.level==='1'});
+  $('inModSum').textContent=marked.length?marked.map(function(m){return (m.phase==='before'?'🌱 ':'🎓 ')+(byId[m.filterId]?byId[m.filterId].name:m.filterId)}).join(' · '):'Нет отмеченных. Отметь значком И1 в «Окне возможностей».';
   var acc=researchMeta&&researchMeta.intakeAccepted||{},rej=researchMeta&&researchMeta.intakeRejected||{};
   var a=Object.values(acc).reduce(function(p,v){return p+v},0),r=Object.values(rej).reduce(function(p,v){return p+v},0);
   $('intakeStats').textContent=x?'вошло '+a+' · не вошло '+r+(r?' ('+Object.keys(rej).map(function(k){return ({phase:'поток','no-buyers10':'нет данных о покупателях',buyers10:'мало покупателей','no-quoteSol':'нет данных SOL',quoteSol:'мало SOL',sample:'жребий','not-matched':'не прошли','modules-only-not-passed':'не в «Прошли»'})[k]+' '+rej[k]}).join(', ')+')':''):''}
 async function applyIntake(){var key=$('intakeKey').value.trim(),msg=$('intakeMsg');
-  if(!controlEndpoint||!researchMeta){msg.textContent='Сервер управления недоступен';return}
+  if(!controlEndpoint){msg.textContent='Сервер управления недоступен';return}if(!researchMeta){msg.textContent='Сервер ещё загружается, попробуй через минуту';return}
   if(!/^[a-zA-Z0-9_-]{32,256}$/.test(key)){msg.textContent='Введи пароль';return}
   var it=intakeFromUI();if(!it.manual.enabled&&!it.modules.enabled&&!window.confirm('Оба входа выключены — исследование перестанет набирать монеты. Продолжить?'))return;
   var st=researchMeta.settings,cfg={hours:st.hours,decisionMinutes:st.decisionMinutes,minActive:st.minActive,maxIdle:st.maxIdle,minCoverage:st.minCoverage,intake:it};
