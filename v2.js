@@ -377,27 +377,30 @@ function pathHtml(c){var e=c._entry||{},m=mint(c),t=now(),chain=[],det=[];
   var n={ok:0,no:0,wait:0,skip:0};f1.forEach(function(x){n[x.st]++});
   var icon1=!f1.length?'—':n.ok?'✅':n.wait?'⏳':n.skip===f1.length?'⚪':'❌';
   chain.push(['Ур.1',icon1+(f1.length&&n.ok?' '+n.ok+'/'+f1.length:'')]);
-  if(!f1.length)det.push(stepRow('⚪','Фильтры 1 ур.:',cfg&&cfg.enabled?'для этого потока не подключены':'выключены'));
+  if(!f1.length)det.push(stepRow('⚪','Уровень 1:',cfg&&cfg.enabled?'модулей нет':'выключен'));
   else{var sum=(n.ok?'✅ '+n.ok+' ':'')+(n.no?'❌ '+n.no+' ':'')+(n.wait?'⏳ '+n.wait+' ':'')+(n.skip?'⚪ '+n.skip:'');
     var wait=f1.find(function(x){return x.st==='wait'});
-    det.push('<details class="step fold"><summary><span class="si">'+icon1+'</span><b>Фильтры 1 ур.:</b> '+sum+(wait?'· решение через '+left(wait.left):'')+'</summary>'+
+    det.push('<details class="step fold"><summary><span class="si">'+icon1+'</span><b>Уровень 1:</b> '+sum+(wait?'· решение через '+left(wait.left):'')+'</summary>'+
       f1.map(function(x){return '<div class="sub">'+({ok:'✅',no:'❌',wait:'⏳',skip:'⚪'})[x.st]+' '+esc(x.name)+'</div>'}).join('')+'</details>')}
   var hrs=researchMeta&&researchMeta.settings?researchMeta.settings.hours:5,b1=(bank['1']||[]).find(function(x){return x.mint===m});
   if(b1){var st=researchMeta.settings,live=b1.activity>=st.minActive&&b1.idle<=st.maxIdle;chain.push(['Иссл.1',live?'🟢':'🔴']);det.push(stepRow(live?'🟢':'🔴','Исследование 1:',(live?'живая':'мёртвая')+' · активность '+b1.activity.toFixed(0)+'%, простой '+b1.idle+' мин'))}
   else{var end1=(e.acceptedAt||0)+hrs*3600e3;chain.push(['Иссл.1',t<end1?'⏳':'—']);det.push(stepRow('⏳','Исследование 1:',t<end1?'итог через '+left(end1-t):'нет итога (мало данных)'))}
   if(row){var r2=serverR2Rows.find(function(x){return x.mint===m}),sl=row.secondLevelRules||[];
     chain.push(['Ур.2',sl.length?'🔹 '+sl.length:'—']);
-    if(sl.length)det.push(stepRow('🔹','Фильтры 2 ур.:',sl.length+' правил записано при входе'));
+    if(sl.length)det.push(stepRow('🔹','Уровень 2:',sl.length+' правил записано при входе'));
     if(r2){chain.push(['Иссл.2',r2.label==='strong'?'🟢':'🔴']);det.push(stepRow(r2.label==='strong'?'🟢':'🔴','Исследование 2:',(r2.label==='strong'?'сильная':'слабая')+' · выше точки 0 '+Number(r2.pctAbove||0).toFixed(0)+'% времени'))}
     else{var end2=(row.zeroAt||0)+300*60000;chain.push(['Иссл.2',t<end2?'⏳':'—']);det.push(stepRow('⏳','Исследование 2:',t<end2?'итог через '+left(end2-t):'нет итога (мало данных)'))}}
-  else{chain.push(['Ур.2','—']);chain.push(['Иссл.2','—'])}
-  return '<div class="chain">'+chain.map(function(x){return '<span class="ch"><small>'+x[0]+'</small>'+x[1]+'</span>'}).join('<span class="arr">›</span>')+'</div>'+det.join('')}
+  else{det.push(stepRow('○','Уровень 2','—'));det.push(stepRow('○','Исследование 2','—'))}
+  if(row&&!(row.secondLevelRules||[]).length)det.splice(det.length-1,0,stepRow('○','Уровень 2','—'));
+  return '<div class="tl">'+det.join('')+'</div>'}
 // ---- Сделки в реальном времени (GeckoTerminal, только пока окно открыто) ----
 var TRADES_AT=0;
 async function loadTrades(){var d=document.getElementById('openCoinDetail');if(!d)return;var m=d.dataset.mint,L=LIVE[m]||{},box=document.getElementById('coinTrades');if(!box)return;
   if(!L.pair){box.innerHTML='<p class="hint">Пул ещё не найден.</p>';return}
   try{var r=await fetch('https://api.geckoterminal.com/api/v2/networks/solana/pools/'+L.pair+'/trades',{headers:{accept:'application/json'}});
-    if(!r.ok)throw Error('HTTP '+r.status);var j=await r.json(),rows=(j.data||[]).slice(0,14).map(function(x){return x.attributes||{}});
+    if(!r.ok)throw Error('HTTP '+r.status);var j=await r.json(),rows=(j.data||[]).slice(0,100).map(function(x){return x.attributes||{}});
+    var B=rows.filter(function(a){return a.kind==='buy'}),S=rows.filter(function(a){return a.kind!=='buy'}),sm=function(g){return g.reduce(function(t,a){return t+(+a.volume_in_usd||0)},0)},ts=document.getElementById('coinTradeSum');
+    if(ts)ts.innerHTML='<div class="tcol b"><b>▲ Покупки</b>'+B.length+' · '+usd(sm(B))+'</div><div class="tcol s"><b>▼ Продажи</b>'+S.length+' · '+usd(sm(S))+'</div>';
     if(!rows.length){box.innerHTML='<p class="hint">Сделок пока нет.</p>';return}
     box.innerHTML=rows.map(function(a){var buy=a.kind==='buy',ts=Date.parse(a.block_timestamp),w=String(a.tx_from_address||'');
       return '<div class="tr '+(buy?'b':'s')+'"><span>'+(buy?'▲':'▼')+'</span><span>'+usd(+a.volume_in_usd)+'</span><span class="w">'+esc(w.slice(0,4)+'…'+w.slice(-3))+'</span><span class="ag">'+(ts?Math.max(0,Math.round((now()-ts)/1000))+'с':'')+'</span></div>'}).join('');TRADES_AT=now()}
@@ -406,11 +409,11 @@ var DETAIL_COIN=null;
 function detail(c){
   var e=c._entry,m=mint(c),L=LIVE[m]||{};DETAIL_COIN=c;
   return '<div id="openCoinDetail" class="sheet" data-mint="'+esc(m)+'"><div class="sheetbox">'+
-    '<div class="row"><h2>'+esc(c.n||c.s||'Монета')+' <small class="muted">'+esc(c.s||'')+'</small></h2><button id="closeCoin">✕</button></div>'+
-    '<div class="muted small">'+(e.phase==='before'?'🌱 создана ':'🎓 миграция ')+'<b class="ago" data-t="'+(+e.eventAt||0)+'">'+agoText(e.eventAt)+'</b> · вход '+time(e.acceptedAt)+'</div>'+
+    '<div class="row"><div class="row" style="gap:9px;justify-content:flex-start">'+(imgOf(c)?'<img class="avatar dav" src="'+esc(imgOf(c))+'" alt="">':'<span class="avatar empty dav">'+esc((c.s||c.n||'?').slice(0,2))+'</span>')+'<div><h2 style="margin:0">'+esc(c.n||c.s||'Монета')+((c.s&&c.n&&c.s.toLowerCase()!==c.n.toLowerCase())?' <small class="muted">'+esc(c.s)+'</small>':'')+'</h2>'+
+    '<div class="muted small">'+(e.phase==='before'?'🌱 ':'🎓 миграция ')+'<b class="ago sh" data-t="'+(+e.eventAt||0)+'">'+agoShort(e.eventAt)+'</b> · 👁 '+(e.acceptedAt&&e.eventAt?spd(e.acceptedAt-e.eventAt):'—')+' · вход '+time(e.acceptedAt)+'</div></div></div><button id="closeCoin">✕</button></div>'+
     '<div class="chartbox"><iframe id="coinChart" src="'+esc(chartSrc(m))+'" loading="lazy" title="График"></iframe></div>'+
     '<div class="minigrid" id="coinStats">'+detailStats(m)+'</div>'+
-    '<div class="sec">Сделки</div><div id="coinTrades" class="trades"><p class="hint">загрузка…</p></div>'+
+    '<div class="sec">Сделки</div><div id="coinTradeSum" class="tsum"></div><div id="coinTrades" class="trades"><p class="hint">загрузка…</p></div>'+
     '<div class="sec">Наша система</div><div class="path" id="coinPath">'+pathHtml(c)+'</div>'+
     '<div class="action-bar"><a class="btn" target="_blank" rel="noopener" href="https://dexscreener.com/solana/'+esc(L.pair||m)+'">DexScreener</a>'+
     '<a class="btn" target="_blank" rel="noopener" href="https://gmgn.ai/sol/token/'+esc(m)+'">GMGN</a>'+
