@@ -943,7 +943,11 @@ function chainWatch(){
 /* ---------- 6. выгрузка ---------- */
 const dayKey=t=>new Date(t+TZ).toISOString().slice(0,10);
 const UPQ=[];function uploadLater(name,obj){if(typeof COMPLETED!=='undefined'&&COMPLETED){COMPLETED.enqueueRaw(name,obj);if(!UPQ.some(x=>x[0]===name))UPQ.push([name,null])}else UPQ.push([name,obj])}
-async function flushUploads(){
+async function flushUploads(){if(FLUSHING)return;FLUSHING=true;try{await flushUploadsInner()}finally{FLUSHING=false}}
+let FLUSHING=false;
+// Пока архивный хвост большой — отдельный разбор раз в 10 с (не ждём цикла выгрузки).
+if(typeof setInterval==='function')setInterval(()=>{if(UPQ.length>200&&!FLUSHING)flushUploads().catch(e=>err('drain '+e.message))},10000);
+async function flushUploadsInner(){
   // Drain the finite old-namespace tail before moving that namespace to archive.
   UPQ.sort((a,b)=>Number(b[0].startsWith('raw/'))-Number(a[0].startsWith('raw/')));
   // A restored raw backlog must not hold source/status/heartbeat publication hostage.
