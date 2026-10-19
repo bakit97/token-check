@@ -385,11 +385,11 @@ function detail(c){
   var e=c._entry,m=mint(c),L=LIVE[m]||{};DETAIL_COIN=c;
   return '<div id="openCoinDetail" class="sheet" data-mint="'+esc(m)+'"><div class="sheetbox">'+
     '<div class="row"><div class="row" style="gap:9px;justify-content:flex-start">'+(imgOf(c)?'<img class="avatar dav" src="'+esc(imgOf(c))+'" alt="">':'<span class="avatar empty dav">'+esc((c.s||c.n||'?').slice(0,2))+'</span>')+'<div><h2 style="margin:0">'+esc(c.n||c.s||'Монета')+((c.s&&c.n&&c.s.toLowerCase()!==c.n.toLowerCase())?' <small class="muted">'+esc(c.s)+'</small>':'')+'</h2>'+
-    '<div class="muted small">'+(function(){var pre=e.phase==='before',ag=cardAgeAt(c),out=[];
-      if(ag)out.push((pre?'🌱 ':'🎓 ')+'возраст <b class="ago sh" data-t="'+ag+'">'+agoShort(ag)+'</b>');
-      if(!pre&&e.eventAt)out.push((ag?'':'🎓 ')+'миграция <b class="ago sh" data-t="'+e.eventAt+'">'+agoShort(e.eventAt)+'</b> назад');
-      if(e.acceptedAt&&e.eventAt)out.push('👁 поймали через '+spd(e.acceptedAt-e.eventAt)+' после '+(pre?'рождения':'миграции'));
-      return out.join(' · ')})()+'</div></div></div><button id="closeCoin">✕</button></div>'+
+    '<div class="dhead">'+(function(){var pre=e.phase==='before',ag=cardAgeAt(c),r=[];
+      r.push('<div><span>Возраст</span> '+(ag?'<b class="ago sh" data-t="'+ag+'">'+agoShort(ag)+'</b>':'<b>неизвестен</b>')+'</div>');
+      r.push('<div><span>Миграция</span> '+(pre?'<b>нет</b>':ag&&e.eventAt?'<b>в '+(e.eventAt-ag<3600000?spd(e.eventAt-ag):agoShort(now()-(e.eventAt-ag)))+'</b>':e.eventAt?'<b class="ago sh" data-t="'+e.eventAt+'">'+agoShort(e.eventAt)+'</b> назад':'—')+'</div>');
+      r.push('<div><span>Путь</span> <b>'+(pre?'🌱 До':'🎓 После')+'</b>'+(e.acceptedAt&&e.eventAt?' · 👁 поймали через '+spd(e.acceptedAt-e.eventAt)+' после '+(pre?'рождения':'миграции'):'')+'</div>');
+      return r.join('')})()+'</div></div></div><button id="closeCoin">✕</button></div>'+
     '<div class="chartbox"><iframe id="coinChart" src="'+esc(chartSrc(m))+'" loading="lazy" title="График"></iframe></div>'+
     '<div class="minigrid" id="coinStats">'+detailStats(m)+'</div>'+
     '<div class="sec">Сделки</div><div id="coinTradeSum" class="tsum"></div><div id="coinTrades" class="trades"><p class="hint">загрузка…</p></div>'+
