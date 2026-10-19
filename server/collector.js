@@ -396,7 +396,7 @@ const C=new Map();const FV=2; // версия формата наблюдени�
 // Авторитетный «Все»: отдельный read-only журнал допуска, не зависит от телефона.
 let EVENT_CLOCK=null;
 let SOURCE=null, SOURCE_ERR='', SOURCE_CFG_ERR='', PRE=null;
-let RESEARCH_V2=null, RESEARCH_V2_ERR='', RESEARCH_BANK_UPLOADED=0;
+let RESEARCH_V2=null, RESEARCH_V2_ERR='', RESEARCH_BANK_UPLOADED=0, RESEARCH_DEBUG_SIG='';
 let PASS_V2=null, RESEARCH_TWO=null, AUTO_V2=null, FILTER_AUDIT=null;
 let RESEARCH_ONE_EPOCH=null, RESEARCH_TWO_EPOCH=null, RESEARCH_CONFIG_ERR='';
 let OLD_RESEARCH_ONE=[], OLD_RESEARCH_TWO=[];
@@ -750,7 +750,13 @@ function candleTasks(){const now=Date.now(),pins=collectionPins(now);
           let k2=[];if(k1.length&&k1[0][0]*1000>c.t)k2=kList(await gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=1000&before_timestamp=${k1[0][0]}&currency=usd`,3,'p24b:'+pool));
           if(c.p===pool)c.path={at:Date.now(),upto:24,c:mergeK(mergeK(c.path?.c,k2),k1)}})
         .catch(e=>{if(e.code!=='OBSERVATION_COMPLETE')err('path24 '+e.message)}).finally(()=>{c.pTry=0})}}
-  tradeTasks(now,pins)}
+  researchTradeTail(now);tradeTasks(now,pins)}
+// One bounded public GT request per tick; this uses no Helius credits.
+function researchTradeTail(now){if(!RESEARCH_V2||gtBackgroundBusy()||gtPending('r1-tail'))return;
+ const entries=[...RESEARCH_V2.admitted.values()].filter(r=>{const c=C.get(r.mint),cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,r.phase),end=r.acceptedAt+cfg.hours*3600e3;return c?.p&&now>=end&&now-end<24*3600e3&&c.outcomeTape?.windowEnd!==end&&!c.outcomeTailBusy&&now-(c.outcomeTailTry||0)>15*60e3;}).sort((a,b)=>b.acceptedAt-a.acceptedAt);
+ const row=entries[0];if(!row)return;const c=C.get(row.mint),cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase),end=row.acceptedAt+cfg.hours*3600e3;c.outcomeTailBusy=true;c.outcomeTailTry=now;
+ gt(`/pools/${c.p}/trades`,2,'r1-tail').then(r=>{if(!Array.isArray(r.data))throw Error('Missing trade response');const at=Date.now(),rows=(r.data||[]).map(d=>{const x=d.attributes||{};return [Math.floor(Date.parse(x.block_timestamp)/1000),x.kind==='buy'?1:0,+x.volume_in_usd||0,x.tx_from_address||'',+(x.kind==='buy'?x.price_to_in_usd:x.price_from_in_usd)||null];});c.outcomeTape=require(DIR+'/research-v2.js').tradeOutcomeEvidence(rows,row.acceptedAt,end,at);if(RESEARCH_V2){RESEARCH_V2.processed.delete(row.mint);RESEARCH_V2.lastAttemptAt.delete(row.mint);}uploadLater(`observations-v2/research-trades/${dayKey(row.acceptedAt)}/${row.mint}-${end}.json`,{mint:row.mint,at,start:row.acceptedAt,end,rows});}).catch(e=>err('research trade tail '+e.message)).finally(()=>{c.outcomeTailBusy=false;});
+}
 // сделки: последние 300 сделок пула; чаще, если монета активная. Покрытие проверяется по перекрытию запросов.
 function sourceDecisionEnd(c){const row=SOURCE?.get(c.a);return row?row.acceptedAt+(PASS_V2?.config?.decisionMinutes||15)*60e3:0}
 function gxTasks(now){if(gtPending('gx'))return;const list=[...C.values()].filter(c=>observedEligible(c)&&ageMin(c,now)>=2&&ageMin(c,now)<16&&now-(c.gxAt||0)>=(c.gxMiss?Math.min(10,2**c.gxMiss)*60e3:55e3)).sort((a,b)=>{
@@ -768,7 +774,7 @@ function tradeTasks(now,pins=collectionPins(now)){gxTasks(now);for(const c of C.
     if(!due)continue;if(c.d==='pump-fun'&&!c.gx?.length){if(now>sourceDecisionEnd(c))finishTrades(c,'GT не подтвердил наличие пула');continue}const end=sourceDecisionEnd(c),fresh=end>now;if(!fresh&&gtBackgroundBusy())continue;const pool=c.p;c.trTry=1;
     gt(`/pools/${pool}/trades`,fresh?1:3,'tr:'+pool,fresh?end:0).then(r=>{if(c.p!==pool)return;const at=Date.now();let lo=Infinity,hi=0;
         for(const d of r.data||[]){const x=d.attributes||{};const ts=Math.floor(Date.parse(x.block_timestamp)/1000);if(!ts)continue;lo=Math.min(lo,ts);hi=Math.max(hi,ts);
-          const pr=+(x.kind==='buy'?x.price_to_in_usd:x.price_from_in_usd)||0;tr.x[d.id||x.tx_hash]=[ts,x.kind==='buy'?1:0,+(+x.volume_in_usd||0).toFixed(2),(x.tx_from_address||'').slice(0,12),pr?+pr.toPrecision(6):null]}
+          const pr=+(x.kind==='buy'?x.price_to_in_usd:x.price_from_in_usd)||0;tr.x[d.id||x.tx_hash]=[ts,x.kind==='buy'?1:0,+(+x.volume_in_usd||0).toFixed(2),x.tx_from_address||'',pr?+pr.toPrecision(6):null]}
         tr.f.push([at,(r.data||[]).length,isFinite(lo)?lo:null,hi||null]);
         if(at>=c.t+10*60e3+10e3)finishTrades(c,null)})
       .catch(e=>{if(e.code!=='OBSERVATION_COMPLETE')err('trades '+e.message)}).finally(()=>{c.trTry=0})}}
@@ -1099,6 +1105,7 @@ async function exportResearchV2(now) {
   RESEARCH_BANKS?.upsert(RESEARCH_V2.select({limit:20000}));
   AI_SNAP.r1=result;
   await upload('research-v2/status.json',result);
+  const debug={epochStart:result.cohortStart,selection:'sha256-order-independent-sample',coins:RESEARCH_V2.debugSample(20)},debugSig=JSON.stringify(debug);if(debugSig!==RESEARCH_DEBUG_SIG){await upload('research-v2/debug-sample.json',{updated:now,...debug});RESEARCH_DEBUG_SIG=debugSig;}
   {
     await upload('research-v2/polygon-1.json',{
       updated:now,epochStart:result.cohortStart,settings:result.settings,counts:result.counts,

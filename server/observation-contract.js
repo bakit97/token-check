@@ -1,6 +1,6 @@
 (function(root){
 'use strict';
-const META=new Set(['a','n','s','i','p','d','q','t','t0','tSrc','seen','disc','rcSeen','wsSeen','firstPostSeenAt','preCurve','preTradingAt','ty','mk','mst','mw','mT','mSig','mSeen','mCr','mH','mk0','ct','soc','tk','tkAt','lastTrade','live','legacy','createdAt','createdAtObservedAt','createdAtSource','uri','description','metadataAt','sol','b5','s5','top10','safeContract','img','cardAt','marketObservedAt']);
+const META=new Set(['a','n','s','i','p','d','q','t','t0','tSrc','seen','disc','rcSeen','wsSeen','firstPostSeenAt','preCurve','preTradingAt','ty','mk','mst','mw','mT','mSig','mSeen','mCr','mH','mk0','ct','soc','tk','tkAt','lastTrade','live','legacy','createdAt','createdAtObservedAt','createdAtSource','uri','description','metadataAt','sol','b5','s5','top10','safeContract','img','cardAt','marketObservedAt','outcomeTape']);
 const day=t=>new Date(t+5*3600000).toISOString().slice(0,10);
 function series(rows,kind){return (rows||[]).map(row=>kind==='vault'?{at:row[0]*1000,slot:row[1],balances:row.slice(2)}:{at:row[0]*1000,values:row.slice(1)})}
 function poolRecord(c,mint){
@@ -36,7 +36,7 @@ function restorePool(p,cutoff){const valid=x=>Number.isFinite(x?.at)&&x.at<=cuto
 }
 function toLegacy(row,cutoff=Infinity){if(row?.schema!==2||row.observations?.schema!==2)throw Error('Unsupported observation contract');
  const out={...row};const proof=row.observations.migrationProof;if(proof?.sourceState)out.mg={...proof.sourceState};if(proof?.previousState)out.mg0={...proof.previousState};delete out.observations;delete out.schema;const [current,...previous]=row.observations.pools.map(p=>restorePool(p,cutoff));
- Object.assign(out,current);if(out.ct&&(!Number.isFinite(out.ct.at)||out.ct.at>cutoff))out.ct=null;out.origs=previous;out.preObs=previous.find(p=>p.d==='pump-fun')||null;return out;
+ Object.assign(out,current);if(out.outcomeTape?.at>cutoff)out.outcomeTape=null;if(out.ct&&(!Number.isFinite(out.ct.at)||out.ct.at>cutoff))out.ct=null;out.origs=previous;out.preObs=previous.find(p=>p.d==='pump-fun')||null;return out;
 }
 function chainDrain(row,cutoff=Infinity){
  const c=row?.observations?toLegacy(row,cutoff):row;if(!c||!Array.isArray(c.vmint)||c.vmint.length!==2||!c.vmint.includes(c.a))return null;

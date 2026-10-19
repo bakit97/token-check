@@ -97,7 +97,7 @@ class ResearchRuntime {
     this.cohortStart=cohortStart;this.cohortEnd=cohortEnd;
     fs.mkdirSync(dir,{recursive:true});
     this.config=settings(config);this.intakeRejected={};this.intakeAccepted={};
-    this.rows=[];this.admitted=new Map();
+    this.rows=[];this.admitted=new Map();this.admissionUpgradeAt=Date.now();
     this.lookup=new Set();
     this.processed=new Map();
     this.lastAttemptAt=new Map();
@@ -112,12 +112,14 @@ class ResearchRuntime {
            !r.features||typeof r.features!=='object')
           throw Error('Malformed saved research sample');
       }
+      this.admissionUpgradeAt=state.admissionUpgradeAt||this.admissionUpgradeAt;
       this.rows=state.rows;this.admitted=new Map((state.admitted||state.rows).map(r=>[r.mint,r]));
       this.lookup=new Set(this.rows.map(r=>r.mint));
       for(const pair of state.processed||[]) {
         if(Array.isArray(pair)&&typeof pair[0]==='string'&&Number.isSafeInteger(pair[1]))
           this.processed.set(pair[0],pair[1]);
       }
+      if(!state.admissionVersion){this.processed.clear();}
       // Compatible with older snapshots that did not store the processed index.
       for(const r of this.rows)if(r.outcomeVersion===2)this.processed.set(r.mint,r.acceptedAt);else this.processed.delete(r.mint);
     }
@@ -139,6 +141,7 @@ class ResearchRuntime {
       considered++;
       const cfg=phaseSettings(this.config,row.phase);
       let admission=this.admitted.get(row.mint);
+      if(!admission&&row.acceptedAt<this.admissionUpgradeAt){admission={mint:row.mint,phase:row.phase,acceptedAt:row.acceptedAt,features:{},via:'preserved-observed-cohort'};this.admitted.set(row.mint,admission);}
       if((!admission||admission.intakePending)&&age>=cfg.decisionMinutes*MIN&&gateChecks++<MAX_CLASSIFICATION_CHECKS){const c=coins.get(row.mint);if(c){const features=featuresAt(c,row.acceptedAt+cfg.decisionMinutes*MIN,{eventAt:row.acceptedAt,phase:row.phase}),gate=intakeDecision(cfg.intake,row,features,passes);if(!gate.ok){this.admitted.delete(row.mint);this.processed.set(row.mint,row.acceptedAt);this.intakeRejected[gate.why]=(this.intakeRejected[gate.why]||0)+1;continue}admission={mint:row.mint,phase:row.phase,acceptedAt:row.acceptedAt,features,via:gate.via};this.admitted.set(row.mint,admission);this.intakeAccepted[gate.via]=(this.intakeAccepted[gate.via]||0)+1;}}
       if(!admission){admission={mint:row.mint,phase:row.phase,acceptedAt:row.acceptedAt,features:{},intakePending:true};this.admitted.set(row.mint,admission);}
 
@@ -197,7 +200,7 @@ class ResearchRuntime {
       this.rows=this.rows.sort((a,b)=>a.time-b.time);
       this.lookup=new Set(this.rows.map(r=>r.mint));
       atomicJSON(this.file,{schema:1,rows:this.rows,
-        admitted:[...this.admitted.values()],processed:[...this.processed],savedAt:now});
+        admissionVersion:2,admissionUpgradeAt:this.admissionUpgradeAt,admitted:[...this.admitted.values()],processed:[...this.processed],savedAt:now});
     }
     for(const row of this.rows){
       const name=classOf(row,this.config);
@@ -209,11 +212,13 @@ class ResearchRuntime {
       maxChecksPerRun:MAX_CLASSIFICATION_CHECKS,intake:this.config.intake,intakeAccepted:this.intakeAccepted,intakeRejected:this.intakeRejected,...this.summary()};
   }
   summary(){
+    const unknownReasons={};
     const counts={live:0,dead:0,pending:0,unknown:0,entered:0,preLive:0,preDead:0,postLive:0,postDead:0},byPhase={before:{entered:0,live:0,dead:0,pending:0,unknown:0},after:{entered:0,live:0,dead:0,pending:0,unknown:0}};
-    for(const row of this.view()){counts.entered++;counts[row.label]++;const p=byPhase[row.phase];if(p){p.entered++;p[row.label]++;}if(['live','dead'].includes(row.label))counts[row.phase==='before'?(row.label==='live'?'preLive':'preDead'):(row.label==='live'?'postLive':'postDead')]++;}
-    return {schema:2,updated:this.lastAt,cohortStart:this.cohortStart,settings:{...this.config},counts,byPhase,pending:{...this.pending,'not-yet-finished':counts.pending,'collector-gap':counts.unknown},bankCapacityPerClass:MAX_BANK_PER_CLASS,status:'observational',secondLevel:'separate-server-verified-pass-stream'};
+    for(const row of this.view()){if(row.label==='unknown')unknownReasons[row.why||'collector-gap']=(unknownReasons[row.why||'collector-gap']||0)+1;counts.entered++;counts[row.label]++;const p=byPhase[row.phase];if(p){p.entered++;p[row.label]++;}if(['live','dead'].includes(row.label))counts[row.phase==='before'?(row.label==='live'?'preLive':'preDead'):(row.label==='live'?'postLive':'postDead')]++;}
+    return {schema:2,updated:this.lastAt,cohortStart:this.cohortStart,settings:{...this.config},counts,byPhase,unknownReasons,pending:{...this.pending,'not-yet-finished':counts.pending,'collector-gap':counts.unknown},bankCapacityPerClass:MAX_BANK_PER_CLASS,status:'observational',secondLevel:'separate-server-verified-pass-stream'};
   }
   view(){const complete=new Map(this.rows.map(r=>[r.mint,r]));return [...this.admitted.values()].map(a=>{const r=complete.get(a.mint);if(r){const v=r.outcomeVersion===2?classifyActivity(r,phaseSettings(this.config,r.phase)):{label:'unknown',why:'legacy-observation-awaiting-recheck'};return {...r,...v};};const cfg=phaseSettings(this.config,a.phase),ended=this.lastAt>=a.acceptedAt+cfg.hours*HOURS+3*MIN,why=this.lastAttemptAt.get(a.mint)?.why;return {...a,label:ended&&why&&why!=='deferred-by-batch'?'unknown':'pending',why:ended?why||'deferred-by-batch':'not-yet-finished'};}).sort((a,b)=>a.acceptedAt-b.acceptedAt);}
+  debugSample(limit=20){const crypto=require('node:crypto'),zlib=require('node:zlib');return this.view().filter(r=>['live','dead','unknown'].includes(r.label)).map(r=>({r,rank:crypto.createHash('sha256').update(String(this.cohortStart)+r.mint).digest('hex')})).sort((a,b)=>a.rank.localeCompare(b.rank)).slice(0,limit).map(({r})=>{let minutes=[];try{if(r.outcomePacked)minutes=JSON.parse(zlib.inflateSync(Buffer.from(r.outcomePacked,'base64'),{maxOutputLength:2000000}).toString())}catch{}return {mint:r.mint,phase:r.phase,acceptedAt:r.acceptedAt,windowStart:r.windowStart,windowEnd:r.windowEnd,label:r.label,why:r.why,coverage:r.coverage,activePct:r.activePct,maxIdleObserved:r.maxIdleObserved,priceAtDecision:r.priceAtDecision,priceAtEnd:r.priceAtEnd,priceKeep:r.priceKeep,lastHourTrades:r.lastHourTrades,lastHourWallets:r.lastHourWallets,uniqueBuyers:r.uniqueBuyers,minuteColumns:['at','collectorObserved','activityObserved','price'],minutes};});}
   select({phase,label,limit=100}={}) {
     if(phase&&!['before','after'].includes(phase))throw TypeError('bad phase');
     if(label&&!['live','dead','pending','unknown'].includes(label))throw TypeError('bad label');

@@ -101,8 +101,8 @@ function classifyActivity(m,cfg={}){
  const tests=[['last-hour-trades',m.lastHourTrades,cfg.lastHourTrades??1],['last-hour-wallets',m.lastHourWallets,cfg.lastHourWallets??1],['price-retention',m.priceKeep,cfg.minPriceKeep??30],['unique-buyers',m.uniqueBuyers,cfg.minUniqueBuyers??30]];
  if(cfg.useActivity)tests.push(['activity',m.activePct,cfg.minActive??70]);
  if(cfg.useIdle)tests.push(['idle',m.maxIdleObserved==null?null:-(m.maxIdleObserved),-(cfg.maxIdle??60)]);
- const failed=tests.find(([,v,n])=>v!=null&&v<n);if(failed)return {label:'dead',why:failed[0]};
- const missing=tests.find(([,v,n])=>n>0&&v==null);return missing?{label:'unknown',why:'unobserved-'+missing[0]}:{label:'live',why:null};
+ const failed=tests.find(([k,v,n])=>v!=null&&v<n&&!m.lowerBounds?.includes(k));if(failed)return {label:'dead',why:failed[0]};
+ const missing=tests.find(([k,v,n])=>n>0&&(v==null||(m.lowerBounds?.includes(k)&&v<n)));return missing?{label:'unknown',why:'unobserved-'+missing[0]}:{label:'live',why:null};
 }
 function activityOutcome(coin,entryAt,cfg={},now=Date.now()){
  if(cfg.outcomeVersion!==2)return legacyActivityOutcome(coin,entryAt,cfg,now);
@@ -112,7 +112,7 @@ function activityOutcome(coin,entryAt,cfg={},now=Date.now()){
  return {...raw,...result,outcomeVersion:2};
 }
 function activityEvidence(coin,start,end,decisionMinutes){
- const history=samples(coin).filter(x=>x.at>=start&&x.at<=end),pools=[coin,...(coin?.origs||[]),coin?.preObs].filter(Boolean);
+ const history=samples(coin).filter(x=>x.at>=start&&x.at<=end),tail=coin?.outcomeTape?.windowStart===start&&coin?.outcomeTape?.windowEnd===end?coin.outcomeTape:null,pools=[coin,...(coin?.origs||[]),coin?.preObs].filter(Boolean);
  const bins=Math.ceil((end-start)/MIN),minutes=Array.from({length:bins},(_,i)=>[start+(i+1)*MIN,null,null,null]);
  // A rolling m5 snapshot proves the preceding interval was observed. Never
  // multiply its transaction count by five or treat a missing pair as zero.
@@ -125,14 +125,24 @@ function activityEvidence(coin,start,end,decisionMinutes){
  // Full trade coverage must cover the entire requested interval. An early
  // ten-minute fetch cannot establish five-hour unique-wallet totals.
  const tapeCovered=pools.some(p=>p.tradeWindow?.start<=start&&p.tradeWindow?.end>=end&&p.tradeWindow?.complete===true);
+ if(tail?.complete)for(const r of minutes){r[1]=1;if(r[2]==null)r[2]=0;}
+ for(const row of tail?.minutes||[]){const i=Math.floor((row[0]-start)/MIN);if(minutes[i]){minutes[i][2]=row[1]>0?1:0;if(row[2]>0)minutes[i][3]=row[2];}}
  let seen=0,active=0,gap=0,maxGap=0,idle=0,maxIdleObserved=0;
  for(const r of minutes){if(r[1]){seen++;gap=0;if(r[2]===1){active++;idle=0}else if(r[2]===0){idle++;maxIdleObserved=Math.max(maxIdleObserved,idle)}else idle=0}else{maxGap=Math.max(maxGap,++gap);idle=0}}
- const priceAt=t=>latestBefore(history,t,7*MIN,x=>x.at)?.price??null;
+ const priceAt=t=>latestBefore(history,t,7*MIN,x=>x.at)?.price??latestBefore(candles(coin),t,7*MIN,x=>x[0])?.[1]??null;
+ for(const r of minutes)r[3]=r[3]??priceAt(r[0]);
  const p0=priceAt(start+decisionMinutes*MIN),pe=priceAt(end);
  let recent=history.filter(x=>x.at>end-60*MIN);let rolling=0,rollingSeen=0;for(let t=end;t>end-60*MIN;t-=FIVE){const d=latestBefore(recent,t,2*MIN,x=>x.at);if(d&&d.at>=t-2*MIN&&d.buys!=null&&d.sells!=null){rolling+=d.buys+d.sells;rollingSeen++}}
  // Zero trades in all twelve non-overlapping rolling windows is conclusive.
  const hourTrades=tapeCovered?lastTrades:rollingSeen===12?rolling:null;
- return {coverage:seen/bins,maxGap,activePct:active/bins*100,maxIdleObserved,lastHourTrades:hourTrades,lastHourWallets:tapeCovered?lastWallets.size:hourTrades===0?0:null,uniqueBuyers:tapeCovered?buyers.size:null,priceKeep:p0>0&&pe!=null?pe/p0*100:null,priceAtDecision:p0,priceAtEnd:pe,minutes,windowStart:start,windowEnd:end,tradeCoverage:tapeCovered};
+ return {coverage:seen/bins,maxGap,activePct:active/bins*100,maxIdleObserved,lastHourTrades:tail?.lastHourTrades??hourTrades,lastHourWallets:tail?.lastHourWallets??(tapeCovered?lastWallets.size:hourTrades===0?0:null),uniqueBuyers:tail?.uniqueBuyers??(tapeCovered?buyers.size:null),lowerBounds:tail?.lowerBounds||[],priceKeep:p0>0&&pe!=null?pe/p0*100:null,priceAtDecision:p0,priceAtEnd:pe,minutes,windowStart:start,windowEnd:end,tradeCoverage:tapeCovered};
+}
+function tradeOutcomeEvidence(rows,start,end,at){
+ const clean=rows.filter(r=>Array.isArray(r)&&Number.isFinite(r[0])),oldest=Math.min(...clean.map(r=>r[0]*1000)),complete=rows.length<300||oldest<=start,tailComplete=rows.length<300||oldest<=end-60*MIN;
+ const buyers=new Set(),wallets=new Set(),minute=new Map();let trades=0;
+ for(const r of clean){const t=r[0]*1000;if(t<start||t>end)continue;const wallet=typeof r[3]==='string'&&r[3].length>=32?r[3]:null;if(r[1]&&wallet)buyers.add(wallet);if(t>=end-60*MIN){trades++;if(wallet)wallets.add(wallet);}const m=Math.floor(t/MIN)*MIN,old=minute.get(m)||[m,0,null];old[1]++;if(r[4]>0)old[2]=r[4];minute.set(m,old);}
+ const identities=clean.every(r=>typeof r[3]==='string'&&r[3].length>=32);
+ return {at,windowStart:start,windowEnd:end,complete,minutes:[...minute.values()].sort((a,b)=>a[0]-b[0]),lastHourTrades:trades,lastHourWallets:identities?wallets.size:null,uniqueBuyers:identities?buyers.size:null,lowerBounds:[...(!tailComplete?['last-hour-trades','last-hour-wallets']:[]),...(!complete?['unique-buyers']:[])]};
 }
 function strengthOutcome(coin,zeroAt,{minAbove=70,minCoverage=.9}={},now=Date.now()){
   if(!inRange(minAbove,0,100))throw RangeError('Invalid level-two settings');
@@ -322,4 +332,4 @@ function capBank(rows,labelFn=it=>it.label,positive='live',negative='dead',max=5
   return [...p,...n].sort((a,b)=>a.time-b.time);
 }
 module.exports={KEYS,RULE_KEYS,LEVEL2_KEYS,levelTwoFeaturesAt,samples,candles,featuresAt,starterFeaturesAt,activityOutcome,
-  classifyActivity,activityEvidence,strengthOutcome,evaluation,passes,ruleKey,ruleStats,proposeRules,capBank};
+  classifyActivity,activityEvidence,tradeOutcomeEvidence,strengthOutcome,evaluation,passes,ruleKey,ruleStats,proposeRules,capBank};
