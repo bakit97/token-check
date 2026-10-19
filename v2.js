@@ -321,7 +321,7 @@ function coinHtml(c,extra){
   var nm=c.n||c.s||'Токен',sy=c.s||'',name=esc(nm),symbol=sy&&sy.toLowerCase()!==nm.toLowerCase()?' <small>'+esc(sy)+'</small>':'';
   return '<button type="button" class="coin '+(e.phase==='before'?'pre':'post')+'" data-coin="'+esc(mint(c))+'">'+
     (img?'<img class="avatar" src="'+esc(img)+'" alt="" loading="lazy">':'<span class="avatar empty"'+(c._uri?' data-uri="'+esc(c._uri)+'"':'')+'>'+esc((sy||nm||'?').slice(0,2))+'</span>')+
-    '<span class="body"><span class="name">'+name+symbol+'</span><span class="detail">'+(e.phase==='before'?'🌱 ':'🎓 возраст ')+'<b class="ago sh" data-t="'+cardAgeAt(c)+'">'+agoShort(cardAgeAt(c))+'</b> · 👁 '+(e.acceptedAt&&e.eventAt?spd(e.acceptedAt-e.eventAt):'—')+'<span class="mline">'+(ml?' · '+esc(ml):'')+'</span></span>'+
+    '<span class="body"><span class="name">'+name+symbol+'</span><span class="detail">'+(e.phase==='before'?'🌱 ':'🎓 возраст ')+'<b class="ago sh" data-t="'+cardAgeAt(c)+'">'+agoShort(cardAgeAt(c))+'</b> · 👁 '+(e.acceptedAt&&e.eventAt?spd(e.acceptedAt-e.eventAt):'—')+'<span class="mline">'+(ml?' · '+mlHtml(ml):'')+'</span></span>'+
     (extra?'<span class="detail">'+(extra.charAt(0)==='<'?extra:esc(extra))+'</span>':'')+'</span><span class="right"><span class="price">'+price(L&&L.price||p&&p[1])+'</span><span class="growbox">'+growthHtml(c)+'</span><span class="sparkbox">'+spark(c)+'</span></span></button>';
 }
 function pc(v){return v==null||!Number.isFinite(+v)?'—':(v>0?'+':'')+Number(v).toFixed(Math.abs(v)>=10?0:1)+'%'}
@@ -653,9 +653,10 @@ function modConds(m,openG){var GR=m.level==='2'||String(m.id).indexOf('a2-')===0
   return '<details class="frow mgrp" data-g="'+g[0]+'" style="margin-top:6px"'+(openG[g[0]]?' open':'')+'><summary><span class="fname">'+g[0]+' <span class="hint">· '+rows.length+'</span></span></summary>'+rows.join('')+
     '<button type="button" class="add1" style="margin-top:6px" data-madd="'+keys[0]+'">+ условие</button></details>'}).join('')}
 function modEvalHtml(m){var ev=m.eval||{},stale=modSig(m)!==m.evalSig&&!!(ev.train||ev.test||ev.live);return (stale?'<div class="warn">⚠ Условия изменены — оценка устарела, нужен перетест</div>':'')+'<div style="'+(stale?'opacity:.45':'')+'">тест '+modEv(ev.train)+'<br>проверка '+modEv(ev.holdout)+'<br>сейчас '+modEv(ev.live)+'</div>'}
-function modBlk(t,cls,title){var l='—',d='';if(t&&t.positiveRecall!=null){var tp=t.totalPositive,tn=t.totalNegative,pp=tp!=null?Math.round(t.positiveRecall*tp):null,pn=tn!=null?Math.round((1-t.negativeRejection)*tn):null;
-    l='🟢 '+modPc(t.positiveRecall)+(tp!=null?' <span>'+pp+' из '+tp+'</span>':'');d='<br>🔴 '+modPc(1-t.negativeRejection)+(tn!=null?' <span>'+pn+' из '+tn+'</span>':'')}
-  return '<div class="mblk '+cls+'"><i>'+title+'</i>'+l+d+'</div>'}
+function modBlk(t,cls,title){var l='—',d='';if(t){var tp=t.totalPositive,tn=t.totalNegative,pp=t.passedPositive!=null?t.passedPositive:tp!=null&&t.positiveRecall!=null?Math.round(t.positiveRecall*tp):null,pn=t.falsePositive!=null?t.falsePositive:tn!=null&&t.rejectedNegative!=null&&t.missingNegative!=null?tn-t.rejectedNegative-t.missingNegative:tn!=null&&t.negativeRejection!=null?Math.round((1-t.negativeRejection)*tn):null;
+ l='🟢 '+modPc(tp?pp/tp:null)+(tp!=null?' <span>'+(pp==null?'—':pp)+' из '+tp+'</span>':'');d='<br>🔴 '+modPc(tn?pn/tn:null)+(tn!=null?' <span>'+(pn==null?'—':pn)+' из '+tn+'</span>':'');if(t.unknown)d+=' <span>нет данных: '+t.unknown+'</span>'}
+ return '<div class="mblk '+cls+'"><i>'+title+'</i>'+l+d+'</div>'}
+
 function modTestBlk(t){if(!t)return '';var pc=function(a,b){return b?Math.round(100*a/b)+'%':'—'};
   return '<div class="mblk mtest"><i>тест · '+(function(d){d=Math.max(0,(Date.now()-t.at)/60000);return d<1?'только что':d<60?Math.floor(d)+' мин назад':d<1440?Math.floor(d/60)+' ч назад':Math.floor(d/1440)+' дн назад'})()+'</i>🟢 '+pc(t.pl,t.tl)+' <span>'+t.pl+' из '+t.tl+'</span><br>🔴 '+pc(t.pd,t.td)+' <span>'+t.pd+' из '+t.td+'</span><br>🏅 место '+t.rank+' из '+t.of+'</div>'}
 function modPass(m,f){if(!f)return false;return m.conds.every(function(c){var v=f[c.key];if(v==null||!isFinite(+v))return false;return c.op==='<='?+v<=+c.value:+v>=+c.value})}

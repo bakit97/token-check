@@ -365,6 +365,7 @@ test('Unknown or zero placeholder volume is a dash in cards and detail; positive
   assert.doesNotMatch(scope.coinHtml(c),/5м \$0/);
   assert.match(scope.detail(c),/Объём 5м<\/span><b>—/);
  }
+ const rendered=scope.coinHtml({a:'mint',n:'Card',sol:0,b5:32,s5:22,_entry:{eventAt:1,phase:'before'},ds:[]});assert.match(rendered,/32↑/);assert.match(rendered,/22↓/);assert.doesNotMatch(rendered,/[\u0001-\u0003]/);
  assert.equal(scope.observedMoney(1234),'$1234');
  assert.match(html,/Всего допущено · за всё время/);assert.doesNotMatch(html,/На витрине сейчас/);
  assert.match(js,/fmt\(sourceMeta.total\)/);

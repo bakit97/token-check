@@ -262,7 +262,7 @@ function proposeRules(rows,{positive='live',negative='dead',minPos=100,minNeg=1,
       // An extra condition must improve rejection by >=5pp without losing positives.
       if(stat.positiveRecall+1e-9<parent.train.positiveRecall||stat.negativeRejection-parent.train.negativeRejection<.05-1e-9)continue;
       const score=2*stat.positiveRecall*stat.negativeRejection/(stat.positiveRecall+stat.negativeRejection);
-      next.push({rule,train:stat,score});
+      next.push({rule,train:stat,score,improvementOf:JSON.stringify(parent.rule.conds||[parent.rule])});
     }
     next.sort(rank);beam.push(...next.slice(0,16));out.push(...next.slice(0,16));
   }
