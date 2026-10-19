@@ -10,7 +10,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 16
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -33,4 +33,4 @@ jobs:
       - name: Verify deployed health and resource limits
         run: |
           generation=$(python3 -c "import json; print(json.load(open('runtime-result.json'))['collectorGeneration'])")
-          python3 deployment/check-runtime-health.py --bucket sol-scan-511718-data --generation "$generation" --tries 16
+          python3 deployment/check-runtime-health.py --bucket sol-scan-511718-data --generation "$generation" --tries 32

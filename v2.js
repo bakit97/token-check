@@ -563,7 +563,7 @@ async function applyIntake(){var key=keyFrom('intakeKey'),msg=$('intakeMsg');
   if(!controlEndpoint){msg.textContent='Сервер управления недоступен';return}if(!researchMeta){msg.textContent='Сервер ещё загружается, попробуй через минуту';return}
   if(!key){msg.textContent='Нужен ключ';return}
   var it=intakeFromUI(),anyMarked=!!((serverCfg()||{}).r1&&((serverCfg().r1.before)||(serverCfg().r1.after)));if(!it.manual.enabled&&!anyMarked&&!window.confirm('В И1 ничего не пойдёт. Продолжить?'))return;
-  var st=researchMeta.settings,cfg={hours:st.hours,decisionMinutes:st.decisionMinutes,minActive:st.minActive,maxIdle:st.maxIdle,minCoverage:st.minCoverage,intake:it};
+  var st=researchMeta.settings,cfg=JSON.parse(JSON.stringify(st));cfg.intake=it;if(cfg.phases)['before','after'].forEach(function(ph){cfg.phases[ph].intake=it});
   if(MOD_DIRTY)applyModules();
   $('intakeApply').disabled=true;msg.textContent='Отправка…';
   try{var r=await ownerFetch(controlEndpoint+'/api/research-one',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(cfg)});
@@ -731,7 +731,7 @@ function renderR1(){
         'Накопление обучающих живых и мёртвых.';
       $('r1Auto').textContent+=' '+text+' Предложено условий: '+fmt(autoOne.rules.length)+'.';
     }
-    var r1ar=$('r1ApplyRow').classList;if(!r1ar.contains||r1ar.contains('hide')){$('r1Hours').value=cfg.hours;$('r1HoursValue').textContent=cfg.hours+' ч';$('r1Activity').value=cfg.minActive;$('r1ActivityValue').textContent=cfg.minActive+'%';$('r1Idle').value=cfg.maxIdle;$('r1IdleValue').textContent=cfg.maxIdle+' мин'}
+    var r1ar=$('r1ApplyRow').classList;if(!r1ar.contains||r1ar.contains('hide')){$('r1Hours').value=cfg.hours;$('r1HoursValue').textContent=cfg.hours+' ч';$('r1Activity').value=cfg.minActive;$('r1ActivityValue').textContent=cfg.minActive+'%';$('r1Idle').value=cfg.maxIdle;$('r1IdleValue').textContent=cfg.maxIdle+' мин';$('r1Drop').value=100-cfg.minPriceKeep;$('r1DropV').textContent=(100-cfg.minPriceKeep)+'%';$('r1Uniq').value=cfg.minUniqueBuyers;$('r1UniqV').textContent=cfg.minUniqueBuyers;$('r1LastTrades').value=cfg.lastHourTrades;$('r1LastTradesV').textContent=cfg.lastHourTrades;$('r1LastWallets').value=cfg.lastHourWallets;$('r1LastWalletsV').textContent=cfg.lastHourWallets;$('r1UseActivity').checked=cfg.useActivity===true;$('r1UseIdle').checked=cfg.useIdle===true}
     var T=r1T(),rr=$('r1ResApplyRow').classList;if(!rr.contains||rr.contains('hide')){$('r1TL').value=T.l;$('r1TLv').textContent=T.l;$('r1TD').value=T.d;$('r1TDv').textContent=T.d;$('r1Dec').value=cfg.decisionMinutes;$('r1DecV').textContent=cfg.decisionMinutes+' мин'}
     if(R1DEC&&R1DEC===cfg.decisionMinutes)R1DEC=0;$('r1ResSum').textContent='🟢 '+a+'/'+T.l+' · 🔴 '+b+'/'+T.d+' · '+(R1DEC?R1DEC+' мин ⏳':cfg.decisionMinutes+' мин');$('r1Meter').style.width=Math.min(100,Math.min(a/T.l,b/T.d)*100)+'%';
     if(researchMeta.counts?.entered!=null){var cc=R1P==='all'?researchMeta.counts:researchMeta.byPhase?.[R1P];if(cc)$('r1Auto').textContent+=' Вошло '+cc.entered+' = 🟢 '+cc.live+' + 🔴 '+cc.dead+' + ⏳ '+cc.pending+' + ❓ '+cc.unknown;}
@@ -1087,7 +1087,7 @@ async function publishResearchLevel(level){
       decisionMinutes:Number($('r1Dec').value)||researchMeta.settings.decisionMinutes,
       minActive:Number($('r1Activity').value),
       maxIdle:Number($('r1Idle').value),targetLive:Number($('r1TL').value),targetDead:Number($('r1TD').value),
-      lastHourTrades:Number(localStorage.getItem('r1LastHourTrades_'+R1P)??1),lastHourWallets:Number(localStorage.getItem('r1LastHourWallets_'+R1P)??1),minPriceKeep:100-Number($('r1Drop').value||70),minUniqueBuyers:Number($('r1Uniq').value??30),useActivity:false,useIdle:false,
+      lastHourTrades:Number($('r1LastTrades').value??onePhaseSettings(researchMeta.settings,R1P).lastHourTrades??1),lastHourWallets:Number($('r1LastWallets').value??onePhaseSettings(researchMeta.settings,R1P).lastHourWallets??1),maxDrop:Number($('r1Drop').value),minPriceKeep:100-Number($('r1Drop').value),minUniqueBuyers:Number($('r1Uniq').value??30),useActivity:$('r1UseActivity').checked,useIdle:$('r1UseIdle').checked,
       minCoverage:researchMeta.settings.minCoverage,...(researchMeta.settings.intake?{intake:researchMeta.settings.intake}:{})};
     if(!Number.isInteger(cfg.hours)||cfg.hours<1||cfg.hours>24||
        !Number.isInteger(cfg.maxIdle)||cfg.maxIdle<5||cfg.maxIdle>1440||
@@ -1332,7 +1332,7 @@ function bind(){
   $('r1N').addEventListener('click',function(e){var b=e.target.closest('[data-r1n]');if(!b)return;R1N=+b.dataset.r1n;document.querySelectorAll('#r1N [data-r1n]').forEach(function(x){x.classList.toggle('active',x===b)});renderR1()});
   [['r1TL','r1TLv',''],['r1TD','r1TDv',''],['r1Dec','r1DecV',' мин']].forEach(function(a){$(a[0]).addEventListener('input',function(){$(a[1]).textContent=$(a[0]).value+a[2];$('r1ResApplyRow').classList.remove('hide')})});
   $('r1ResApply').addEventListener('click',function(){publishResearchLevel('1')});
-  ['r1Hours','r1Activity','r1Idle','r1Drop','r1Uniq'].forEach(function(id){$(id).addEventListener('input',function(){$('r1ApplyRow').classList.remove('hide');if(id==='r1Drop')$('r1DropV').textContent=this.value+'%';if(id==='r1Uniq')$('r1UniqV').textContent=this.value})});
+  ['r1Hours','r1Activity','r1Idle','r1Drop','r1Uniq','r1LastTrades','r1LastWallets','r1UseActivity','r1UseIdle'].forEach(function(id){$(id).addEventListener('input',function(){$('r1ApplyRow').classList.remove('hide');if(id==='r1Drop')$('r1DropV').textContent=this.value+'%';if(id==='r1Uniq')$('r1UniqV').textContent=this.value;if(id==='r1LastTrades')$('r1LastTradesV').textContent=this.value;if(id==='r1LastWallets')$('r1LastWalletsV').textContent=this.value})});
   function liveKey(){return 'r1live_'+R1P}
   function liveLoad(){var v={d:70,u:30};try{v=Object.assign(v,JSON.parse(localStorage.getItem(liveKey())||'{}'))}catch(e){}$('r1Drop').value=v.d;$('r1DropV').textContent=v.d+'%';$('r1Uniq').value=v.u;$('r1UniqV').textContent=v.u}
   liveLoad();$('r1Ph').addEventListener('click',liveLoad);

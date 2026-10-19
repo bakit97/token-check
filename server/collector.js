@@ -482,10 +482,7 @@ function recoverSupersededStudies(now=Date.now()){
     const {ResearchRuntime}=require(DIR+'/research-runtime.js');
     OLD_RESEARCH_ONE=RESEARCH_ONE_EPOCH.history
       .filter(e=>e.endedAt>now-maxAge)
-      .map(e=>({epoch:e,runtime:new ResearchRuntime({
-        dir:DIR,config:e.config,bankName:oneResearchBankName(e),
-        cohortStart:e.activeAt,cohortEnd:e.endedAt
-      })}));
+      .map(e=>({epoch:e,runtime:{config:e.config,cohortStart:e.activeAt,cohortEnd:e.endedAt,rows:[],processed:new Map(),summary:()=>({counts:null,archivedRaw:true})}}));
   }
   if(RESEARCH_TWO_EPOCH&&RESEARCH_TWO){
     const {ResearchTwoRuntime}=require(DIR+'/research-two-runtime.js');
@@ -1098,10 +1095,8 @@ async function exportResearchV2(now) {
   // All read-only observations originate from the accepted main source.
   const result=RESEARCH_V2.update({source:SOURCE,coins:researchCoins(),passes:PASS_V2,now});
   // A settings change does NOT abandon previously admitted cohorts.
-  for(const item of OLD_RESEARCH_ONE){
-    try{item.runtime.update({source:SOURCE,coins:researchCoins(),passes:PASS_V2,now});RESEARCH_BANKS?.upsert(item.runtime.select({limit:20000}))}
-    catch(e){err('research old 1 '+item.epoch.hash+' '+e.message)}
-  }
+  // Earlier raw cohorts remain on disk; current labels must not be overwritten by old criteria.
+  RESEARCH_BANKS?.relabelOne(RESEARCH_V2.config);
   RESEARCH_BANKS?.upsert(RESEARCH_V2.select({limit:20000}));
   AI_SNAP.r1=result;
   await upload('research-v2/status.json',result);
@@ -1163,7 +1158,7 @@ async function exportPathsV2(now){
     TWO_BANK_UPLOADED=now;
   }
   if(AUTO_V2&&RESEARCH_V2&&(now-AUTO_UPLOADED>60*60e3)){
-    const levelOne=(RESEARCH_BANKS?RESEARCH_BANKS.select({level:'1'}):RESEARCH_V2.select({limit:20000})).map(x=>({
+    const levelOne=(RESEARCH_BANKS?RESEARCH_BANKS.select({level:'1'}):RESEARCH_V2.select({limit:20000})).filter(x=>x.outcomeVersion===2&&['live','dead'].includes(x.label)).map(x=>({
       ...x,time:x.acceptedAt
     }));
     const levelTwo=RESEARCH_BANKS?RESEARCH_BANKS.select({level:'2'}):RESEARCH_TWO.select({limit:20000});

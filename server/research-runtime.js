@@ -180,7 +180,7 @@ class ResearchRuntime {
       this.rows.push({via:gate.via,
         mint:row.mint,phase:row.phase,featureAnchor:'acceptedAt',featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,row.acceptedAt,'1',row.phase),curve:observationCurve(coin,row.acceptedAt,cfg.hours),curveUnit:'price-usd',
         acceptedAt:row.acceptedAt,decisionAt,
-        ...result,minutes:undefined,outcomePacked:require('node:zlib').deflateSync(Buffer.from(JSON.stringify(result.minutes||[]))).toString('base64'),
+        ...result,outcomeAt:now,minutes:undefined,outcomePacked:require('node:zlib').deflateSync(Buffer.from(JSON.stringify(result.minutes||[]))).toString('base64'),
         hours:cfg.hours,label:result.label,
         activePct:result.activePct,
         maxIdleObserved:result.maxIdleObserved,
