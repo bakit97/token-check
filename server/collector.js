@@ -138,19 +138,21 @@ function ctFromMint(v){
 /* Монеты до миграции (pump): контракт и SOL в кривой берём пачками по 100 аккаунтов за 1 запрос,
    иначе стартовые фильтры «Прошли» не видят safeContract/quoteSol и монеты до миграции не проходят никогда.
    Кривая pump: real_sol_reserves = u64 @32, complete = bool @48. Замер — только у монет перед моментом решения. */
-const PRE_STATS={ct:0,curve:0,calls:0,deferred:0,errors:0};
-async function preChainSweep(){const now=Date.now(),dec=(PASS_V2?.config?.decisionMinutes||15)*60e3;
-  const pre=[...C.values()].filter(c=>isRecordedPre(c)&&isCurve(c.d)&&now-(SOURCE.get(c.a)?.acceptedAt||now)<dec+5*60e3);
+const PRE_STATS={ct:0,curve:0,calls:0,deferred:0,errors:0};let PRE_SWEEP_BUSY=false;
+async function preChainSweep(){if(PRE_SWEEP_BUSY)return;PRE_SWEEP_BUSY=true;try{await preChainSweepBody()}finally{PRE_SWEEP_BUSY=false}}
+async function preChainSweepBody(){const now=Date.now(),dec=(PASS_V2?.config?.decisionMinutes||15)*60e3;
+  const visible=new Set(SOURCE?.latest(200).map(r=>r.mint)||[]);
+  const pre=[...C.values()].filter(c=>isRecordedPre(c)&&isCurve(c.d)&&now-(SOURCE.get(c.a)?.acceptedAt||now)<Math.max(dec+5*60e3,(require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2?.config||{},'before').hours||5)*3600e3));
   const needCt=pre.filter(c=>!c.ct).sort((a,b)=>(SOURCE.get(b.a)?.acceptedAt||0)-(SOURCE.get(a.a)?.acceptedAt||0)).slice(0,100);
-  const needCurve=pre.filter(c=>c.p&&now-(c.curveSol?.at(-1)?.[0]||0)>=50e3).sort((a,b)=>(a.curveSol?.at(-1)?.[0]||0)-(b.curveSol?.at(-1)?.[0]||0)||(SOURCE.get(b.a)?.acceptedAt||0)-(SOURCE.get(a.a)?.acceptedAt||0)).slice(0,200);
+  const needCurve=pre.filter(c=>c.p&&now-(c.curveSol?.at(-1)?.[0]||0)>=(now-(SOURCE.get(c.a)?.acceptedAt||now)<dec+5*60e3?120e3:now-(SOURCE.get(c.a)?.acceptedAt||now)<2*3600e3?5*60e3:30*60e3)).sort((a,b)=>Number(visible.has(b.a))-Number(visible.has(a.a))||(a.curveSol?.at(-1)?.[0]||0)-(b.curveSol?.at(-1)?.[0]||0)||(SOURCE.get(b.a)?.acceptedAt||0)-(SOURCE.get(a.a)?.acceptedAt||0)).slice(0,200);
   const call=async(list,enc)=>{PRE_STATS.calls++;return (await rpc('getMultipleAccounts',[list,enc],{priority:enc.encoding==='jsonParsed'?'metadata':'pools',context:'до миграции',source:'pump-card'}))?.value||[]};
-  try{
+  try{for(let i=0;i<needCurve.length;i+=100){const part=needCurve.slice(i,i+100),pools=part.map(c=>c.p),v=await call(pools,{encoding:'base64',dataSlice:{offset:0,length:115}}),at=Date.now();
+      part.forEach((c,j)=>{const a=v[j];if(c.p!==pools[j]||!a||a.owner!==PUMP)return;const u=b64(a.data?.[0]);if(u.length<49)return;
+        const bytes=Buffer.from(u);if(bytes.length>=81&&bytes.subarray(49,81).some(x=>x!==0)&&!c.creatorAddress){c.creatorAddress=pk(bytes,49);c.creatorObservedAt=at;}const lam=Number(bytes.readBigUInt64LE(32));(c.curveSol=c.curveSol||[]).push([at,lam,u[48]?1:0]);PRE_STATS.curve++})}
+  }catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else{PRE_STATS.errors++;err('pre sweep '+e.message)}}  try{
     if(needCt.length){const v=await call(needCt.map(c=>c.a),{encoding:'jsonParsed'});const at=Date.now();needCt.forEach((c,j)=>{if(!v[j])return;try{const ct=ctFromMint(v[j]);ct.at=at;ct.batch=1;c.ct=ct;PRE_STATS.ct++}catch{PRE_STATS.errors++}})}
   }catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else{PRE_STATS.errors++;err('pre contracts '+e.message)}}
-  try{for(let i=0;i<needCurve.length;i+=100){const part=needCurve.slice(i,i+100),pools=part.map(c=>c.p),v=await call(pools,{encoding:'base64',dataSlice:{offset:0,length:49}}),at=Date.now();
-      part.forEach((c,j)=>{const a=v[j];if(c.p!==pools[j]||!a||a.owner!==PUMP)return;const u=b64(a.data?.[0]);if(u.length<49)return;
-        const lam=Number(Buffer.from(u).readBigUInt64LE(32));(c.curveSol=c.curveSol||[]).push([at,lam,u[48]?1:0]);PRE_STATS.curve++})}
-  }catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else{PRE_STATS.errors++;err('pre sweep '+e.message)}}}
+}
 
 /* ---------- миграция. Доказательство = 2 условия вместе:
    1) пул лежит по официальному адресу миграции (вычисляется из адреса монеты: PDA площадки);
@@ -402,22 +404,44 @@ let RESEARCH_ONE_EPOCH=null, RESEARCH_TWO_EPOCH=null, RESEARCH_CONFIG_ERR='';
 let OLD_RESEARCH_ONE=[], OLD_RESEARCH_TWO=[];
 let AUTO_STUDIES=null,RESEARCH_BANKS=null,LIBRARY_CONFIG={schema:1,modules:[],deleted:[]},LIBRARY_ROWS=[],LIBRARY_SCORES={},LIBRARY_SCORE_AT=0,LIBRARY_PUBLISH_SIG='';
 let PASS_ERR='', TWO_ERR='', PASS_CFG_ERR='', TWO_BANK_UPLOADED=0, AUTO_UPLOADED=0;
+function seedLaunchEvidence(c,event,record){if(c.initialTradingEvidence)return;c.initialTradingEvidence=true;const p=event||record.proof||{},at=record.acceptedAt;
+ if(p.creator){c.creatorAddress=p.creator;c.creatorObservedAt=at;}if(p.supplyRaw)c.supplyRaw=p.supplyRaw;if(p.tokenProgram)c.tokenProgram=p.tokenProgram;if(c.n)c.nameObservedAt=c.nameObservedAt||at;
+ if((c.q||WSOL)===WSOL&&Number.isSafeInteger(p.initialCurveSol)&&p.initialCurveSol>=0){c.curveSol=c.curveSol||[];if(!c.curveSol.some(r=>r[0]===at))c.curveSol.push([at,p.initialCurveSol,p.initialComplete?1:0]);c.curveSol.sort((a,b)=>a[0]-b[0]);}
+ const trades=p.trades||p.initialTrades||[];c.earlyWallets=[...new Set(trades.filter(t=>t.buy).map(t=>t.wallet))];c.earlyWalletsAt=at;const dev=trades.filter(t=>t.wallet===c.creatorAddress);appendIntelligence(c,{at,earlyWallets:c.earlyWallets,features:{devBuySol:c.creatorAddress?dev.filter(t=>t.buy).reduce((n,t)=>n+Number(t.solRaw)/1e9,0):null,devSold:dev.some(t=>!t.buy)?1:null},lowerBoundKeys:['devBuySol']});
+}
+function appendIntelligence(c,snapshot){const list=c.intelligenceSnapshots=c.intelligenceSnapshots||[];list.push(snapshot);if(list.length>48){const early=(SOURCE?.get(c.a)?.acceptedAt||c.t)+15*60e3,candidates=list.filter(s=>s.at<=early);c.intelligenceSnapshots=[...candidates.slice(0,24),...list.filter(s=>s.at>early).slice(-24)];}}
 async function admitVerifiedPublicLaunch(launch,record) {
   const existing=C.get(record.mint);
   if(existing){existing.preCurve=existing.preCurve||1;existing.preTradingAt=record.eventAt;existing.createdAt=record.eventAt;existing.createdAtObservedAt=record.acceptedAt;existing.createdAtSource='verified-create-log-slot-time';
     if(!existing.n)existing.n=launch.name;if(!existing.s)existing.s=launch.symbol;
-    return;
+    seedLaunchEvidence(existing,launch,record);return;
   }
   C.set(record.mint,{a:record.mint,n:launch.name,s:launch.symbol,i:'',
     p:launch.curve,d:'pump-fun',q:launch.quote||WSOL,t:record.eventAt,
     preTradingAt:record.eventAt,createdAt:record.eventAt,createdAtObservedAt:record.acceptedAt,createdAtSource:'verified-create-log-slot-time',tSrc:'pre',seen:record.acceptedAt,disc:'pre-ws',
     preCurve:1,pools:[launch.curve],fv:FV,
-    mg:{v:MGV,st:'curve',k:'curve-pump',final:1,lastAt:record.acceptedAt}});
+    mg:{v:MGV,st:'curve',k:'curve-pump',final:1,lastAt:record.acceptedAt}});seedLaunchEvidence(C.get(record.mint),launch,record);
 }
+let SMART_WALLETS=null,INTEL_BUSY=false,INTEL_LAST=0,INTEL_RPC_LAST=0;const INTEL_BLOCKS=new Map(),INTEL_STATS={opening:0,deferred:0,errors:0,creatorBalances:0,history:0};
+async function collectIntelligence(){const now=Date.now();if(INTEL_BUSY||now-INTEL_LAST<60000||!SOURCE)return;INTEL_BUSY=true;INTEL_LAST=now;try{const api=require(DIR+'/early-intelligence.js');
+ if(!SMART_WALLETS)SMART_WALLETS=new api.SmartWallets(DIR);SMART_WALLETS.refresh(()=>RESEARCH_BANKS?RESEARCH_BANKS.rows({curves:false}):RESEARCH_V2?.select({limit:20000})||[],now);
+ for(const c of C.values())if(c.earlyProgress&&now-(SOURCE.get(c.a)?.acceptedAt||now)>15*60000){delete c.earlyProgress;c.earlyDone=true;}
+ const sourceRows=[...SOURCE.records.values()],records=sourceRows.map(r=>{const c=C.get(r.mint);return {mint:r.mint,acceptedAt:r.acceptedAt,creator:r.proof?.creator||c?.creatorAddress||null,creatorAt:r.proof?.creator?r.acceptedAt:c?.creatorObservedAt??Infinity};}),outcomes=RESEARCH_V2?.select({limit:20000})||[],candidates=[...C.values()].filter(c=>{const r=SOURCE.get(c.a);if(!r)return false;const cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2?.config||{},r.phase);return now-r.acceptedAt<Math.max(15,cfg.decisionMinutes||15)*60000;}).sort((a,b)=>SOURCE.get(b.a).acceptedAt-SOURCE.get(a.a).acceptedAt);
+ for(const c of candidates.slice(0,150)){const r=SOURCE.get(c.a);if(c.creatorAddress&&!c.creatorHistoryAt){appendIntelligence(c,{at:now,features:api.creatorFeatures(c.creatorAddress,r.acceptedAt,records,outcomes),lowerBoundKeys:['devLaunches'],creatorScope:'observed-prior-launches'});c.creatorHistoryAt=now;INTEL_STATS.history++;}if(!c.smartAt||c.bx?.at>c.smartAt||c.earlyWalletsAt>c.smartAt){const smart=SMART_WALLETS.features(c,r.acceptedAt,now);if(smart){appendIntelligence(c,smart);c.smartAt=now;}}}
+ if(now-INTEL_RPC_LAST<60000||process.memoryUsage().rss>330e6||RESOURCE.summary().creditsMinute>12.5)return;
+ const opt={priority:'metadata',context:'ранние признаки',source:'intelligence'};INTEL_RPC_LAST=now;
+ // Alternate a bounded creator-account batch with one immutable opening block.
+ const balances=candidates.filter(c=>c.creatorAddress&&c.ct?.supply>0&&now-(c.creatorBalanceAt||0)>120000).slice(0,50);
+ if(balances.length&&Math.floor(now/60000)%2===0){const prepared=[];for(const c of balances){const program=c.ct.prog==='token2022'?T22:'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';c.creatorAta=c.creatorAta||await findPDA([b58dec(c.creatorAddress),b58dec(program),b58dec(c.a)],'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');prepared.push(c.creatorAta);}const rows=(await rpc('getMultipleAccounts',[prepared,{encoding:'jsonParsed'}],opt))?.value||[],at=Date.now();balances.forEach((c,i)=>{const account=rows[i],info=account?.data?.parsed?.info;if(account&&(!info||info.mint!==c.a||info.owner!==c.creatorAddress))return;const amount=account?Number(info.tokenAmount?.amount)/10**Number(info.tokenAmount?.decimals):0;if(!Number.isFinite(amount))return;appendIntelligence(c,{at,features:{devHold:amount,devHoldPct:amount/c.ct.supply*100},lowerBoundKeys:['devHold','devHoldPct'],creatorHoldingScope:'verified-associated-account-lower-bound'});c.creatorBalanceAt=at;INTEL_STATS.creatorBalances++;});return;}
+ const c=candidates.filter(c=>!c.earlyDone&&SOURCE.get(c.a)?.proof?.slot&&(c.q||WSOL)===WSOL).sort((a,b)=>(b.earlyProgress?.blocks?.length||0)-(a.earlyProgress?.blocks?.length||0)||SOURCE.get(a.a).acceptedAt-SOURCE.get(b.a).acceptedAt)[0];if(!c)return;const record=SOURCE.get(c.a),slot=record.proof.slot;c.earlyProgress=c.earlyProgress||{blocks:[]};const next=slot+c.earlyProgress.blocks.length;let block=INTEL_BLOCKS.get(next);
+ if(!block){const raw=await rpc('getBlock',[next,{encoding:'json',transactionDetails:'full',rewards:false,maxSupportedTransactionVersion:1,commitment:'confirmed'}],opt);block=api.blockEvidence(raw,next,Date.now(),b58dec);if(!block)return;INTEL_BLOCKS.set(next,block);while(INTEL_BLOCKS.size>6)INTEL_BLOCKS.delete(INTEL_BLOCKS.keys().next().value);}
+ c.earlyProgress.blocks.push({...block,events:block.events.filter(e=>e.mint===c.a)});
+ {const snap=api.openingFeatures({mint:c.a,creator:c.creatorAddress,supplyRaw:c.supplyRaw||(c.ct?.supply>0?Math.round(c.ct.supply*10**c.ct.dec).toString():null),slot,blocks:c.earlyProgress.blocks,at:Date.now()});if(!(c.tokenProgram==='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'||c.ct?.safetyVersion===1&&c.ct.fee===0&&!c.ct.hook&&c.ct.unknownExtensions?.length===0)){snap.features.sniperShare=null;snap.features.bundleShare=null;}appendIntelligence(c,snap);c.earlyWallets=snap.earlyWallets;c.earlyWalletsAt=snap.at;const smart=SMART_WALLETS.features(c,record.acceptedAt,snap.at);if(smart){appendIntelligence(c,smart);c.smartAt=snap.at;}if(c.earlyProgress.blocks.length===3){c.earlyDone=true;delete c.earlyProgress;INTEL_STATS.opening++;}}
+ }catch(e){if(e.code==='BUDGET_DEFERRED')INTEL_STATS.deferred++;else INTEL_STATS.errors++;}finally{INTEL_BUSY=false;}}
 // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
 // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
 const MODULES=['event-clock.js','admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
-  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js','module-library.js','active-history.js','launch-history.js'];
+  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js','module-library.js','active-history.js','launch-history.js','early-intelligence.js'];
 let MODULES_OK=null;
 function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
   for(const name of MODULES){const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
@@ -445,7 +469,7 @@ async function initSource() {
       p:item.proof.curve,d:'pump-fun',q:item.proof.quote||WSOL,t:item.eventAt,
       tSrc:'pre',preTradingAt:item.eventAt,seen:item.acceptedAt,disc:'pre-ws',preCurve:1,firstPostSeenAt:null,
       pools:[item.proof.curve],mg:{v:MGV,st:'curve',k:'curve-pump',final:1,
-      lastAt:item.acceptedAt},fv:FV});
+      lastAt:item.acceptedAt},fv:FV});seedLaunchEvidence(C.get(item.mint),item.proof,item);
   }
   SOURCE_ERR='';
   log('главный источник готов, принято',SOURCE.records.size,'настройки',SOURCE.settings());
@@ -786,7 +810,7 @@ function finishTrades(c,why){const tr=c.tr;c.trDone=1;if(!tr||!tr.f.length){c.bx
   const L=Object.values(tr.x).filter(x=>x[0]>=t0-5&&x[0]<end);const B={},S=new Set();let buys=0,sells=0,bu=0,su=0;
   for(const [ts,k,usd,from] of L){if(k){buys++;bu+=usd;B[from]=B[from]||[0,0];B[from][0]++;B[from][1]+=usd}else{sells++;su+=usd;S.add(from)}}
   const bv=Object.values(B).map(x=>x[1]).sort((a,b)=>b-a),sum=a=>a.reduce((s,x)=>s+x,0);
-  c.bx={at:lastAt,cov,n:L.length,buys,sells,buyUsd:Math.round(bu),sellUsd:Math.round(su),payers:Object.keys(B).length,sellers:S.size,
+  c.bx={at:lastAt,cov,n:L.length,buys,sells,buyUsd:Math.round(bu),sellUsd:Math.round(su),payers:Object.keys(B).length,earlyWallets:Object.keys(B).filter(w=>w.length>=32),sellers:S.size,
     repeat:Object.values(B).filter(x=>x[0]>=2).length,both:Object.keys(B).filter(k=>S.has(k)).length,
     top1:bu?+(bv[0]/bu).toFixed(3):null,top5:bu?+(sum(bv.slice(0,5))/bu).toFixed(3):null,fetches:tr.f.length,why:why||null};
   if(cov&&!c.k10){const M=new Map();for(const x of Object.values(tr.x).filter(x=>x[0]>=t0-60&&x[0]<end+60&&x[4]).sort((a,b)=>a[0]-b[0])){const m=Math.floor(x[0]/60)*60;const k=M.get(m);
@@ -858,7 +882,7 @@ async function collectPoolBatch(part){
 async function chainObsLoop(){for(;;){const now=Date.now();
   try{
     // Pool balances precede holders. Oldest due observations are served first.
-    if(now-(globalThis.lastPools||0)>=10000){globalThis.lastPools=now;const jobs=[];
+    if(now-(globalThis.lastPools||0)>=10000){globalThis.lastPools=now;if(now-(globalThis.lastPreUrgent||0)>=30000&&SOURCE?.latest(200).some(r=>r.phase==='before'&&C.has(r.mint)&&!C.get(r.mint).curveSol?.length)){globalThis.lastPreUrgent=now;await preChainSweep();}const jobs=[];
       for(const c of C.values()){if(!isOk(c))continue;const a=ageMin(c,now);if(a<0||a>24*60+15)continue;c.raw=c.raw||{};
         const rm=RAW_M.find(m=>!c.raw[m]&&a>=m&&a<m+Math.max(2,m*.1));
         for(const m of RAW_M)if(!c.raw[m]&&a>=m+Math.max(2,m*.1))c.raw[m]={at:now,miss:1,reason:c.poolBudgetDeferredAt?'budget':'not-observed'};
@@ -1082,12 +1106,12 @@ async function exportSource(now) {
       proofSig:x.proof?.signature||null,uri:c?.uri||x.proof?.uri||null,migrationPool:x.proof?.pool||null,proofKind:x.proof?.kind||null,eventSlot:x.proof?.slot||null,eventTimeSource:x.proof?.timeSource||null};
   };
   const summary=SOURCE.summary(now);
-  const today=SOURCE.day(d).map(enrich);
+  const today=SOURCE.day(d).map(enrich),live=SOURCE.latest(200).map(enrich),active=[...C.values()].filter(c=>SOURCE.has(c.a)).map(c=>require(DIR+'/coin-profile.js').cardAt(c,now)),coverage=rows=>({known:rows.filter(r=>r.sol!=null).length,total:rows.length,percent:rows.length?rows.filter(r=>r.sol!=null).length/rows.length*100:null,olderThan7Minutes:rows.filter(r=>r.sol!=null&&r.solAgeMs>7*60e3).length});if(PROFILES)PROFILES.stats.solCoverage={live:coverage(live),active:coverage(active),day:coverage(today)};
   // Нет задним числом добавленных кандидатов из обычной ленты.
   // Предмиграционный адаптер пока не активен: не выдавать пустоту за готовность.
   AI_SNAP.source=summary;
-  await upload('source/status.json',{...summary,cardUnits:{sol:'SOL',top10:'percent',b5:'transactions',s5:'transactions',createdAt:'unix-ms'},mode:'verified-pre-post',preConnected:preFlowing(),preLive:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:preFlowing()&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
-  await upload('source/live.json',{updated:now,count:today.length,coins:SOURCE.latest(200).map(enrich)});
+  await upload('source/status.json',{...summary,solCoverage:PROFILES?.stats.solCoverage||null,cardUnits:{sol:'SOL',top10:'percent',b5:'transactions',s5:'transactions',createdAt:'unix-ms'},mode:'verified-pre-post',preConnected:preFlowing(),preLive:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:preFlowing()&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
+  await upload('source/live.json',{updated:now,count:today.length,coins:live});
   if(now-SOURCE_DAY_PUBLISHED_AT>=5*60e3){await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});SOURCE_DAY_PUBLISHED_AT=now;}
 }
 function researchCoins(){const contract=require(DIR+'/observation-contract.js');return {get:mint=>{const c=C.get(mint)||(typeof COMPLETED!=='undefined'&&COMPLETED?COMPLETED.readCoin(mint):null);return c?contract.toLegacy(contract.project(fullCoin(c),{metadata:fullCoin(c),admission:SOURCE?.get(mint)||null})):null}}}
@@ -1319,7 +1343,7 @@ async function researchExportsCycle(){
 let STATUS_BUSY=false;
 async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const now=Date.now(),today=dayKey(now);
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,coinProfiles:PROFILES?.stats||null,resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,publishedAt:FAST_PASS_PUBLISH_AT},
@@ -1363,7 +1387,7 @@ const STARTED=Date.now();
   const LAUNCH_HISTORY=new (require(DIR+'/launch-history.js').LaunchHistory)();
   const updateLaunchHistory=()=>{try{LAUNCH_HISTORY.update({source:SOURCE,coins:C,metadata:mint=>COMPLETED?.metadata(mint),now:Date.now()})}catch(e){err('launch history '+e.message)}};updateLaunchHistory();setInterval(updateLaunchHistory,60000);
   const updateProfiles=()=>PROFILES.update({coins:C,source:SOURCE,rpc:(m,p)=>rpc(m,p,{priority:'identity',context:'карточка',source:'coin-profile'})}).catch(e=>err('profiles '+e.message));
-  setInterval(updateProfiles,60000);updateProfiles();
+  setInterval(updateProfiles,60000);updateProfiles();setTimeout(()=>collectIntelligence(),30000);setInterval(()=>collectIntelligence(),60000);
   chainWatch();setInterval(()=>exportStatus().catch(e=>err('status '+e.message)),60000);exportStatus().catch(e=>err('status '+e.message));
   publicFeedsCycle().catch(e=>err('public feeds '+e.message));setInterval(()=>publicFeedsCycle().catch(e=>err('public feeds '+e.message)),60000);
   setTimeout(()=>researchExportsCycle().catch(e=>err('research exports '+e.message)),15000);setInterval(()=>researchExportsCycle().catch(e=>err('research exports '+e.message)),120000);

@@ -3,11 +3,13 @@ const TOKEN='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',T22='TokenzQdBNbLqP5VE
 const {starterFeaturesAt}=require('./research-v2');
 const MIN=60000;
 function cardAt(c,at){
- const f=starterFeaturesAt(c||{},at),d=(c?.ds||[]).filter(x=>Number.isFinite(x?.[0])&&x[0]*1000<=at&&at-x[0]*1000<=7*MIN).at(-1);
- const count=v=>Number.isInteger(v)&&v>=0?v:null;
- return {sol:f.quoteSol,b5:count(d?.[4]),s5:count(d?.[5]),top10:f.top10,safeContract:f.safeContract==null?null:f.safeContract===1,
-  createdAt:Number.isSafeInteger(c?.createdAt)&&c.createdAt<=at?c.createdAt:null,createdAtSource:c?.createdAtSource||null,
-  img:imageUrl(c?.i)||null,cardAt:at,marketObservedAt:d?d[0]*1000:null};
+ const f=starterFeaturesAt(c||{},at),d=(c?.ds||[]).filter(x=>Number.isFinite(x?.[0])&&x[0]*1000<=at&&at-x[0]*1000<=7*MIN).at(-1),count=v=>Number.isInteger(v)&&v>=0?v:null;
+ const WSOL='So11111111111111111111111111111111111111112',qi=c?.vmint?.indexOf(WSOL),vault=qi>=0&&c.vmint.length===2&&c.vmint[1-qi]===c.a&&c.vaultIdentityAt<=at;
+ const native=vault?(c.lq||[]).filter(r=>r[0]*1000<=at&&at-r[0]*1000<=35*MIN).at(-1):null,curve=c?.mg?.st!=='ok'&&/pump-?fun/i.test(c?.d||'')&&(!c.q||c.q===WSOL)?(c.curveSol||[]).filter(r=>r[0]<=at&&at-r[0]<=35*MIN).at(-1):null;
+ let sol=f.quoteSol,measuredAt=null;if(native&&Number.isFinite(native[2+qi])){sol=native[2+qi]/1e9;measuredAt=native[0]*1000;}else if(curve&&Number.isFinite(curve[1])){sol=curve[1]/1e9;measuredAt=curve[0];}
+ const clone=c?.discoveryFeatures&&c.discoveryFeatures.at<=at?c.discoveryFeatures:{};
+ return {cloneCount:clone.cloneCount??null,cloneRank:clone.cloneRank??null,isFirstOfName:clone.isFirstOfName??null,cloneCountLowerBound:clone.cloneCountLowerBound===true,sol,solMeasuredAt:measuredAt,solAgeMs:measuredAt!=null?at-measuredAt:null,b5:count(d?.[4]),s5:count(d?.[5]),top10:f.top10,safeContract:f.safeContract==null?null:f.safeContract===1,
+  createdAt:Number.isSafeInteger(c?.createdAt)&&c.createdAt<=at?c.createdAt:null,createdAtSource:c?.createdAtSource||null,img:imageUrl(c?.i)||null,cardAt:at,marketObservedAt:d?d[0]*1000:null};
 }
 function imageUrl(raw){
  if(typeof raw!=='string'||raw.length>2048)return null;

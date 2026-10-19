@@ -96,7 +96,8 @@ function createEvent(bytes,slot,observedAt){
  }
  let quote='So11111111111111111111111111111111111111112';
  if(remaining>=234&&bytes.subarray(offset+202,offset+234).some(b=>b!==0))quote=encodeKey(bytes.subarray(offset+202,offset+234));
- return {mint,curve,quote,slot,blockAt,observedAt,name:strings[0].slice(0,40),symbol:strings[1].slice(0,16),uri:/^(https:\/\/|ipfs:\/\/)[^\s"'<>]{4,290}$/.test(strings[2]||'')?strings[2]:null};
+ const creatorBytes=remaining>=136?bytes.subarray(offset+96,offset+128):bytes.subarray(offset+64,offset+96),creator=creatorBytes.some(x=>x!==0)?encodeKey(creatorBytes):null,supplyRaw=remaining>=168?bytes.readBigUInt64LE(offset+160).toString():null,tokenProgram=remaining>=200?encodeKey(bytes.subarray(offset+168,offset+200)):null;
+ return {creator,supplyRaw,tokenProgram,mint,curve,quote,slot,blockAt,observedAt,name:strings[0].slice(0,40),symbol:strings[1].slice(0,16),uri:/^(https:\/\/|ipfs:\/\/)[^\s"'<>]{4,290}$/.test(strings[2]||'')?strings[2]:null};
 }
 function parsePumpCreateEvents(value,{slot,observedAt}={}){
  if(value?.err!==null||!isPumpCreateLog(value)||!Number.isSafeInteger(slot)||slot<=0||!Number.isSafeInteger(observedAt))return [];
@@ -114,6 +115,6 @@ function parsePumpCreateEvents(value,{slot,observedAt}={}){
    if(event)frame.events.push({...event,signature:value.signature});
   }
  }
- return events;
+ const tape=require('./early-intelligence').tradeEvents(value,{slot,observedAt});return events.map(e=>{const trades=tape.events.filter(t=>t.mint===e.mint),last=trades.at(-1),reserve=e.quote==='So11111111111111111111111111111111111111112'&&tape.complete?(last?last.realSolRaw:'0'):null;return {...e,trades,initialCurveSol:reserve!=null&&BigInt(reserve)<=BigInt(Number.MAX_SAFE_INTEGER)?Number(reserve):null,initialComplete:last?.realTokenRaw==='0',initialTradesComplete:tape.complete};});
 }
 module.exports={PUMP,parsePumpLaunch,isTradeableCurve,isPumpCreateLog,parsePumpCreateEvents};

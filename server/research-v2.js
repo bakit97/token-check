@@ -55,7 +55,8 @@ function featuresAt(coin,decisionAt,context={}){
     buySellRatio:finite(ratio)};
   const ct=coin?.ct,metaAt=coin?.metadataAt,discovery=coin?.discoveryFeatures;
   const clone=discovery&&discovery.at<=decisionAt?{isFirstOfName:discovery.isFirstOfName,cloneCount:discovery.cloneCount,cloneRank:discovery.cloneRank,...(discovery.cloneCountLowerBound?{lowerBoundKeys:['cloneCount','cloneRank']}:{})}:{isFirstOfName:null,cloneCount:null,cloneRank:null};
-  return {...Object.fromEntries(RULE_KEYS.map(k=>[k,null])),...extendedFeaturesAt(coin,decisionAt,context,F),...F,...clone,...starterFeaturesAt(coin,decisionAt,context),
+  const extra=extendedFeaturesAt(coin,decisionAt,context,F);
+  return {...Object.fromEntries(RULE_KEYS.map(k=>[k,null])),...extra,...F,...clone,...starterFeaturesAt(coin,decisionAt,context),lowerBoundKeys:[...new Set([...(extra.lowerBoundKeys||[]),...(clone.lowerBoundKeys||[])])],
     token2022:ct&&ct.at<=decisionAt&&['token','token2022'].includes(ct.prog)?(ct.prog==='token2022'?1:0):null,
     hasImage:Number.isFinite(metaAt)&&metaAt<=decisionAt?(coin.img||coin.i?1:0):Number.isFinite(coin?.imageObservedAt)&&coin.imageObservedAt<=decisionAt&&(coin.img||coin.i)?1:null,
     hasDescription:Number.isFinite(metaAt)&&metaAt<=decisionAt?(coin.description?1:0):null,
@@ -116,7 +117,7 @@ function extendedFeaturesAt(coin,t,context,F){
  const eventAt=context.eventAt??coin?.t;out.tradesPerMin=Number.isFinite(eventAt)&&t-eventAt>=FIVE&&F.trades!=null?F.trades/5:null;out.uniqBuyersPerMin=Number.isFinite(eventAt)&&t-eventAt>=FIVE&&F.buyers!=null?F.buyers/5:null;
  if(Number.isFinite(eventAt)){const before=starterFeaturesAt(coin,eventAt,context),after=starterFeaturesAt(coin,t,context);out.poolGrowth=before.quoteSol>0&&after.quoteSol!=null?(after.quoteSol/before.quoteSol-1)*100:null;}
  const socials=coin?.socialFeatures;if(socials?.at<=t)for(const k of ['hasTwitter','hasTelegram','hasWebsite'])out[k]=bool(socials[k]);
- for(const snapshot of [...(coin?.intelligenceSnapshots||[])].filter(s=>s.at<=t).sort((a,b)=>a.at-b.at))for(const [k,v] of Object.entries(snapshot.features||{}))if(RULE_KEYS.includes(k)&&typeof v==='number'&&Number.isFinite(v))out[k]=v;
+ for(const snapshot of [...(coin?.intelligenceSnapshots||[])].filter(s=>s.at<=t).sort((a,b)=>a.at-b.at)){for(const [k,v] of Object.entries(snapshot.features||{}))if(RULE_KEYS.includes(k)&&typeof v==='number'&&Number.isFinite(v)){out[k]=v;out.lowerBoundKeys=(out.lowerBoundKeys||[]).filter(x=>x!==k);if(snapshot.lowerBoundKeys?.includes(k))out.lowerBoundKeys.push(k);}}
  return out;
 }
 function activityOutcome(coin,entryAt,cfg={},now=Date.now()){
