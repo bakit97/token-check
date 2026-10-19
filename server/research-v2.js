@@ -261,13 +261,15 @@ function levelTwoFeaturesAt(coin,decisionAt,{entryAt,acceptedAt,phase}={}){
  // infer bot/repeat/developer sales or one-minute flow from rolling m5 counts.
  return {...featuresAt(coin,decisionAt,{eventAt:acceptedAt,phase}),...Object.fromEntries(Object.entries(out).filter(([,v])=>v!=null))};
 }
+const INTEL_ZERO_KEYS=new Set(['devBuySol','devHold','devHoldPct','bundleShare','bundledWallets']);
+function verifiedFeatures(F={}){if(F.intelligenceEvidenceVersion===2)return F;const out={...F};for(const k of ['smartBuyers','smartShare'])if(k in out)out[k]=null;for(const k of INTEL_ZERO_KEYS)if(out[k]===0)out[k]=null;return out;}
 function evaluation(F,rule){
   if(rule?.conds){if(!Array.isArray(rule.conds)||!rule.conds.length||rule.conds.length>8)return 'unknown';const results=rule.conds.map(c=>evaluation(F,{key:c?.key,op:c?.op,value:c?.value,value2:c?.value2}));return results.includes('reject')?'reject':results.includes('unknown')?'unknown':'pass'}
   if(!F||!rule||!RULE_KEYS.includes(rule.key)||
       !['>=','<=','between'].includes(rule.op)||!Number.isFinite(rule.value)||(rule.op==='between'&&(!Number.isFinite(rule.value2)||rule.value2<rule.value)))return 'unknown';
   if(rule.conditions){if(!Array.isArray(rule.conditions)||rule.conditions.length>8)return 'unknown';const results=rule.conditions.map(c=>evaluation(F,c));
     if(results.includes('reject'))return 'reject';if(results.includes('unknown'))return 'unknown';}
-  if(F.intelligenceEvidenceVersion!==2&&(['smartBuyers','smartShare'].includes(rule.key)||F[rule.key]===0&&['devBuySol','devHold','devHoldPct','bundleShare','bundledWallets'].includes(rule.key)))return 'unknown';
+  if(F.intelligenceEvidenceVersion!==2&&(['smartBuyers','smartShare'].includes(rule.key)||F[rule.key]===0&&INTEL_ZERO_KEYS.has(rule.key)))return 'unknown';
   const v=F[rule.key];
   if(typeof v!=='number'||!Number.isFinite(v))return 'unknown';
   if(F.lowerBoundKeys?.includes(rule.key)){if(rule.op==='>=')return v>=rule.value?'pass':'unknown';if(rule.op==='<=')return v>rule.value?'reject':'unknown';if(rule.op==='between')return v>rule.value2?'reject':'unknown';}
@@ -320,5 +322,5 @@ function capBank(rows,labelFn=it=>it.label,positive='live',negative='dead',max=5
   const n=dedup.filter(x=>labelFn(x)===negative).slice(0,max);
   return [...p,...n].sort((a,b)=>a.time-b.time);
 }
-module.exports={KEYS,LEVEL1_KEYS,RULE_KEYS,LEVEL2_KEYS,levelTwoFeaturesAt,samples,candles,featuresAt,starterFeaturesAt,activityOutcome,
+module.exports={verifiedFeatures,KEYS,LEVEL1_KEYS,RULE_KEYS,LEVEL2_KEYS,levelTwoFeaturesAt,samples,candles,featuresAt,starterFeaturesAt,activityOutcome,
   classifyActivity,activityEvidence,tradeOutcomeEvidence,strengthOutcome,evaluation,passes,ruleKey,ruleStats,wilsonInterval,weightedScore,proposeRules,capBank};

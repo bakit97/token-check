@@ -260,7 +260,7 @@ class ResearchTwoRuntime {
     if(label&&!['strong','weak'].includes(label))throw TypeError('bad label');
     if(!Number.isInteger(limit)||limit<1||limit>20000)throw RangeError('bad limit');
     return this.rows.filter(x=>(!phase||x.phase===phase)&&(!label||x.label===label))
-      .sort((a,b)=>b.zeroAt-a.zeroAt).slice(0,limit);
+      .sort((a,b)=>b.zeroAt-a.zeroAt).slice(0,limit).map(r=>({...r,features:require('./research-v2').verifiedFeatures(r.features)}));
   }
 }
 function capPhases(rows){return ['before','after'].flatMap(phase=>capBank(rows.filter(r=>r.phase===phase),r=>r.label,'strong','weak',MAX_PER_CLASS))}

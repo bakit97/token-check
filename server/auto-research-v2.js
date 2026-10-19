@@ -3,7 +3,7 @@
 // Rules are learned on older cohorts; a later 100-row holdout is never used
 // for threshold discovery. These are diagnostics, not trading instructions.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
-const {proposeRules,ruleStats,wilsonInterval}=require('./research-v2');
+const {proposeRules,ruleStats,wilsonInterval,verifiedFeatures}=require('./research-v2');
 function holdoutQuality(stat,{minPositiveRecall=.65,minNegativeRejection=.65,candidates=1}={}){if(!stat)return false;const z=Math.sqrt(2*Math.log(2*Math.max(1,candidates)/.05));stat.positiveRecallLowerAdjusted=wilsonInterval(stat.passedPositive,stat.totalPositive,z).low;stat.negativeRejectionLowerAdjusted=wilsonInterval(stat.rejectedNegative,stat.totalNegative,z).low;stat.adjustedZ=z;return stat.evaluablePositive>=20&&stat.evaluableNegative>=20&&stat.positiveRecallLowerAdjusted>=minPositiveRecall&&stat.negativeRejectionLowerAdjusted>=minNegativeRejection;}
 function discover(rows,{level='1',minTrainPositive,minTrainNegative,minValidation=100,minPositiveRecall=.65,minNegativeRejection=.65,maxRules=12,missPenalty=3}={}){
  if(!['1','2'].includes(level))throw TypeError('Unknown research level');const pos=level==='1'?'live':'strong',neg=level==='1'?'dead':'weak',good=Math.max(20,minTrainPositive??(level==='1'?100:40)),bad=Math.max(20,minTrainNegative??40),clean=rows.filter(r=>r&&r.mint&&r.features&&[pos,neg].includes(r.label)&&Number.isSafeInteger(r.time)).sort((a,b)=>a.time-b.time),day=t=>new Date(t+5*3600000).toISOString().slice(0,10);let split=-1;
@@ -21,7 +21,7 @@ class AutoStudies{
   for(const phase of ['before','after']){
    const cfg=settings.phases?.[phase]||settings,dm=cfg.decisionMinutes||10;
    const compatible=(r,minutes)=>!r.decisionAt||Math.abs((r.decisionAt-r.acceptedAt)/60000-minutes)<.01;
-   const bank=rows.filter(r=>r.phase===phase&&compatible(r,dm)&&r.acceptedAt<=now&&(r.outcomeAt==null||r.outcomeAt<=now));
+   const bank=rows.filter(r=>r.phase===phase&&compatible(r,dm)&&r.acceptedAt<=now&&(r.outcomeAt==null||r.outcomeAt<=now)).map(r=>({...r,features:verifiedFeatures(r.features)}));
    const report=discover(bank,{level,minTrainPositive:cfg.targetLive??cfg.targetStrong??(level==='1'?100:40),minTrainNegative:cfg.targetDead??cfg.targetWeak??40,missPenalty:cfg.missPenalty??3});phases[phase]=report;
    for(const proposal of report.rules){
     if(proposal.passesHoldout!==true)continue;
@@ -48,7 +48,7 @@ class AutoStudies{
    }
   }
   if(changed){const tmp=this.file+'.tmp',fd=fs.openSync(tmp,'w',0o600);try{fs.writeFileSync(fd,JSON.stringify({schema:1,modules:[...this.modules.values()]}));fs.fsyncSync(fd)}finally{fs.closeSync(fd)}fs.renameSync(tmp,this.file);require('./durable-json').syncDirectory(path.dirname(this.file))}
-  return {schema:2,level,status:'phase-separated',phases,rules,unsupportedFeatures:['creator-history','sniper-bundle-identification','bot-identification','LP-lock-without-proof'],updated:now};
+  return {schema:2,level,status:'phase-separated',phases,rules,supportedScopes:{creator:'observed-prior-launches-and-verified-positive-associated-account',snipers:'verified-pump-opening-slots',bundles:'observed-common-funding-lower-bound',smart:'ready-registry-known-at-admission'},unsupportedFeatures:['bot-identification','LP-lock-without-proof'],updated:now};
  }
  reportParents(rows,options={}){
   const cohorts=new Map();for(const row of rows)for(const f of row.sourceFilterVersions||[]){const id=f.id+'@'+f.version;if(!cohorts.has(id))cohorts.set(id,[]);cohorts.get(id).push(row)}
