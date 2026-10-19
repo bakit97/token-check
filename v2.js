@@ -360,7 +360,7 @@ function pathHtml(c){var e=c._entry||{},m=mint(c),t=now(),chain=[],det=[];
     det.push('<details class="step fold"><summary><span class="si">'+icon1+'</span><b>Уровень 1:</b> '+sum+(wait?'· решение через '+left(wait.left):'')+'</summary>'+
       f1.map(function(x){return '<div class="sub">'+({ok:'✅',no:'❌',wait:'⏳',skip:'⚪'})[x.st]+' '+esc(x.name)+'</div>'}).join('')+'</details>')}
   var hrs=researchMeta&&researchMeta.settings?researchMeta.settings.hours:5,b1=(bank['1']||[]).find(function(x){return x.mint===m});
-  if(b1){var st=researchMeta.settings,live=b1.label?b1.label==='live':(b1.activity>=st.minActive&&b1.idle<=st.maxIdle);chain.push(['Иссл.1',live?'🟢':'🔴']);det.push(stepRow(live?'🟢':'🔴','Исследование 1:',(live?'живая':'мёртвая')+' · активность '+b1.activity.toFixed(0)+'%, простой '+b1.idle+' мин'))}
+  if(b1){var st=researchMeta.settings,live=b1.label?b1.label==='live':(b1.activity>=st.minActive&&b1.idle<=st.maxIdle);var wt=b1.label==='pending'||b1.label==='unknown',ic=b1.label==='pending'?'⏳':b1.label==='unknown'?'❓':live?'🟢':'🔴';chain.push(['Иссл.1',ic]);det.push(stepRow(ic,'Исследование 1:',b1.label==='pending'?'ждёт конца окна':b1.label==='unknown'?'нет данных':(live?'живая':'мёртвая')+' · активность '+(b1.activity==null?'—':(+b1.activity).toFixed(0)+'%')+', простой '+(b1.idle==null?'—':b1.idle+' мин')))}
   else{var end1=(e.acceptedAt||0)+hrs*3600e3;chain.push(['Иссл.1',t<end1?'⏳':'—']);det.push(stepRow('⏳','Исследование 1:',t<end1?'итог через '+left(end1-t):'нет итога (мало данных)'))}
   if(row){var r2=serverR2Rows.find(function(x){return x.mint===m}),sl=row.secondLevelRules||[];
     chain.push(['Ур.2',sl.length?'🔹 '+sl.length:'—']);
