@@ -86,8 +86,9 @@ test('Six panels, age admission, safe settings and local filter management work 
   await page.locator('#libNew').click();
   await expect(page.locator('#modSheet')).toBeVisible();
   await page.locator('#modSheet [data-mf="name"]').fill('Исследовательская проверка');
-  await page.locator('#modSheet .mgrp summary').first().click();
-  await page.locator('#modSheet [data-madd]').first().click();
+  const group=page.locator('#modSheet .mgrp').filter({visible:true}).first();
+  if(await group.getAttribute('open')===null)await group.locator('summary').click();
+  await group.locator('[data-madd]').first().click();
   await page.locator('#modSheet [data-mf="value"]').fill('1');
   await page.locator('#modSheet [data-msave]').click();
   await expect(page.locator('#libMods')).toContainText('Исследовательская проверка');
