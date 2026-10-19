@@ -2,7 +2,7 @@ name: deploy-control
 on:
   push:
     branches: [main]
-    paths: ['server/control-api.js', 'server/research-config.js', 'server/pass-runtime.js', 'server/research-runtime.js', 'server/research-two-runtime.js', 'server/research-v2.js', 'server/Dockerfile', '.github/workflows/deploy-control.yml']
+    paths: ['server/control-api.js', 'server/research-config.js', 'server/pass-runtime.js', 'server/research-runtime.js', 'server/research-two-runtime.js', 'server/research-v2.js', 'server/module-library.js', 'server/research-banks.js', 'server/durable-json.js', 'server/stream-json.js', 'server/Dockerfile', '.github/workflows/deploy-control.yml']
   workflow_dispatch:
 permissions:
   contents: read

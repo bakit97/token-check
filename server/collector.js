@@ -6,10 +6,10 @@ if(typeof WebSocket==='undefined'&&!process.env.WSX){const ch=require('child_pro
    активность каждые 5 минут в течение 5 часов, свечи первых 10 минут и итог за 5 часов.
    Каждые 2 минуты выгружает перепись дня (по Алматы, с 00:00) в Cloud Storage. */
 const fs=require('fs'),zlib=require('zlib');
-let HEALTH=null;
+let HEALTH=null,PROFILES=null;
 let COMPLETED=null,ACTIVE_HISTORY=null;
 const fullCoin=c=>ACTIVE_HISTORY?ACTIVE_HISTORY.hydrate(c):c;
-const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:45000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0,pendingWork:0,cancelledGT:0};
+const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:30000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0,pendingWork:0,cancelledGT:0};
 let RESOURCE=null;
 const resourcePressure=()=>process.memoryUsage().rss>=360*1024*1024;
 const BUCKET='sol-scan-511718-data',DIR=process.env.SOLSCAN_DIR||'/var/solscan',TZ=5*3600e3;
@@ -117,8 +117,9 @@ async function ctCheck(c){
   const rpc=rpcFor(c,'контракт');
   const mi=await rpc('getAccountInfo',[c.a,{encoding:'jsonParsed'}]);const v=mi?.value;if(!v)throw new Error('токен не найден');
   const ct=ctFromMint(v);
-  if(ct.metaMut==null){const mv=(await rpc('getAccountInfo',[await metadataOf(c.a),{encoding:'base64'}]))?.value;if(mv)ct.metaMut=metaMutable(b64(mv.data?.[0]))}
-  ct.at=Date.now();c.ct=ct}
+  ct.at=Date.now();c.ct=ct; // A deferred optional metadata read must not discard verified mint rights.
+  if(ct.metaMut==null)try{const mv=(await rpc('getAccountInfo',[await metadataOf(c.a),{encoding:'base64'}]))?.value;if(mv?.owner===META){const bytes=b64(mv.data?.[0]);ct.metaMut=metaMutable(bytes);const meta=require(DIR+'/coin-profile.js').parseMetadata(bytes);if(meta.uri)c.uri=meta.uri}}catch(e){c.metadataReason=e.code==='BUDGET_DEFERRED'?'budget-deferred':'metadata-unavailable'}
+}
 // разбор mint-аккаунта (jsonParsed) без запросов — общий для одиночной и пакетной проверки
 function ctFromMint(v){
   if(![T22,'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'].includes(v.owner)||v.data?.parsed?.type!=='mint')throw Error('Unverified mint account');
@@ -138,16 +139,16 @@ function ctFromMint(v){
    Кривая pump: real_sol_reserves = u64 @32, complete = bool @48. Замер — только у монет перед моментом решения. */
 const PRE_STATS={ct:0,curve:0,calls:0,deferred:0,errors:0};
 async function preChainSweep(){const now=Date.now(),dec=(PASS_V2?.config?.decisionMinutes||15)*60e3;
-  const pre=[...C.values()].filter(c=>isRecordedPre(c)&&now-c.t<dec+5*60e3);
-  const needCt=pre.filter(c=>!c.ct&&now-c.t>=30e3).slice(0,200);
-  const needCurve=pre.filter(c=>c.p&&now-c.t>=dec-3*60e3&&now-c.t<=dec+60e3&&!(c.curveSol?.length&&now-c.curveSol.at(-1)[0]<50e3)).slice(0,200);
-  const call=async(list,enc)=>{PRE_STATS.calls++;return (await rpc('getMultipleAccounts',[list,enc],{context:'до миграции',source:'до миграции'}))?.value||[]};
+  const pre=[...C.values()].filter(c=>isRecordedPre(c)&&isCurve(c.d)&&now-(SOURCE.get(c.a)?.acceptedAt||now)<dec+5*60e3);
+  const needCt=pre.filter(c=>!c.ct).sort((a,b)=>(SOURCE.get(b.a)?.acceptedAt||0)-(SOURCE.get(a.a)?.acceptedAt||0)).slice(0,100);
+  const needCurve=pre.filter(c=>c.p&&now-(c.curveSol?.at(-1)?.[0]||0)>=50e3).sort((a,b)=>(a.curveSol?.at(-1)?.[0]||0)-(b.curveSol?.at(-1)?.[0]||0)||(SOURCE.get(b.a)?.acceptedAt||0)-(SOURCE.get(a.a)?.acceptedAt||0)).slice(0,200);
+  const call=async(list,enc)=>{PRE_STATS.calls++;return (await rpc('getMultipleAccounts',[list,enc],{priority:enc.encoding==='jsonParsed'?'metadata':'pools',context:'до миграции',source:'pump-card'}))?.value||[]};
   try{
-    for(let i=0;i<needCt.length;i+=100){const part=needCt.slice(i,i+100);const v=await call(part.map(c=>c.a),{encoding:'jsonParsed'});const at=Date.now();
-      part.forEach((c,j)=>{if(!v[j])return;try{const ct=ctFromMint(v[j]);ct.at=at;ct.batch=1;c.ct=ct;PRE_STATS.ct++}catch(e){}})}
-    for(let i=0;i<needCurve.length;i+=100){const part=needCurve.slice(i,i+100);const v=await call(part.map(c=>c.p),{encoding:'base64',dataSlice:{offset:0,length:49}});const at=Date.now();
-      part.forEach((c,j)=>{const a=v[j];if(!a||a.owner!==PUMP)return;const u=b64(a.data?.[0]);if(u.length<49)return;
-        const lam=Number(Buffer.from(u).readBigUInt64LE(32));(c.curveSol=c.curveSol||[]).push([at,lam,u[48]?1:0]);if(c.curveSol.length>12)c.curveSol.shift();PRE_STATS.curve++})}
+    if(needCt.length){const v=await call(needCt.map(c=>c.a),{encoding:'jsonParsed'});const at=Date.now();needCt.forEach((c,j)=>{if(!v[j])return;try{const ct=ctFromMint(v[j]);ct.at=at;ct.batch=1;c.ct=ct;PRE_STATS.ct++}catch{PRE_STATS.errors++}})}
+  }catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else{PRE_STATS.errors++;err('pre contracts '+e.message)}}
+  try{for(let i=0;i<needCurve.length;i+=100){const part=needCurve.slice(i,i+100),pools=part.map(c=>c.p),v=await call(pools,{encoding:'base64',dataSlice:{offset:0,length:49}}),at=Date.now();
+      part.forEach((c,j)=>{const a=v[j];if(c.p!==pools[j]||!a||a.owner!==PUMP)return;const u=b64(a.data?.[0]);if(u.length<49)return;
+        const lam=Number(Buffer.from(u).readBigUInt64LE(32));(c.curveSol=c.curveSol||[]).push([at,lam,u[48]?1:0]);PRE_STATS.curve++})}
   }catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else{PRE_STATS.errors++;err('pre sweep '+e.message)}}}
 
 /* ---------- миграция. Доказательство = 2 условия вместе:
@@ -398,23 +399,24 @@ let RESEARCH_V2=null, RESEARCH_V2_ERR='', RESEARCH_BANK_UPLOADED=0;
 let PASS_V2=null, RESEARCH_TWO=null, AUTO_V2=null, FILTER_AUDIT=null;
 let RESEARCH_ONE_EPOCH=null, RESEARCH_TWO_EPOCH=null, RESEARCH_CONFIG_ERR='';
 let OLD_RESEARCH_ONE=[], OLD_RESEARCH_TWO=[];
+let AUTO_STUDIES=null,RESEARCH_BANKS=null,LIBRARY_CONFIG={schema:1,modules:[],deleted:[]},LIBRARY_ROWS=[],LIBRARY_SCORES={},LIBRARY_SCORE_AT=0,LIBRARY_PUBLISH_SIG='';
 let PASS_ERR='', TWO_ERR='', PASS_CFG_ERR='', TWO_BANK_UPLOADED=0, AUTO_UPLOADED=0;
 async function admitVerifiedPublicLaunch(launch,record) {
   const existing=C.get(record.mint);
-  if(existing){existing.preCurve=existing.preCurve||1;existing.preTradingAt=record.eventAt;
+  if(existing){existing.preCurve=existing.preCurve||1;existing.preTradingAt=record.eventAt;existing.createdAt=record.eventAt;existing.createdAtObservedAt=record.acceptedAt;existing.createdAtSource='verified-create-log-slot-time';
     if(!existing.n)existing.n=launch.name;if(!existing.s)existing.s=launch.symbol;
     return;
   }
   C.set(record.mint,{a:record.mint,n:launch.name,s:launch.symbol,i:'',
     p:launch.curve,d:'pump-fun',q:launch.quote||WSOL,t:record.eventAt,
-    preTradingAt:record.eventAt,tSrc:'pre',seen:record.acceptedAt,disc:'pre-ws',
+    preTradingAt:record.eventAt,createdAt:record.eventAt,createdAtObservedAt:record.acceptedAt,createdAtSource:'verified-create-log-slot-time',tSrc:'pre',seen:record.acceptedAt,disc:'pre-ws',
     preCurve:1,pools:[launch.curve],fv:FV,
     mg:{v:MGV,st:'curve',k:'curve-pump',final:1,lastAt:record.acceptedAt}});
 }
 // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
 // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
 const MODULES=['event-clock.js','admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
-  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','active-history.js'];
+  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js','module-library.js','active-history.js'];
 let MODULES_OK=null;
 function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
   for(const name of MODULES){const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
@@ -522,7 +524,8 @@ async function initPathsV2(){
   // localStorage setting as permission to create an authoritative alert.
   const config=await getObj('config/pass-filters.json');
   if(!config)throw Error('Missing server filter configuration');
-  PASS_V2=new (require(DIR+'/pass-runtime.js').PassRuntime)({dir:DIR,config});
+  await refreshLibrary(config);
+  PASS_V2=new (require(DIR+'/pass-runtime.js').PassRuntime)({dir:DIR,config:require(DIR+'/pass-runtime.js').verdictConfig(require(DIR+'/module-library.js').windowConfig(config,LIBRARY_ROWS,LIBRARY_CONFIG.deleted))});
   const {ResearchTwoRuntime,configOf}=require(DIR+'/research-two-runtime.js');
   const {ResearchEpoch}=require(DIR+'/research-config.js');
   const requested=await getObj('config/research-two.json')||configOf();
@@ -535,6 +538,10 @@ async function initPathsV2(){
   });
   recoverSupersededStudies();
   AUTO_V2=require(DIR+'/auto-research-v2.js');
+  AUTO_STUDIES=new AUTO_V2.AutoStudies({dir:DIR});
+  try{LIBRARY_SCORES=JSON.parse(fs.readFileSync(DIR+'/module-live-evaluations.json','utf8'))}catch(e){if(e.code!=='ENOENT')err('library live scores unavailable')}
+  await refreshLibrary(PASS_V2.config);
+  RESEARCH_BANKS=new (require(DIR+'/research-banks.js').ResearchBanks)({dir:DIR,config:await getObj('config/research-storage.json')||{},one:RESEARCH_V2?.config||{},two:RESEARCH_TWO.config});
   FILTER_AUDIT=new (require(DIR+'/filter-audit.js').FilterAudit)({dir:DIR});
   PASS_ERR='';TWO_ERR='';PASS_CFG_ERR='';
   log('серверные пути готовы: Прошли',PASS_V2.records.size,
@@ -553,7 +560,7 @@ async function reloadResearchConfig(){
         recoverSupersededStudies();
         RESEARCH_BANK_UPLOADED=0;AUTO_UPLOADED=0;
         log('первый исследовательский полигон переключён на новую эпоху',x.hash);
-      }
+      }else RESEARCH_V2.config=RESEARCH_ONE_EPOCH.current.config;
     }
     if(RESEARCH_TWO_EPOCH&&RESEARCH_TWO){
       const cfg=await getObj('config/research-two.json');
@@ -566,20 +573,40 @@ async function reloadResearchConfig(){
         recoverSupersededStudies();
         TWO_BANK_UPLOADED=0;AUTO_UPLOADED=0;
         log('второй исследовательский полигон переключён на новую эпоху',x.hash);
-      }
+      }else RESEARCH_TWO.config=RESEARCH_TWO_EPOCH.current.config;
     }
+    if(RESEARCH_BANKS){RESEARCH_BANKS.applyConfig(await getObj('config/research-storage.json')||{},RESEARCH_V2?.config||{},RESEARCH_TWO?.config||{});RESEARCH_BANKS.upsert([])}
     RESEARCH_CONFIG_ERR='';
   }catch(e){
     RESEARCH_CONFIG_ERR=e.message;
     err('research config '+e.message);
   }
 }
+async function refreshLibrary(raw){
+ const lib=require(DIR+'/module-library.js');LIBRARY_CONFIG=lib.catalog(await getObj('config/modules.json')||{schema:1,modules:[],deleted:[]});
+ const old=new Map(LIBRARY_ROWS.map(m=>[m.id,m])),configured=[];
+ for(const m of raw.modules||[]){const f=(raw.filters||[]).find(f=>f.id===m.filterId);if(!f)continue;configured.push({...f,phase:m.phase,verdictMinutes:f.verdictMinutes||raw.decisionMinutes,conds:f.conds||[f].concat(f.conditions||[]),createdAt:old.get(f.id)?.createdAt||raw.activatedAt||PASS_V2?.config?.activatedAt||Date.now()})}
+ LIBRARY_ROWS=lib.combine({owner:LIBRARY_CONFIG,auto:AUTO_STUDIES?[...AUTO_STUDIES.modules.values()]:[],configured});
+ for(const m of LIBRARY_ROWS){const score=LIBRARY_SCORES[m.id];if(score?.evalSig===m.evalSig)m.eval={...m.eval,live:score.live}}
+}
+async function publishLibrary(now){
+ if(!AUTO_STUDIES||!PASS_V2)return;
+ await refreshLibrary(PASS_V2.config);
+ if(RESEARCH_BANKS&&now-LIBRARY_SCORE_AT>=60*60e3){const scores=await require(DIR+'/module-library.js').liveStats(LIBRARY_ROWS,RESEARCH_BANKS.rows());
+  for(const m of LIBRARY_ROWS){const live=scores.get(m.id);if(live&&(live.totalPositive||live.totalNegative)){m.eval={...m.eval,live};LIBRARY_SCORES[m.id]={evalSig:m.evalSig,live}}}
+  const ids=new Set(LIBRARY_ROWS.map(m=>m.id));for(const id of Object.keys(LIBRARY_SCORES))if(!ids.has(id))delete LIBRARY_SCORES[id];
+  const file=DIR+'/module-live-evaluations.json',tmp=file+'.tmp',fd=fs.openSync(tmp,'w',0o600);try{fs.writeFileSync(fd,JSON.stringify(LIBRARY_SCORES));fs.fsyncSync(fd)}finally{fs.closeSync(fd)}fs.renameSync(tmp,file);require(DIR+'/durable-json.js').syncDirectory(DIR);LIBRARY_SCORE_AT=now;
+ }
+ const content=JSON.stringify(LIBRARY_ROWS),sig=require('node:crypto').createHash('sha256').update(content).digest('hex');
+ if(sig!==LIBRARY_PUBLISH_SIG){await upload('research-v2/modules.json',{schema:1,origin:'server-module-library',updated:now,modules:LIBRARY_ROWS});LIBRARY_PUBLISH_SIG=sig}
+}
 async function reloadPassConfig(){
   if(!PASS_V2)return;
   try{
     const config=await getObj('config/pass-filters.json');
     if(!config)throw Error('No pass configuration');
-    if(PASS_V2.applyConfig(config))
+    await refreshLibrary(config);
+    if(PASS_V2.applyConfig(require(DIR+'/pass-runtime.js').verdictConfig(require(DIR+'/module-library.js').windowConfig(config,LIBRARY_ROWS,LIBRARY_CONFIG.deleted))))
       log('применена новая серверная версия фильтров',PASS_V2.configHash);
     PASS_CFG_ERR='';
   }catch(e){
@@ -596,7 +623,7 @@ function admitVerifiedMigration(c){
   }catch(e){SOURCE_ERR='ошибка записи источника: '+e.message;err('source '+e.message)}
 }
 
-const OBS_KEYS=['ds','k10','path','hold','bx','lq','gx','vaults','vmint','vdec','vaultIdentityAt','legacy','raw','tr','rawUp','trDone','archiveRefs'],OBS_TMP=['tr','raw','dsAt','dsTryAt','tokAt','gxAt','lastTrade','kTry','pTry','trTry','trDone','lqAt','rawUp','vTry'];
+const OBS_KEYS=['curveSol','ds','k10','path','hold','bx','lq','gx','vaults','vmint','vdec','vaultIdentityAt','legacy','raw','tr','rawUp','trDone','archiveRefs'],OBS_TMP=['tr','raw','dsAt','dsTryAt','tokAt','gxAt','lastTrade','kTry','pTry','trTry','trDone','lqAt','rawUp','vTry'];
 function takeObs(c){const o={};for(const k of OBS_KEYS){if(c[k]!=null)o[k]=c[k];delete c[k]}for(const k of OBS_TMP)delete c[k];return o}
 function load(){try{require(DIR+'/stream-json.js').loadRows(DIR+'/state.json',c=>{
     for(const key of ['chTry','kTry','pTry','trTry','vTry'])delete c[key]; // in-flight locks belong to the old process
@@ -980,7 +1007,7 @@ async function flushUploadsInner(){
   }
 }
 function coinMetadata(c){const mg=c.mg||{};
-  const r={a:c.a,n:c.n,s:c.s,i:c.i,p:c.p,d:c.d,q:c.q,t:c.t,tSrc:c.tSrc||'gt',t0:c.t0||null,seen:c.seen,disc:c.disc||null,rcSeen:c.rcSeen||null,wsSeen:c.wsSeen||null,firstPostSeenAt:c.firstPostSeenAt||null,preCurve:!!c.preCurve,preTradingAt:c.preTradingAt||null,ty:launchType(c),
+  const r={a:c.a,n:c.n,s:c.s,i:c.i,p:c.p,d:c.d,q:c.q,t:c.t,tSrc:c.tSrc||'gt',t0:c.t0||null,createdAt:c.createdAt||null,createdAtSource:c.createdAtSource||null,createdAtObservedAt:c.createdAtObservedAt||null,uri:c.uri||null,metadataAt:c.metadataAt,description:c.description||null,seen:c.seen,disc:c.disc||null,rcSeen:c.rcSeen||null,wsSeen:c.wsSeen||null,firstPostSeenAt:c.firstPostSeenAt||null,preCurve:!!c.preCurve,preTradingAt:c.preTradingAt||null,ty:launchType(c),
     mk:mg.k||null,mst:mg.st||null,mw:mg.why||'',mT:mg.mT||null,mSig:mg.sig||null,mSeen:mg.seenAt||null,mCr:mg.creator??null,mH:c.mgH||[],mk0:c.mg0?.k||null,
     origs:(c.origs||[]).map(o=>({p:o.p,t:o.t,d:o.d,movedAt:o.movedAt})),
     preObs:c.preCurve?((c.origs||[]).find(o=>o.d==='pump-fun')||null):null,ct:c.ct||null,curveSol:c.preCurve&&c.curveSol?.length?c.curveSol:undefined,soc:c.soc||0,tk:c.tk&&isFinite(c.tk)?c.tk:null,tkAt:c.tkAt||null,
@@ -1046,16 +1073,16 @@ async function exportSource(now) {
   const d=dayKey(now);
   const enrich=x=>{
     const c=C.get(x.mint)||COMPLETED?.metadata(x.mint);
-    return {a:x.mint,phase:x.phase,eventAt:x.eventAt,acceptedAt:x.acceptedAt,
+    return {...require(DIR+'/coin-profile.js').cardAt(c,now),a:x.mint,phase:x.phase,eventAt:x.eventAt,acceptedAt:x.acceptedAt,
       n:c?.n||'',s:c?.s||'',i:c?.i||'',family:x.proof?.family||null,curve:x.proof?.curve||null,
-      proofSig:x.proof?.signature||null,uri:x.proof?.uri||null,migrationPool:x.proof?.pool||null,proofKind:x.proof?.kind||null,eventSlot:x.proof?.slot||null,eventTimeSource:x.proof?.timeSource||null};
+      proofSig:x.proof?.signature||null,uri:c?.uri||x.proof?.uri||null,migrationPool:x.proof?.pool||null,proofKind:x.proof?.kind||null,eventSlot:x.proof?.slot||null,eventTimeSource:x.proof?.timeSource||null};
   };
   const summary=SOURCE.summary(now);
   const today=SOURCE.day(d).map(enrich);
   // Нет задним числом добавленных кандидатов из обычной ленты.
   // Предмиграционный адаптер пока не активен: не выдавать пустоту за готовность.
   AI_SNAP.source=summary;
-  await upload('source/status.json',{...summary,mode:'verified-pre-post',preConnected:preFlowing(),preLive:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:preFlowing()&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
+  await upload('source/status.json',{...summary,cardUnits:{sol:'SOL',top10:'percent',b5:'transactions',s5:'transactions',createdAt:'unix-ms'},mode:'verified-pre-post',preConnected:preFlowing(),preLive:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:preFlowing()&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
   await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});
   await upload('source/live.json',{updated:now,count:today.length,coins:SOURCE.latest(200).map(enrich)});
 }
@@ -1066,15 +1093,16 @@ async function exportResearchV2(now) {
   const result=RESEARCH_V2.update({source:SOURCE,coins:researchCoins(),passes:PASS_V2,now});
   // A settings change does NOT abandon previously admitted cohorts.
   for(const item of OLD_RESEARCH_ONE){
-    try{item.runtime.update({source:SOURCE,coins:researchCoins(),passes:PASS_V2,now})}
+    try{item.runtime.update({source:SOURCE,coins:researchCoins(),passes:PASS_V2,now});RESEARCH_BANKS?.upsert(item.runtime.select({limit:20000}))}
     catch(e){err('research old 1 '+item.epoch.hash+' '+e.message)}
   }
+  RESEARCH_BANKS?.upsert(RESEARCH_V2.select({limit:20000}));
   AI_SNAP.r1=result;
   await upload('research-v2/status.json',result);
   if(result.added>0||now-RESEARCH_BANK_UPLOADED>20*60e3){
     await upload('research-v2/polygon-1.json',{
       updated:now,epochStart:result.cohortStart,settings:result.settings,counts:result.counts,
-      coins:RESEARCH_V2.select({limit:10000}),
+      coins:RESEARCH_BANKS?require(DIR+'/stream-json.js').rowStream(()=>RESEARCH_BANKS.rows({level:'1',curves:true})):RESEARCH_V2.select({limit:20000}),
       note:'Observed classifications only; no buy/sell signals'
     });
     RESEARCH_BANK_UPLOADED=now;
@@ -1083,6 +1111,7 @@ async function exportResearchV2(now) {
 async function exportPathsV2(now){
   if(!PASS_V2||!RESEARCH_TWO||!SOURCE)return;
   await reloadPassConfig();
+  await publishLibrary(now);
   const p=PASS_CFG_ERR
     ?{added:0,...PASS_V2.summary(now),status:'paused-control-unavailable'}
     :PASS_V2.update({source:SOURCE,coins:researchCoins(),now});
@@ -1094,7 +1123,7 @@ async function exportPathsV2(now){
     serverOnly:true});
   await upload('passed-v2/live.json',{
     updated:now,origin:'server-journal',
-    coins:PASS_V2.latest(1000).filter(x=>x.zeroAt>now)
+    coins:PASS_V2.latest(1000).filter(x=>x.schema===2?now-x.firstSeenAt<5*60e3:x.zeroAt>now)
   });
   for(const d of [dayKey(now),dayKey(now-864e5)]){
     const rows=PASS_V2.day(d);
@@ -1104,19 +1133,21 @@ async function exportPathsV2(now){
   }
   const result=RESEARCH_TWO.update({passes:PASS_V2,coins:researchCoins(),now});
   for(const item of OLD_RESEARCH_TWO){
-    try{item.runtime.update({passes:PASS_V2,coins:researchCoins(),now})}
+    try{item.runtime.update({passes:PASS_V2,coins:researchCoins(),now});RESEARCH_BANKS?.upsert(item.runtime.select({limit:20000}))}
     catch(e){err('research old 2 '+item.epoch.hash+' '+e.message)}
   }
   TWO_ERR='';
+  RESEARCH_BANKS?.upsert(RESEARCH_TWO.select({limit:20000}));
+  if(RESEARCH_BANKS)await upload('research-v2/storage.json',{...RESEARCH_BANKS.summary(),updated:now});
   AI_SNAP.r2=result;
   await upload('research-v2/status-two.json',result);
   if(result.added>0||now-TWO_BANK_UPLOADED>20*60e3){
     // Don't transfer a 300-minute price array for every bank sample to a phone.
     // Publish frozen feature rows and a tiny server-aggregated curve separately.
-    const levelTwoRows=RESEARCH_TWO.select({limit:10000});
+    const levelTwoRows=RESEARCH_BANKS?RESEARCH_BANKS.rows({level:'2',curves:true}):RESEARCH_TWO.select({limit:20000});
     await upload('research-v2/polygon-2.json',{
       updated:now,epochStart:result.cohortStart,settings:result.settings,counts:result.counts,
-      coins:levelTwoRows.map(({curve,minuteCurve,minuteCurvePacked,...row})=>row),
+      coins:require(DIR+'/stream-json.js').rowStream(function*(){for(const {minuteCurve,minuteCurvePacked,...row} of levelTwoRows)yield row}),
       note:'Only fully observed server Passed stream; no orders'
     });
     await upload('research-v2/curve-two.json',{
@@ -1125,15 +1156,17 @@ async function exportPathsV2(now){
     });
     TWO_BANK_UPLOADED=now;
   }
-  if(AUTO_V2&&RESEARCH_V2&&(p.added||result.added||now-AUTO_UPLOADED>20*60e3)){
-    const levelOne=RESEARCH_V2.select({limit:10000}).map(x=>({
+  if(AUTO_V2&&RESEARCH_V2&&(now-AUTO_UPLOADED>60*60e3)){
+    const levelOne=(RESEARCH_BANKS?RESEARCH_BANKS.select({level:'1'}):RESEARCH_V2.select({limit:20000})).map(x=>({
       ...x,time:x.acceptedAt
     }));
-    const levelTwo=RESEARCH_TWO.select({limit:10000});
-    const one=AUTO_V2.discover(levelOne,{level:'1'});
-    const two=AUTO_V2.discover(levelTwo,{level:'2'});
-    await upload('research-v2/auto-1.json',{updated:now,epochStart:RESEARCH_V2.cohortStart,...one});
-    await upload('research-v2/auto-2.json',{updated:now,epochStart:RESEARCH_TWO.cohortStart,...two});
+    const levelTwo=RESEARCH_BANKS?RESEARCH_BANKS.select({level:'2'}):RESEARCH_TWO.select({limit:20000});
+    const one=AUTO_STUDIES.report(levelOne,{level:'1',settings:RESEARCH_V2.config,now});
+    const two=AUTO_STUDIES.reportParents(levelTwo,{settings:RESEARCH_TWO.config,now});
+    await refreshLibrary(PASS_V2.config);
+    const visible=report=>({...report,rules:report.rules.map(r=>LIBRARY_ROWS.find(m=>m.id===r.id&&m.level===report.level)).filter(Boolean).map(m=>({...m,rule:{...m.conds[0],conditions:m.conds.slice(1),conds:m.conds,phase:m.phase,verdictMinutes:m.verdictMinutes},train:m.eval.train,holdout:m.eval.holdout,live:m.eval.live}))});
+    await upload('research-v2/auto-1.json',{updated:now,epochStart:RESEARCH_V2.cohortStart,...visible(one)});
+    await upload('research-v2/auto-2.json',{updated:now,epochStart:RESEARCH_TWO.cohortStart,...visible(two)});
     if(FILTER_AUDIT){
       const audit=FILTER_AUDIT.report({
         config:PASS_V2.config,one:levelOne,two:levelTwo,
@@ -1151,7 +1184,7 @@ async function exportPathsV2(now){
           to:x.epoch.endedAt,counts:x.runtime.summary().counts}))},
       note:'Older cohorts continue their original observation settings and are never relabeled'
     });
-    AUTO_UPLOADED=now;
+    AUTO_UPLOADED=now;await publishLibrary(now);
   }
 }
 // Critical path: durable first-level matches must not wait for the 120s
@@ -1174,7 +1207,7 @@ async function fastPassedLoop(){
             const publishAt=Date.now();
             await upload('passed-v2/live.json',{
               updated:publishAt,origin:'server-journal',
-              coins:PASS_V2.latest(1000).filter(x=>x.zeroAt>publishAt)
+              coins:PASS_V2.latest(1000).filter(x=>x.schema===2?publishAt-x.firstSeenAt<5*60e3:x.zeroAt>publishAt)
             });
             FAST_PASS_PUBLISH_AT=publishAt;
           }
@@ -1227,7 +1260,7 @@ async function retireConfirmed(day,list,now){
 }
 async function exportObservationSummary(name,list,now){
   const contract=require(DIR+'/observation-contract.js'),{rowStream}=require(DIR+'/stream-json.js');
-  await upload(name,{schema:2,updated:now,scope:'admitted-latest-observations-only',coins:rowStream(function*(){for(const c of list){const admission=SOURCE?.get(c.a);if(admission)yield contract.projectSummary(c,{metadata:coinMetadata(c),admission});}})});
+  await upload(name,{schema:2,updated:now,scope:'admitted-latest-observations-only',coins:rowStream(function*(){for(const c of list){const admission=SOURCE?.get(c.a);if(admission)yield contract.projectSummary(c,{metadata:{...coinMetadata(c),...require(DIR+'/coin-profile.js').cardAt(c,now)},admission});}})});
 }
 let COLD_DEDUP_BUSY=false;
 async function deduplicateClosedArchiveRows(){if(COLD_DEDUP_BUSY||!COMPLETED||!SOURCE)return;COLD_DEDUP_BUSY=true;try{
@@ -1266,7 +1299,7 @@ async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayK
 let STATUS_BUSY=false;
 async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const now=Date.now(),today=dayKey(now);
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,coinProfiles:PROFILES?.stats||null,resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,publishedAt:FAST_PASS_PUBLISH_AT},
@@ -1306,6 +1339,9 @@ const STARTED=Date.now();
   try{await initSource();await reloadSourceAgeConfig()}catch(e){SOURCE_ERR=e.message;err('главный источник не запустился: '+e.message)}
   try{await initResearchV2()}catch(e){RESEARCH_V2_ERR=e.message;err('исследование v2 не запустилось: '+e.message)}
   try{await initPathsV2()}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('серверные пути не запустились: '+e.message)}
+  PROFILES=new (require(DIR+'/coin-profile.js').CoinProfiles)();
+  const updateProfiles=()=>PROFILES.update({coins:C,source:SOURCE,rpc:(m,p)=>rpc(m,p,{priority:'identity',context:'карточка',source:'coin-profile'})}).catch(e=>err('profiles '+e.message));
+  setInterval(updateProfiles,60000);updateProfiles();
   chainWatch();setInterval(()=>exportStatus().catch(e=>err('status '+e.message)),60000);exportStatus().catch(e=>err('status '+e.message));
   startDiscoveryBootstrap();
   setInterval(pollNew,90000);

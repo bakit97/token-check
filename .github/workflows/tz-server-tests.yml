@@ -1,0 +1,23 @@
+name: tz-server-tests
+on:
+  push:
+    branches: [feature/tz-20261019]
+  pull_request:
+    paths: ['server/**', 'tests/**', 'v2.js', 'deployment/**']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test tests/*.cjs
+      - run: node --test server/*.test.js
+      - run: |
+          python3 deployment/update-manifest.py
+          git diff --exit-code deployment/recovery-manifest.json
+          python3 deployment/build-recovery.py
+          python3 deployment/test-publish-runtime.py

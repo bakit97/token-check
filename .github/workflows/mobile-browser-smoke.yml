@@ -1,7 +1,7 @@
 name: mobile-browser-smoke
 on:
   push:
-    branches: ['feature/real-browser-mobile-tests-*', 'feature/serverside-passed-r2-20261017']
+    branches: ['main', 'feature/real-browser-mobile-tests-*', 'feature/serverside-passed-r2-20261017', 'feature/tz-20261019']
     paths:
       - 'tests/mobile.spec.js'
       - '.github/workflows/mobile-browser-smoke.yml'

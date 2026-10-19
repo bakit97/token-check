@@ -3,15 +3,18 @@
 // Price is observational; incomplete periods have no strong/weak label.
 const fs=require('node:fs');
 const path=require('node:path');
-const {strengthOutcome,capBank,evaluation,featuresAt}=require('./research-v2');
+const {strengthOutcome,capBank,evaluation,featuresAt,levelTwoFeaturesAt}=require('./research-v2');
 
 const MIN=60000,HOUR=60*MIN,FRESH=48*HOUR,RETRY=15*MIN;
 const MAX_PER_CLASS=5000,MAX_CHECKS=200;
 function configOf(raw={}){
-  const cfg={minAbove:raw.minAbove??70,minCoverage:raw.minCoverage??.9};
+  const cfg={minAbove:raw.minAbove??70,minCoverage:raw.minCoverage??.9,decisionMinutes:raw.decisionMinutes??5,targetStrong:raw.targetStrong??40,targetWeak:raw.targetWeak??40};
   if(typeof cfg.minAbove!=='number'||cfg.minAbove<0||cfg.minAbove>100||
      typeof cfg.minCoverage!=='number'||cfg.minCoverage<.5||cfg.minCoverage>1)
     throw RangeError('Invalid level-two research config');
+  if(!Number.isInteger(cfg.decisionMinutes)||cfg.decisionMinutes<1||cfg.decisionMinutes>15)throw RangeError('Invalid similarity time');
+  for(const k of ['targetStrong','targetWeak'])if(!Number.isInteger(cfg[k])||cfg[k]<10||cfg[k]>5000)throw RangeError('Invalid research target');
+  if(raw.phases){cfg.phases={};for(const phase of ['before','after'])cfg.phases[phase]=configOf({...cfg,...raw.phases[phase],phases:null})}
   return cfg;
 }
 function durableJSON(file,value){
@@ -20,8 +23,7 @@ function durableJSON(file,value){
   try{let n=0;while(n<buf.length)n+=fs.writeSync(fd,buf,n,buf.length-n);fs.fsyncSync(fd)}
   finally{fs.closeSync(fd)}
   fs.renameSync(temporary,file);
-  const d=fs.openSync(path.dirname(file),'r');
-  try{fs.fsyncSync(d)}finally{fs.closeSync(d)}
+  require('./durable-json').syncDirectory(path.dirname(file));
 }
 function packMinuteCurve(values){
   if(!Array.isArray(values)||values.length!==300)return null;
@@ -81,7 +83,7 @@ class ResearchTwoRuntime {
              (typeof row.minuteCurvePacked!=='string'||Buffer.from(row.minuteCurvePacked,'base64').length!==1200)))
           throw Error('Corrupted second-level research row');
       }
-      this.rows=capBank(data.rows,r=>r.label,'strong','weak',MAX_PER_CLASS);
+      this.rows=capPhases(data.rows);
       for(const pair of data.processed||[])
         if(Array.isArray(pair)&&typeof pair[0]==='string'&&Number.isSafeInteger(pair[1]))
           this.processed.set(pair[0],pair[1]);
@@ -103,8 +105,7 @@ class ResearchTwoRuntime {
       const fd=fs.openSync(this.journalFile,'r+');
       try{fs.ftruncateSync(fd,complete.length);fs.fsyncSync(fd)}
       finally{fs.closeSync(fd)}
-      const dirFd=fs.openSync(path.dirname(this.journalFile),'r');
-      try{fs.fsyncSync(dirFd)}finally{fs.closeSync(dirFd)}
+      require('./durable-json').syncDirectory(path.dirname(this.journalFile));
     }
     const additions=[];
     for(const line of complete.toString('utf8').split('\n')){
@@ -124,7 +125,7 @@ class ResearchTwoRuntime {
       additions.push(row);
     }
     if(additions.length)
-      this.rows=capBank(this.rows.concat(additions),r=>r.label,'strong','weak',MAX_PER_CLASS);
+      this.rows=capPhases(this.rows.concat(additions));
     this.journalCount=complete.toString('utf8').split('\n').length-1;
   }
   _appendJournal(rows){
@@ -176,7 +177,8 @@ class ResearchTwoRuntime {
         pending['candidate-missing']=(pending['candidate-missing']||0)+1;
         continue;
       }
-      const result=strengthOutcome(coin,pass.zeroAt,this.config,now);
+      const cfg=this.config.phases?.[pass.phase]||this.config;
+      const result=strengthOutcome(coin,pass.zeroAt,cfg,now);
       if(result.label==='pending'){
         this.retry.set(pass.mint,{at:now,zeroAt:pass.zeroAt,reason:result.why});
         pending[result.why]=(pending[result.why]||0)+1;
@@ -185,20 +187,21 @@ class ResearchTwoRuntime {
       this.retry.delete(pass.mint);
       // Level-two conditions and versions were frozen at first Passed.
       // Their metrics use only observations up to the fixed zeroAt.
-      const F=featuresAt(coin,pass.zeroAt,{eventAt:pass.eventAt,phase:pass.phase});
+      const featureAt=pass.acceptedAt+cfg.decisionMinutes*MIN;
+      const F=levelTwoFeaturesAt(coin,featureAt,{entryAt:pass.acceptedAt,acceptedAt:pass.acceptedAt,phase:pass.phase});
       const secondLevelMatches=(pass.secondLevelRules||[])
         .filter(f=>evaluation(F,f)==='pass').map(f=>({...f}));
       newRows.push({
         mint:pass.mint,phase:pass.phase,acceptedAt:pass.acceptedAt,
-        firstSeenAt:pass.firstSeenAt,zeroAt:pass.zeroAt,
+        firstSeenAt:pass.firstSeenAt,zeroAt:pass.zeroAt,decisionAt:featureAt,featureAnchor:'acceptedAt',featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,pass.acceptedAt,'2',pass.phase),sourceFilterRules:pass.matches.map(f=>({...f})),
         configHash:pass.configHash,sourceFilterVersions:pass.matches.map(f=>({
           id:f.id,version:f.version,level:f.level
         })),
         label:result.label,secondLevelMatches,
         pctAbove:result.pctAbove,covered:result.covered,
-        p0:result.p0,curve:result.curve,minuteCurvePacked:packMinuteCurve(result.minuteCurve),features:F,
+        p0:result.p0,curve:[[0,0],...result.curve],minuteCurvePacked:packMinuteCurve(result.minuteCurve),features:F,
         firstPassFeatures:{...pass.features},
-        threshold:this.config.minAbove,coverageThreshold:this.config.minCoverage,
+        threshold:cfg.minAbove,coverageThreshold:cfg.minCoverage,
         time:pass.zeroAt
       });
       // Processed is updated only after the complete batch is fsynced.
@@ -211,7 +214,7 @@ class ResearchTwoRuntime {
     if(added){
       this._appendJournal(newRows);
       for(const row of newRows)this.processed.set(row.mint,row.zeroAt);
-      this.rows=capBank(this.rows.concat(newRows),r=>r.label,'strong','weak',MAX_PER_CLASS);
+      this.rows=capPhases(this.rows.concat(newRows));
       this.journalCount+=newRows.length;
       // Persist expensive full snapshots rarely instead of writing several
       // megabytes every two-minute heartbeat.
@@ -254,9 +257,10 @@ class ResearchTwoRuntime {
   select({phase,label,limit=10000}={}){
     if(phase&&!['before','after'].includes(phase))throw TypeError('bad phase');
     if(label&&!['strong','weak'].includes(label))throw TypeError('bad label');
-    if(!Number.isInteger(limit)||limit<1||limit>10000)throw RangeError('bad limit');
+    if(!Number.isInteger(limit)||limit<1||limit>20000)throw RangeError('bad limit');
     return this.rows.filter(x=>(!phase||x.phase===phase)&&(!label||x.label===label))
       .sort((a,b)=>b.zeroAt-a.zeroAt).slice(0,limit);
   }
 }
+function capPhases(rows){return ['before','after'].flatMap(phase=>capBank(rows.filter(r=>r.phase===phase),r=>r.label,'strong','weak',MAX_PER_CLASS))}
 module.exports={ResearchTwoRuntime,configOf};

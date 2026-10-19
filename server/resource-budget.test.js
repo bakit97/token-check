@@ -15,14 +15,14 @@ test('rolling minute releases charges after sixty seconds; restart never erases 
  f.advance(59999);assert.throws(()=>restarted.reserveRPC('getTransaction','migration'),{code:'BUDGET_DEFERRED'});
  f.advance(1);restarted.reserveRPC('getTransaction','migration');
 });
-test('fresh proof retains ten calls and pools retain four, with headroom for pre WS inside eighteen',t=>{
+test('fresh proof retains ten calls and pools retain four, with headroom for pre WS inside seventeen',t=>{
  const f=fixture(t),b=new ResourceBudget(f);
  for(let i=0;i<4;i++)b.reserveRPC('getMultipleAccounts','pools');
  for(let i=0;i<10;i++)b.reserveRPC('getTransaction','migration');
  assert.throws(()=>b.reserveRPC('getAccountInfo','holders'),{code:'BUDGET_DEFERRED'});
  assert.throws(()=>b.reserveRPC('getTransaction','migration'),{code:'BUDGET_DEFERRED'});
  b.stream(140000,'pre');b.stream(1000,'migrations');
- assert.ok(b.summary().creditsMinute<=18);assert.equal(b.streamAllowed('migrations'),true);
+ assert.ok(b.summary().creditsMinute<=17);assert.equal(b.streamAllowed('migrations'),true);
 });
 test('two fresh signature and transaction proofs fit in one minute without blocking the pool reserve',t=>{
  const f=fixture(t),b=new ResourceBudget(f);
@@ -37,7 +37,7 @@ test('production pre has no RPC allocation; idle reserves remain available to or
 });
 test('only pre exceeding its own WS share pauses; migration subscriptions remain live',t=>{
  const f=fixture(t),b=new ResourceBudget(f);b.reserveRPC('getTransaction','migration');
- assert.equal(b.stream(140000,'pre'),true);assert.equal(b.stream(40000,'pre'),false);
+ assert.equal(b.stream(120000,'pre'),true);assert.equal(b.stream(40000,'pre'),false);
  assert.equal(b.streamAllowed('migrations'),true);b.stream(1000,'migrations');
  f.advance(60001);assert.equal(b.streamAllowed('pre'),true);
 });

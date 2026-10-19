@@ -3,7 +3,7 @@ const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypt
 const HOUR=3600000,dayOf=t=>new Date(t+5*HOUR).toISOString().slice(0,10);
 const hash=s=>crypto.createHash('sha256').update(s).digest('hex');
 const metrics=c=>({rawStates:Object.keys(c.raw||{}).length,dsRows:c.ds?.length||0,vaultRows:c.lq?.length||0});
-const identity=c=>({n:c.n,s:c.s,i:c.i,metrics:metrics(c),poolKeys:[...new Set([c.p,...(c.pools||[]),...(c.origs||[]).map(x=>x.p)].filter(Boolean))]});
+const identity=c=>({n:c.n,s:c.s,i:c.i,createdAt:c.createdAt||null,createdAtSource:c.createdAtSource||null,metrics:metrics(c),poolKeys:[...new Set([c.p,...(c.pools||[]),...(c.origs||[]).map(x=>x.p)].filter(Boolean))]});
 function syncDir(dir){if(process.platform==='win32')return;const fd=fs.openSync(dir,'r');try{fs.fsyncSync(fd)}finally{fs.closeSync(fd)}}
 function atomic(file,value){const tmp=file+'.tmp',fd=fs.openSync(tmp,'w');try{fs.writeFileSync(fd,JSON.stringify(value));fs.fsyncSync(fd)}finally{fs.closeSync(fd)}fs.renameSync(tmp,file);syncDir(path.dirname(file))}
 function writeAll(fd,buf){let n=0;while(n<buf.length)n+=fs.writeSync(fd,buf,n,buf.length-n)}
@@ -12,7 +12,7 @@ function researchPins({source,passes,one=[],two=[],now=Date.now()}={}){
  const first=one.filter(Boolean),second=two.filter(Boolean);
  for(const rt of first.length?first:[{}])for(const r of source?.records?.values()||[]){
   if(r.acceptedAt<(rt.cohortStart||0)||r.acceptedAt>=(rt.cohortEnd??Infinity)||rt.processed?.has(r.mint))continue;
-  pin(r.mint,r.acceptedAt+(rt.config?.hours??5)*HOUR+3*60000);
+  pin(r.mint,r.acceptedAt+(rt.config?.phases?.[r.phase]?.hours??rt.config?.hours??5)*HOUR+3*60000);
  }
  for(const rt of second.length?second:[{}])for(const r of passes?.records?.values()||[]){
   if(r.firstSeenAt<(rt.cohortStart||0)||r.firstSeenAt>=(rt.cohortEnd??Infinity)||rt.processed?.has(r.mint))continue;

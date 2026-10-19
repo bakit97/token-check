@@ -12,7 +12,7 @@ class ResourceBudget{
   constructor({dir,now=Date.now,env=process.env}={}){
     this.now=now;this.file=path.join(dir,'resource-budget.json');
     this.limit=1000000;this.perMinute=Math.min(20,Number(env.HELIUS_CREDITS_PER_MINUTE||20));
-    this.wsPerMB=20;this.target=Math.min(18,this.perMinute);this.migrationPending=true;this.poolsPending=true;
+    this.wsPerMB=20;this.target=Math.min(17,this.perMinute);this.migrationPending=true;this.poolsPending=true;
     const at=now();this.state={schema:1,used:Number(env.HELIUS_USED_CREDITS||174302),
       resetAt:Date.parse(env.HELIUS_RESET_AT||'2026-11-14T00:00:00Z'),
       baselineCredits:Number(env.HELIUS_USED_CREDITS||174302),since:at,buckets:[],gcsMonth:new Date(at).toISOString().slice(0,7),
@@ -56,7 +56,7 @@ class ResourceBudget{
   laneTotal(lane,window=60*MIN){this.trim();return this.state.buckets.filter(b=>b.at>this.now()-window).reduce((n,b)=>n+(b.lanes?.[lane]||0),0)}
   allow(cost,priority=0){const lane=this.lane(priority),m=this.totals(MIN),h=this.totals(60*MIN),rate=Math.min(this.target,this.rate());
     // Migration stream never disconnects. Leave metering headroom and a pool reserve.
-    const ceiling=Math.max(0,rate-Math.max(.5,3.5-m.ws)),total=m.rpc+m.ws;
+    const ceiling=Math.max(0,rate-Math.max(.5,Math.min(3.5,Math.max(.5,rate-14))-m.ws)),total=m.rpc+m.ws;
     const poolFloor=Math.min(4,ceiling*.3),proofFloor=Math.min(10,Math.max(0,ceiling-poolFloor-.5));
     const proofReserve=this.migrationPending?Math.max(0,proofFloor-this.laneTotal('migration',MIN)):0;
     const poolReserve=this.poolsPending?Math.max(0,poolFloor-this.laneTotal('pools',MIN)):0;

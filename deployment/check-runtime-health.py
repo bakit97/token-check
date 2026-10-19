@@ -3,7 +3,7 @@ import argparse,json,time,urllib.request
 def health(s,generation,now):
     age=now-s['updated']/1000;credits=s['resources']['helius']['creditsMinute'];memory=s['mem'];ws=s['ws']['connected'];state=s['retention']['stateBytes'];peak=s.get('memory',{}).get('rssPeakMB',memory)
     modules=all(s.get(k,{}).get('active') is True and not s.get(k,{}).get('error') and not s.get(k,{}).get('configError') for k in ['source','passedV2','researchV2','researchTwo'])
-    okay=str(s['version'])==generation and age<120 and memory<450 and peak<450 and state<45000000 and credits<=18 and ws.get('dbc') is True and ws.get('ll') is True and modules
+    okay=str(s['version'])==generation and age<120 and memory<450 and peak<450 and state<30000000 and credits<=17 and ws.get('dbc') is True and ws.get('ll') is True and modules
     return {'okay':okay,'version':s['version'],'ageSec':round(age),'memoryMB':memory,'peakMB':peak,'stateBytes':state,'creditsMinute':credits,'dbc':ws.get('dbc'),'launchLab':ws.get('ll'),'modulesReady':modules}
 def main():
     p=argparse.ArgumentParser();p.add_argument('--bucket',required=True);p.add_argument('--generation',required=True);p.add_argument('--tries',type=int,default=1);a=p.parse_args()
