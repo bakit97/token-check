@@ -104,7 +104,8 @@ function classifyActivity(m,cfg={}){
  // Reclassify old completed rows from their original minute observations too.
  let minutes=m.minutes;try{if(!minutes&&m.outcomePacked)minutes=JSON.parse(require('node:zlib').inflateSync(Buffer.from(m.outcomePacked,'base64'),{maxOutputLength:2000000}).toString())}catch{return {label:'unknown',why:'collector-gap'}}
  const end=m.windowEnd??minutes?.at(-1)?.[0],hour=(minutes||[]).filter(r=>r.length>=4&&r[0]>end-60*MIN&&r[0]<=end),observed=hour.filter(r=>r[1]===1),active=observed.filter(r=>r[2]===1).length;
- if(hour.length&&observed.length<Math.ceil(hour.length*(cfg.minCoverage??.8)))return {label:'unknown',why:'collector-gap'};
+ let hourGap=0;for(const r of hour){hourGap=r[1]===1?0:hourGap+1;if(hourGap>10)return {label:'unknown',why:'collector-gap'};}
+ if(hour.length&&!observed.length)return {label:'unknown',why:'collector-gap'};
  if(hour.length&&observed.length&&active===0&&observed.every(r=>r[2]===0))return {label:'dead',why:'last-hour-inactive'};
  // Activity minutes are an explicit fallback criterion, not an invented count
  // of trades or distinct wallets. Keep the original null metrics unchanged.

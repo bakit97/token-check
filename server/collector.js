@@ -1106,11 +1106,13 @@ async function exportSource(now) {
       proofSig:x.proof?.signature||null,uri:c?.uri||x.proof?.uri||null,migrationPool:x.proof?.pool||null,proofKind:x.proof?.kind||null,eventSlot:x.proof?.slot||null,eventTimeSource:x.proof?.timeSource||null};
   };
   const summary=SOURCE.summary(now);
+  const solReasons={};for(const x of SOURCE.latest(200)){const c=C.get(x.mint),card=require(DIR+'/coin-profile.js').cardAt(c,now);if(card.sol!=null)continue;const reason=!c?'missing-candidate':x.phase!=='before'?'post-no-native-vault':c.q&&c.q!==WSOL?'non-native-quote':!c.curveSol?.length?'curve-not-read':'curve-stale';solReasons[reason]=(solReasons[reason]||0)+1;}
+
   const today=SOURCE.day(d).map(enrich),live=SOURCE.latest(200).map(enrich),active=[...C.values()].filter(c=>SOURCE.has(c.a)).map(c=>require(DIR+'/coin-profile.js').cardAt(c,now)),coverage=rows=>({known:rows.filter(r=>r.sol!=null).length,total:rows.length,percent:rows.length?rows.filter(r=>r.sol!=null).length/rows.length*100:null,olderThan7Minutes:rows.filter(r=>r.sol!=null&&r.solAgeMs>7*60e3).length});if(PROFILES)PROFILES.stats.solCoverage={live:coverage(live),active:coverage(active),day:coverage(today)};
   // Нет задним числом добавленных кандидатов из обычной ленты.
   // Предмиграционный адаптер пока не активен: не выдавать пустоту за готовность.
   AI_SNAP.source=summary;
-  await upload('source/status.json',{...summary,solCoverage:PROFILES?.stats.solCoverage||null,cardUnits:{sol:'SOL',top10:'percent',b5:'transactions',s5:'transactions',createdAt:'unix-ms'},mode:'verified-pre-post',preConnected:preFlowing(),preLive:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:preFlowing()&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
+  await upload('source/status.json',{...summary,solCoverage:PROFILES?.stats.solCoverage||null,solMissingReasons:solReasons,cardUnits:{sol:'SOL',top10:'percent',b5:'transactions',s5:'transactions',createdAt:'unix-ms'},mode:'verified-pre-post',preConnected:preFlowing(),preLive:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:preFlowing()&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
   await upload('source/live.json',{updated:now,count:today.length,coins:live});
   if(now-SOURCE_DAY_PUBLISHED_AT>=5*60e3){await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});SOURCE_DAY_PUBLISHED_AT=now;}
 }
