@@ -321,7 +321,7 @@ function coinHtml(c,extra){
   var nm=c.n||c.s||'Токен',sy=c.s||'',name=esc(nm),symbol=sy&&sy.toLowerCase()!==nm.toLowerCase()?' <small>'+esc(sy)+'</small>':'';
   return '<button type="button" class="coin '+(e.phase==='before'?'pre':'post')+'" data-coin="'+esc(mint(c))+'">'+
     (img?'<img class="avatar" src="'+esc(img)+'" alt="" loading="lazy">':'<span class="avatar empty"'+(c._uri?' data-uri="'+esc(c._uri)+'"':'')+'>'+esc((sy||nm||'?').slice(0,2))+'</span>')+
-    '<span class="body"><span class="name">'+name+symbol+'</span><span class="detail">'+(e.phase==='before'?'🌱 ':'🎓 возраст ')+'<b class="ago sh" data-t="'+cardAgeAt(c)+'">'+agoShort(cardAgeAt(c))+'</b> · 👁 '+(e.acceptedAt&&e.eventAt?spd(e.acceptedAt-e.eventAt):'—')+'<span class="mline">'+(ml?' · '+mlHtml(ml):'')+'</span></span>'+
+    '<span class="body"><span class="name">'+name+symbol+'</span><span class="detail">'+(function(){var ag=cardAgeAt(c),pre=e.phase==='before';if(!pre&&!ag)return '🎓 миграция <b class="ago sh" data-t="'+(+e.eventAt||0)+'">'+agoShort(e.eventAt)+'</b>';return (pre?'🌱 ':'🎓 возраст ')+'<b class="ago sh" data-t="'+ag+'">'+agoShort(ag)+'</b>'})()+' · 👁 '+(e.acceptedAt&&e.eventAt?spd(e.acceptedAt-e.eventAt):'—')+'<span class="mline">'+(ml?' · '+mlHtml(ml):'')+'</span></span>'+
     (extra?'<span class="detail">'+(extra.charAt(0)==='<'?extra:esc(extra))+'</span>':'')+'</span><span class="right"><span class="price">'+price(L&&L.price||p&&p[1])+'</span><span class="growbox">'+growthHtml(c)+'</span><span class="sparkbox">'+spark(c)+'</span></span></button>';
 }
 function pc(v){return v==null||!Number.isFinite(+v)?'—':(v>0?'+':'')+Number(v).toFixed(Math.abs(v)>=10?0:1)+'%'}
@@ -330,8 +330,8 @@ function solInPool(c){if(Object.prototype.hasOwnProperty.call(c,'sol'))return Nu
 function topHold(c){if(Object.prototype.hasOwnProperty.call(c,'top10'))return Number.isFinite(c.top10)?{top10:c.top10/100,at:c.cardAt}:null;var best=null;Object.values(c.hold||{}).forEach(function(h){if(h&&!h.miss&&Number.isFinite(h.top10)&&(!best||h.at>best.at))best=h});return best}
 function detailStats(m){var c=DETAIL_COIN||{},L=cardMarket(c),sol=solInPool(c),h=topHold(c);
   var safe=typeof c.safeContract==='boolean'?c.safeContract:null;
-  var cells=[['Цена',price(L.price)],['MC',usd(L.mc)],['Ликв.',usd(L.liq)],
-    ['SOL в пуле',sol==null?'—':sol.toFixed(sol<10?2:0)],['Объём 5м',usd(L.v5)],['Пок/прод 5м',(L.b5==null?'—':L.b5)+'/'+(L.s5==null?'—':L.s5)],
+  var cells=[['Цена',price(L.price)],['Кап',usd(L.mc)],['Ликв.',usd(L.liq)],
+    ['SOL в пуле',sol==null?'—':sol.toFixed(sol<10?2:0)],['Объём 5м',usd(L.v5)],['Пок/прод 5м',(L.b5==null&&L.s5==null)?'—':'<b class="bu">'+(L.b5||0)+'↑</b> <b class="sl">'+(L.s5||0)+'↓</b>'],
     ['5м / 1ч',pc(L.ch5)+' / '+pc(L.ch1h)],['Топ-10',h?(h.top10*100).toFixed(0)+'%':'—'],['Контракт',safe==null?'—':safe?'<span class="good">чистый</span>':'<span class="bad">опасный</span>']];
   return cells.map(function(x){return '<div class="mini"><span>'+x[0]+'</span><b>'+x[1]+'</b></div>'}).join('')}
 function chartSrc(m){var L=LIVE[m]||{};return 'https://dexscreener.com/solana/'+(L.pair||m)+'?embed=1&loadChartSettings=0&trades=0&tabs=0&info=0&chartLeftToolbar=0&chartTheme=dark&theme=dark&chartStyle=1&chartType=usd&interval=1'}
@@ -375,10 +375,10 @@ async function loadTrades(){var d=document.getElementById('openCoinDetail');if(!
   try{var r=await fetch('https://api.geckoterminal.com/api/v2/networks/solana/pools/'+L.pair+'/trades',{headers:{accept:'application/json'}});
     if(!r.ok)throw Error('HTTP '+r.status);var j=await r.json(),rows=(j.data||[]).slice(0,100).map(function(x){return x.attributes||{}});
     var B=rows.filter(function(a){return a.kind==='buy'}),S=rows.filter(function(a){return a.kind!=='buy'}),sm=function(g){return g.reduce(function(t,a){return t+(+a.volume_in_usd||0)},0)},ts=document.getElementById('coinTradeSum');
-    if(ts)ts.innerHTML='<div class="tcol b"><b>▲ Покупки</b>'+B.length+' · '+usd(sm(B))+'</div><div class="tcol s"><b>▼ Продажи</b>'+S.length+' · '+usd(sm(S))+'</div>';
+    if(ts)ts.innerHTML='<p class="hint" style="grid-column:1/3;margin:0">за последние '+rows.length+' сделок</p><div class="tcol b"><b>▲ Покупки</b>'+B.length+' · '+usd(sm(B))+'</div><div class="tcol s"><b>▼ Продажи</b>'+S.length+' · '+usd(sm(S))+'</div>';
     if(!rows.length){box.innerHTML='<p class="hint">Сделок пока нет.</p>';return}
     box.innerHTML=rows.map(function(a){var buy=a.kind==='buy',ts=Date.parse(a.block_timestamp),w=String(a.tx_from_address||'');
-      return '<div class="tr '+(buy?'b':'s')+'"><span>'+(buy?'▲':'▼')+'</span><span>'+usd(+a.volume_in_usd)+'</span><span class="w">'+esc(w.slice(0,4)+'…'+w.slice(-3))+'</span><span class="ag">'+(ts?Math.max(0,Math.round((now()-ts)/1000))+'с':'')+'</span></div>'}).join('');TRADES_AT=now()}
+      return '<div class="tr '+(buy?'b':'s')+'"><span>'+(buy?'▲':'▼')+'</span><span>'+usd(+a.volume_in_usd)+'</span><span class="w">'+esc(w.slice(0,4)+'…'+w.slice(-3))+'</span><span class="ag">'+(ts?agoShort(ts):'')+'</span></div>'}).join('');TRADES_AT=now()}
   catch(e){box.innerHTML='<p class="hint">Сделки недоступны ('+esc(String(e.message||e))+')</p>'}}
 var DETAIL_COIN=null;
 function detail(c){
@@ -1441,6 +1441,7 @@ async function loadInternal(){
   var vals=fetched.map(function(q){return q.status==='fulfilled'?q.value:null});
   var errors=fetched.filter(function(q){return q.status==='rejected'});
   if(vals.slice(1,3).every(function(x){return !x})&&!vals[5]&&!vals[6]){
+    if(sourceActive&&lastAccepted.length){$('net').textContent='● Нет связи';$('net').className='live bad';return}
     // Previously rendered candidates must not remain active when the
     // authoritative source is unavailable on a later refresh.
     sourceActive=false;sourceMeta=null;sourceRecords=[];
