@@ -321,7 +321,7 @@ function coinHtml(c,extra){
   var nm=c.n||c.s||'Токен',sy=c.s||'',name=esc(nm),symbol=sy&&sy.toLowerCase()!==nm.toLowerCase()?' <small>'+esc(sy)+'</small>':'';
   return '<button type="button" class="coin '+(e.phase==='before'?'pre':'post')+'" data-coin="'+esc(mint(c))+'">'+
     (img?'<img class="avatar" src="'+esc(img)+'" alt="" loading="lazy">':'<span class="avatar empty"'+(c._uri?' data-uri="'+esc(c._uri)+'"':'')+'>'+esc((sy||nm||'?').slice(0,2))+'</span>')+
-    '<span class="body"><span class="name">'+name+symbol+'</span><span class="detail">'+(e.phase==='before'?'🌱 ':'🎓 возраст ')+'<b class="ago sh" data-t="'+cardAgeAt(c)+'">'+agoShort(cardAgeAt(c))+'</b> · 👁 '+(e.acceptedAt&&e.eventAt?spd(e.acceptedAt-e.eventAt):'—')+'<span class="mline">'+(ml?' · '+esc(ml):'')+'</span></span>'+
+    '<span class="body"><span class="name">'+name+symbol+'</span><span class="detail">'+(e.phase==='before'?'🌱 ':'🎓 возраст ')+'<b class="ago sh" data-t="'+cardAgeAt(c)+'">'+agoShort(cardAgeAt(c))+'</b> · 👁 '+(e.acceptedAt&&e.eventAt?spd(e.acceptedAt-e.eventAt):'—')+'<span class="mline">'+(ml?' · '+mlHtml(ml):'')+'</span></span>'+
     (extra?'<span class="detail">'+(extra.charAt(0)==='<'?extra:esc(extra))+'</span>':'')+'</span><span class="right"><span class="price">'+price(L&&L.price||p&&p[1])+'</span><span class="growbox">'+growthHtml(c)+'</span><span class="sparkbox">'+spark(c)+'</span></span></button>';
 }
 function pc(v){return v==null||!Number.isFinite(+v)?'—':(v>0?'+':'')+Number(v).toFixed(Math.abs(v)>=10?0:1)+'%'}
