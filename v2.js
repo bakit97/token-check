@@ -738,6 +738,8 @@ function renderR1(){
     var isLive=function(x){if(x.label)return x.label==='live';var c=onePhaseSettings(researchMeta.settings,r1Phase(x));return x.activity>=c.minActive&&x.idle<=c.maxIdle},cs1=+(researchMeta&&researchMeta.cohortStart)||0,all=bank['1'].filter(function(x){return R1P==='all'||r1Phase(x)===R1P});
     if(R1P!=='all'){a=all.filter(isLive).length;b=all.filter(function(x){return x.label==='dead'}).length;$('r1Live').textContent=fmt(a);$('r1Dead').textContent=fmt(b);$('r1ResSum').textContent=$('r1ResSum').textContent.replace(/^🟢 \d+/,'🟢 '+a).replace(/🔴 \d+/,'🔴 '+b)}
     $('r1AllN').textContent=fmt(all.length);$('r1Wait').textContent=R1P==='all'?fmt(all.filter(function(x){return x.label==='pending'}).length):fmt(all.filter(function(x){return x.label==='pending'}).length);
+    if($('r1Unknown'))$('r1Unknown').textContent=fmt(all.filter(function(x){return x.label==='unknown'}).length);
+    var dist=researchMeta.distributions,de=$('r1Distributions');if(de){var hist=function(h){return h.bins.map(function(b){return b.from+'…'+(b.to==null?'∞':b.to)+': '+b.count}).join(' / ')+' · неизвестно '+h.unknown;};de.textContent=dist?(R1P==='all'?['before','after']:[R1P]).map(function(ph){var dp=dist[ph];return dp?(ph==='before'?'До':'После')+' · завершено '+dp.completed+' · активность %: '+hist(dp.activePct)+' · простой мин: '+hist(dp.maxIdleObserved)+' · изменение цены %: '+hist(dp.priceChangePct)+' · разные покупатели: '+hist(dp.uniqueBuyers)+' · нижних границ '+dp.lowerBounds:''}).join(' | '):'';}
     $('r1Sum').textContent=cfg.hours+' ч · '+cfg.minActive+'% · '+cfg.maxIdle+' мин';
     var sel=all.filter(function(x){return R1F==='all'||x.label===R1F}).slice(-R1N).reverse();
     $('r1Rows').innerHTML=sel.length?sel.map(function(x){var lv=isLive(x),c=lastAccepted.find(function(d){return mint(d)===x.mint}),bd='<span class="badge '+(x.label==='live'?'good':x.label==='dead'?'bad':'')+'" title="'+esc(x.why||'')+'">'+({live:'🟢',dead:'🔴',pending:'⏳',unknown:'❓'}[x.label]||'❓')+'</span>';
@@ -746,7 +748,7 @@ function renderR1(){
   }
   const provisionalLive=lastR1.filter(function(x){return x.result.label==='live'}).length;
   const provisionalDead=lastR1.filter(function(x){return x.result.label==='dead'}).length;
-  $('r1Live').textContent='—';$('r1Dead').textContent='—';
+  $('r1Live').textContent='—';$('r1Dead').textContent='—';if($('r1Unknown'))$('r1Unknown').textContent='—';$('r1Wait').textContent='—';$('r1AllN').textContent='—';if($('r1Distributions'))$('r1Distributions').textContent='';
   $('r1Meter').style.width='0%';
   $('r1Auto').textContent='⛔ Авторитетная серверная разметка сейчас недоступна. '+
     'Локальные предварительные оценки (живых '+fmt(provisionalLive)+
