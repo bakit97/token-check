@@ -125,7 +125,7 @@
 <div class="prow"><label for="r1TL">Нужно 🟢 живых <b id="r1TLv">100</b></label><input id="r1TL" type="range" min="20" max="500" step="10" value="100"></div>
 <div class="prow"><label for="r1TD">Нужно 🔴 мёртвых <b id="r1TDv">40</b></label><input id="r1TD" type="range" min="10" max="300" step="10" value="40"></div>
 <div class="prow"><label for="r1Dec">Время поиска сходства <b id="r1DecV">15 мин</b> от обнаружения</label><input id="r1Dec" type="range" min="2" max="15" step="1" value="15"></div>
-<div class="row applyrow hide" id="r1ResApplyRow"><button type="button" class="primary pbtn" id="r1ResApply" style="margin-left:auto">Применить</button></div></details>
+<div class="row applyrow hide" id="r1ResApplyRow"><button type="button" class="primary pbtn" id="r1ResApply" style="margin-left:auto">Применить</button></div><p class="hint" id="r1ResMsg" style="margin:4px 0 0"></p></details>
 <div class="meter" style="margin:8px 0"><div id="r1Meter" style="width:0"></div></div>
 <div id="r1Suggestions"></div>
 <div hidden><button id="applyR1"></button><input id="ownerResearchOneKey" class="ownerkey"><input id="confirmResearchOne" type="checkbox" checked><div id="r1Auto"></div></div>
@@ -144,7 +144,7 @@
 <div class="prow"><label for="r2TL">Нужно 🟢 сильных <b id="r2TLv">40</b></label><input id="r2TL" type="range" min="10" max="300" step="10" value="40"></div>
 <div class="prow"><label for="r2TD">Нужно 🔴 слабых <b id="r2TDv">40</b></label><input id="r2TD" type="range" min="10" max="300" step="10" value="40"></div>
 <div class="prow"><label for="r2Dec">Время поиска сходства <b id="r2DecV">5 мин</b> от обнаружения</label><input id="r2Dec" type="range" min="1" max="15" step="1" value="5"></div>
-<div class="row applyrow hide" id="r2ResApplyRow"><button type="button" class="primary pbtn" id="r2ResApply" style="margin-left:auto">Применить</button></div></details>
+<div class="row applyrow hide" id="r2ResApplyRow"><button type="button" class="primary pbtn" id="r2ResApply" style="margin-left:auto">Применить</button></div><p class="hint" id="r2ResMsg" style="margin:4px 0 0"></p></details>
 <div id="r2Suggestions"></div>
 <div hidden>
 <h1>Исследование 2-го уровня</h1><p class="muted">Источник: «Прошли». Одна общая кривая, точка 0 — окончание таймера решения, следующие 300 минут — только для оценки результата.</p>
@@ -198,6 +198,6 @@
 
 </main>
 <script src="./server/observation-contract.js?v=20261018-admission-3" defer></script>
-<script src="./v2.js?v=20261019-del-1" defer></script>
+<script src="./v2.js?v=20261019-apply-1" defer></script>
 <noscript>Текстовая сводка для ИИ: https://storage.googleapis.com/sol-scan-511718-data/ai/summary.md (JSON: ai/summary.json)</noscript>
 </body></html>

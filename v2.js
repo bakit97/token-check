@@ -1058,7 +1058,8 @@ function validControlEndpoint(value){
 async function publishResearchLevel(level){
   const one=level==='1',keyField=one?'ownerResearchOneKey':'ownerResearchTwoKey';
   const checkField=one?'confirmResearchOne':'confirmResearchTwo';
-  const statusField=one?'researchOneControlState':'researchTwoControlState';
+  const statusField=one?'researchOneControlState':'researchTwoControlState',msgEl=document.getElementById(one?'r1ResMsg':'r2ResMsg'),btnEl=document.getElementById(one?'r1ResApply':'r2ResApply');
+  const say=function(t){$(statusField).textContent=t;if(msgEl)msgEl.textContent=t};
   const buttonField=one?'publishResearchOne':'publishResearchTwo';
   const endpoint=one?'/api/research-one':'/api/research-two';
   const current=one?researchMeta:twoMeta;
@@ -1089,7 +1090,7 @@ async function publishResearchLevel(level){
   if(one){var base=JSON.parse(JSON.stringify(researchMeta.settings)),phases=base.phases||{before:Object.assign({},base),after:Object.assign({},base)};var update=cfg;['before','after'].forEach(function(phase){if(R1P==='all'||R1P===phase)phases[phase]=Object.assign({},phases[phase],update);delete phases[phase].phases});cfg=Object.assign({},base,{phases:phases})}
   if(!one){var base2=JSON.parse(JSON.stringify(twoMeta.settings));delete base2.hours;var phases2=base2.phases||{before:Object.assign({},base2),after:Object.assign({},base2)},update2=cfg;['before','after'].forEach(function(phase){if(s.r2Stream==='all'||s.r2Stream===phase)phases2[phase]=Object.assign({},phases2[phase],update2);delete phases2[phase].phases});cfg=Object.assign({},base2,{phases:phases2})}
   $(buttonField).disabled=true;
-  $(statusField).textContent='Отправка серверной версии…';
+  say('Отправка…');if(btnEl){btnEl.disabled=true;btnEl.textContent='Отправка…'}
   const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
   try{
     const r=await ownerFetch(controlEndpoint+endpoint,{
@@ -1098,16 +1099,14 @@ async function publishResearchLevel(level){
       body:JSON.stringify(cfg)
     });
     if(!r.ok){
-      $(statusField).textContent='Сервер отклонил изменения. HTTP '+r.status;
-      note(r.status===401?'Ключ владельца не принят':'Публикация не удалась: '+r.status);
+      say(r.status===429?'Слишком часто. Подожди минуту и нажми ещё раз.':r.status===401?'Ключ не принят':'Сервер отклонил: HTTP '+r.status);
       return;
     }
     $(keyField).value='';$(checkField).checked=false;
-    $(statusField).textContent='✓ Принято, сервер применит через 2–3 мин';
-    note('Сервер переключится на новые правила без переписывания старой истории.');
+    say('✓ Сохранено. Сервер применит через 2–3 мин.');
   }catch(e){
-    $(statusField).textContent='Ошибка связи: '+String(e.message||e);
-  }finally{
+    say('Ошибка связи: '+String(e.message||e));
+  }finally{if(btnEl){btnEl.disabled=false;btnEl.textContent='Применить'}
     clearTimeout(timer);$(buttonField).disabled=!controlEndpoint||!current;
   }
 }
