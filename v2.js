@@ -1245,7 +1245,7 @@ function stageAutoRule(e){
   var btn=e.target.closest('[data-stage-auto]');if(!btn)return;
   var parts=btn.dataset.stageAuto.split(':'),level=parts[0],report=level==='1'?autoOne:autoTwo,item=report&&report.rules&&report.rules[Number(parts[1])];
   if(!item||!item.rule){note('Нет серверного модуля');return}
-  var r=item.rule,conds=r.conds||[r].concat(r.conditions||[]),keys=['isFirstOfName','cloneCount','cloneRank','buyers','trades','volume','liq','mc','buys','sells','buySellRatio','buyers10','safeContract','quoteSol','top1','top10','token2022','hasImage','hasDescription','sellShare','averageTrade','chg1m','chg3m','chg5m','fromPeak','drawdown','buyerAccel','volAccel','bigBuyShare','repeatBuys','avgBuy','sellShare1m','bigHolderSell','devSold','top10Drift','holderGrowth','poolGrowth','toMigration','ageMin','hourOfDay','solTrend','launchRate'];
+  var r=item.rule,conds=r.conds||[r].concat(r.conditions||[]),keys=Object.keys(MLAB).concat(Object.keys(MLAB2));
   if(!conds.length||conds.length>8||conds.some(function(c){return !keys.includes(c.key)||!['>=','<=','between'].includes(c.op)||!Number.isFinite(c.value)||c.value < -1e12||(c.op==='between'&&(!Number.isFinite(c.value2)||c.value2<c.value))})){note('Неподдерживаемые условия модуля');return}
   var d=draft();if(!d){note('Нет данных сервера');return}
   var phase=item.phase||r.phase;if(!['before','after'].includes(phase)){note('У модуля не указан поток');return}
@@ -1514,10 +1514,11 @@ async function loadInternal(){
   if(!vals[10]||vals[10].status!=='observational'||!Number.isFinite(vals[10].updated)||now()-vals[10].updated>7*60000){
     researchMeta=null;researchServerBank=false;bank['1']=[];
   }
-  if(researchMeta&&vals[11]&&vals[11].epochStart===researchMeta.cohortStart&&
-     Array.isArray(vals[11].coins)&&vals[11].counts){
-    if(vals[11].snapshotUpdated){researchMeta=Object.assign({},researchMeta,{counts:vals[11].counts,byPhase:vals[11].byPhase||researchMeta.byPhase});}
-    const sourceRows=vals[11].coins.filter(function(x){
+  const onePopulation=researchMeta&&Array.isArray(researchMeta.population)?{coins:researchMeta.population,counts:researchMeta.counts,byPhase:researchMeta.byPhase,epochStart:researchMeta.cohortStart,snapshotUpdated:researchMeta.updated}:vals[11];
+  if(researchMeta&&onePopulation&&onePopulation.epochStart===researchMeta.cohortStart&&
+     Array.isArray(onePopulation.coins)&&onePopulation.counts){
+    if(onePopulation.snapshotUpdated){researchMeta=Object.assign({},researchMeta,{counts:onePopulation.counts,byPhase:onePopulation.byPhase||researchMeta.byPhase});}
+    const sourceRows=onePopulation.coins.filter(function(x){
       return x.mint&&['live','dead','pending','unknown'].includes(x.label)&&x.features;
     });
     bank['1']=sourceRows.map(function(x){

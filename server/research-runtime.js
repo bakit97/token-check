@@ -108,7 +108,7 @@ class ResearchRuntime {
       if(state.schema!==1||!Array.isArray(state.rows))throw Error('Unknown stored research format');
       for(const r of state.rows){
         if(typeof r.mint!=='string'||!Number.isSafeInteger(r.acceptedAt)||
-           !Number.isFinite(r.activePct)||!Number.isFinite(r.maxIdleObserved)||
+           (r.activePct!=null&&!Number.isFinite(r.activePct))||(r.maxIdleObserved!=null&&!Number.isFinite(r.maxIdleObserved))||
            !r.features||typeof r.features!=='object')
           throw Error('Malformed saved research sample');
       }

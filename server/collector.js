@@ -119,7 +119,7 @@ async function ctCheck(c){
   const mi=await rpc('getAccountInfo',[c.a,{encoding:'jsonParsed'}]);const v=mi?.value;if(!v)throw new Error('токен не найден');
   const ct=ctFromMint(v);
   ct.at=Date.now();c.ct=ct; // A deferred optional metadata read must not discard verified mint rights.
-  if(ct.metaMut==null)try{const mv=(await rpc('getAccountInfo',[await metadataOf(c.a),{encoding:'base64'}]))?.value;if(mv?.owner===META){const bytes=b64(mv.data?.[0]);ct.metaMut=metaMutable(bytes);const meta=require(DIR+'/coin-profile.js').parseMetadata(bytes);if(meta.uri)c.uri=meta.uri}}catch(e){c.metadataReason=e.code==='BUDGET_DEFERRED'?'budget-deferred':'metadata-unavailable'}
+  if(ct.metaMut==null)try{const mv=(await rpc('getAccountInfo',[await metadataOf(c.a),{encoding:'base64'}]))?.value;if(mv?.owner===META){const bytes=b64(mv.data?.[0]);ct.metaMut=metaMutable(bytes);ct.metaMutAt=Date.now();const meta=require(DIR+'/coin-profile.js').parseMetadata(bytes);if(meta.uri)c.uri=meta.uri}}catch(e){c.metadataReason=e.code==='BUDGET_DEFERRED'?'budget-deferred':'metadata-unavailable'}
 }
 // разбор mint-аккаунта (jsonParsed) без запросов — общий для одиночной и пакетной проверки
 function ctFromMint(v){
@@ -130,7 +130,7 @@ function ctFromMint(v){
     if(e.extension==='transferFeeConfig')ct.fee=Math.max(+(s.newerTransferFee?.transferFeeBasisPoints||0),+(s.olderTransferFee?.transferFeeBasisPoints||0))/100;
     if(e.extension==='transferHook'&&s.programId)ct.hook=true;if(e.extension==='permanentDelegate'&&s.delegate)ct.deleg=true;
     if(e.extension==='nonTransferable')ct.nontr=true;if(e.extension==='defaultAccountState'&&/frozen/i.test(s.accountState||''))ct.defFrozen=true;
-    if(/pausable/i.test(e.extension))ct.pause=true;if(e.extension==='tokenMetadata')ct.metaMut=!!s.updateAuthority});
+    if(/pausable/i.test(e.extension))ct.pause=true;if(e.extension==='tokenMetadata'){ct.metaMut=!!s.updateAuthority;ct.metaMutFromMint=true;}});
   ct.feeAuthority=(info.extensions||[]).some(e=>e.extension==='transferFeeConfig'&&!!e.state?.transferFeeConfigAuthority);
   const benign=new Set(['transferFeeConfig','transferHook','permanentDelegate','nonTransferable','defaultAccountState','pausableConfig','pausable','tokenMetadata','metadataPointer','groupPointer','groupMemberPointer','tokenGroup','tokenGroupMember']);
   ct.unknownExtensions=(info.extensions||[]).filter(e=>!benign.has(e.extension)).map(e=>e.extension);ct.safetyVersion=1;
@@ -707,6 +707,7 @@ function dsTokenInfo(c,arr,at){if(!arr.length)return;
   if(!c.n&&arr[0].baseToken){c.nameObservedAt=at;c.n=(arr[0].baseToken.name||'').slice(0,40);c.s=(arr[0].baseToken.symbol||'').slice(0,16)}
   const cv=arr.filter(p=>isCurve(p.dexId)||/dbc|launch/i.test(p.dexId||'')).map(p=>p.pairCreatedAt).filter(Boolean);
   const all=arr.map(p=>p.pairCreatedAt).filter(Boolean);const born=Math.min(...(cv.length?cv:all));if(isFinite(born)&&born<c.t-60e3){const nt=Math.min(c.tk||Infinity,born);if(nt!==c.tk){c.tk=nt;c.tkAt=at}}
+  const info=arr[0].info;if(info){const social=info.socials;c.socialFeatures={at,hasTwitter:Array.isArray(social)?social.some(s=>/^(twitter|x)$/i.test(s.type||'')):null,hasTelegram:Array.isArray(social)?social.some(s=>/telegram/i.test(s.type||'')):null,hasWebsite:Array.isArray(info.websites)?info.websites.some(s=>!!s.url):null};if(info.imageUrl&&!c.i)c.imageObservedAt=at;}
   c.soc=Math.max(c.soc||0,(arr[0].info?.socials||[]).length+(arr[0].info?.websites||[]).length);if(!c.i&&arr[0].info?.imageUrl)c.i=arr[0].info.imageUrl}
 async function pollDS(){const now=Date.now(),pins=collectionPins(now);
   const need=[...C.values()].filter(c=>collectionActive(c,now,pins)&&dsDue(c,now));
@@ -1099,12 +1100,13 @@ async function exportResearchV2(now) {
   RESEARCH_BANKS?.relabelOne(RESEARCH_V2.config);
   RESEARCH_BANKS?.upsert(RESEARCH_V2.select({limit:20000}));
   AI_SNAP.r1=result;
-  await upload('research-v2/status.json',result);
+  const population=RESEARCH_V2.view().map(r=>({mint:r.mint,phase:r.phase,acceptedAt:r.acceptedAt,label:r.label,why:r.why||null,activePct:r.activePct??null,maxIdleObserved:r.maxIdleObserved??null,features:r.features||{}}));
+  await upload('research-v2/status.json',{...result,snapshotId:String(now),population});
   const debug={epochStart:result.cohortStart,selection:'sha256-order-independent-sample',coins:RESEARCH_V2.debugSample(20,{coins:researchCoins(),now})},debugSig=JSON.stringify(debug);if(debugSig!==RESEARCH_DEBUG_SIG){await upload('research-v2/debug-sample.json',{updated:now,...debug});RESEARCH_DEBUG_SIG=debugSig;}
   {
     await upload('research-v2/polygon-1.json',{
       updated:now,epochStart:result.cohortStart,settings:result.settings,counts:result.counts,
-      coins:RESEARCH_V2.view(),byPhase:result.byPhase,snapshotUpdated:now,
+      coins:population,byPhase:result.byPhase,snapshotId:String(now),snapshotUpdated:now,
       note:'Observed classifications only; no buy/sell signals'
     });
     RESEARCH_BANK_UPLOADED=now;

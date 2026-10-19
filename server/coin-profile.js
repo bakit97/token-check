@@ -24,7 +24,7 @@ async function metadataImage(uri,{fetch:read=globalThis.fetch}={}){
  try{const r=await read(url,{redirect:'error',signal:control.signal,headers:{accept:'application/json'}});
   if(!r.ok)throw Error('metadata-http');if(Number(r.headers?.get('content-length'))>262144)throw Error('metadata-too-large');
   let bytes=0;const chunks=[];for await(const b of r.body){bytes+=b.length;if(bytes>262144){control.abort();throw Error('metadata-too-large')}chunks.push(Buffer.from(b))}
-  const data=JSON.parse(Buffer.concat(chunks).toString('utf8'));return {image:imageUrl(data.image),description:typeof data.description==='string'?data.description.slice(0,4096):null};
+  const data=JSON.parse(Buffer.concat(chunks).toString('utf8'));const link=(raw,hosts)=>{const u=imageUrl(raw);if(!u)return false;return !hosts||hosts.includes(new URL(u).hostname.replace(/^www\./,''));};const social={at:Date.now(),hasTwitter:link(data.twitter||data.extensions?.twitter,['twitter.com','x.com']),hasTelegram:link(data.telegram||data.extensions?.telegram,['t.me','telegram.me','telegram.org']),hasWebsite:link(data.website||data.extensions?.website)};return {social,image:imageUrl(data.image),description:typeof data.description==='string'?data.description.slice(0,4096):null};
  }finally{clearTimeout(timer)}
 }
 function parseMetadata(bytes){const b=Buffer.from(bytes);let pos=65;const values=[];
@@ -56,7 +56,7 @@ class CoinProfiles{
   try{const rows=[...coins.values()].filter(c=>{const a=source?.get(c.a);return a&&now-a.acceptedAt<2*3600000});
    for(const c of rows)if(!c.createdAt&&Number.isSafeInteger(c.preTradingAt)){c.createdAt=c.preTradingAt;c.createdAtObservedAt=source.get(c.a)?.acceptedAt||now;c.createdAtSource='verified-create-log-slot-time'}
    const needs=rows.filter(c=>!c.i&&now-(c.profileAttemptAt||0)>10*MIN&& (c.uri||c.ct?.uri||source.get(c.a)?.proof?.uri)).sort((a,b)=>source.get(b.a).acceptedAt-source.get(a.a).acceptedAt).slice(0,4);
-   for(const c of needs){c.profileAttemptAt=now;try{const m=await metadataImage(c.uri||c.ct?.uri||source.get(c.a).proof.uri,{fetch});if(!m.reason)c.metadataAt=Date.now();if(m.image){c.i=m.image;c.profileAt=Date.now();this.stats.images++}if(m.description!=null)c.description=m.description;c.profileReason=m.reason||null}catch{c.profileReason='metadata-unavailable';this.stats.errors++}}
+   for(const c of needs){c.profileAttemptAt=now;try{const m=await metadataImage(c.uri||c.ct?.uri||source.get(c.a).proof.uri,{fetch});if(!m.reason){c.metadataAt=Date.now();c.socialFeatures=m.social;}if(m.image){c.i=m.image;c.profileAt=Date.now();this.stats.images++}if(m.description!=null)c.description=m.description;c.profileReason=m.reason||null}catch{c.profileReason='metadata-unavailable';this.stats.errors++}}
    const c=rows.filter(c=>source.get(c.a).phase==='after'&&!c.createdAt&&now-(c.creationAttemptAt||0)>60*MIN).sort((a,b)=>source.get(b.a).acceptedAt-source.get(a.a).acceptedAt)[0];
    if(c){try{const result=await findCreation(c,rpc,now);c.creationAttemptAt=result.reason==='history-page-pending'?now-59*MIN:now;c.creationReason=result.reason||null;if(result.createdAt){c.createdAt=result.createdAt;c.createdAtObservedAt=Date.now();c.createdAtSource=result.source;c.creationSignature=result.signature;delete c.creationCandidate;this.stats.created++}else this.stats.unknown++}catch(e){if(e.code==='BUDGET_DEFERRED')this.stats.deferred++;else{c.creationAttemptAt=now;c.creationReason='creation-unavailable';this.stats.errors++}}}
   }finally{this.busy=false}

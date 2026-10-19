@@ -12,7 +12,7 @@ function syncDirectory(dir){
   let fd;try{fd=fs.openSync(dir,'r');fs.fsyncSync(fd)}catch(e){if(process.platform!=='win32'||!['EPERM','EISDIR','EACCES'].includes(e.code))throw e}finally{if(fd!=null)fs.closeSync(fd)}
 }
 function kzDay(at){return new Date(at+TZ).toISOString().slice(0,10)}
-const KEYS=new Set(['isFirstOfName','cloneCount','cloneRank',...require('./research-v2').LEVEL2_KEYS,'buyers','trades','volume','liq','mc','buys','sells','buySellRatio','buyers10','safeContract','quoteSol','top1','top10','token2022','hasImage','hasDescription','sellShare','averageTrade']);
+const KEYS=new Set(require('./research-v2').RULE_KEYS);
 const PHASES=new Set(['before','after']);
 
 function configOf(raw={}){

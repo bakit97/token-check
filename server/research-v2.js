@@ -5,7 +5,8 @@
 const MIN=60_000, FIVE=5*MIN;
 const KEYS=['buyers','trades','volume','liq','mc','buys','sells','buySellRatio'];
 const LEVEL2_KEYS=['chg1m','chg3m','chg5m','fromPeak','drawdown','buyerAccel','volAccel','bigBuyShare','repeatBuys','avgBuy','sellShare1m','bigHolderSell','devSold','top10Drift','holderGrowth','poolGrowth','toMigration','ageMin','hourOfDay','solTrend','launchRate'];
-const RULE_KEYS=['isFirstOfName','cloneCount','cloneRank',...KEYS,'buyers10','quoteSol','safeContract','top1','top10','token2022','hasImage','hasDescription','sellShare','averageTrade',...LEVEL2_KEYS];
+const LEVEL1_KEYS=["safeContract", "mintRevoked", "freezeRevoked", "metaImmutable", "token2022", "t22Safe", "lpBurned", "devBuySol", "devHoldPct", "devHold", "devSold", "devLaunches", "devRugShare", "sniperShare", "bundleShare", "bundledWallets", "top1", "top10", "holders", "holderGrowth", "buyers10", "buyers", "uniqBuyersPerMin", "botShare", "smartBuyers", "smartShare", "trades", "tradesPerMin", "buys", "sells", "buySellRatio", "sellShare", "averageTrade", "volume", "quoteSol", "poolGrowth", "mc", "hasImage", "hasDescription", "hasTwitter", "hasTelegram", "hasWebsite", "isFirstOfName", "cloneCount", "cloneRank"];
+const RULE_KEYS=[...new Set([...KEYS,...LEVEL1_KEYS,...LEVEL2_KEYS])];
 const inRange=(x,a,b)=>Number.isFinite(x)&&x>=a&&x<=b;
 function samples(coin) {
   const src=[coin?.preObs,...(coin?.origs||[]),coin].filter(Boolean);
@@ -54,9 +55,9 @@ function featuresAt(coin,decisionAt,context={}){
     buySellRatio:finite(ratio)};
   const ct=coin?.ct,metaAt=coin?.metadataAt,discovery=coin?.discoveryFeatures;
   const clone=discovery&&discovery.at<=decisionAt?{isFirstOfName:discovery.isFirstOfName,cloneCount:discovery.cloneCount,cloneRank:discovery.cloneRank,...(discovery.cloneCountLowerBound?{lowerBoundKeys:['cloneCount','cloneRank']}:{})}:{isFirstOfName:null,cloneCount:null,cloneRank:null};
-  return {...F,...clone,...starterFeaturesAt(coin,decisionAt,context),
+  return {...Object.fromEntries(RULE_KEYS.map(k=>[k,null])),...extendedFeaturesAt(coin,decisionAt,context,F),...F,...clone,...starterFeaturesAt(coin,decisionAt,context),
     token2022:ct&&ct.at<=decisionAt&&['token','token2022'].includes(ct.prog)?(ct.prog==='token2022'?1:0):null,
-    hasImage:Number.isFinite(metaAt)&&metaAt<=decisionAt?(coin.img||coin.i?1:0):null,
+    hasImage:Number.isFinite(metaAt)&&metaAt<=decisionAt?(coin.img||coin.i?1:0):Number.isFinite(coin?.imageObservedAt)&&coin.imageObservedAt<=decisionAt&&(coin.img||coin.i)?1:null,
     hasDescription:Number.isFinite(metaAt)&&metaAt<=decisionAt?(coin.description?1:0):null,
     sellShare:buys!=null&&sells!=null&&buys+sells>0?sells/(buys+sells)*100:null,
     averageTrade:buys!=null&&sells!=null&&buys+sells>0&&F.volume!=null?F.volume/(buys+sells):null};
@@ -105,6 +106,19 @@ function classifyActivity(m,cfg={}){
  const failed=tests.find(([k,v,n])=>v!=null&&v<n&&!m.lowerBounds?.includes(k));if(failed)return {label:'dead',why:failed[0]};
  const missing=tests.find(([k,v,n])=>n>0&&(v==null||(m.lowerBounds?.includes(k)&&v<n)));return missing?{label:'unknown',why:'unobserved-'+missing[0]}:{label:'live',why:null};
 }
+function extendedFeaturesAt(coin,t,context,F){
+ const out={},ct=coin?.ct,known=ct?.at<=t&&ct.safetyVersion===1,bool=v=>typeof v==='boolean'?v?1:0:null;
+ out.mintRevoked=known&&typeof ct.mint==='boolean'?ct.mint?0:1:null;out.freezeRevoked=known&&typeof ct.freeze==='boolean'?ct.freeze?0:1:null;
+ const mutableAt=ct?.metaMutAt??(ct?.metaMutFromMint?ct.at:null);out.metaImmutable=known&&Number.isFinite(mutableAt)&&mutableAt<=t&&typeof ct.metaMut==='boolean'?ct.metaMut?0:1:null;
+ out.t22Safe=known&&ct.prog==='token'?1:known&&ct.prog==='token2022'&&Array.isArray(ct.unknownExtensions)&&['hook','deleg','defFrozen','nontr','pause','feeAuthority'].every(k=>typeof ct[k]==='boolean')&&Number.isFinite(ct.fee)?ct.fee>0||ct.hook||ct.deleg||ct.defFrozen||ct.nontr||ct.pause||ct.feeAuthority||ct.unknownExtensions.length?0:1:null;
+ const lp=coin?.lpEvidence;out.lpBurned=context.phase==='after'&&lp?.verified===true&&lp.at<=t&&['burned','locked','unlocked'].includes(lp.state)?lp.state==='burned'||lp.state==='locked'&&lp.lockUntil>=t?1:0:null;
+ const holds=Object.values(coin?.hold||{}).filter(h=>h?.at<=t&&!h.miss&&Number.isInteger(h.holders)&&h.holdersComplete===true).sort((a,b)=>a.at-b.at),last=holds.at(-1),first=holds[0];out.holders=last?.holders??null;out.holderGrowth=first&&last.at>first.at?(last.holders-first.holders)/((last.at-first.at)/MIN):null;
+ const eventAt=context.eventAt??coin?.t;out.tradesPerMin=Number.isFinite(eventAt)&&t-eventAt>=FIVE&&F.trades!=null?F.trades/5:null;out.uniqBuyersPerMin=Number.isFinite(eventAt)&&t-eventAt>=FIVE&&F.buyers!=null?F.buyers/5:null;
+ if(Number.isFinite(eventAt)){const before=starterFeaturesAt(coin,eventAt,context),after=starterFeaturesAt(coin,t,context);out.poolGrowth=before.quoteSol>0&&after.quoteSol!=null?(after.quoteSol/before.quoteSol-1)*100:null;}
+ const socials=coin?.socialFeatures;if(socials?.at<=t)for(const k of ['hasTwitter','hasTelegram','hasWebsite'])out[k]=bool(socials[k]);
+ for(const snapshot of [...(coin?.intelligenceSnapshots||[])].filter(s=>s.at<=t).sort((a,b)=>a.at-b.at))for(const [k,v] of Object.entries(snapshot.features||{}))if(RULE_KEYS.includes(k)&&typeof v==='number'&&Number.isFinite(v))out[k]=v;
+ return out;
+}
 function activityOutcome(coin,entryAt,cfg={},now=Date.now()){
  if(cfg.outcomeVersion!==2)return legacyActivityOutcome(coin,entryAt,cfg,now);
  const end=entryAt+(cfg.hours??5)*60*MIN;
@@ -136,7 +150,7 @@ function activityEvidence(coin,start,end,decisionMinutes){
  let recent=history.filter(x=>x.at>end-60*MIN);let rolling=0,rollingSeen=0;for(let t=end;t>end-60*MIN;t-=FIVE){const d=latestBefore(recent,t,2*MIN,x=>x.at);if(d&&d.at>=t-2*MIN&&d.buys!=null&&d.sells!=null){rolling+=d.buys+d.sells;rollingSeen++}}
  // Zero trades in all twelve non-overlapping rolling windows is conclusive.
  const hourTrades=tapeCovered?lastTrades:rollingSeen===12?rolling:null;
- return {coverage:seen/bins,maxGap,activePct:active/bins*100,maxIdleObserved,lastHourTrades:tail?.lastHourTrades??hourTrades,lastHourWallets:tail?.lastHourWallets??(tapeCovered?lastWallets.size:hourTrades===0?0:null),uniqueBuyers:tail?.uniqueBuyers??(tapeCovered?buyers.size:null),lowerBounds:tail?.lowerBounds||[],priceKeep:p0>0&&pe!=null?pe/p0*100:null,priceAtDecision:p0,priceAtEnd:pe,minutes,windowStart:start,windowEnd:end,tradeCoverage:tapeCovered};
+ return {coverage:seen/bins,maxGap,activePct:seen?active/bins*100:null,maxIdleObserved:seen?maxIdleObserved:null,lastHourTrades:tail?.lastHourTrades??hourTrades,lastHourWallets:tail?.lastHourWallets??(tapeCovered?lastWallets.size:hourTrades===0?0:null),uniqueBuyers:tail?.uniqueBuyers??(tapeCovered?buyers.size:null),lowerBounds:tail?.lowerBounds||[],priceKeep:p0>0&&pe!=null?pe/p0*100:null,priceAtDecision:p0,priceAtEnd:pe,minutes,windowStart:start,windowEnd:end,tradeCoverage:tapeCovered};
 }
 function tradeOutcomeEvidence(rows,start,end,at){
  const clean=rows.filter(r=>Array.isArray(r)&&Number.isFinite(r[0])),oldest=Math.min(...clean.map(r=>r[0]*1000)),complete=rows.length<300||oldest<=start,tailComplete=rows.length<300||oldest<=end-60*MIN;
@@ -234,7 +248,7 @@ function levelTwoFeaturesAt(coin,decisionAt,{entryAt,acceptedAt,phase}={}){
  if(Number.isSafeInteger(entryAt))out.hourOfDay=new Date(entryAt+5*3600000).getUTCHours();
  // Trade rows lack individual receipt times and full wallet identities. Do not
  // infer bot/repeat/developer sales or one-minute flow from rolling m5 counts.
- return {...featuresAt(coin,decisionAt,{eventAt:acceptedAt,phase}),...out};
+ return {...featuresAt(coin,decisionAt,{eventAt:acceptedAt,phase}),...Object.fromEntries(Object.entries(out).filter(([,v])=>v!=null))};
 }
 function evaluation(F,rule){
   if(rule?.conds){if(!Array.isArray(rule.conds)||!rule.conds.length||rule.conds.length>8)return 'unknown';const results=rule.conds.map(c=>evaluation(F,{key:c?.key,op:c?.op,value:c?.value,value2:c?.value2}));return results.includes('reject')?'reject':results.includes('unknown')?'unknown':'pass'}
@@ -335,5 +349,5 @@ function capBank(rows,labelFn=it=>it.label,positive='live',negative='dead',max=5
   const n=dedup.filter(x=>labelFn(x)===negative).slice(0,max);
   return [...p,...n].sort((a,b)=>a.time-b.time);
 }
-module.exports={KEYS,RULE_KEYS,LEVEL2_KEYS,levelTwoFeaturesAt,samples,candles,featuresAt,starterFeaturesAt,activityOutcome,
+module.exports={KEYS,LEVEL1_KEYS,RULE_KEYS,LEVEL2_KEYS,levelTwoFeaturesAt,samples,candles,featuresAt,starterFeaturesAt,activityOutcome,
   classifyActivity,activityEvidence,tradeOutcomeEvidence,strengthOutcome,evaluation,passes,ruleKey,ruleStats,proposeRules,capBank};
