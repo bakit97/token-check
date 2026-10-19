@@ -54,7 +54,7 @@ function discover(rows,{level='1',minTrainPositive,minTrainNegative,minValidatio
     },rules,method:'later-complete-calendar-days-no-future-features',
     caution:'Provisional observational diagnostics; later holdout is not proof of future performance'};
 }
-function signature(rule){return (rule.conds||[rule].concat(rule.conditions||[])).map(c=>[c.key,c.op,Number(c.value).toPrecision(8)].join('|')).sort().join('&')}
+function signature(rule){return (rule.conds||[rule].concat(rule.conditions||[])).map(c=>[c.key,c.op,Number(c.value).toPrecision(8),...(c.op==='between'?[Number(c.value2).toPrecision(8)]:[])].join('|')).sort().join('&')}
 const NAMES={buyers:'Покупатели',buyers10:'Ранние покупатели',quoteSol:'SOL в пуле',safeContract:'Безопасный контракт',top10:'Концентрация топ-10',top1:'Крупнейший держатель',trades:'Сделки',volume:'Объём',buySellRatio:'Баланс спроса',buys:'Покупки',sells:'Продажи',sellShare:'Доля продаж',averageTrade:'Средняя сделка',token2022:'Тип токена',hasImage:'Изображение',hasDescription:'Описание',liq:'Ликвидность',mc:'Капитализация'};
 class AutoStudies{
  constructor({dir}){this.file=path.join(dir,'auto-studies-v2.json');this.modules=new Map();if(fs.existsSync(this.file)){const x=JSON.parse(fs.readFileSync(this.file,'utf8'));if(x.schema!==1||!Array.isArray(x.modules)||x.modules.length>1000)throw Error('Invalid auto studies');for(const m of x.modules){if(!m.id||!['before','after'].includes(m.phase)||!m.createdAt)throw Error('Invalid auto module');this.modules.set(m.id,m)}}}
@@ -68,14 +68,14 @@ class AutoStudies{
    for(const proposal of report.rules){
     const original=proposal.rule.conds||[proposal.rule].concat(proposal.rule.conditions||[]);
     const base=inherited.flatMap(f=>f.conds||[f].concat(f.conditions||[]));
-    const allowed=original.filter(c=>!base.some(b=>b.key===c.key&&b.op===c.op&&(c.op==='>='?c.value<=b.value:c.value>=b.value)));
+    const allowed=original.filter(c=>!base.some(b=>b.key===c.key&&b.op===c.op&&(c.op==='between'?c.value<=b.value&&c.value2>=b.value2:c.op==='>='?c.value<=b.value:c.value>=b.value)));
     if(!allowed.length)continue;const candidate={...proposal,rule:{...allowed[0],conditions:allowed.slice(1),conds:allowed}};
     if(allowed.length!==original.length){const day=t=>new Date(t+5*3600000).toISOString().slice(0,10),trainDays=new Set(report.trainingDays),valDays=new Set(report.validationDays),pos=level==='1'?'live':'strong',neg=level==='1'?'dead':'weak';candidate.train=ruleStats(bank.filter(r=>trainDays.has(day(r.time))),candidate.rule,pos,neg);candidate.holdout=valDays.size?ruleStats(bank.filter(r=>valDays.has(day(r.time))),candidate.rule,pos,neg):null;if(candidate.train.positiveRecall<.55||candidate.train.negativeRejection<.5)continue;}
     const sig=[level,phase,dm,parentId||'',signature(candidate.rule)].join('|'),id='auto'+level+'_'+crypto.createHash('sha256').update(sig).digest('hex').slice(0,20);
     if(this.modules.has(id)||this.modules.size>=1000)continue;
-    const close=[...this.modules.values()].some(m=>m.level===level&&m.phase===phase&&(m.parentId||null)===parentId&&m.verdictMinutes===dm&&m.conds.length===allowed.length&&allowed.every(c=>m.conds.some(b=>b.key===c.key&&b.op===c.op&&Math.abs(c.value-b.value)<=Math.max(1e-8,Math.abs(b.value)*.05))));if(close)continue;
-    const conds=(candidate.rule.conds||[candidate.rule].concat(candidate.rule.conditions||[])).map(c=>({key:c.key,op:c.op,value:c.value}));
-    const m={id,level,phase,parentId,improvementOf:candidate.improvementOf||null,name:((candidate.improvementOf?'Улучшение · ':'')+conds.map(c=>(NAMES[c.key]||c.key)+' '+c.op+' '+Number(c.value.toPrecision(4))).join(' · ')).slice(0,64),verdictMinutes:dm,conds,createdAt:now,liveFrom:now,evalSig:sig,
+    const close=[...this.modules.values()].some(m=>m.level===level&&m.phase===phase&&(m.parentId||null)===parentId&&m.verdictMinutes===dm&&m.conds.length===allowed.length&&allowed.every(c=>m.conds.some(b=>b.key===c.key&&b.op===c.op&&Math.abs(c.value-b.value)<=Math.max(1e-8,Math.abs(b.value)*.05)&&(c.op!=='between'||Math.abs(c.value2-b.value2)<=Math.max(1e-8,Math.abs(b.value2)*.05)))));if(close)continue;
+    const conds=(candidate.rule.conds||[candidate.rule].concat(candidate.rule.conditions||[])).map(c=>({key:c.key,op:c.op,value:c.value,...(c.op==='between'?{value2:c.value2}:{})}));
+    const m={id,level,phase,parentId,improvementOf:candidate.improvementOf||null,name:((candidate.improvementOf?'Улучшение · ':'')+conds.map(c=>(NAMES[c.key]||c.key)+' '+c.op+' '+Number(c.value.toPrecision(4))+(c.op==='between'?'…'+Number(c.value2.toPrecision(4)):'')).join(' · ')).slice(0,64),verdictMinutes:dm,conds,createdAt:now,liveFrom:now,evalSig:sig,
       eval:{train:candidate.train,holdout:candidate.holdout,live:null,test:null},rule:candidate.rule};
     this.modules.set(id,m);changed=true;
    }

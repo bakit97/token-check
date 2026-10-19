@@ -523,7 +523,7 @@ function showModPicker(level){PICK_LEVEL=level;var d=draft();if(!d)return;var ha
   $('modPicker').hidden=false}
 function pickFilter(id){var d=draft(),f=d.filters.find(function(x){return x.id===id});
   if(!f){var lm=((libraryMeta&&libraryMeta.modules)||[]).find(function(x){return x.id===id}),lf=lm?catalogFilter(lm):null;if(!lf)return;
-    f={id:String(lf.id),name:String(lf.name).slice(0,64),level:String(lf.level),key:lf.key,op:lf.op,value:Number(lf.value),version:Number(lf.version)||1,verdictMinutes:lf.verdictMinutes||dfltVerdict(),...(lf.conds?{conds:lf.conds}:{}),...(lf.phase?{phase:lf.phase}:{}),...(lf.conditions?{conditions:lf.conditions.map(function(c){return {key:c.key,op:c.op,value:c.value}})}:{})};d.filters.push(f)}
+    f={id:String(lf.id),name:String(lf.name).slice(0,64),level:String(lf.level),key:lf.key,op:lf.op,value:Number(lf.value),...(lf.op==='between'?{value2:Number(lf.value2)}:{}),version:Number(lf.version)||1,verdictMinutes:lf.verdictMinutes||dfltVerdict(),...(lf.conds?{conds:lf.conds}:{}),...(lf.phase?{phase:lf.phase}:{}),...(lf.conditions?{conditions:lf.conditions.map(function(c){return {key:c.key,op:c.op,value:c.value,...(c.op==='between'?{value2:c.value2}:{})}})}:{})};d.filters.push(f)}
   d.modules.push({filterId:f.id,phase:MINE_STREAM,level:PICK_LEVEL,enabled:true});MOD_DIRTY=true;$('modPicker').hidden=true;renderServerModules()}
 function modClick(e){var t=e.target,d=draft();if(!d)return;
   if(t.dataset.tg!=null){e.preventDefault();var m=d.modules[+t.dataset.tg];m.enabled=!m.enabled;MOD_DIRTY=true;renderServerModules()}
@@ -1036,7 +1036,7 @@ function preparedServerConfig(){
   }
   const filters=s.filters.map(function(f){
     return {id:String(f.id),name:String(f.name),level:String(f.level),
-      key:f.key,op:f.op,value:Number(f.value),version:Number(f.version),...(f.conditions?{conditions:f.conditions.map(function(c){return {key:c.key,op:c.op,value:c.value}})}:{})};
+      key:f.key,op:f.op,value:Number(f.value),...(f.op==='between'?{value2:Number(f.value2)}:{}),version:Number(f.version),...(f.conditions?{conditions:f.conditions.map(function(c){return {key:c.key,op:c.op,value:c.value,...(c.op==='between'?{value2:c.value2}:{})}})}:{})};
   });
   const ids=new Set(filters.map(function(f){return f.id}));
   const modules=s.modules.filter(function(m){return ids.has(m.filterId)})
@@ -1249,10 +1249,10 @@ function stageAutoRule(e){
   var parts=btn.dataset.stageAuto.split(':'),level=parts[0],report=level==='1'?autoOne:autoTwo,item=report&&report.rules&&report.rules[Number(parts[1])];
   if(!item||!item.rule){note('Нет серверного модуля');return}
   var r=item.rule,conds=r.conds||[r].concat(r.conditions||[]),keys=['buyers','trades','volume','liq','mc','buys','sells','buySellRatio','buyers10','safeContract','quoteSol','top1','top10','token2022','hasImage','hasDescription','sellShare','averageTrade','chg1m','chg3m','chg5m','fromPeak','drawdown','buyerAccel','volAccel','bigBuyShare','repeatBuys','avgBuy','sellShare1m','bigHolderSell','devSold','top10Drift','holderGrowth','poolGrowth','toMigration','ageMin','hourOfDay','solTrend','launchRate'];
-  if(!conds.length||conds.length>8||conds.some(function(c){return !keys.includes(c.key)||!['>=','<='].includes(c.op)||!Number.isFinite(c.value)||c.value < -1e12})){note('Неподдерживаемые условия модуля');return}
+  if(!conds.length||conds.length>8||conds.some(function(c){return !keys.includes(c.key)||!['>=','<=','between'].includes(c.op)||!Number.isFinite(c.value)||c.value < -1e12||(c.op==='between'&&(!Number.isFinite(c.value2)||c.value2<c.value))})){note('Неподдерживаемые условия модуля');return}
   var d=draft();if(!d){note('Нет данных сервера');return}
   var phase=item.phase||r.phase;if(!['before','after'].includes(phase)){note('У модуля не указан поток');return}
-  var id=String(item.id||r.id||('auto'+level+'_'+Date.now())).replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,64),f={id:id,name:String(item.name||r.name||ruleLabel(r)).slice(0,64),level:level,phase:phase,version:item.version||1,verdictMinutes:item.verdictMinutes||r.verdictMinutes||d.decisionMinutes,conds:conds.map(function(c){return {key:c.key,op:c.op,value:c.value}})};
+  var id=String(item.id||r.id||('auto'+level+'_'+Date.now())).replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,64),f={id:id,name:String(item.name||r.name||ruleLabel(r)).slice(0,64),level:level,phase:phase,version:item.version||1,verdictMinutes:item.verdictMinutes||r.verdictMinutes||d.decisionMinutes,conds:conds.map(function(c){return {key:c.key,op:c.op,value:c.value,...(c.op==='between'?{value2:c.value2}:{})}})};
   Object.assign(f,f.conds[0]);f.conditions=f.conds.slice(1);
   var pos=d.filters.findIndex(function(x){return x.id===id});if(pos<0)d.filters.push(f);else d.filters[pos]=f;
   if(!d.modules.some(function(x){return x.filterId===id&&x.phase===phase&&x.level===level}))d.modules.push({filterId:id,phase:phase,level:level,enabled:true});

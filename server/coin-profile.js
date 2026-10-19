@@ -38,9 +38,10 @@ function verifiesMintCreation(tx,mint){
 }
 async function findCreation(c,rpc,now){
  let first=c.creationCandidate;
- if(!first){const rows=await rpc('getSignaturesForAddress',[c.a,{limit:1000,commitment:'confirmed'}]);
-  if(!Array.isArray(rows)||rows.length>=1000)return {createdAt:null,reason:'history-truncated'};
-  first=[...rows].reverse().find(x=>x.err===null&&typeof x.signature==='string');if(!first)return {createdAt:null,reason:'no-successful-history'};
+ if(!first){if((c.creationSearch?.pages||0)>=32)return {createdAt:null,reason:'history-budget-bound'};const rows=await rpc('getSignaturesForAddress',[c.a,{limit:1000,commitment:'confirmed',...(c.creationSearch?.before?{before:c.creationSearch.before}:{})}]);
+  if(!Array.isArray(rows))return {createdAt:null,reason:'history-unavailable'};
+  if(rows.length>=1000){c.creationSearch={before:rows.at(-1).signature,pages:(c.creationSearch?.pages||0)+1,oldestSuccess:[...rows].reverse().find(x=>x.err===null&&typeof x.signature==='string')||c.creationSearch?.oldestSuccess||null};return {createdAt:null,reason:'history-page-pending'};}
+  first=[...rows].reverse().find(x=>x.err===null&&typeof x.signature==='string')||c.creationSearch?.oldestSuccess;if(!first)return {createdAt:null,reason:'no-successful-history'};
   c.creationCandidate={signature:first.signature,blockTime:first.blockTime,slot:first.slot};
  }
  const tx=await rpc('getTransaction',[first.signature,{encoding:'jsonParsed',maxSupportedTransactionVersion:0,commitment:'confirmed'}]);
@@ -57,7 +58,7 @@ class CoinProfiles{
    const needs=rows.filter(c=>!c.i&&now-(c.profileAttemptAt||0)>10*MIN&& (c.uri||c.ct?.uri||source.get(c.a)?.proof?.uri)).sort((a,b)=>source.get(b.a).acceptedAt-source.get(a.a).acceptedAt).slice(0,4);
    for(const c of needs){c.profileAttemptAt=now;try{const m=await metadataImage(c.uri||c.ct?.uri||source.get(c.a).proof.uri,{fetch});if(!m.reason)c.metadataAt=Date.now();if(m.image){c.i=m.image;c.profileAt=Date.now();this.stats.images++}if(m.description!=null)c.description=m.description;c.profileReason=m.reason||null}catch{c.profileReason='metadata-unavailable';this.stats.errors++}}
    const c=rows.filter(c=>source.get(c.a).phase==='after'&&!c.createdAt&&now-(c.creationAttemptAt||0)>60*MIN).sort((a,b)=>source.get(b.a).acceptedAt-source.get(a.a).acceptedAt)[0];
-   if(c){try{const result=await findCreation(c,rpc,now);c.creationAttemptAt=now;c.creationReason=result.reason||null;if(result.createdAt){c.createdAt=result.createdAt;c.createdAtObservedAt=Date.now();c.createdAtSource=result.source;c.creationSignature=result.signature;delete c.creationCandidate;this.stats.created++}else this.stats.unknown++}catch(e){if(e.code==='BUDGET_DEFERRED')this.stats.deferred++;else{c.creationAttemptAt=now;c.creationReason='creation-unavailable';this.stats.errors++}}}
+   if(c){try{const result=await findCreation(c,rpc,now);c.creationAttemptAt=result.reason==='history-page-pending'?now-59*MIN:now;c.creationReason=result.reason||null;if(result.createdAt){c.createdAt=result.createdAt;c.createdAtObservedAt=Date.now();c.createdAtSource=result.source;c.creationSignature=result.signature;delete c.creationCandidate;this.stats.created++}else this.stats.unknown++}catch(e){if(e.code==='BUDGET_DEFERRED')this.stats.deferred++;else{c.creationAttemptAt=now;c.creationReason='creation-unavailable';this.stats.errors++}}}
   }finally{this.busy=false}
  }
 }

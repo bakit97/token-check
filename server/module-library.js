@@ -1,11 +1,11 @@
 'use strict';
 const crypto=require('node:crypto'),zlib=require('node:zlib');
 const {RULE_KEYS,LEVEL2_KEYS,evaluation,featuresAt,levelTwoFeaturesAt}=require('./research-v2');
-function moduleSignature(m){return crypto.createHash('sha256').update(JSON.stringify([String(m.level),m.phase,m.verdictMinutes,m.conds.map(c=>[c.key,c.op,c.value]).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)))])).digest('hex').slice(0,24)}
+function moduleSignature(m){return crypto.createHash('sha256').update(JSON.stringify([String(m.level),m.phase,m.verdictMinutes,m.conds.map(c=>[c.key,c.op,c.value,...(c.op==='between'?[c.value2]:[])]).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)))])).digest('hex').slice(0,24)}
 function definition(raw){
  if(!raw||typeof raw.id!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(raw.id)||!['1','2'].includes(String(raw.level))||!['before','after'].includes(raw.phase)||typeof raw.name!=='string'||!raw.name.trim()||raw.name.length>64||!Number.isInteger(raw.verdictMinutes)||raw.verdictMinutes<(String(raw.level)==='1'?2:1)||raw.verdictMinutes>15||!Array.isArray(raw.conds)||!raw.conds.length||raw.conds.length>8)throw TypeError('Invalid module');
  const level=String(raw.level),keys=level==='1'?RULE_KEYS.filter(k=>!LEVEL2_KEYS.includes(k)):RULE_KEYS;
- const conds=raw.conds.map(c=>{if(!c||!keys.includes(c.key)||!['>=','<='].includes(c.op)||!Number.isFinite(c.value)||c.value < (LEVEL2_KEYS.includes(c.key)?-1e12:0)||c.value>1e12)throw TypeError('Invalid module condition');return {key:c.key,op:c.op,value:c.value}});
+ const conds=raw.conds.map(c=>{if(!c||!keys.includes(c.key)||!['>=','<=','between'].includes(c.op)||!Number.isFinite(c.value)||c.value < (LEVEL2_KEYS.includes(c.key)?-1e12:0)||c.value>1e12||(c.op==='between'&&(!Number.isFinite(c.value2)||c.value2<c.value||c.value2>1e12)))throw TypeError('Invalid module condition');return {key:c.key,op:c.op,value:c.value,...(c.op==='between'?{value2:c.value2}:{})}});
  return {id:raw.id,level,phase:raw.phase,name:raw.name.trim(),verdictMinutes:raw.verdictMinutes,conds};
 }
 function catalog(raw={schema:1,modules:[],deleted:[]}){

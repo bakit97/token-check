@@ -7,12 +7,12 @@
     "source-runtime.js": "089dc694373e09fea9cd0598d9697c4f441b04c374006f677caab0502cde4e21",
     "pump-pre.js": "c3a05cd8b79e807409b7f5b86d320205835db468c068839b82668606e004bbd8",
     "pre-watcher.js": "079b33d70d39bfd25364763db0559c3d20f5ab3d130668a20c78d4a3203cfb1b",
-    "research-v2.js": "c9417235fa956580503aac9875ff0d77a23103738bcbd871668628fb231bf635",
+    "research-v2.js": "cb8280a12e65e54141748adf1ebe1e0f95bb3ac16529aed3e1bf95d69c1b2c25",
     "research-runtime.js": "011884d3c7694e548072b2c318552548cd169374a6ef145460382254fd525b99",
     "research-config.js": "29a6d3f306524b576aff6eac212c766ba110a3b560a835118a7be72a0523183a",
-    "pass-runtime.js": "3a00b53e88dc2cb4991fc007ac149f6c0cc5702b74dcafb581fbc8f5e7822870",
+    "pass-runtime.js": "2d088ec60b529d8280646fd75346b074bb06755b0e24515370c9857d9c020bea",
     "research-two-runtime.js": "4f8d786ce59691852f2ab0ae14f0f076a0a2a5b77ace29e0466886575dd17ced",
-    "auto-research-v2.js": "99f16369aaeaf3b3890f39b7537f08ca078b434d171e34f8f9e3df55f5284c9f",
+    "auto-research-v2.js": "b51791cbcf00b32d410685314758c3f296b444b2b2b6c29a6ea6524d2e618c34",
     "filter-audit.js": "75b842d42f9c98dfedfee7e93a4f59de2b14fc7fd7fda5c7f9f31b1080f978e1",
     "resource-budget.js": "a2986e642e74e4ed182edc56550188264478f1073f3c862dbd6b9a9c3aaf9905",
     "runtime-health.js": "001b44ef3198e679008fd58aa3e9f90f7843303775cbc74b3a21eda745a9ba84",
@@ -21,10 +21,10 @@
     "packed-observations.js": "6e2622a57f6d8939411b9884ec1f9c80bd8e091b8d734c8276465789128204e4",
     "completed-coins.js": "c935a104b97740f85b4ae547be5a2b23c567b777ce026138a71d7dca9b17c46a",
     "seed-completed.js": "01522182858aba7faab6cd85a5badd7552795cecbac2c12f00755a8ce985e1a4",
-    "coin-profile.js": "b566a20c6d08196ff8e8a0493907550ada30fc9c3435627490afdeb479b4ad8f",
+    "coin-profile.js": "ee57d1fe3bd35e64e0699306d6836bd1329111f6162be48cd633afbe7dbae2c7",
     "durable-json.js": "a042526c285613abc0935b43db8dffb98502054b1b9d43a8355438620dc8f192",
     "research-banks.js": "05c9ea4673d23814f5954622c0e508c85d81352e1998792a0b85277176b56dd1",
-    "module-library.js": "685e8ef2bfafde9511079bef73454d0b1158332a1d13d0c7a8753e40ae0bc863",
+    "module-library.js": "69ac7ff48c6db333f5e04183e610cff01bbcb8a9e464912bf62ac2f4ca5003f3",
     "active-history.js": "5492de7925391b7cd8bea9a28b518405515bca75c979be9ba2512d505f87886b"
   }
 }

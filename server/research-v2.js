@@ -236,18 +236,19 @@ function levelTwoFeaturesAt(coin,decisionAt,{entryAt,acceptedAt,phase}={}){
  return {...featuresAt(coin,decisionAt,{eventAt:acceptedAt,phase}),...out};
 }
 function evaluation(F,rule){
-  if(rule?.conds){if(!Array.isArray(rule.conds)||!rule.conds.length||rule.conds.length>8)return 'unknown';const results=rule.conds.map(c=>evaluation(F,{key:c?.key,op:c?.op,value:c?.value}));return results.includes('reject')?'reject':results.includes('unknown')?'unknown':'pass'}
+  if(rule?.conds){if(!Array.isArray(rule.conds)||!rule.conds.length||rule.conds.length>8)return 'unknown';const results=rule.conds.map(c=>evaluation(F,{key:c?.key,op:c?.op,value:c?.value,value2:c?.value2}));return results.includes('reject')?'reject':results.includes('unknown')?'unknown':'pass'}
   if(!F||!rule||!RULE_KEYS.includes(rule.key)||
-      !['>=','<='].includes(rule.op)||!Number.isFinite(rule.value))return 'unknown';
+      !['>=','<=','between'].includes(rule.op)||!Number.isFinite(rule.value)||(rule.op==='between'&&(!Number.isFinite(rule.value2)||rule.value2<rule.value)))return 'unknown';
   if(rule.conditions){if(!Array.isArray(rule.conditions)||rule.conditions.length>8)return 'unknown';const results=rule.conditions.map(c=>evaluation(F,c));
     if(results.includes('reject'))return 'reject';if(results.includes('unknown'))return 'unknown';}
   const v=F[rule.key];
   if(typeof v!=='number'||!Number.isFinite(v))return 'unknown';
+  if(rule.op==='between'){if(rule.key==='buyers10'&&F.buyers10LowerBound===true)return v>rule.value2?'reject':'unknown';return v>=rule.value&&v<=rule.value2?'pass':'reject';}
   if(rule.key==='buyers10'&&F.buyers10LowerBound===true)return rule.op==='>='?(v>=rule.value?'pass':'unknown'):(v>rule.value?'reject':'unknown');
   return rule.op==='>='?(v>=rule.value?'pass':'reject'):(v<=rule.value?'pass':'reject');
 }
 function passes(F,rule){return evaluation(F,rule)==='pass'}
-function ruleKey(r){return [r.key,r.op,Number(r.value).toPrecision(8)].join('|')}
+function ruleKey(r){return [r.key,r.op,Number(r.value).toPrecision(8),...(r.op==='between'?[Number(r.value2).toPrecision(8)]:[])].join('|')}
 function ruleStats(rows,rule,positive,negative){
   const yes=rows.filter(r=>r.label===positive);
   const no=rows.filter(r=>r.label===negative);
@@ -295,6 +296,7 @@ function proposeRules(rows,{positive='live',negative='dead',minPos=100,minNeg=1,
       }
     }
   }
+  for(const key of RULE_KEYS){const values=sorted.map(r=>r.features?.[key]).filter(v=>typeof v==='number'&&Number.isFinite(v)).sort((a,b)=>a-b);if(values.length<Math.max(12,rows.length*.4))continue;const bounds=[...new Set(Array.from({length:21},(_,i)=>values[Math.floor((values.length-1)*i/20)]))];for(let i=0;i<bounds.length;i++)for(let j=i+1;j<bounds.length;j++){const rule={key,op:'between',value:bounds[i],value2:bounds[j]},sig=ruleKey(rule);if(seenRules.has(sig))continue;seenRules.add(sig);const stat=ruleStats(rows,rule,positive,negative);if(stat.positiveRecall<.55||stat.negativeRejection<.5||stat.evaluablePositive/pos.length<.85||stat.evaluableNegative/neg.length<.85)continue;const score=2*stat.positiveRecall*stat.negativeRejection/(stat.positiveRecall+stat.negativeRejection);out.push({rule,train:stat,score});}}
   const rank=(a,b)=>b.score-a.score||b.train.positiveRecall-a.train.positiveRecall;
   out.sort(rank);
   const leaves=out.slice(0,24),beam=out.slice(0,16);

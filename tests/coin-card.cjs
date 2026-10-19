@@ -14,8 +14,8 @@ test('birth lookup verifies the mint initialization and resumes a deferred trans
  await assert.rejects(findCreation(c,rpc,T),{code:'BUDGET_DEFERRED'});deferred=false;const r=await findCreation(c,rpc,T);assert.equal(r.createdAt,tx.blockTime*1000);assert.equal(calls.filter(m=>m==='getSignaturesForAddress').length,1);
  tx.meta.innerInstructions[0].instructions[0].parsed.info.mint='other';assert.equal((await findCreation(c,rpc,T)).createdAt,null);
 });
-test('a truncated signature page is unknown and never paginated or treated as birth',async()=>{
- let n=0;const result=await findCreation(coin(),async(m)=>{n++;assert.equal(m,'getSignaturesForAddress');return Array.from({length:1000},()=>({err:null,signature:'x'}))},T);assert.equal(result.createdAt,null);assert.equal(result.reason,'history-truncated');assert.equal(n,1);
+test('a full signature page saves a bounded pagination cursor and never invents a birth',async()=>{
+ let n=0;const result=await findCreation(coin(),async(m)=>{n++;assert.equal(m,'getSignaturesForAddress');return Array.from({length:1000},()=>({err:null,signature:'x'}))},T);assert.equal(result.createdAt,null);assert.equal(result.reason,'history-page-pending');assert.equal(n,1);
 });
 test('metadata images reject internal/untrusted fetches, enforce a byte bound and keep the URI immutable',async()=>{
  let calls=0;const read=async()=>{calls++;return {ok:true,headers:{get:()=>null},body:[Buffer.from(JSON.stringify({image:'ipfs://bafyimage',description:'text'}))]}};
@@ -28,3 +28,5 @@ test('existing UI data adapters preserve server zero/unknown values and real age
  const source=fs.readFileSync(path.join(__dirname,'../v2.js'),'utf8'),ctx={liveOf:()=>({b5:999,s5:999}),now:()=>T};vm.createContext(ctx);vm.runInContext(source.slice(source.indexOf('function sourceCard('),source.indexOf('function admitted('))+';this.card=sourceCard;this.market=cardMarket;this.age=cardAgeAt;',ctx);
  const c=ctx.card({sol:0,b5:0,s5:null,top10:20,safeContract:false,createdAt:T-30*M});assert.equal(ctx.market(c).b5,0);assert.equal(ctx.market(c).s5,null);assert.equal(ctx.age({...c,_entry:{phase:'after',eventAt:T-M}}),T-30*M);assert.equal(ctx.age({_entry:{phase:'after',eventAt:T-M}}),0);
 });
+
+test('birth pagination resumes behind the previous oldest signature and verifies the true initialization',async()=>{const c=coin(),calls=[];let page=0;const rpc=async(m,p)=>{calls.push([m,p]);if(m==='getSignaturesForAddress'){if(page++===0)return Array.from({length:1000},(_,i)=>({signature:'recent'+i,err:null}));assert.equal(p[1].before,'recent999');return [{signature:'birth',err:null}];}assert.equal(p[0],'birth');return {blockTime:Math.floor((T-100*M)/1000),meta:{err:null},transaction:{message:{instructions:[{programId:TOKEN,parsed:{type:'initializeMint',info:{mint:c.a}}}]}}};};assert.equal((await findCreation(c,rpc,T)).createdAt,null);assert.equal((await findCreation(c,rpc,T)).createdAt,T-100*M);assert.equal(calls.length,3);});
