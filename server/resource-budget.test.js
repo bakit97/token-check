@@ -148,3 +148,8 @@ test('Pump gap with no observed baseline stays unknown and restart downtime is n
  p.connected(100);p.summary();f.advance(60000);const r=new PumpTelemetry(f);r.connected(250);const s=r.summary();
  assert.equal(s.budgetPausedMs,0);assert.equal(s.otherGapMs,60000);assert.equal(s.lostDuringBudgetPauses.estimate,null);
 });
+test('pre stream is not starved for hours by pending reserves: floor after five minutes',t=>{
+ const f=fixture(t),b=new ResourceBudget(f);b.migrationPending=true;b.poolsPending=true;
+ b.stream(200000,'pre');assert.equal(b.streamAllowed('pre'),false);
+ f.advance(301000);b.stream(200000,'pre');assert.equal(b.streamAllowed('pre'),true);
+});

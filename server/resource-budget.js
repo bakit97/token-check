@@ -89,7 +89,14 @@ class ResourceBudget{
   streamAllowed(source='pre'){if(source!=='pre')return true;
     const now=this.now();
     if(this.rate()<=0||this.state.used>=this.limit)return false;
-    const own=this.laneTotal('ws:pre',MIN),allowed=own<this.preCapacity();
+    // Starvation guard: pending migration/pool reserves must not silence the
+    // pre-migration create stream (main source of «Все») for hours. After 5 min
+    // of continuous starvation the stream gets a guaranteed floor.
+    let cap=this.preCapacity();
+    if(cap>this.laneTotal('ws:pre',MIN))this.preStarvedSince=0;
+    else{if(!this.preStarvedSince)this.preStarvedSince=now;
+      if(now-this.preStarvedSince>=300000)cap=Math.max(cap,Math.min(10,this.rate(),this.target));}
+    const own=this.laneTotal('ws:pre',MIN),allowed=own<cap;
     if(allowed){this.prePauseSince=0;this.preProbeUntil=0;return true;}
     // Short bounded probes preserve visibility. Received bytes remain fully charged;
     // an unavoidable probe overshoot is visible, never hidden by clamping the ledger.
