@@ -1103,10 +1103,10 @@ async function publishResearchLevel(level){
       return;
     }
     $(keyField).value='';$(checkField).checked=false;
-    say('✓ Сохранено. Сервер применит через 2–3 мин.');
+    say('✓ Сохранено. Сервер применит через 2–3 мин.');if(btnEl){btnEl.dataset.done='1'}
   }catch(e){
     say('Ошибка связи: '+String(e.message||e));
-  }finally{if(btnEl){btnEl.disabled=false;btnEl.textContent='Применить'}
+  }finally{if(btnEl){if(btnEl.dataset.done){btnEl.disabled=true;btnEl.textContent='✓ Сохранено'}else{btnEl.disabled=false;btnEl.textContent='Применить'}}
     clearTimeout(timer);$(buttonField).disabled=!controlEndpoint||!current;
   }
 }
@@ -1301,6 +1301,7 @@ function bind(){
   $('libSelect').addEventListener('click',function(){LIB_SEL=!LIB_SEL;LIBSET={};this.textContent=LIB_SEL?'Отмена':'Тест';$('libBar').classList.toggle('hide',!LIB_SEL);$('libMsg').textContent=LIB_SEL?'Выбери модули для теста':'';libRender()});
   $('libMods').addEventListener('click',function(e){var t=e.target.closest('[data-mopen]');if(!t)return;var id=t.dataset.mopen;if(LIB_SEL){LIBSET[id]=!LIBSET[id];t.classList.toggle('picked',!!LIBSET[id]);$('libMsg').textContent='Отмечено: '+Object.keys(LIBSET).filter(function(k){return LIBSET[k]}).length}else openModSheet(id)});
   $('libTest').addEventListener('click',function(){var ids=Object.keys(LIBSET).filter(function(k){return LIBSET[k]});if(!ids.length){$('libMsg').textContent='Отметь хотя бы один модуль';return}openTestSheet(ids)});
+  ['r1ResFold','r2ResFold'].forEach(function(id){var f=$(id);if(f)f.addEventListener('input',function(){var b=$(id==='r1ResFold'?'r1ResApply':'r2ResApply');if(b&&b.dataset.done){delete b.dataset.done;b.disabled=false;b.textContent='Применить';var mm=$(id==='r1ResFold'?'r1ResMsg':'r2ResMsg');if(mm)mm.textContent=''}})});
   $('r2Seg').addEventListener('click',function(e){var b=e.target.closest('[data-r2f]');if(!b)return;R2F=b.dataset.r2f;document.querySelectorAll('#r2Seg [data-r2f]').forEach(function(x){x.classList.toggle('active',x===b)});renderR2()});
   $('r2N').addEventListener('click',function(e){var b=e.target.closest('[data-r2n]');if(!b)return;R2N=+b.dataset.r2n;document.querySelectorAll('#r2N [data-r2n]').forEach(function(x){x.classList.toggle('active',x===b)});renderR2()});
   $('r2Strong').addEventListener('input',function(){$('r2StrongValue').textContent=$('r2Strong').value+'%';$('r2ApplyRow').classList.remove('hide')});
