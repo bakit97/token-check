@@ -722,7 +722,7 @@ function renderR1(){
     $('r1Auto').textContent='Серверные наблюдения · '+cfg.hours+' ч · активность ≥'+cfg.minActive+
       '% · простой ≤'+cfg.maxIdle+' мин. Размечено живых: '+a+
       '/100. Ожидают окончания наблюдения: '+(p['not-yet-finished']||0)+
-      ', недостаточно данных: '+(p['insufficient-activity-coverage']||0)+
+      ', ❓ сбой/нет подтверждённых наблюдений: '+(p['collector-gap']||0)+
       '. Автоподбор: требуется не меньше 100 живых и 40 мёртвых в обучении, затем отдельные 100 на поздней проверке.';
     if(autoOne){
       const text=autoOne.status==='rolling-holdout-ready'?
@@ -734,12 +734,13 @@ function renderR1(){
     var r1ar=$('r1ApplyRow').classList;if(!r1ar.contains||r1ar.contains('hide')){$('r1Hours').value=cfg.hours;$('r1HoursValue').textContent=cfg.hours+' ч';$('r1Activity').value=cfg.minActive;$('r1ActivityValue').textContent=cfg.minActive+'%';$('r1Idle').value=cfg.maxIdle;$('r1IdleValue').textContent=cfg.maxIdle+' мин'}
     var T=r1T(),rr=$('r1ResApplyRow').classList;if(!rr.contains||rr.contains('hide')){$('r1TL').value=T.l;$('r1TLv').textContent=T.l;$('r1TD').value=T.d;$('r1TDv').textContent=T.d;$('r1Dec').value=cfg.decisionMinutes;$('r1DecV').textContent=cfg.decisionMinutes+' мин'}
     if(R1DEC&&R1DEC===cfg.decisionMinutes)R1DEC=0;$('r1ResSum').textContent='🟢 '+a+'/'+T.l+' · 🔴 '+b+'/'+T.d+' · '+(R1DEC?R1DEC+' мин ⏳':cfg.decisionMinutes+' мин');$('r1Meter').style.width=Math.min(100,Math.min(a/T.l,b/T.d)*100)+'%';
-    var isLive=function(x){if(x.label)return x.label==='live';var c=onePhaseSettings(researchMeta.settings,r1Phase(x));return x.activity>=c.minActive&&x.idle<=c.maxIdle},cs1=+(researchMeta&&researchMeta.cohortStart)||0,all=bank['1'].filter(function(x){return (!cs1||(+x.acceptedAt||+x.time||0)>=cs1)&&(R1P==='all'||r1Phase(x)===R1P)});
-    if(R1P!=='all'){a=all.filter(isLive).length;b=all.length-a;$('r1Live').textContent=fmt(a);$('r1Dead').textContent=fmt(b);$('r1ResSum').textContent=$('r1ResSum').textContent.replace(/^🟢 \d+/,'🟢 '+a).replace(/🔴 \d+/,'🔴 '+b)}
-    $('r1AllN').textContent=fmt(all.length);$('r1Wait').textContent=R1P==='all'?fmt(p['not-yet-finished']||0):'—';
+    if(researchMeta.counts?.entered!=null){var cc=R1P==='all'?researchMeta.counts:researchMeta.byPhase?.[R1P];if(cc)$('r1Auto').textContent+=' Вошло '+cc.entered+' = 🟢 '+cc.live+' + 🔴 '+cc.dead+' + ⏳ '+cc.pending+' + ❓ '+cc.unknown;}
+    var isLive=function(x){if(x.label)return x.label==='live';var c=onePhaseSettings(researchMeta.settings,r1Phase(x));return x.activity>=c.minActive&&x.idle<=c.maxIdle},cs1=+(researchMeta&&researchMeta.cohortStart)||0,all=bank['1'].filter(function(x){return R1P==='all'||r1Phase(x)===R1P});
+    if(R1P!=='all'){a=all.filter(isLive).length;b=all.filter(function(x){return x.label==='dead'}).length;$('r1Live').textContent=fmt(a);$('r1Dead').textContent=fmt(b);$('r1ResSum').textContent=$('r1ResSum').textContent.replace(/^🟢 \d+/,'🟢 '+a).replace(/🔴 \d+/,'🔴 '+b)}
+    $('r1AllN').textContent=fmt(all.length);$('r1Wait').textContent=R1P==='all'?fmt(all.filter(function(x){return x.label==='pending'}).length):fmt(all.filter(function(x){return x.label==='pending'}).length);
     $('r1Sum').textContent=cfg.hours+' ч · '+cfg.minActive+'% · '+cfg.maxIdle+' мин';
-    var sel=all.filter(function(x){return R1F==='all'||(R1F==='live')===isLive(x)}).slice(-R1N).reverse();
-    $('r1Rows').innerHTML=sel.length?sel.map(function(x){var lv=isLive(x),c=lastAccepted.find(function(d){return mint(d)===x.mint}),bd='<span class="badge '+(lv?'good':'bad')+'">'+(lv?'🟢':'🔴')+'</span>';
+    var sel=all.filter(function(x){return R1F==='all'||x.label===R1F}).slice(-R1N).reverse();
+    $('r1Rows').innerHTML=sel.length?sel.map(function(x){var lv=isLive(x),c=lastAccepted.find(function(d){return mint(d)===x.mint}),bd='<span class="badge '+(x.label==='live'?'good':x.label==='dead'?'bad':'')+'" title="'+esc(x.why||'')+'">'+({live:'🟢',dead:'🔴',pending:'⏳',unknown:'❓'}[x.label]||'❓')+'</span>';
       return coinHtml(c||coinOf(x),bd)}).join(''):'<div class="empty-state">Пока нет</div>';
     return;
   }
@@ -1084,6 +1085,7 @@ async function publishResearchLevel(level){
       decisionMinutes:Number($('r1Dec').value)||researchMeta.settings.decisionMinutes,
       minActive:Number($('r1Activity').value),
       maxIdle:Number($('r1Idle').value),targetLive:Number($('r1TL').value),targetDead:Number($('r1TD').value),
+      lastHourTrades:Number(localStorage.getItem('r1LastHourTrades_'+R1P)??1),lastHourWallets:Number(localStorage.getItem('r1LastHourWallets_'+R1P)??1),minPriceKeep:100-Number($('r1Drop').value||70),minUniqueBuyers:Number($('r1Uniq').value??30),useActivity:false,useIdle:false,
       minCoverage:researchMeta.settings.minCoverage,...(researchMeta.settings.intake?{intake:researchMeta.settings.intake}:{})};
     if(!Number.isInteger(cfg.hours)||cfg.hours<1||cfg.hours>24||
        !Number.isInteger(cfg.maxIdle)||cfg.maxIdle<5||cfg.maxIdle>1440||
@@ -1515,12 +1517,13 @@ async function loadInternal(){
   }
   if(researchMeta&&vals[11]&&vals[11].epochStart===researchMeta.cohortStart&&
      Array.isArray(vals[11].coins)&&vals[11].counts){
+    if(vals[11].snapshotUpdated){researchMeta=Object.assign({},researchMeta,{counts:vals[11].counts,byPhase:vals[11].byPhase||researchMeta.byPhase});}
     const sourceRows=vals[11].coins.filter(function(x){
-      return x.mint&&Number.isFinite(x.activePct)&&Number.isFinite(x.maxIdleObserved)&&x.features;
+      return x.mint&&['live','dead','pending','unknown'].includes(x.label)&&x.features;
     });
     bank['1']=sourceRows.map(function(x){
-      return {mint:x.mint,phase:x.phase,label:x.label,t:x.acceptedAt,activity:x.activePct,
-        idle:x.maxIdleObserved,features:x.features};
+      return {mint:x.mint,phase:x.phase,label:x.label,why:x.why,acceptedAt:x.acceptedAt,t:x.acceptedAt,activity:x.activePct??null,
+        idle:x.maxIdleObserved??null,features:x.features};
     }).sort(function(a,b){return a.t-b.t});
     researchServerBank=true;
     lastResearchBankRead=now();

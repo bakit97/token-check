@@ -123,7 +123,7 @@ test('Research epoch persists history and never reuses an old bank after a chang
   const e=new ResearchEpoch({dir:d,key:'one',validate:settings,
     config:initial,adoptLegacy:true});
   assert.equal(e.current.activeAt,0);
-  assert.equal(e.apply({...initial,minActive:80}),true);
+  assert.equal(e.apply({...initial,hours:6}),true);
   assert.equal(e.history.length,1);
   const middle=e.current.activeAt;
   assert.equal(e.apply(initial),true);

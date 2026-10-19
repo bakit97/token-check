@@ -153,7 +153,7 @@ test('полигон сервера: неопределённые показат
   const bankRows=Array.from({length:1000},(_,i)=>({
     mint:'mon'+String(i).padStart(35,'1'),
     acceptedAt:now-6*3600e3-i*1000,
-    activePct:i<500?100:0,maxIdleObserved:i<500?0:70,
+    label:i<500?'live':'dead',activePct:i<500?100:0,maxIdleObserved:i<500?0:70,
     features:{buyers:i<500?30:i<750?5:null}
   }));
   const stats={status:'observational',updated:now,counts:{live:500,dead:500},

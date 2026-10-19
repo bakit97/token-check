@@ -556,7 +556,7 @@ async function reloadResearchConfig(){
       if(RESEARCH_ONE_EPOCH.apply(cfg)){
         const x=RESEARCH_ONE_EPOCH.current;
         const {ResearchRuntime}=require(DIR+'/research-runtime.js');
-        RESEARCH_V2=new ResearchRuntime({dir:DIR,config:x.config,
+        RESEARCH_V2=new ResearchRuntime({dir:DIR,config:x.config,carry:RESEARCH_V2,
           cohortStart:x.activeAt,bankName:oneResearchBankName(x)});
         recoverSupersededStudies();
         RESEARCH_BANK_UPLOADED=0;AUTO_UPLOADED=0;
@@ -1099,10 +1099,10 @@ async function exportResearchV2(now) {
   RESEARCH_BANKS?.upsert(RESEARCH_V2.select({limit:20000}));
   AI_SNAP.r1=result;
   await upload('research-v2/status.json',result);
-  if(result.added>0||now-RESEARCH_BANK_UPLOADED>20*60e3){
+  {
     await upload('research-v2/polygon-1.json',{
       updated:now,epochStart:result.cohortStart,settings:result.settings,counts:result.counts,
-      coins:RESEARCH_BANKS?require(DIR+'/stream-json.js').rowStream(()=>RESEARCH_BANKS.rows({level:'1',curves:true})):RESEARCH_V2.select({limit:20000}),
+      coins:RESEARCH_V2.view(),byPhase:result.byPhase,snapshotUpdated:now,
       note:'Observed classifications only; no buy/sell signals'
     });
     RESEARCH_BANK_UPLOADED=now;

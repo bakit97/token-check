@@ -29,37 +29,37 @@ function mockSource(){
 }
 test('research only observes the admitted source, stores live and dead separately',t=>{
  const dir=workingDir(t);
- const runtime=new ResearchRuntime({dir,config:{hours:5}});
+ const runtime=new ResearchRuntime({dir,config:{hours:5,lastHourWallets:0,minUniqueBuyers:0}});
  const source=mockSource();
  const coins=new Map([[A,stream(()=>true)],[B,stream(m=>m<20)],[C,{ds:[]}]]);
  const result=runtime.update({source,coins,now:T+6*H});
- assert.equal(result.added,2);
+ assert.equal(result.added,3);
  assert.equal(result.counts.live,1);
  assert.equal(result.counts.dead,1);
  assert.equal(runtime.select({label:'live'})[0].mint,A);
  assert.equal(runtime.select({label:'dead'})[0].mint,B);
- assert.equal(result.pending['insufficient-activity-coverage'],1);
+ assert.equal(result.counts.unknown,1);
  assert.ok(runtime.select()[0].features?.trades!==undefined);
  assert.equal(runtime.update({source,coins,now:T+6*H+M}).added,0,'do not count same mint again');
  const restarted=new ResearchRuntime({dir});
- assert.equal(restarted.rows.length,2);
+ assert.equal(restarted.rows.length,3);
  assert.equal(restarted.update({source,coins,now:T+6*H+2*M}).added,0);
 });
 test('never label young coins before observation finishes',t=>{
- const runtime=new ResearchRuntime({dir:workingDir(t)});
+ const runtime=new ResearchRuntime({dir:workingDir(t),config:{lastHourWallets:0,minUniqueBuyers:0}});
  const coins=new Map([[A,stream(()=>true)]]);
  const source={records:new Map([[A,{mint:A,phase:'before',acceptedAt:T}]])};
  assert.equal(runtime.update({source,coins,now:T+4*H}).added,0);
  assert.equal(runtime.summary().counts.live,0);
  assert.equal(runtime.summary().pending['not-yet-finished'],1);
 });
-test('reclassify stored observations by activity criterion, not price gains',t=>{
+test('reclassify stored observations without discarding raw outcomes',t=>{
  const dir=workingDir(t),source={records:new Map([[A,{mint:A,phase:'before',acceptedAt:T}]])};
  const coins=new Map([[A,stream(m=>m<250)]]);
- new ResearchRuntime({dir}).update({source,coins,now:T+6*H});
- const strict=new ResearchRuntime({dir,config:{minActive:95}});
+ new ResearchRuntime({dir,config:{lastHourTrades:0,lastHourWallets:0,minUniqueBuyers:0}}).update({source,coins,now:T+6*H});
+ const strict=new ResearchRuntime({dir,config:{minActive:95,useActivity:true,lastHourTrades:0,lastHourWallets:0,minUniqueBuyers:0}});
  assert.equal(strict.summary().counts.dead,1);
- const relaxed=new ResearchRuntime({dir,config:{minActive:70}});
+ const relaxed=new ResearchRuntime({dir,config:{minActive:70,useActivity:true,lastHourTrades:0,lastHourWallets:0,minUniqueBuyers:0}});
  assert.equal(relaxed.summary().counts.live,1);
 });
 test('processed bank excludes old pruned tokens when they are still in the 48h source window',t=>{
@@ -73,7 +73,7 @@ test('processed bank excludes old pruned tokens when they are still in the 48h s
  assert.equal(once.added,0);
 });
 test('source age is not inferred from token creation or latest screen time',t=>{
- const runtime=new ResearchRuntime({dir:workingDir(t)});
+ const runtime=new ResearchRuntime({dir:workingDir(t),config:{lastHourWallets:0,minUniqueBuyers:0}});
  const source={records:new Map([[A,{mint:A,phase:'after',acceptedAt:T}]])};
  const coins=new Map([[A,stream(()=>true)]]);
  const r=runtime.update({source,coins,now:T+6*H});
@@ -87,7 +87,7 @@ test('damaged persistent data fails closed, never resets memory silently',t=>{
 });
 test('requires 5000-per-class maximum and validates configuration',t=>{
  assert.throws(()=>new ResearchRuntime({dir:workingDir(t),config:{hours:25}}),RangeError);
- assert.equal(classOf({activePct:95,maxIdleObserved:0},{minActive:70,maxIdle:60}),'live');
+ assert.equal(classOf({activePct:95,maxIdleObserved:0},{minActive:70,maxIdle:60}),'unknown');
 });
 
 
@@ -101,17 +101,17 @@ test('continuous research limits CPU work and retries missing data every fifteen
  const first=runtime.update({source,coins,now:T+6*H});
  assert.equal(first.attempted,250);
  assert.equal(first.pending['deferred-by-batch'],350);
- assert.equal(first.pending['insufficient-activity-coverage'],250);
+ assert.equal(first.counts.unknown,250);
  const second=runtime.update({source,coins,now:T+6*H+M});
  assert.equal(second.attempted,250);
  assert.equal(second.pending['deferred-by-batch'],100);
- assert.equal(second.pending['insufficient-activity-coverage'],500);
+ assert.equal(second.counts.unknown,500);
  const third=runtime.update({source,coins,now:T+6*H+2*M});
  assert.equal(third.attempted,100);
- assert.equal(third.pending['insufficient-activity-coverage'],600);
+ assert.equal(third.counts.unknown,600);
  assert.equal(third.pending['deferred-by-batch']||0,0);
  const soon=runtime.update({source,coins,now:T+6*H+3*M});
  assert.equal(soon.attempted,0);
  const later=runtime.update({source,coins,now:T+6*H+16*M});
- assert.equal(later.attempted,250);
+ assert.equal(later.attempted,0);
 });

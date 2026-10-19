@@ -4,7 +4,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const {
-  featuresAt, activityOutcome, capBank, candles
+  featuresAt, activityOutcome, classifyActivity, capBank, candles
 } = require('./research-v2');
 
 const MIN=60_000;
@@ -48,6 +48,9 @@ function intakeDecision(intake,row,features,passes){
 }
 function settings(cfg={}) {
   const result={
+    outcomeVersion:2,
+    lastHourTrades:cfg.lastHourTrades??1,lastHourWallets:cfg.lastHourWallets??1,minPriceKeep:cfg.minPriceKeep??(100-(cfg.maxDrop??70)),minUniqueBuyers:cfg.minUniqueBuyers??30,
+    useActivity:cfg.useActivity===true,useIdle:cfg.useIdle===true,
     hours:cfg.hours??5,
     decisionMinutes:cfg.decisionMinutes??10,
     minActive:cfg.minActive??70,
@@ -64,6 +67,7 @@ function settings(cfg={}) {
     throw new RangeError('Invalid first-level observation settings');
   }
   for(const key of ['targetLive','targetDead'])if(!Number.isInteger(result[key])||result[key]<10||result[key]>5000)throw RangeError('Invalid research target');
+  for(const [key,max] of [['lastHourTrades',1000000],['lastHourWallets',100000],['minPriceKeep',100],['minUniqueBuyers',200]])if(!Number.isFinite(result[key])||result[key]<0||result[key]>max)throw RangeError('Invalid live threshold');
   if(cfg.phases){result.phases={};for(const phase of ['before','after'])result.phases[phase]=settings({...result,...cfg.phases[phase],phases:null})}
   return result;
 }
@@ -82,18 +86,18 @@ function atomicJSON(filepath,obj) {
 }
 function phaseSettings(cfg,phase){return cfg.phases?.[phase]||cfg}
 function classOf(row,cfg) {
-  cfg=phaseSettings(cfg,row.phase);return row.activePct>=cfg.minActive && row.maxIdleObserved<=cfg.maxIdle ? 'live':'dead';
+  cfg=phaseSettings(cfg,row.phase);if(row.outcomeVersion===2)return classifyActivity(row,cfg).label;return 'unknown';
 }
 
 class ResearchRuntime {
-  constructor({dir,config={},bankName='research-v2-bank.json',cohortStart=0,cohortEnd=Infinity}={}) {
+  constructor({dir,config={},bankName='research-v2-bank.json',cohortStart=0,cohortEnd=Infinity,carry=null}={}) {
     if(!dir)throw new TypeError('Research directory is required');
     this.dir=dir;
     this.file=path.join(dir,bankName);
     this.cohortStart=cohortStart;this.cohortEnd=cohortEnd;
     fs.mkdirSync(dir,{recursive:true});
     this.config=settings(config);this.intakeRejected={};this.intakeAccepted={};
-    this.rows=[];
+    this.rows=[];this.admitted=new Map();
     this.lookup=new Set();
     this.processed=new Map();
     this.lastAttemptAt=new Map();
@@ -108,19 +112,21 @@ class ResearchRuntime {
            !r.features||typeof r.features!=='object')
           throw Error('Malformed saved research sample');
       }
-      this.rows=capPhases(state.rows,this.config);
+      this.rows=state.rows;this.admitted=new Map((state.admitted||state.rows).map(r=>[r.mint,r]));
       this.lookup=new Set(this.rows.map(r=>r.mint));
       for(const pair of state.processed||[]) {
         if(Array.isArray(pair)&&typeof pair[0]==='string'&&Number.isSafeInteger(pair[1]))
           this.processed.set(pair[0],pair[1]);
       }
       // Compatible with older snapshots that did not store the processed index.
-      for(const r of this.rows)this.processed.set(r.mint,r.acceptedAt);
+      for(const r of this.rows)if(r.outcomeVersion===2)this.processed.set(r.mint,r.acceptedAt);else this.processed.delete(r.mint);
     }
+    this.carryFrom(carry);
   }
+  carryFrom(previous){if(!previous)return;for(const row of previous.admitted.values())if(!this.admitted.has(row.mint))this.admitted.set(row.mint,{...row,intakePending:true,transferred:true});}
   update({source,coins,passes=null,now=Date.now()}={}) {
     if(!source?.records || !coins?.get)throw new TypeError('Need source ledger and coin map');
-    let added=0,considered=0,attempted=0;
+    let added=0,considered=0,attempted=0,gateChecks=0;
     const pending={},byPhase={before:{live:0,dead:0},after:{live:0,dead:0}};
     // Newest first, avoid scanning the entire multi-month ledger.
     const recent=typeof source.recentAdmissions==='function'?
@@ -129,11 +135,15 @@ class ResearchRuntime {
     for(const row of recent){
       const age=now-row.acceptedAt;
       diag.recent++;if(row.acceptedAt<this.cohortStart)diag.beforeCohort++;else if(row.acceptedAt>=this.cohortEnd)diag.afterEnd++;else if(age<0)diag.future++;else if(age>FRESH_WINDOW)diag.tooOld++;else if(this.processed.has(row.mint))diag.processed++;
-      if(row.acceptedAt<this.cohortStart||row.acceptedAt>=this.cohortEnd||age<0||age>FRESH_WINDOW||this.processed.has(row.mint))continue;
+      if((row.acceptedAt<this.cohortStart&&!this.admitted.has(row.mint))||row.acceptedAt>=this.cohortEnd||age<0||age>FRESH_WINDOW||this.processed.has(row.mint))continue;
       considered++;
       const cfg=phaseSettings(this.config,row.phase);
-      if(age<cfg.hours*HOURS+3*MIN){
-        pending['not-yet-finished']=(pending['not-yet-finished']||0)+1;
+      let admission=this.admitted.get(row.mint);
+      if((!admission||admission.intakePending)&&age>=cfg.decisionMinutes*MIN&&gateChecks++<MAX_CLASSIFICATION_CHECKS){const c=coins.get(row.mint);if(c){const features=featuresAt(c,row.acceptedAt+cfg.decisionMinutes*MIN,{eventAt:row.acceptedAt,phase:row.phase}),gate=intakeDecision(cfg.intake,row,features,passes);if(!gate.ok){this.admitted.delete(row.mint);this.processed.set(row.mint,row.acceptedAt);this.intakeRejected[gate.why]=(this.intakeRejected[gate.why]||0)+1;continue}admission={mint:row.mint,phase:row.phase,acceptedAt:row.acceptedAt,features,via:gate.via};this.admitted.set(row.mint,admission);this.intakeAccepted[gate.via]=(this.intakeAccepted[gate.via]||0)+1;}}
+      if(!admission){admission={mint:row.mint,phase:row.phase,acceptedAt:row.acceptedAt,features:{},intakePending:true};this.admitted.set(row.mint,admission);}
+      if(admission.intakePending&&age>=cfg.decisionMinutes*MIN)this.admitted.delete(row.mint);
+      if(admission.intakePending||age<cfg.hours*HOURS+3*MIN){
+        const why=age<cfg.hours*HOURS+3*MIN?'not-yet-finished':'deferred-by-batch';pending[why]=(pending[why]||0)+1;
         continue;
       }
       const previous=this.lastAttemptAt.get(row.mint);
@@ -161,12 +171,12 @@ class ResearchRuntime {
       }
       this.lastAttemptAt.delete(row.mint);
       const features=featuresAt(coin,decisionAt,{eventAt:row.acceptedAt,phase:row.phase});
-      const gate=intakeDecision(cfg.intake,row,features,passes);
-      if(!gate.ok){this.processed.set(row.mint,row.acceptedAt);this.intakeRejected[gate.why]=(this.intakeRejected[gate.why]||0)+1;continue}
-      this.intakeAccepted[gate.via]=(this.intakeAccepted[gate.via]||0)+1;
+      const gate={via:admission.via||'all'};
+      this.rows=this.rows.filter(x=>x.mint!==row.mint);
       this.rows.push({via:gate.via,
         mint:row.mint,phase:row.phase,featureAnchor:'acceptedAt',featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,row.acceptedAt,'1',row.phase),curve:observationCurve(coin,row.acceptedAt,cfg.hours),curveUnit:'price-usd',
         acceptedAt:row.acceptedAt,decisionAt,
+        ...result,minutes:undefined,outcomePacked:require('node:zlib').deflateSync(Buffer.from(JSON.stringify(result.minutes||[]))).toString('base64'),
         hours:cfg.hours,label:result.label,
         activePct:result.activePct,
         maxIdleObserved:result.maxIdleObserved,
@@ -183,15 +193,15 @@ class ResearchRuntime {
     }
     for(const [mint,retry] of this.lastAttemptAt)
       if(now-retry.acceptedAt>FRESH_WINDOW)this.lastAttemptAt.delete(mint);
-    if(added){
-      this.rows=capPhases(this.rows,this.config);
+    {
+      this.rows=this.rows.sort((a,b)=>a.time-b.time);
       this.lookup=new Set(this.rows.map(r=>r.mint));
       atomicJSON(this.file,{schema:1,rows:this.rows,
-        processed:[...this.processed],savedAt:now});
+        admitted:[...this.admitted.values()],processed:[...this.processed],savedAt:now});
     }
     for(const row of this.rows){
       const name=classOf(row,this.config);
-      if(byPhase[row.phase])byPhase[row.phase][name]++;
+      if(byPhase[row.phase]&&name in byPhase[row.phase])byPhase[row.phase][name]++;
     }
     this.pending=pending;
     this.lastAt=now;
@@ -199,21 +209,14 @@ class ResearchRuntime {
       maxChecksPerRun:MAX_CLASSIFICATION_CHECKS,intake:this.config.intake,intakeAccepted:this.intakeAccepted,intakeRejected:this.intakeRejected,...this.summary()};
   }
   summary(){
-    const counts={live:0,dead:0,preLive:0,preDead:0,postLive:0,postDead:0};
-    for(const row of this.rows){
-      const label=classOf(row,this.config);
-      counts[label]++;
-      counts[row.phase==='before'?(label==='live'?'preLive':'preDead'):(label==='live'?'postLive':'postDead')]++;
-    }
-    return {schema:1,updated:this.lastAt,cohortStart:this.cohortStart,
-      settings:{...this.config},counts,pending:{...this.pending},
-      bankCapacityPerClass:MAX_BANK_PER_CLASS,
-      status:'observational',
-      secondLevel:'separate-server-verified-pass-stream'};
+    const counts={live:0,dead:0,pending:0,unknown:0,entered:0,preLive:0,preDead:0,postLive:0,postDead:0},byPhase={before:{entered:0,live:0,dead:0,pending:0,unknown:0},after:{entered:0,live:0,dead:0,pending:0,unknown:0}};
+    for(const row of this.view()){counts.entered++;counts[row.label]++;const p=byPhase[row.phase];if(p){p.entered++;p[row.label]++;}if(['live','dead'].includes(row.label))counts[row.phase==='before'?(row.label==='live'?'preLive':'preDead'):(row.label==='live'?'postLive':'postDead')]++;}
+    return {schema:2,updated:this.lastAt,cohortStart:this.cohortStart,settings:{...this.config},counts,byPhase,pending:{...this.pending,'collector-gap':counts.unknown},bankCapacityPerClass:MAX_BANK_PER_CLASS,status:'observational',secondLevel:'separate-server-verified-pass-stream'};
   }
+  view(){const complete=new Map(this.rows.map(r=>[r.mint,r]));return [...this.admitted.values()].map(a=>{const r=complete.get(a.mint);if(r){const v=r.outcomeVersion===2?classifyActivity(r,phaseSettings(this.config,r.phase)):{label:'unknown',why:'legacy-observation-awaiting-recheck'};return {...r,...v};};const cfg=phaseSettings(this.config,a.phase),ended=this.lastAt>=a.acceptedAt+cfg.hours*HOURS+3*MIN,why=this.lastAttemptAt.get(a.mint)?.why;return {...a,label:ended&&why&&why!=='deferred-by-batch'?'unknown':'pending',why:ended?why||'deferred-by-batch':'not-yet-finished'};}).sort((a,b)=>a.acceptedAt-b.acceptedAt);}
   select({phase,label,limit=100}={}) {
     if(phase&&!['before','after'].includes(phase))throw TypeError('bad phase');
-    if(label&&!['live','dead'].includes(label))throw TypeError('bad label');
+    if(label&&!['live','dead','pending','unknown'].includes(label))throw TypeError('bad label');
     if(!Number.isInteger(limit)||limit<1||limit>20000)throw RangeError('bad limit');
     return this.rows.filter(r=>(!phase||r.phase===phase) && (!label||classOf(r,this.config)===label))
       .sort((a,b)=>b.acceptedAt-a.acceptedAt).slice(0,limit)

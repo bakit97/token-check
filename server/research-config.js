@@ -46,7 +46,8 @@ class ResearchEpoch{
     this.apply(config);
   }
   apply(raw){
-    const config=this.validate(raw),hash=hashOf(config);
+    const config=this.validate(raw),hash=hashOf(this.key==='one'?{hours:config.hours,intake:config.intake,phases:config.phases?Object.fromEntries(Object.entries(config.phases).map(([p,v])=>[p,{hours:v.hours,intake:v.intake}])):undefined}:config);
+    if(this.key==='one'&&this.current){const old=this.current.config,identity=c=>hashOf({hours:c.hours,intake:c.intake,phases:c.phases?Object.fromEntries(Object.entries(c.phases).map(([p,v])=>[p,{hours:v.hours,intake:v.intake}])):undefined});if(identity(old)===identity(config)){if(JSON.stringify(old)!==JSON.stringify(config)){const next={...this.current,config};atomic(this.file,{schema:2,current:next,history:this.history,updated:Date.now()});this.current=next;}return false;}}
     if(this.current?.hash===hash){if(JSON.stringify(config)!==JSON.stringify(this.current.config)){const next={...this.current,config};atomic(this.file,{schema:2,current:next,history:this.history,updated:Date.now()});this.current=next}return false;}
     const now=Date.now();
     const activeAt=this.current?now:(this.adoptLegacy?0:now);
