@@ -181,7 +181,7 @@ function levelTwoFeaturesAt(coin,decisionAt,{entryAt,acceptedAt,phase}={}){
  const pool0=starterFeaturesAt(coin,entryAt,{eventAt:acceptedAt,phase}),pool1=starterFeaturesAt(coin,decisionAt,{eventAt:acceptedAt,phase});
  if(pool0.quoteSol>0&&pool1.quoteSol!=null)out.poolGrowth=(pool1.quoteSol/pool0.quoteSol-1)*100;
  if(pool0.top10!=null&&pool1.top10!=null)out.top10Drift=pool1.top10-pool0.top10;
- if(Number.isSafeInteger(coin.createdAt)&&coin.createdAt<=decisionAt)out.ageMin=(decisionAt-coin.createdAt)/MIN;
+ if(Number.isSafeInteger(coin.createdAt)&&coin.createdAt<=decisionAt&&Number.isFinite(coin.createdAtObservedAt)&&coin.createdAtObservedAt<=decisionAt)out.ageMin=(decisionAt-coin.createdAt)/MIN;
  if(Number.isSafeInteger(entryAt))out.hourOfDay=new Date(entryAt+5*3600000).getUTCHours();
  // Trade rows lack individual receipt times and full wallet identities. Do not
  // infer bot/repeat/developer sales or one-minute flow from rolling m5 counts.

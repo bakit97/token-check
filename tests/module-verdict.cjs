@@ -36,3 +36,7 @@ test('configuration preserves compound conditions and separate modes; rejects in
  assert.throws(()=>configOf({...x.cfg,passMode:'bad'}));assert.throws(()=>configOf({...x.cfg,filters:[{...x.cfg.filters[0],verdictMinutes:0}]}));
  const old={...x.cfg};delete old.passMode;delete old.filters[0].verdictMinutes;assert.equal(verdictConfig(old).filters[0].verdictMinutes,10);
 });
+
+test('phone shows only completed server verdicts and never falls back to browser rules',()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),code=fs.readFileSync(require('node:path').join(__dirname,'../v2.js'),'utf8');const body=code.slice(code.indexOf('function passedCoins('),code.indexOf('function storeBank('));const scope={serverPassActive:false,serverPassRows:[],now:()=>100,mint:c=>c.a};vm.runInNewContext(body,scope);assert.equal(scope.passedCoins([{a:M,_entry:{acceptedAt:1}}]).length,0);scope.serverPassActive=true;scope.serverPassRows=[{mint:M,phase:'before',acceptedAt:1,firstSeenAt:90,zeroAt:110,matches:[]}];assert.equal(scope.passedCoins([]).length,0);scope.serverPassRows[0].zeroAt=90;assert.equal(scope.passedCoins([]).length,1);
+});

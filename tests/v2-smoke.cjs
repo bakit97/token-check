@@ -265,7 +265,7 @@ test('Passed journal preserves original version, deadline and detection after di
       querySelectorAll(){return []},insertAdjacentHTML(){},scrollIntoView(){},remove(){}};
     nodes.set(id,o);return o;
   }
-  const now=Date.now(),acceptedAt=now-120000,mint='So11111111111111111111111111111111111111112';
+  const now=Date.now(),acceptedAt=now-12*60000,mint='So11111111111111111111111111111111111111112';
   const source={mode:'verified-pre-post',updated:now,today:1,todayBefore:0,todayAfter:1,
     settings:{beforeMinutes:2,afterMinutes:2},preConnected:true};
   const entry={a:mint,phase:'after',eventAt:acceptedAt-1000,acceptedAt};
@@ -276,11 +276,14 @@ test('Passed journal preserves original version, deadline and detection after di
   const defaults={decision:10,level:'1',filters:[
     {id:'001',level:'1',name:'Покупатели 8+',key:'buyers',op:'>=',value:8,version:3}
   ],modules:[{filterId:'001',phase:'after',level:'1',enabled:true}]};
+  const serverEvent={schema:2,mint,phase:'after',acceptedAt,zeroAt:acceptedAt+10*60000,firstSeenAt:acceptedAt+10*60000,features:{buyers:10},matches:structuredClone(defaults.filters),name:coin.n};
   memory.set('solscan_v2_state_20261017',JSON.stringify(defaults));
   async function fetch(url){
     let value={coins:[]};
     if(url.includes('/source/status.json'))value=source;
     else if(url.includes('/source/day/')||url.includes('/source/live.json'))value={coins:[entry]};
+    else if(url.includes('/passed-v2/status.json'))value={updated:now,serverOnly:true,status:'server-observational',serverConfig:{schema:1,enabled:true,activatedAt:0,decisionMinutes:10,filters:defaults.filters,modules:defaults.modules}};
+    else if(url.includes('/passed-v2/'))value={origin:'server-journal',updated:now,coins:[serverEvent]};
     else if(url.includes('/research-v2/'))value=null;
     else if(url.includes('/status.json'))value={updated:now};
     else if(url.includes('/obs/'))value={coins:[]};
@@ -297,25 +300,23 @@ test('Passed journal preserves original version, deadline and detection after di
   }
   run();
   await new Promise(resolve=>setTimeout(resolve,60));
-  let ledger=JSON.parse(memory.get('solscan_v2_verified_passes_20261017')||'[]');
-  assert.equal(ledger.length,1);
-  assert.equal(ledger[0].matches[0].version,3);
-  assert.equal(ledger[0].deadline,acceptedAt+10*60000);
-  assert.equal(ledger[0].features.buyers,10);
+  assert.equal(memory.has('solscan_v2_verified_passes_20261017'),false);
+  assert.equal(serverEvent.matches[0].version,3);
+  assert.equal(serverEvent.features.buyers,10);
   assert.match(el('passedList').innerHTML,/Фиксированная монета/);
   const toggle=listeners.get('moduleGrid:change');
   toggle({target:{matches:()=>true,dataset:{toggle:'001',phase:'after'},checked:false}});
   el('decisionMins').value='25';
   listeners.get('applyDecision:click')();
   assert.match(el('passedList').innerHTML,/Фиксированная монета/);
-  assert.equal(JSON.parse(memory.get('solscan_v2_verified_passes_20261017'))[0].deadline,acceptedAt+10*60000);
+  assert.equal(serverEvent.zeroAt,acceptedAt+10*60000);
   assert.match(el('passedArchiveList').innerHTML,/v3/);
   // Reload from the same phone, now with every module disabled.
   nodes.clear();listeners.clear();
   run();
   await new Promise(resolve=>setTimeout(resolve,60));
   assert.match(el('passedList').innerHTML,/Фиксированная монета/);
-  assert.equal(JSON.parse(memory.get('solscan_v2_verified_passes_20261017')).length,1);
+  assert.equal(memory.has('solscan_v2_verified_passes_20261017'),false);
 });
 
 test('Expired historical coins never create fresh Passed signals on a late visit',async()=>{

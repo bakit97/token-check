@@ -179,7 +179,7 @@ function labTwo(c,passed) {
 function passedCoins(coins){
   if(serverPassActive){
     var lookup=new Map(coins.map(function(c){return [mint(c),c]}));
-    return serverPassRows.map(function(p){
+    return serverPassRows.filter(function(p){return p.firstSeenAt<=now()&&p.zeroAt<=now()}).map(function(p){
       var c=lookup.get(p.mint);
       if(!c){
         c={a:p.mint,n:p.name||'',s:'',ds:[],i:'',_entry:{
@@ -189,42 +189,9 @@ function passedCoins(coins){
         features:p.features,firstSeenAt:p.firstSeenAt,source:'server'};
     }).sort(function(a,b){return b.firstSeenAt-a.firstSeenAt});
   }
-  // A filter change must never rewrite an earlier signal. Old admissions are
-  // never backfilled into "Passed" after their original decision window.
-  var previous=new Map(signalLog.map(function(x){return [x.mint,x]}));
-  var enabled=s.modules.filter(function(m){return m.enabled});
-  var out=[],dirty=false,seenAt=now();
-  for(var c of coins){
-    var key=mint(c),entry=c._entry,record=previous.get(key);
-    if(record&&(record.acceptedAt!==entry.acceptedAt||record.phase!==entry.phase))record=null;
-    if(!record&&enabled.length&&seenAt>=entry.acceptedAt){
-      var deadline=entry.acceptedAt+s.decision*60000;
-      if(seenAt<=deadline){
-        var available=dataMetrics(c,seenAt);
-        var matches=[];
-        for(var m of enabled){
-          if(m.phase!==entry.phase||m.level!=='1')continue;
-          var f=s.filters.find(function(x){return x.id===m.filterId&&x.level===m.level});
-          if(f&&ruleMatch(available,f))matches.push({
-            id:f.id,name:f.name,level:f.level,version:f.version,
-            key:f.key,op:f.op,value:f.value
-          });
-        }
-        if(matches.length){
-          // Freeze match criteria, decision deadline and pre-decision features.
-          record={mint:key,phase:entry.phase,acceptedAt:entry.acceptedAt,
-            firstSeenAt:seenAt,deadline:deadline,name:c.n||c.s||key,
-            features:available,matches:matches};
-          signalLog.push(record);previous.set(key,record);dirty=true;
-        }
-      }
-    }
-    if(record)out.push({coin:c,deadline:record.deadline,
-      matches:record.matches,features:record.features,firstSeenAt:record.firstSeenAt});
-  }
-  if(dirty){signalLog=signalLog.slice(-2000);saveSignals()}
-  return out.sort(function(a,b){return b.coin._entry.acceptedAt-a.coin._entry.acceptedAt});
+  return []; // The phone never synthesizes a Passed signal.
 }
+
 function storeBank(level,rows){
   var arr=bank[level],seen=new Set(arr.map(function(x){return x.mint})),added=0;
   for(var row of rows){
@@ -240,7 +207,7 @@ function storeBank(level,rows){
   if(added)saveBank();
 }
 function bankLabel(level,row){
-  if(level==='1')return row.activity>=s.r1Activity&&row.idle<=s.r1Idle?'live':'dead';
+  if(level==='1'){if(['live','dead'].includes(row.label))return row.label;var cfg=onePhaseSettings(researchMeta&&researchMeta.settings,row.phase);return row.activity>=(cfg.minActive??s.r1Activity)&&row.idle<=(cfg.maxIdle??s.r1Idle)?'live':'dead'}
   if(serverR2Active&&['strong','weak'].includes(row.label))return row.label;
   return row.above>=s.r2Strong?'strong':'weak';
 }
@@ -648,10 +615,10 @@ function renderPassed(){
   var sel=win.filter(function(q){return PF==='all'||ph(q)===PF});
   $('passedList').innerHTML=sel.length?sel.map(function(q){var left=Math.max(0,(q.firstSeenAt||q.deadline)+W*60000-now()),sec=Math.ceil(left/1000);
     return '<div class="pwrap"><div class="pstrip '+(ph(q)==='after'?'post':'pre')+'"><b class="mono">⏳ '+Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')+'</b> · '+q.matches.map(function(f){return esc(f.name)}).join(' · ')+'</div>'+coinHtml(q.coin)+'</div>'}).join(''):'<div class="empty-state">Пока нет</div>';
-  var history=(serverPassActive?serverPassRows:signalLog).slice(0);
+  var history=(serverPassActive?serverPassRows:[]).slice(0);
   if(!serverPassActive)history=history.reverse();
   history=history.slice(0,40);
-  $('passedArchiveCount').textContent=fmt(serverPassActive?serverPassRows.length:signalLog.length);
+  $('passedArchiveCount').textContent=fmt(serverPassActive?serverPassRows.length:0);
   $('passedArchiveList').innerHTML=history.length?history.map(function(x){
     var stamp=new Date(x.firstSeenAt).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
     return '<div class="vrow"><div class="row"><b>'+esc(x.name||x.mint)+'</b><span class="badge">'+esc(stamp)+'</span></div>'+
@@ -662,7 +629,7 @@ function renderPassed(){
 var MGRP=[['Спрос',['buyers10','buyers','trades','buys','sells','buySellRatio','volume']],['Пул',['quoteSol','mc']],['Держатели',['top1','top10']],['Контракт',['safeContract']]];
 var MGRP2=[['Импульс',['chg1m','chg3m','chg5m','fromPeak','drawdown']],['Спрос',['buyerAccel','volAccel']],['Покупки',['bigBuyShare','repeatBuys','avgBuy']],['Продажи',['sellShare1m','bigHolderSell','devSold']],['Держатели',['top10Drift','holderGrowth']],['Пул',['poolGrowth','toMigration']],['Время и рынок',['ageMin','hourOfDay','solTrend','launchRate']]];
 var MLAB2={chg1m:'Цена за 1 мин %',chg3m:'Цена за 3 мин %',chg5m:'Цена за 5 мин %',fromPeak:'От пика %',drawdown:'Макс. просадка %',buyerAccel:'Ускорение покупателей',volAccel:'Ускорение объёма',bigBuyShare:'Доля крупных покупок %',repeatBuys:'Повторные покупки',avgBuy:'Средняя покупка $',sellShare1m:'Продажи за 1 мин %',bigHolderSell:'Продают крупные (1 = да)',devSold:'Создатель продал (1 = да)',top10Drift:'Сдвиг топ-10 %',holderGrowth:'Рост держателей',poolGrowth:'Рост пула %',toMigration:'До миграции %',ageMin:'Возраст мин',hourOfDay:'Час суток',solTrend:'Тренд SOL %',launchRate:'Запусков в мин'};
-var MLAB={safeContract:'Безопасный контракт (1 = да)',buyers10:'Покупатели 10 мин',quoteSol:'SOL в пуле',top1:'Топ-1 держатель %',top10:'Топ-10 держателей %',buyers:'Покупатели',trades:'Сделки',volume:'Объём $',liq:'Ликвидность $',mc:'Капитализация $',buys:'Покупки',sells:'Продажи',buySellRatio:'Покупки/продажи'};
+var MLAB={token2022:'Token-2022 (1 = да)',hasImage:'Есть изображение',hasDescription:'Есть описание',sellShare:'Доля продаж %',averageTrade:'Средняя сделка $',safeContract:'Безопасный контракт (1 = да)',buyers10:'Покупатели 10 мин',quoteSol:'SOL в пуле',top1:'Топ-1 держатель %',top10:'Топ-10 держателей %',buyers:'Покупатели',trades:'Сделки',volume:'Объём $',liq:'Ликвидность $',mc:'Капитализация $',buys:'Покупки',sells:'Продажи',buySellRatio:'Покупки/продажи'};
 var MODS={};
 var MSHORT={buyers10:'Спрос',buyers:'Покупатели',quoteSol:'SOL',top1:'Топ1',top10:'Топ10',trades:'Сделки',volume:'Объём',liq:'Ликв',mc:'Кап',buys:'Покупки',sells:'Продажи',buySellRatio:'Пок/прод'};
 function modAutoName(c){return c.map(function(x){return (MSHORT[x.key]||x.key)+' '+(x.op==='<='?'≤':'≥')+fmt(x.value)}).join(' · ')}
@@ -680,7 +647,7 @@ function modPc(v){return v==null?'—':Math.round(v*100)+'%'}
 function modEv(t){if(!t||t.positiveRecall==null)return '—';return '🟢 '+modPc(t.positiveRecall)+' · 🔴 '+modPc(1-t.negativeRejection)+(t.totalPositive!=null?' <span class="hint">на 🟢'+t.totalPositive+' 🔴'+t.totalNegative+'</span>':'')}
 var MOD_AUTO={};
 function modConds(m,openG){var GR=m.level==='2'||String(m.id).indexOf('a2-')===0?MGRP2:MGRP,LB=GR===MGRP2?MLAB2:MLAB;return GR.map(function(g){var keys=g[1],rows=[];m.conds.forEach(function(c,j){if(keys.indexOf(c.key)<0&&!(g===GR[0]&&!GR.some(function(x){return x[1].indexOf(c.key)>=0})))return;
-    rows.push('<div class="row" style="gap:5px;margin-top:5px"><select class="input sm inl" style="margin:0;flex:1;min-width:0" data-mf="key" data-j="'+j+'">'+keys.map(function(k){return '<option value="'+k+'"'+(k===c.key?' selected':'')+'>'+LB[k]+'</option>'}).join('')+'</select>'+
+    rows.push('<div class="row" style="gap:5px;margin-top:5px"><select class="input sm inl" style="margin:0;flex:1;min-width:0" data-mf="key" data-j="'+j+'">'+keys.concat(keys.indexOf(c.key)<0?[c.key]:[]).map(function(k){return '<option value="'+k+'"'+(k===c.key?' selected':'')+'>'+esc(LB[k]||MLAB[k]||k)+'</option>'}).join('')+'</select>'+
     '<select class="input sm inl" style="margin:0;width:54px" data-mf="op" data-j="'+j+'"><option'+(c.op==='>='?' selected':'')+'>&gt;=</option><option'+(c.op==='<='?' selected':'')+'>&lt;=</option></select>'+
     '<input class="input sm" style="width:70px;min-height:28px;padding:2px 6px" type="number" step="any" value="'+esc(c.value)+'" data-mf="value" data-j="'+j+'"><button type="button" class="del" data-mdel="'+j+'">✕</button></div>')});
   return '<details class="frow mgrp" data-g="'+g[0]+'" style="margin-top:6px"'+(openG[g[0]]?' open':'')+'><summary><span class="fname">'+g[0]+' <span class="hint">· '+rows.length+'</span></span></summary>'+rows.join('')+
@@ -898,7 +865,7 @@ function classified(level){
     if(label==='live'||label==='strong')a.push(x);
     else b.push(x);
   }
-  return [a.slice(-5000),b.slice(-5000)];
+  return [a,b];
 }
 function renderServerRuleHistory(){
   if(!$('serverRuleHistoryRows'))return;

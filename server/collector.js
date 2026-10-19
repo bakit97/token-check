@@ -7,8 +7,9 @@ if(typeof WebSocket==='undefined'&&!process.env.WSX){const ch=require('child_pro
    Каждые 2 минуты выгружает перепись дня (по Алматы, с 00:00) в Cloud Storage. */
 const fs=require('fs'),zlib=require('zlib');
 let HEALTH=null,PROFILES=null;
-let COMPLETED=null;
-const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:45000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0,pendingWork:0,cancelledGT:0};
+let COMPLETED=null,ACTIVE_HISTORY=null;
+const fullCoin=c=>ACTIVE_HISTORY?ACTIVE_HISTORY.hydrate(c):c;
+const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:30000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0,pendingWork:0,cancelledGT:0};
 let RESOURCE=null;
 const resourcePressure=()=>process.memoryUsage().rss>=360*1024*1024;
 const BUCKET='sol-scan-511718-data',DIR=process.env.SOLSCAN_DIR||'/var/solscan',TZ=5*3600e3;
@@ -147,7 +148,7 @@ async function preChainSweep(){const now=Date.now(),dec=(PASS_V2?.config?.decisi
   }catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else{PRE_STATS.errors++;err('pre contracts '+e.message)}}
   try{for(let i=0;i<needCurve.length;i+=100){const part=needCurve.slice(i,i+100),pools=part.map(c=>c.p),v=await call(pools,{encoding:'base64',dataSlice:{offset:0,length:49}}),at=Date.now();
       part.forEach((c,j)=>{const a=v[j];if(c.p!==pools[j]||!a||a.owner!==PUMP)return;const u=b64(a.data?.[0]);if(u.length<49)return;
-        const lam=Number(Buffer.from(u).readBigUInt64LE(32));(c.curveSol=c.curveSol||[]).push([at,lam,u[48]?1:0]);if(c.curveSol.length>20)c.curveSol.shift();PRE_STATS.curve++})}
+        const lam=Number(Buffer.from(u).readBigUInt64LE(32));(c.curveSol=c.curveSol||[]).push([at,lam,u[48]?1:0]);PRE_STATS.curve++})}
   }catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else{PRE_STATS.errors++;err('pre sweep '+e.message)}}}
 
 /* ---------- миграция. Доказательство = 2 условия вместе:
@@ -402,20 +403,20 @@ let AUTO_STUDIES=null,RESEARCH_BANKS=null,LIBRARY_CONFIG={schema:1,modules:[],de
 let PASS_ERR='', TWO_ERR='', PASS_CFG_ERR='', TWO_BANK_UPLOADED=0, AUTO_UPLOADED=0;
 async function admitVerifiedPublicLaunch(launch,record) {
   const existing=C.get(record.mint);
-  if(existing){existing.preCurve=existing.preCurve||1;existing.preTradingAt=record.eventAt;existing.createdAt=record.eventAt;existing.createdAtSource='verified-create-log-slot-time';
+  if(existing){existing.preCurve=existing.preCurve||1;existing.preTradingAt=record.eventAt;existing.createdAt=record.eventAt;existing.createdAtObservedAt=record.acceptedAt;existing.createdAtSource='verified-create-log-slot-time';
     if(!existing.n)existing.n=launch.name;if(!existing.s)existing.s=launch.symbol;
     return;
   }
   C.set(record.mint,{a:record.mint,n:launch.name,s:launch.symbol,i:'',
     p:launch.curve,d:'pump-fun',q:launch.quote||WSOL,t:record.eventAt,
-    preTradingAt:record.eventAt,createdAt:record.eventAt,createdAtSource:'verified-create-log-slot-time',tSrc:'pre',seen:record.acceptedAt,disc:'pre-ws',
+    preTradingAt:record.eventAt,createdAt:record.eventAt,createdAtObservedAt:record.acceptedAt,createdAtSource:'verified-create-log-slot-time',tSrc:'pre',seen:record.acceptedAt,disc:'pre-ws',
     preCurve:1,pools:[launch.curve],fv:FV,
     mg:{v:MGV,st:'curve',k:'curve-pump',final:1,lastAt:record.acceptedAt}});
 }
 // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
 // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
 const MODULES=['event-clock.js','admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
-  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js','module-library.js'];
+  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js','module-library.js','active-history.js'];
 let MODULES_OK=null;
 function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
   for(const name of MODULES){const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
@@ -1006,7 +1007,7 @@ async function flushUploadsInner(){
   }
 }
 function coinMetadata(c){const mg=c.mg||{};
-  const r={a:c.a,n:c.n,s:c.s,i:c.i,p:c.p,d:c.d,q:c.q,t:c.t,tSrc:c.tSrc||'gt',t0:c.t0||null,createdAt:c.createdAt||null,createdAtSource:c.createdAtSource||null,uri:c.uri||null,metadataAt:c.metadataAt,description:c.description||null,seen:c.seen,disc:c.disc||null,rcSeen:c.rcSeen||null,wsSeen:c.wsSeen||null,firstPostSeenAt:c.firstPostSeenAt||null,preCurve:!!c.preCurve,preTradingAt:c.preTradingAt||null,ty:launchType(c),
+  const r={a:c.a,n:c.n,s:c.s,i:c.i,p:c.p,d:c.d,q:c.q,t:c.t,tSrc:c.tSrc||'gt',t0:c.t0||null,createdAt:c.createdAt||null,createdAtSource:c.createdAtSource||null,createdAtObservedAt:c.createdAtObservedAt||null,uri:c.uri||null,metadataAt:c.metadataAt,description:c.description||null,seen:c.seen,disc:c.disc||null,rcSeen:c.rcSeen||null,wsSeen:c.wsSeen||null,firstPostSeenAt:c.firstPostSeenAt||null,preCurve:!!c.preCurve,preTradingAt:c.preTradingAt||null,ty:launchType(c),
     mk:mg.k||null,mst:mg.st||null,mw:mg.why||'',mT:mg.mT||null,mSig:mg.sig||null,mSeen:mg.seenAt||null,mCr:mg.creator??null,mH:c.mgH||[],mk0:c.mg0?.k||null,
     origs:(c.origs||[]).map(o=>({p:o.p,t:o.t,d:o.d,movedAt:o.movedAt})),
     preObs:c.preCurve?((c.origs||[]).find(o=>o.d==='pump-fun')||null):null,ct:c.ct||null,curveSol:c.preCurve&&c.curveSol?.length?c.curveSol:undefined,soc:c.soc||0,tk:c.tk&&isFinite(c.tk)?c.tk:null,tkAt:c.tkAt||null,
@@ -1085,14 +1086,14 @@ async function exportSource(now) {
   await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});
   await upload('source/live.json',{updated:now,count:today.length,coins:SOURCE.latest(200).map(enrich)});
 }
-function researchCoins(){const contract=require(DIR+'/observation-contract.js');return {get:mint=>{const c=C.get(mint)||(typeof COMPLETED!=='undefined'&&COMPLETED?COMPLETED.readCoin(mint):null);return c?contract.toLegacy(contract.project(c,{metadata:c,admission:SOURCE?.get(mint)||null})):null}}}
+function researchCoins(){const contract=require(DIR+'/observation-contract.js');return {get:mint=>{const c=C.get(mint)||(typeof COMPLETED!=='undefined'&&COMPLETED?COMPLETED.readCoin(mint):null);return c?contract.toLegacy(contract.project(fullCoin(c),{metadata:fullCoin(c),admission:SOURCE?.get(mint)||null})):null}}}
 async function exportResearchV2(now) {
   if(!RESEARCH_V2||!SOURCE)return;
   // All read-only observations originate from the accepted main source.
   const result=RESEARCH_V2.update({source:SOURCE,coins:researchCoins(),passes:PASS_V2,now});
   // A settings change does NOT abandon previously admitted cohorts.
   for(const item of OLD_RESEARCH_ONE){
-    try{item.runtime.update({source:SOURCE,coins:researchCoins(),passes:PASS_V2,now})}
+    try{item.runtime.update({source:SOURCE,coins:researchCoins(),passes:PASS_V2,now});RESEARCH_BANKS?.upsert(item.runtime.select({limit:20000}))}
     catch(e){err('research old 1 '+item.epoch.hash+' '+e.message)}
   }
   RESEARCH_BANKS?.upsert(RESEARCH_V2.select({limit:20000}));
@@ -1132,7 +1133,7 @@ async function exportPathsV2(now){
   }
   const result=RESEARCH_TWO.update({passes:PASS_V2,coins:researchCoins(),now});
   for(const item of OLD_RESEARCH_TWO){
-    try{item.runtime.update({passes:PASS_V2,coins:researchCoins(),now})}
+    try{item.runtime.update({passes:PASS_V2,coins:researchCoins(),now});RESEARCH_BANKS?.upsert(item.runtime.select({limit:20000}))}
     catch(e){err('research old 2 '+item.epoch.hash+' '+e.message)}
   }
   TWO_ERR='';
@@ -1248,12 +1249,12 @@ async function stageCompleted(now){
   if(!COMPLETED)return;const pins=retentionPins(now),{retirementDue}=require(DIR+'/completed-coins.js');RETENTION.protectedResearch=pins.size;RETENTION.pendingRaw=0;RETENTION.pendingWork=0;
   const cancelled=typeof gtQ==='undefined'?0:require(DIR+'/completed-coins.js').cancelRetiredGT(gtQ,C,{now,pins});RETENTION.cancelledGT+=cancelled;if(cancelled)await new Promise(r=>setImmediate(r));
   const candidates=[];for(const c of C.values())if(retirementDue(c,{now,pins})){if(retirementBlocked(c)){if(UPQ.some(([name])=>(name.includes('/'+c.a+'-')||name.includes('/'+c.a+'/'))))RETENTION.pendingRaw++;else RETENTION.pendingWork++;continue}candidates.push(c)}
-  await COMPLETED.stage(candidates);RETENTION.lastSweepAt=now;
+  await COMPLETED.stage((function*(){for(const c of candidates)yield fullCoin(c)})());RETENTION.lastSweepAt=now;
 }
 async function retireConfirmed(day,list,now){
   if(!COMPLETED)return;const pins=retentionPins(now),{retirementDue}=require(DIR+'/completed-coins.js');let removed=0;
   for(const c of list){if(C.get(c.a)!==c||!retirementDue(c,{now,pins})||retirementBlocked(c))continue;
-    if(COMPLETED.isConfirmed(c)){C.delete(c.a);removed++}if(removed&&removed%32===0)await new Promise(r=>setImmediate(r));}
+    if(COMPLETED.isConfirmed(fullCoin(c))){C.delete(c.a);removed++}if(removed&&removed%32===0)await new Promise(r=>setImmediate(r));}
   if(removed){RETENTION.removed+=removed;COMPLETED.removed+=removed;COMPLETED.lastRemovedAt=Date.now();}
   return removed;
 }
@@ -1274,12 +1275,14 @@ const LAST_DAY_EXPORT=new Map();
 let DAY_EXPORT_BUSY=false;
 async function exportDays(){if(DAY_EXPORT_BUSY)return;DAY_EXPORT_BUSY=true;try{await exportDaysBody()}finally{DAY_EXPORT_BUSY=false}}
 async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayKey(now-864e5);
-  await reloadSourceAgeConfig();await reloadResearchConfig();await seedCompletedDays(now);await stageCompleted(now);
+  await reloadSourceAgeConfig();await reloadResearchConfig();
+  if(ACTIVE_HISTORY&&await ACTIVE_HISTORY.compact({coins:C,publish:upload,read:getObj,now}))save();
+  await seedCompletedDays(now);await stageCompleted(now);
   const {rowStream}=require(DIR+'/stream-json.js'),days=[...new Set([today,yest,...(COMPLETED?.days()||[])])],completedDays=[];
   for(const d of days){const live=[...C.values()].filter(c=>dayKey(c.t)===d),pins=COMPLETED?retentionPins(now):new Map();
     const force=COMPLETED&&(COMPLETED.needsConfirmation(d)||live.some(c=>require(DIR+'/completed-coins.js').retirementDue(c,{now,pins})&&!retirementBlocked(c)));if(d!==today&&!force&&now-(LAST_DAY_EXPORT.get(d)||0)<30*60e3)continue;
     if(COMPLETED?.sealed.has(d)){if(live.length)err('retention: sealed day has unexpected active records '+d);continue}
-    const list=COMPLETED?COMPLETED.view(d,live):live;if(!list.length)continue;
+    const list=COMPLETED?COMPLETED.view(d,live,fullCoin):live;if(!list.length)continue;
     OBS_CONTRACT.days[d]=await exportObservationContract('observations-v2/'+d+'.json',list,now);
     await exportObservationSummary('observations-v2/summary/day/'+d+'.json',list,now);
     if(COMPLETED){COMPLETED.confirm(d,list);await retireConfirmed(d,live,Date.now());completedDays.push(d)}
@@ -1296,7 +1299,7 @@ async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayK
 let STATUS_BUSY=false;
 async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const now=Date.now(),today=dayKey(now);
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,coinProfiles:PROFILES?.stats||null,resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,coinProfiles:PROFILES?.stats||null,resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,publishedAt:FAST_PASS_PUBLISH_AT},
@@ -1332,7 +1335,7 @@ const STARTED=Date.now();
   RESOURCE=new (require(DIR+'/resource-budget.js').ResourceBudget)({dir:DIR,env:{...process.env,HELIUS_USED_CREDITS:process.env.HELIUS_USED_CREDITS||'185000'}});
   HEALTH=new (require(DIR+'/runtime-health.js').RuntimeHealth)();let expected=Date.now()+1000;setInterval(()=>{const at=Date.now();HEALTH.lagMs=Math.max(0,at-expected);HEALTH.maxLagMs=Math.max(HEALTH.maxLagMs,HEALTH.lagMs);expected=at+1000;HEALTH.capture()},1000).unref();
   COMPLETED=new (require(DIR+'/completed-coins.js').CompletedCoins)(DIR);UPQ.push(...COMPLETED.rawQueue());
-  load();if(fs.existsSync(DIR+'/state.json'))RETENTION.stateBytes=fs.statSync(DIR+'/state.json').size;HEALTH.capture('load:complete');log('старт, версия',VERSION);
+  load();ACTIVE_HISTORY=new (require(DIR+'/active-history.js').ActiveHistory)(DIR);await ACTIVE_HISTORY.restore(C,getObj);if(fs.existsSync(DIR+'/state.json'))RETENTION.stateBytes=fs.statSync(DIR+'/state.json').size;HEALTH.capture('load:complete');log('старт, версия',VERSION);
   try{await initSource();await reloadSourceAgeConfig()}catch(e){SOURCE_ERR=e.message;err('главный источник не запустился: '+e.message)}
   try{await initResearchV2()}catch(e){RESEARCH_V2_ERR=e.message;err('исследование v2 не запустилось: '+e.message)}
   try{await initPathsV2()}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('серверные пути не запустились: '+e.message)}

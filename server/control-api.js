@@ -141,7 +141,7 @@ function handler(req,res){
       const snapshot=(await storageGet(token,'research-v2/modules.json'))?.modules||[],lib=require('./module-library');let config,module,results,deleted;
       try{
         if(req.url==='/api/module-test'){
-          const modules=lib.combine({owner:current,auto:snapshot}),bank=await storageGet(token,proposed.level==='1'?'research-v2/polygon-1.json':'research-v2/polygon-2.json');
+          const modules=lib.combine({owner:current,auto:snapshot}),bank=await storageGet(token,String(proposed.level)==='1'?'research-v2/polygon-1.json':'research-v2/polygon-2.json');
           results=lib.manualTest(modules,bank?.coins||[],proposed);config=lib.catalog(current);
           for(const result of results){const m=modules.find(m=>m.id===result.id);config.modules=config.modules.filter(x=>x.id!==m.id).concat({...m,eval:{...m.eval,test:result}})}
         }else{const out=lib.edit(current,proposed,snapshot);config=out.config;module=out.module;deleted=out.deleted}

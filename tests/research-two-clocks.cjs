@@ -7,7 +7,7 @@ const {configOf:passConfig}=require('../server/pass-runtime');
 const M=60000,T=Date.UTC(2026,9,19);
 function dir(t){const d=fs.mkdtempSync(path.join(os.tmpdir(),'two-clock-'));t.after(()=>fs.rmSync(d,{recursive:true,force:true}));return d}
 test('level 2 early metrics respect receipt cutoff and leave unsupported flow and wallets unknown',()=>{
- const coin={createdAt:T-M,ds:Array.from({length:16},(_,m)=>[(T+m*M)/1000,100+m,100,100,10,2,100]),path:{at:T+100*M,c:[[(T+6*M)/1000,999,999,999,999,10]]}};
+ const coin={createdAt:T-M,createdAtObservedAt:T,ds:Array.from({length:16},(_,m)=>[(T+m*M)/1000,100+m,100,100,10,2,100]),path:{at:T+100*M,c:[[(T+6*M)/1000,999,999,999,999,10]]}};
  const f=levelTwoFeaturesAt(coin,T+7*M,{entryAt:T+2*M,acceptedAt:T,phase:'after'});
  assert.equal(f.chg5m,(107/102-1)*100);assert.equal(f.ageMin,8);assert.equal(f.drawdown,0);assert.equal(f.fromPeak,0);assert.equal(f.bigBuyShare,null);assert.equal(f.repeatBuys,null);assert.equal(f.devSold,null);assert.equal(f.sellShare1m,null);assert.equal(f.buyerAccel,null);assert.ok(LEVEL2_KEYS.every(k=>Object.hasOwn(f,k)));
 });

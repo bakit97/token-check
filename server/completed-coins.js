@@ -12,7 +12,7 @@ function researchPins({source,passes,one=[],two=[],now=Date.now()}={}){
  const first=one.filter(Boolean),second=two.filter(Boolean);
  for(const rt of first.length?first:[{}])for(const r of source?.records?.values()||[]){
   if(r.acceptedAt<(rt.cohortStart||0)||r.acceptedAt>=(rt.cohortEnd??Infinity)||rt.processed?.has(r.mint))continue;
-  pin(r.mint,r.acceptedAt+(rt.config?.hours??5)*HOUR+3*60000);
+  pin(r.mint,r.acceptedAt+(rt.config?.phases?.[r.phase]?.hours??rt.config?.hours??5)*HOUR+3*60000);
  }
  for(const rt of second.length?second:[{}])for(const r of passes?.records?.values()||[]){
   if(r.firstSeenAt<(rt.cohortStart||0)||r.firstSeenAt>=(rt.cohortEnd??Infinity)||rt.processed?.has(r.mint))continue;
@@ -93,14 +93,14 @@ class CompletedCoins{
  coversHot(c){const e=this.metadata(c.a);if(!e||e.t!==c.t||!e.poolKeys.includes(c.p)||this.confirmed.get(dayOf(e.t))?.get(c.a)!==e.hash)return false;
   const archived=this.readCoin(c.a);return archived.p===c.p&&containsObservations(archived,c);
  }
- view(day,live){const records=this.index.get(day)||new Map(),mutable=[],shadowed=new Set();
-  for(const c of live){const e=records.get(c.a);if(!e||e.hash!==hash(JSON.stringify(c))){mutable.push(c);shadowed.add(c.a)}}
+ view(day,live,hydrate=c=>c){const records=this.index.get(day)||new Map(),mutable=[],shadowed=new Set();
+  for(const c of live){const e=records.get(c.a);if(!e||e.hash!==hash(JSON.stringify(hydrate(c)))){mutable.push(c);shadowed.add(c.a)}}
   const entries=[...records.values()].filter(e=>!shadowed.has(e.mint)),file=this.file(day);
   const end=fs.existsSync(file)?fs.statSync(file).size:0;
-  const counts={rawStates:0,dsRows:0,vaultRows:0};for(const x of [...entries.map(e=>e.metrics),...mutable.map(metrics)])for(const key of Object.keys(counts))counts[key]+=x[key];
+  const counts={rawStates:0,dsRows:0,vaultRows:0};for(const x of [...entries.map(e=>e.metrics),...mutable.map(c=>metrics(hydrate(c)))])for(const key of Object.keys(counts))counts[key]+=x[key];
   return {day,end,metrics:counts,proof:entries.map(e=>[e.mint,e.hash]),length:mutable.length+entries.length,*[Symbol.iterator](){
    if(entries.length){const fd=fs.openSync(file,'r');try{for(const e of entries){const b=Buffer.alloc(e.length);let n=0;while(n<b.length){const r=fs.readSync(fd,b,n,b.length-n,e.offset+n);if(!r)throw Error('Incomplete completed coin');n+=r}const row=JSON.parse(b.toString('utf8'));if(row.hash!==e.hash||hash(JSON.stringify(row.c))!==e.hash)throw Error('Completed coin checksum mismatch');yield row.c}}finally{fs.closeSync(fd)}}
-   yield*mutable;
+   for(const c of mutable)yield hydrate(c);
   },reduce(fn,initial){let value=initial;for(const c of this)value=fn(value,c);return value}};
  }
  needsConfirmation(day){const entries=this.index.get(day),ack=this.confirmed.get(day);return !!entries&&[...entries.values()].some(e=>ack?.get(e.mint)!==e.hash)}

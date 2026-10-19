@@ -9,7 +9,7 @@ function storageConfig(raw={},one={},two={}){
  for(const phase of PHASES)for(const label of LABELS){const value=raw[phase]?.[label]??2000;if(!Number.isInteger(value)||value<50||value>5000)throw RangeError('Storage target must be 50..5000');const first=one.phases?.[phase]||one,second=two.phases?.[phase]||two;const minimum={live:first.targetLive||100,dead:first.targetDead||40,strong:second.targetStrong||40,weak:second.targetWeak||40}[label];out[phase][label]=Math.max(value,minimum)}
  return out;
 }
-function valid(row){return row&&typeof row.mint==='string'&&PHASES.includes(row.phase)&&LABELS.includes(row.label)&&Number.isSafeInteger(row.acceptedAt)&&row.features&&typeof row.features==='object'}
+function valid(row){return row&&typeof row.mint==='string'&&PHASES.includes(row.phase)&&LABELS.includes(row.label)&&Number.isSafeInteger(row.acceptedAt)&&row.features&&typeof row.features==='object'&&row.featureAnchor==='acceptedAt'}
 function encode(row){const copy={...row};delete copy.minuteCurve;delete copy.minuteCurvePacked;if(Array.isArray(copy.curve)){copy.curvePacked=zlib.deflateRawSync(Buffer.from(JSON.stringify(copy.curve)),{level:1}).toString('base64');delete copy.curve}return copy}
 function decode(row,curves=true){if(!curves){const {curvePacked,...rest}=row;return rest}if(!row.curvePacked)return row;const {curvePacked,...rest}=row;return {...rest,curve:JSON.parse(zlib.inflateRawSync(Buffer.from(curvePacked,'base64'),{maxOutputLength:128*1024}).toString('utf8'))}}
 class ResearchBanks{

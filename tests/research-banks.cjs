@@ -5,7 +5,7 @@ function dir(t){const d=fs.mkdtempSync(path.join(os.tmpdir(),'banks-eight-'));t.
 function settings(){return {schema:1,before:{live:50,dead:50,strong:50,weak:50},after:{live:50,dead:50,strong:50,weak:50}}}
 const opts={config:settings(),one:{targetLive:50,targetDead:50},two:{targetStrong:50,targetWeak:50}};
 test('eight banks rotate independently, preserve labeled features/curve, and restart without resurrecting old rows',t=>{
- const d=dir(t),b=new ResearchBanks({dir:d,...opts}),rows=[];for(const phase of ['before','after'])for(const label of ['live','dead','strong','weak'])for(let i=0;i<65;i++)rows.push({mint:phase+label+i,phase,label,acceptedAt:1000+i,features:{buys:i},curve:[[0,null],[5,1.23456789123]],time:1000+i});
+ const d=dir(t),b=new ResearchBanks({dir:d,...opts}),rows=[];for(const phase of ['before','after'])for(const label of ['live','dead','strong','weak'])for(let i=0;i<65;i++)rows.push({mint:phase+label+i,phase,label,acceptedAt:1000+i,features:{buys:i},featureAnchor:'acceptedAt',curve:[[0,null],[5,1.23456789123]],time:1000+i});
  assert.equal(b.upsert(rows),520);for(const phase of ['before','after'])for(const label of ['live','dead','strong','weak'])assert.equal(b.summary().counts[phase][label],50);
  const r=b.select({level:'1',phase:'before',label:'live',curves:true});assert.equal(r.length,50);assert.equal(r[0].mint,'beforelive15');assert.deepEqual(r[0].curve,rows[0].curve);assert.equal(r[0].features.buys,15);
  const restarted=new ResearchBanks({dir:d,...opts});assert.equal(restarted.select().length,400);assert.equal(restarted.upsert(rows),0);assert.ok(restarted.select().every(x=>!Object.hasOwn(x,'curvePacked')));
