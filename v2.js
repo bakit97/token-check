@@ -1302,6 +1302,10 @@ function bind(){
   $('libMods').addEventListener('click',function(e){var t=e.target.closest('[data-mopen]');if(!t)return;var id=t.dataset.mopen;if(LIB_SEL){LIBSET[id]=!LIBSET[id];t.classList.toggle('picked',!!LIBSET[id]);$('libMsg').textContent='Отмечено: '+Object.keys(LIBSET).filter(function(k){return LIBSET[k]}).length}else openModSheet(id)});
   $('libTest').addEventListener('click',function(){var ids=Object.keys(LIBSET).filter(function(k){return LIBSET[k]});if(!ids.length){$('libMsg').textContent='Отметь хотя бы один модуль';return}openTestSheet(ids)});
   ['r1ResFold','r2ResFold'].forEach(function(id){var f=$(id);if(f)f.addEventListener('input',function(){var b=$(id==='r1ResFold'?'r1ResApply':'r2ResApply');if(b&&b.dataset.done){delete b.dataset.done;b.disabled=false;b.textContent='Применить';var mm=$(id==='r1ResFold'?'r1ResMsg':'r2ResMsg');if(mm)mm.textContent=''}})});
+  function penKey(L){return 'missPen_'+L+'_'+(L==='1'?R1P:s.r2Stream)}
+  function penLoad(L){var v=3;try{v=+localStorage.getItem(penKey(L))||3}catch(e){}$('r'+L+'Pen').value=v;$('r'+L+'PenV').textContent='×'+v}
+  ['1','2'].forEach(function(L){penLoad(L);$('r'+L+'Pen').addEventListener('input',function(){$('r'+L+'PenV').textContent='×'+this.value;$('r'+L+'ResApplyRow').classList.remove('hide')});
+    $('r'+L+'ResApply').addEventListener('click',function(){try{localStorage.setItem(penKey(L),$('r'+L+'Pen').value)}catch(e){}})});
   $('r2Seg').addEventListener('click',function(e){var b=e.target.closest('[data-r2f]');if(!b)return;R2F=b.dataset.r2f;document.querySelectorAll('#r2Seg [data-r2f]').forEach(function(x){x.classList.toggle('active',x===b)});renderR2()});
   $('r2N').addEventListener('click',function(e){var b=e.target.closest('[data-r2n]');if(!b)return;R2N=+b.dataset.r2n;document.querySelectorAll('#r2N [data-r2n]').forEach(function(x){x.classList.toggle('active',x===b)});renderR2()});
   $('r2Strong').addEventListener('input',function(){$('r2StrongValue').textContent=$('r2Strong').value+'%';$('r2ApplyRow').classList.remove('hide')});
