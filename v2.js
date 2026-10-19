@@ -316,12 +316,17 @@ function renderKeyUI(){var has=!!ownerKey();document.querySelectorAll('.ownerkey
 function keyFrom(id){var v=(document.getElementById(id)||{}).value;v=(v||'').trim()||ownerKey();if(!v&&typeof window!=='undefined'&&window.prompt){v=(window.prompt('Ключ владельца (один раз)')||'').trim()}return v}
 async function ownerFetch(url,opts){var r=await fetch(url,opts);var a=opts&&opts.headers&&opts.headers.Authorization||'';rememberIfOk(r,a.replace(/^Bearer /,''));return r}
 function rememberIfOk(r,key){if(r&&r.ok&&key)setOwnerKey(key);else if(r&&r.status===401)setOwnerKey('')}
+var CLONE_AT=0,CLONE_MAP=null;
+function cloneInfo(c){if(typeof Map==='undefined')return null;var nm=String(c.n||'').trim().toLowerCase();if(!nm)return null;
+  if(!CLONE_MAP||now()-CLONE_AT>5000){CLONE_MAP=new Map();CLONE_AT=now();(typeof lastAccepted!=='undefined'&&lastAccepted||[]).forEach(function(x){var k=String(x.n||'').trim().toLowerCase();if(!k)return;var t=(x._entry&&x._entry.eventAt)||0,g=CLONE_MAP.get(k)||{n:0,first:Infinity,fm:''};g.n++;if(t<g.first){g.first=t;g.fm=mint(x)}CLONE_MAP.set(k,g)})}
+  var g=CLONE_MAP.get(nm);return g?{n:g.n,first:g.fm===mint(c)}:null}
 function coinHtml(c,extra){
   var e=c._entry||{},p=(c.ds||[]).at(-1),L=liveOf(c),img=imgOf(c),ml=marketLine(c);
   var nm=c.n||c.s||'Токен',sy=c.s||'',name=esc(nm),symbol=sy&&sy.toLowerCase()!==nm.toLowerCase()?' <small>'+esc(sy)+'</small>':'';
+  var cl=cloneInfo(c),clb=cl&&cl.n>1?' <span class="clone'+(cl.first?' orig':'')+'">'+(cl.first?'оригинал':'копия')+' ×'+cl.n+'</span>':'';
   return '<button type="button" class="coin '+(e.phase==='before'?'pre':'post')+'" data-coin="'+esc(mint(c))+'">'+
     (img?'<img class="avatar" src="'+esc(img)+'" alt="" loading="lazy">':'<span class="avatar empty"'+(c._uri?' data-uri="'+esc(c._uri)+'"':'')+'>'+esc((sy||nm||'?').slice(0,2))+'</span>')+
-    '<span class="body"><span class="name">'+name+symbol+'</span><span class="detail">'+(function(){var ag=cardAgeAt(c),pre=e.phase==='before';if(!pre&&!ag)return '🎓 миграция <b class="ago sh" data-t="'+(+e.eventAt||0)+'">'+agoShort(e.eventAt)+'</b>';return (pre?'🌱 ':'🎓 возраст ')+'<b class="ago sh" data-t="'+ag+'">'+agoShort(ag)+'</b>'})()+' · 👁 '+(e.acceptedAt&&e.eventAt?spd(e.acceptedAt-e.eventAt):'—')+'<span class="mline">'+(ml?' · '+mlHtml(ml):'')+'</span></span>'+
+    '<span class="body"><span class="name">'+name+symbol+'</span><span class="detail">'+(clb?clb.replace(' <span','<span')+' ':'')+(function(){var ag=cardAgeAt(c),pre=e.phase==='before';if(!pre&&!ag)return '🎓 миграция <b class="ago sh" data-t="'+(+e.eventAt||0)+'">'+agoShort(e.eventAt)+'</b>';return (pre?'🌱 ':'🎓 возраст ')+'<b class="ago sh" data-t="'+ag+'">'+agoShort(ag)+'</b>'})()+' · 👁 '+(e.acceptedAt&&e.eventAt?spd(e.acceptedAt-e.eventAt):'—')+'<span class="mline">'+(ml?' · '+mlHtml(ml):'')+'</span></span>'+
     (extra?'<span class="detail">'+(extra.charAt(0)==='<'?extra:esc(extra))+'</span>':'')+'</span><span class="right"><span class="price">'+price(L&&L.price||p&&p[1])+'</span><span class="growbox">'+growthHtml(c)+'</span><span class="sparkbox">'+spark(c)+'</span></span></button>';
 }
 function pc(v){return v==null||!Number.isFinite(+v)?'—':(v>0?'+':'')+Number(v).toFixed(Math.abs(v)>=10?0:1)+'%'}
