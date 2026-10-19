@@ -125,8 +125,10 @@ class ResearchRuntime {
     // Newest first, avoid scanning the entire multi-month ledger.
     const recent=typeof source.recentAdmissions==='function'?
       source.recentAdmissions(now-FRESH_WINDOW,now):source.records.values();
+    const diag={recent:0,beforeCohort:0,afterEnd:0,tooOld:0,future:0,processed:0,processedSize:this.processed.size};
     for(const row of recent){
       const age=now-row.acceptedAt;
+      diag.recent++;if(row.acceptedAt<this.cohortStart)diag.beforeCohort++;else if(row.acceptedAt>=this.cohortEnd)diag.afterEnd++;else if(age<0)diag.future++;else if(age>FRESH_WINDOW)diag.tooOld++;else if(this.processed.has(row.mint))diag.processed++;
       if(row.acceptedAt<this.cohortStart||row.acceptedAt>=this.cohortEnd||age<0||age>FRESH_WINDOW||this.processed.has(row.mint))continue;
       considered++;
       const cfg=phaseSettings(this.config,row.phase);
@@ -193,7 +195,7 @@ class ResearchRuntime {
     }
     this.pending=pending;
     this.lastAt=now;
-    return {added,considered,attempted,
+    return {added,considered,attempted,diag:{...diag,cohortStart:this.cohortStart,cohortEnd:String(this.cohortEnd),now},
       maxChecksPerRun:MAX_CLASSIFICATION_CHECKS,intake:this.config.intake,intakeAccepted:this.intakeAccepted,intakeRejected:this.intakeRejected,...this.summary()};
   }
   summary(){
