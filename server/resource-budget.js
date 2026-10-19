@@ -23,9 +23,10 @@ class ResourceBudget{
        !Array.isArray(s.buckets)||!Array.isArray(s.gcsHour)||!Number.isFinite(s.gcsUsed)||
        !Number.isFinite(s.gcsNext)||!Number.isFinite(s.since)||!Number.isFinite(this.perMinute)||this.perMinute<=0||
        s.buckets.some(b=>!Number.isFinite(b.at)||!Number.isFinite(b.rpc)||!Number.isFinite(b.ws)||b.rpc<0||b.ws<0))throw Error('Invalid resource budget ledger');
+    this.preStarvedSince=s.preStarvedSince||0;this.prePauseSince=s.prePauseSince||0;
     this.persist();
   }
-  persist(){atomic(this.file,this.state)}
+  persist(){this.state.preStarvedSince=this.preStarvedSince||0;this.state.prePauseSince=this.prePauseSince||0;atomic(this.file,this.state)}
   trim(){const t=this.now();this.state.buckets=this.state.buckets.filter(b=>b.at>=Math.floor(t/MIN)*MIN-120*MIN);
     this.state.gcsHour=this.state.gcsHour.filter(x=>x>t-60*MIN);
     this.state.gcsSuccessHour=this.state.gcsSuccessHour.filter(x=>x>t-60*MIN);
@@ -86,7 +87,8 @@ class ResourceBudget{
     const poolReserve=this.poolsPending?Math.max(0,4-pools):0;
     return Math.max(0,rate-m.rpc-(m.ws-this.laneTotal('ws:pre',MIN))-proofReserve-poolReserve-.5);
   }
-  streamAllowed(source='pre'){if(source!=='pre')return true;
+  streamAllowed(source='pre'){const before=[this.preStarvedSince,this.prePauseSince].join('|'),allowed=this._streamAllowed(source);if(source==='pre'&&before!==[this.preStarvedSince,this.prePauseSince].join('|'))this.persist();return allowed;}
+  _streamAllowed(source='pre'){if(source!=='pre')return true;
     const now=this.now();
     if(this.rate()<=0||this.state.used>=this.limit)return false;
     // Starvation guard: pending migration/pool reserves must not silence the

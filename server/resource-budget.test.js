@@ -153,3 +153,5 @@ test('pre stream is not starved for hours by pending reserves: floor after five 
  b.stream(200000,'pre');assert.equal(b.streamAllowed('pre'),false);
  f.advance(301000);b.stream(200000,'pre');assert.equal(b.streamAllowed('pre'),true);
 });
+
+test('owner starvation floor survives a collector restart without changing its five-minute rule',t=>{const f=fixture(t),b=new ResourceBudget(f);b.migrationPending=true;b.poolsPending=true;b.stream(200000,'pre');assert.equal(b.streamAllowed('pre'),false);f.advance(290000);const restored=new ResourceBudget(f);assert.equal(restored.preStarvedSince,b.preStarvedSince);f.advance(11000);restored.stream(200000,'pre');assert.equal(restored.streamAllowed('pre'),true);});
