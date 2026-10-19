@@ -127,8 +127,8 @@ function extendedFeaturesAt(coin,t,context,F){
  const eventAt=context.eventAt??coin?.t;out.tradesPerMin=Number.isFinite(eventAt)&&t-eventAt>=FIVE&&F.trades!=null?F.trades/5:null;out.uniqBuyersPerMin=Number.isFinite(eventAt)&&t-eventAt>=FIVE&&F.buyers!=null?F.buyers/5:null;
  if(Number.isFinite(eventAt)){const before=starterFeaturesAt(coin,eventAt,context),after=starterFeaturesAt(coin,t,context);out.poolGrowth=before.quoteSol>0&&after.quoteSol!=null?(after.quoteSol/before.quoteSol-1)*100:null;}
  const socials=coin?.socialFeatures;if(socials?.at<=t)for(const k of ['hasTwitter','hasTelegram','hasWebsite'])out[k]=bool(socials[k]);
- for(const snapshot of [...(coin?.intelligenceSnapshots||[])].filter(s=>s.at<=t).sort((a,b)=>a.at-b.at)){for(const [k,v] of Object.entries(snapshot.features||{}))if(RULE_KEYS.includes(k)&&typeof v==='number'&&Number.isFinite(v)){out[k]=v;out.lowerBoundKeys=(out.lowerBoundKeys||[]).filter(x=>x!==k);if(snapshot.lowerBoundKeys?.includes(k))out.lowerBoundKeys.push(k);}}
- return out;
+ for(const snapshot of [...(coin?.intelligenceSnapshots||[])].filter(s=>s.at<=t).sort((a,b)=>a.at-b.at)){for(const [k,v] of Object.entries(snapshot.features||{}))if(RULE_KEYS.includes(k)&&typeof v==='number'&&Number.isFinite(v)){if(['smartBuyers','smartShare'].includes(k)&&(snapshot.evidenceVersion!==2||snapshot.smartRegistryReady!==true))continue;if(snapshot.evidenceVersion!==2&&v===0&&['devBuySol','devHold','devHoldPct','bundleShare','bundledWallets'].includes(k))continue;if(k==='devBuySol'&&coin.q&&coin.q!=='So11111111111111111111111111111111111111112')continue;out[k]=v;out.lowerBoundKeys=(out.lowerBoundKeys||[]).filter(x=>x!==k);if(snapshot.lowerBoundKeys?.includes(k))out.lowerBoundKeys.push(k);}}
+ out.intelligenceEvidenceVersion=2;return out;
 }
 function activityOutcome(coin,entryAt,cfg={},now=Date.now()){
  if(cfg.outcomeVersion!==2)return legacyActivityOutcome(coin,entryAt,cfg,now);
@@ -267,6 +267,7 @@ function evaluation(F,rule){
       !['>=','<=','between'].includes(rule.op)||!Number.isFinite(rule.value)||(rule.op==='between'&&(!Number.isFinite(rule.value2)||rule.value2<rule.value)))return 'unknown';
   if(rule.conditions){if(!Array.isArray(rule.conditions)||rule.conditions.length>8)return 'unknown';const results=rule.conditions.map(c=>evaluation(F,c));
     if(results.includes('reject'))return 'reject';if(results.includes('unknown'))return 'unknown';}
+  if(F.intelligenceEvidenceVersion!==2&&(['smartBuyers','smartShare'].includes(rule.key)||F[rule.key]===0&&['devBuySol','devHold','devHoldPct','bundleShare','bundledWallets'].includes(rule.key)))return 'unknown';
   const v=F[rule.key];
   if(typeof v!=='number'||!Number.isFinite(v))return 'unknown';
   if(F.lowerBoundKeys?.includes(rule.key)){if(rule.op==='>=')return v>=rule.value?'pass':'unknown';if(rule.op==='<=')return v>rule.value?'reject':'unknown';if(rule.op==='between')return v>rule.value2?'reject':'unknown';}
