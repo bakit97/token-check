@@ -99,7 +99,7 @@ function freshAdmission(c) {
   return null;
 }
 function sourceCard(record){
-  const out={};for(const key of ['cloneCount','cloneRank','isFirstOfName','cloneCountLowerBound','sol','solMeasuredAt','solAgeMs','b5','s5','top10','safeContract','createdAt','createdAtSource','cardAt','marketObservedAt'])if(Object.prototype.hasOwnProperty.call(record,key))out[key]=record[key];
+  const out={};for(const key of ['cloneCount','cloneRank','isFirstOfName','cloneCountLowerBound','sol','solQuoteMint','solUnavailableReason','solMeasuredAt','solAgeMs','b5','s5','top10','safeContract','createdAt','createdAtSource','cardAt','marketObservedAt'])if(Object.prototype.hasOwnProperty.call(record,key))out[key]=record[key];
   if(record.img)out.img=record.img;return out;
 }
 function cardMarket(c){const live=liveOf(c)||{},row=(c.ds||[]).at(-1),server=Object.prototype.hasOwnProperty.call(c,'b5');
@@ -256,7 +256,7 @@ async function pollMarket(){if(liveBusy||document.hidden)return;var mints=visibl
         var h=LIVE_HIST[m]=LIVE_HIST[m]||[];if(LIVE[m].price)h.push(LIVE[m].price);if(h.length>40)h.shift()})}
     patchCards();updateDetailStats()}catch(e){}finally{liveBusy=false}}
 function mlHtml(t){return esc(t).replace('\u0001','<b class="bu">').replace('\u0002','↑</b> <b class="sl">').replace('\u0003','↓</b>')}
-function marketLine(c){var L=cardMarket(c),out=[],sol=solInPool(c);if(sol!=null)out.push('SOL '+(c.solAgeMs>7*60000?'≈':'')+sol.toFixed(sol<10?2:1));if(L&&L.mc)out.push('кап '+usd(L.mc));
+function marketLine(c){var L=cardMarket(c),out=[],sol=solInPool(c);if(sol!=null)out.push('SOL '+(c.solAgeMs>7*60000?'≈':'')+sol.toFixed(sol<10?2:1));if(sol==null&&c.solUnavailableReason==='non-native-quote')out.push('SOL — (другая котировка)');if(L&&L.mc)out.push('кап '+usd(L.mc));
   if(L&&(L.b5!=null||L.s5!=null))out.push('5м: \u0001'+(L.b5??'—')+'\u0002'+(L.s5??'—')+'\u0003');return out.join(' · ')}
 function patchCards(){document.querySelectorAll('[data-coin]').forEach(function(b){var m=b.dataset.coin,L=LIVE[m];if(!L)return;
   var ml=b.querySelector('.mline');if(ml){var cm=lastAccepted.find(function(x){return mint(x)===m})||{a:m};var t=marketLine(cm);ml.innerHTML=t?' · '+mlHtml(t):''}

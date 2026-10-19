@@ -1,7 +1,7 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "35f9dedb471c0e1dbb291fd6836c28d57ab2a023ac44e1851d3d761bb819f612",
+    "collector.js": "3e202b2389b08b661db35cf1a920adffba14fc3e98075a0fc6b398fed130890a",
     "event-clock.js": "ae835ddd6a280ae888d1b264a4e2acf665bdd62d895a3ea42c255339e793e2ad",
     "admission.js": "99feba0f235ce8e262f01b1e517a9373c906fb6c51353a2951a184ef5bfacde8",
     "source-runtime.js": "089dc694373e09fea9cd0598d9697c4f441b04c374006f677caab0502cde4e21",
@@ -21,7 +21,7 @@
     "packed-observations.js": "6e2622a57f6d8939411b9884ec1f9c80bd8e091b8d734c8276465789128204e4",
     "completed-coins.js": "79c70849147f84d0e364e56358cfbd41ade531b780e215427b712d5ff56e5c9d",
     "seed-completed.js": "01522182858aba7faab6cd85a5badd7552795cecbac2c12f00755a8ce985e1a4",
-    "coin-profile.js": "75cb173e56221c09b4272d32213e8eaa33f5d543495ad17320014737700ac8c9",
+    "coin-profile.js": "05f419c7493bdda0efb20836e37d8d53d36ea1c823433cf23d1c161c5cd9a910",
     "durable-json.js": "a042526c285613abc0935b43db8dffb98502054b1b9d43a8355438620dc8f192",
     "research-banks.js": "05c9ea4673d23814f5954622c0e508c85d81352e1998792a0b85277176b56dd1",
     "module-library.js": "988a222adcf5c8747a8e91813c8cf77b58458fcfab8452d2ee8b60c17cd8b6e5",
