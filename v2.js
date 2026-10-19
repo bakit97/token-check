@@ -237,7 +237,7 @@ function liveOf(c){return LIVE[mint(c)]||null}
 function agoText(t){if(!t)return '—';var sec=Math.max(0,Math.floor((now()-t)/1000));
   if(sec<3600)return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')+' назад';
   var h=Math.floor(sec/3600),m=Math.floor(sec%3600/60);return h+' ч '+m+' мин назад'}
-function spd(ms){if(ms<10000)return (Math.max(0,ms)/1000).toFixed(1)+' с';var sec=Math.round(ms/1000);return sec<60?sec+' с':sec<3600?Math.floor(sec/60)+' м '+(sec%60)+' с':Math.floor(sec/3600)+' ч'}
+function spd(ms){if(ms<100)return '< 0.1 с';if(ms<10000)return (Math.max(0,ms)/1000).toFixed(1)+' с';var sec=Math.round(ms/1000);return sec<60?sec+' с':sec<3600?Math.floor(sec/60)+' м '+(sec%60)+' с':Math.floor(sec/3600)+' ч'}
 function agoShort(t){if(!t)return '—';var sec=Math.max(0,Math.floor((now()-t)/1000));if(sec<60)return sec+' с';if(sec<3600)return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0');var h=Math.floor(sec/3600);return h<48?h+' ч '+Math.floor(sec%3600/60)+' м':Math.floor(h/24)+' дн'}
 function tickAges(){document.querySelectorAll('.ago[data-t]').forEach(function(el){el.textContent=el.classList&&el.classList.contains('sh')?agoShort(+el.dataset.t):agoText(+el.dataset.t)})}
 function usd(v){var n=Number(v);if(!Number.isFinite(n)||n<=0)return '—';if(n>=1e6)return '$'+(n/1e6).toFixed(2)+'M';if(n>=1e3)return '$'+(n/1e3).toFixed(1)+'K';return '$'+n.toFixed(0)}
@@ -385,7 +385,11 @@ function detail(c){
   var e=c._entry,m=mint(c),L=LIVE[m]||{};DETAIL_COIN=c;
   return '<div id="openCoinDetail" class="sheet" data-mint="'+esc(m)+'"><div class="sheetbox">'+
     '<div class="row"><div class="row" style="gap:9px;justify-content:flex-start">'+(imgOf(c)?'<img class="avatar dav" src="'+esc(imgOf(c))+'" alt="">':'<span class="avatar empty dav">'+esc((c.s||c.n||'?').slice(0,2))+'</span>')+'<div><h2 style="margin:0">'+esc(c.n||c.s||'Монета')+((c.s&&c.n&&c.s.toLowerCase()!==c.n.toLowerCase())?' <small class="muted">'+esc(c.s)+'</small>':'')+'</h2>'+
-    '<div class="muted small">'+(e.phase==='before'?'🌱 ':'🎓 возраст ')+'<b class="ago sh" data-t="'+cardAgeAt(c)+'">'+agoShort(cardAgeAt(c))+'</b> · 👁 '+(e.acceptedAt&&e.eventAt?spd(e.acceptedAt-e.eventAt):'—')+' · вход '+time(e.acceptedAt)+'</div></div></div><button id="closeCoin">✕</button></div>'+
+    '<div class="muted small">'+(function(){var pre=e.phase==='before',ag=cardAgeAt(c),out=[];
+      if(ag)out.push((pre?'🌱 ':'🎓 ')+'возраст <b class="ago sh" data-t="'+ag+'">'+agoShort(ag)+'</b>');
+      if(!pre&&e.eventAt)out.push((ag?'':'🎓 ')+'миграция <b class="ago sh" data-t="'+e.eventAt+'">'+agoShort(e.eventAt)+'</b> назад');
+      if(e.acceptedAt&&e.eventAt)out.push('👁 поймали через '+spd(e.acceptedAt-e.eventAt)+' после '+(pre?'рождения':'миграции'));
+      return out.join(' · ')})()+'</div></div></div><button id="closeCoin">✕</button></div>'+
     '<div class="chartbox"><iframe id="coinChart" src="'+esc(chartSrc(m))+'" loading="lazy" title="График"></iframe></div>'+
     '<div class="minigrid" id="coinStats">'+detailStats(m)+'</div>'+
     '<div class="sec">Сделки</div><div id="coinTradeSum" class="tsum"></div><div id="coinTrades" class="trades"><p class="hint">загрузка…</p></div>'+
