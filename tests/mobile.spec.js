@@ -2,7 +2,12 @@ const { test, expect } = require('@playwright/test');
 const TOKEN='So11111111111111111111111111111111111111112';
 test.use({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:2});
 test('Six panels, age admission, safe settings and local filter management work on a phone',async({page},testInfo)=>{
-  const errors=[],now=Date.now();
+  const errors=[],now=Date.now();let modulesState={schema:1,modules:[],deleted:[]};
+  page.on('dialog',dialog=>dialog.accept('synthetic-test-owner-key-1234567890123456'));
+  await page.route('https://solscan-test.run.app/**',async route=>{
+    if(route.request().method()==='OPTIONS')return route.fulfill({status:204,headers:{'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'*'}});
+    const action=route.request().postDataJSON(),out=require('../server/module-library').edit(modulesState,action,modulesState.modules,Date.now());modulesState=out.config;return route.fulfill({status:200,contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:JSON.stringify({accepted:true,module:out.module})});
+  });
   page.on('pageerror',error=>errors.push(String(error)));
   const c={a:TOKEN,n:'Проверочная монета',s:'CHECK',p:TOKEN,d:'pumpswap',
     t:now-20*60_000,mst:'ok',mk:'pump',mT:now-20*60_000,
@@ -24,10 +29,13 @@ test('Six panels, age admission, safe settings and local filter management work 
   await page.route('https://storage.googleapis.com/sol-scan-511718-data/**',route=>{
     const pathname=new URL(route.request().url()).pathname;
     let response={coins:[]};
-    if(pathname.endsWith('/source/status.json'))response=source;
+    if(pathname.endsWith('/control/endpoint.json'))response={enabled:true,url:'https://solscan-test.run.app'};
+    else if(pathname.endsWith('/research-v2/modules.json'))response={schema:1,origin:'server-module-library',updated:now,modules:modulesState.modules};
+    else if(pathname.endsWith('/source/status.json'))response=source;
     else if(pathname.includes('/source/day/')||pathname.endsWith('/source/live.json'))response={coins:[admitted]};
     else if(pathname.endsWith('/research-v2/status.json'))response=research;
     else if(pathname.endsWith('/research-v2/polygon-1.json'))response={counts:research.counts,coins:[]};
+    else if(pathname.endsWith('/passed-v2/status.json'))response={updated:now,status:'disabled-no-server-rules',serverOnly:true,serverConfig:{schema:1,enabled:false,activatedAt:0,decisionMinutes:10,filters:[],modules:[]}};
     else if(pathname.endsWith('/status.json'))response={updated:now};
     else if(pathname.includes('/observations-v2/'))response={schema:2,coins:[require('../server/observation-contract').projectSummary(c,{metadata:c})]};
     else if(pathname.includes('/obs/'))throw Error('Legacy observation request');
@@ -50,44 +58,42 @@ test('Six panels, age admission, safe settings and local filter management work 
   await expect(page.locator('#coinList')).not.toContainText('Проверочная монета');
   await page.locator('#allStreams [data-stream="all"]').click();
   await page.locator('#p-all details summary').click();
-  await expect(page.locator('#ageBefore')).toBeDisabled();
+  await expect(page.locator('#ageBefore')).toBeEnabled();
   await page.locator('#cardLimit').selectOption('10');
   await page.locator('#applySource').click();
   await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('solscan_v2_state_20261017')).limit)).toBe(10);
   await page.locator('#tabs [data-page="mine"]').click();
   await expect(page.locator('#p-mine')).toBeVisible();
-  await page.locator('[data-pick-source="before"][data-pick-level="1"]').click();
-  await expect(page.locator('#filterPicker')).toBeVisible();
-  await page.locator('#pickerClose').click();
+  await page.locator('#paneWin [data-addlev="1"]').click();
+  await expect(page.locator('#modPicker')).toBeVisible();
+  await page.locator('#modPickerX').click();
   await page.locator('#tabs [data-page="passed"]').click();
-  await page.locator('#decisionSettings summary').click();
-  await expect(page.locator('#applyDecision')).toBeVisible();
-  await page.locator('#decisionMins').evaluate(el=>{
-    el.value='12';el.dispatchEvent(new Event('input',{bubbles:true}));
+  await page.locator('#pwFold summary').click();
+  await expect(page.locator('#pwMin')).toBeVisible();
+  await page.locator('#pwMin').evaluate(el=>{
+    el.value='4';el.dispatchEvent(new Event('input',{bubbles:true}));
   });
-  await page.locator('#applyDecision').click();
-  await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('solscan_v2_state_20261017')).decision)).toBe(12);
+  await page.locator('#pwApply').click();
+  await expect.poll(()=>page.evaluate(()=>localStorage.getItem('passWin'))).toBe('4');
   await page.locator('#tabs [data-page="r1"]').click();
   await expect(page.locator('#r1Live')).toHaveText('0');
   await expect(page.locator('#r1Auto')).toContainText('Ожидают окончания наблюдения: 1');
   await expect(page.locator('#applyR1')).toBeDisabled();
   await page.locator('#tabs [data-page="r2"]').click();
-  await expect(page.locator('#r2Graph')).toContainText('Нет монет с полной историей');
+  await expect(page.locator('#r2Graph')).toContainText('Пока нет монет с историей после точки 0');
   await page.locator('#tabs [data-page="library"]').click();
-  await page.locator('#createFilter').click();
-  await expect(page.locator('#editor')).toBeVisible();
-  await page.locator('#filterName').fill('Исследовательская проверка');
-  await page.locator('#filterKey').selectOption('buyers');
-  await page.locator('#filterValue').fill('20');
-  await page.locator('#editor [type="submit"]').click();
-  await expect(page.locator('#libraryList')).toContainText('Исследовательская проверка');
-  await page.locator('#tabs [data-page="mine"]').click();
-  await page.locator('[data-pick-source="after"][data-pick-level="1"]').click();
-  await page.locator('#pickerItems [data-use]').first().click();
-  await expect(page.locator('#activeModules')).toHaveText('0');
-  await expect(page.locator('[data-apply-modules]')).toBeEnabled();
-  await page.locator('[data-apply-modules]').click();
-  await expect(page.locator('#activeModules')).toHaveText('1');
+  await page.locator('#libNew').click();
+  await expect(page.locator('#modSheet')).toBeVisible();
+  await page.locator('#modSheet [data-mf="name"]').fill('Исследовательская проверка');
+  await page.locator('#modSheet .mgrp summary').first().click();
+  await page.locator('#modSheet [data-madd]').first().click();
+  await page.locator('#modSheet [data-mf="value"]').fill('1');
+  await page.locator('#modSheet [data-msave]').click();
+  await expect(page.locator('#libMods')).toContainText('Исследовательская проверка');
+  await page.reload({waitUntil:'domcontentloaded'});
+  await expect(page.locator('#net')).toHaveText('● LIVE');
+  await page.locator('#tabs [data-page="library"]').click();
+  await expect(page.locator('#libMods')).toContainText('Исследовательская проверка');
   await page.locator('#tabs [data-page="all"]').click();
   await page.screenshot({path:testInfo.outputPath('solscan-phone.png'),fullPage:true});
   expect(errors).toEqual([]);

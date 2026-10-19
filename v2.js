@@ -719,7 +719,7 @@ function renderAutoSuggestions(report,lvl,ph){
   var dm=(report&&report.decisionMinutes)||(researchMeta&&researchMeta.settings&&researchMeta.settings.decisionMinutes)||15;
   ((report&&report.rules)||[]).slice(0,8).forEach(function(x,i){var id='a'+(report.level||1)+'-'+i,m={id:id,name:modAutoName([{key:x.rule.key,op:x.rule.op,value:x.rule.value}]),dm:dm,createdAt:Date.parse(report.generatedAt||report.updatedAt||'')||null,conds:[{key:x.rule.key,op:x.rule.op,value:x.rule.value}],eval:{train:x.train,holdout:x.holdout}};m.evalSig=modSig(m);if(!(saved[id]&&saved[id].deleted))list.push([saved[id]||m,report.level+':'+i])});
   list.forEach(function(p){MODS[p[0].id]=JSON.parse(JSON.stringify(p[0]));MOD_AUTO[p[0].id]=p[1]});
-  Object.keys(saved).forEach(function(k){var u=saved[k];if(k.indexOf('u')===0&&!u.deleted&&String(u.level)===String(lvl))list.push([u,''])});
+  Object.keys(saved).forEach(function(k){var u=saved[k];if(k.indexOf('u')===0&&!u.deleted&&String(u.level)===String(lvl)){MODS[k]=JSON.parse(JSON.stringify(u));list.push([u,''])}});
   var PH=ph||(lvl===1?R1P:s.r2Stream);list=list.filter(function(p){return PH==='all'||!p[0].phase||p[0].phase===PH});
   var T=lvl===1?r1T():r2T();return '<div class="modgrid">'+list.map(function(p){return modTile(MODS[p[0].id])}).join('')+'</div>'+(!(report&&report.rules&&report.rules.length)?'<p class="hint">Модули появятся, когда наберётся 🟢 '+T.l+' и 🔴 '+T.d+'.</p>':'');
 }

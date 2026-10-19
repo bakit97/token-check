@@ -21,6 +21,7 @@ jobs:
           for file in server/*.js; do node --check "$file"; done
           python3 deployment/build-recovery.py
           python3 deployment/test-publish-runtime.py
+          node --test tests/*.cjs
           node --test server/*.test.js tests/resource-collector-smoke.cjs tests/research-collector-smoke.cjs tests/completed-coins-collector.cjs tests/observation-contract-collector.cjs
       - uses: google-github-actions/auth@v2
         with:
