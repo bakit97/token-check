@@ -46,7 +46,7 @@ test('an empty current hot census can accept another coin without overwriting it
 test('research can finalize an evicted cohort from disk without restoring it to the hot census',async t=>{
  const c=coin('mature',27),{ctx}=setup(t,[c]);vm.runInContext(code.slice(code.indexOf('function researchCoins()'),code.indexOf('async function exportResearchV2(')),ctx);
  let checked=false;ctx.exportResearchV2=async()=>{assert.equal(ctx.C.has(c.a),false);assert.deepEqual(ctx.researchCoins().get(c.a).ds,c.ds);assert.equal(ctx.C.has(c.a),false);checked=true};
- await ctx.run();assert.equal(checked,true);
+ await ctx.run();ctx.RESEARCH_V2={};ctx.RESEARCH_EXPORTS={busy:false};await ctx.researchExportsCycle();assert.equal(checked,true);
 });
 
 

@@ -38,7 +38,7 @@ function discover(rows,{level='1',minTrainPositive,minTrainNegative,minValidatio
       ruleStats(validation,r.rule,pos,neg):null;
     const quality=val&&val.positiveRecall>=minPositiveRecall&&
       val.negativeRejection>=minNegativeRejection;
-    return {rank:i+1,rule:r.rule,train:r.train,trainScore:r.score,
+    return {rank:i+1,rule:r.rule,train:r.train,trainScore:r.score,improvementOf:r.improvementOf||null,
       holdout:val,passesHoldout:val?!!quality:null};
   });
   return {schema:1,level,status:!ready?'waiting-training':
@@ -75,7 +75,7 @@ class AutoStudies{
     if(this.modules.has(id)||this.modules.size>=1000)continue;
     const close=[...this.modules.values()].some(m=>m.level===level&&m.phase===phase&&(m.parentId||null)===parentId&&m.verdictMinutes===dm&&m.conds.length===allowed.length&&allowed.every(c=>m.conds.some(b=>b.key===c.key&&b.op===c.op&&Math.abs(c.value-b.value)<=Math.max(1e-8,Math.abs(b.value)*.05))));if(close)continue;
     const conds=(candidate.rule.conds||[candidate.rule].concat(candidate.rule.conditions||[])).map(c=>({key:c.key,op:c.op,value:c.value}));
-    const m={id,level,phase,parentId,name:conds.map(c=>(NAMES[c.key]||c.key)+' '+c.op+' '+Number(c.value.toPrecision(4))).join(' · ').slice(0,64),verdictMinutes:dm,conds,createdAt:now,liveFrom:now,evalSig:sig,
+    const m={id,level,phase,parentId,improvementOf:candidate.improvementOf||null,name:((candidate.improvementOf?'Улучшение · ':'')+conds.map(c=>(NAMES[c.key]||c.key)+' '+c.op+' '+Number(c.value.toPrecision(4))).join(' · ')).slice(0,64),verdictMinutes:dm,conds,createdAt:now,liveFrom:now,evalSig:sig,
       eval:{train:candidate.train,holdout:candidate.holdout,live:null,test:null},rule:candidate.rule};
     this.modules.set(id,m);changed=true;
    }

@@ -1,18 +1,18 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "1ea82fb3b62bcd266778a0e9ea93318dccf80d36bad72eb657250f445087442e",
+    "collector.js": "f82f55a69f32a629d1257e9f85f92a56d0c2b968eae526215afa1c13fbc00242",
     "event-clock.js": "ae835ddd6a280ae888d1b264a4e2acf665bdd62d895a3ea42c255339e793e2ad",
     "admission.js": "99feba0f235ce8e262f01b1e517a9373c906fb6c51353a2951a184ef5bfacde8",
     "source-runtime.js": "089dc694373e09fea9cd0598d9697c4f441b04c374006f677caab0502cde4e21",
     "pump-pre.js": "c3a05cd8b79e807409b7f5b86d320205835db468c068839b82668606e004bbd8",
     "pre-watcher.js": "079b33d70d39bfd25364763db0559c3d20f5ab3d130668a20c78d4a3203cfb1b",
-    "research-v2.js": "bcff94963194ee019cbbb47b4f6c5c85544bbc4dba5d4fc5e9a9ef69af212396",
+    "research-v2.js": "8955f2988ba17859840cded012734c4f3aee0b9cc3179ba082cbae30674e4613",
     "research-runtime.js": "abd670278620f2bbf13aabdd8866002e33cbfba98fdf48cede1a00ed98302d90",
     "research-config.js": "7ac9ef909365fe8d2fe06814456459433c43b359347564cd7d8a0cf8c2e44011",
     "pass-runtime.js": "3a00b53e88dc2cb4991fc007ac149f6c0cc5702b74dcafb581fbc8f5e7822870",
     "research-two-runtime.js": "4f8d786ce59691852f2ab0ae14f0f076a0a2a5b77ace29e0466886575dd17ced",
-    "auto-research-v2.js": "c08999b7679eb151e7e6f9b5082746c81b5637ce410be84e4243c91b0384cdf4",
+    "auto-research-v2.js": "99f16369aaeaf3b3890f39b7537f08ca078b434d171e34f8f9e3df55f5284c9f",
     "filter-audit.js": "75b842d42f9c98dfedfee7e93a4f59de2b14fc7fd7fda5c7f9f31b1080f978e1",
     "resource-budget.js": "6e2c7994f86e7cc7ce9c3ce281446e3476c12bcaafc112a7ffc723a06c955660",
     "runtime-health.js": "001b44ef3198e679008fd58aa3e9f90f7843303775cbc74b3a21eda745a9ba84",
@@ -24,7 +24,7 @@
     "coin-profile.js": "b566a20c6d08196ff8e8a0493907550ada30fc9c3435627490afdeb479b4ad8f",
     "durable-json.js": "a042526c285613abc0935b43db8dffb98502054b1b9d43a8355438620dc8f192",
     "research-banks.js": "91e689e0aa624f05bb8f5e46ba370c9fa0539af140d5e7e1a4d97870a1ac4d5a",
-    "module-library.js": "0c51576f5101f0ae55af1370885544ac867931d50a94a800bc1a76b8c3dbc896",
+    "module-library.js": "685e8ef2bfafde9511079bef73454d0b1158332a1d13d0c7a8753e40ae0bc863",
     "active-history.js": "5492de7925391b7cd8bea9a28b518405515bca75c979be9ba2512d505f87886b"
   }
 }

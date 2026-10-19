@@ -28,3 +28,7 @@ test('live excludes old admissions and definition validation rejects empty or un
 test('renaming an active window rule does not restart activation or cancel its cohort',t=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'rename-pass-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const cfg={schema:1,enabled:true,activatedAt:0,decisionMinutes:2,passMode:'1',filters:[{...moduleDef,version:1}],modules:[{filterId:'own',phase:'before',level:'1',enabled:true}]};const p=new PassRuntime({dir,config:cfg}),at=p.config.activatedAt,hash=p.configHash;cfg.filters[0].name='Новое имя';assert.equal(p.applyConfig(cfg),false);assert.equal(p.config.activatedAt,at);assert.equal(p.configHash,hash);assert.equal(p.config.filters[0].name,'Новое имя');
 });
+
+test('module report distinguishes known negative passes from unknown observations',()=>{
+ const vm=require('node:vm'),code=fs.readFileSync(path.join(__dirname,'../v2.js'),'utf8'),scope={modPc:v=>v==null?'—':Math.round(v*100)+'%'};vm.runInNewContext(code.slice(code.indexOf('function modBlk('),code.indexOf('function modTestBlk(')),scope);const html=scope.modBlk({totalPositive:10,totalNegative:20,passedPositive:8,falsePositive:3,rejectedNegative:15,missingNegative:2,unknown:2},'mnow','сейчас');assert.match(html,/3 из 20/);assert.doesNotMatch(html,/5 из 20/);assert.match(html,/нет данных: 2/);
+});

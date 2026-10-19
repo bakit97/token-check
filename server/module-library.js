@@ -15,6 +15,10 @@ function catalog(raw={schema:1,modules:[],deleted:[]}){
 function combine({auto=[],owner,configured=[],now=Date.now()}={}){
  const cfg=catalog(owner),rows=new Map();for(const m of [...configured,...auto,...cfg.modules]){let d;try{d=definition(m)}catch{continue}rows.set(m.id,{...m,...d,evalSig:moduleSignature(d),createdAt:m.createdAt||now,liveFrom:m.liveFrom||m.createdAt||now,eval:m.eval||{train:null,holdout:null,live:null,test:null}})}for(const id of cfg.deleted)rows.delete(id);return [...rows.values()];
 }
+function configuredModules(raw,previous=[],now=Date.now()){
+ const old=new Map(previous.map(m=>[m.id,m])),presetPhases={'start-basic':'before','start-strong':'before','start-basic-h':'after','start-strong-h':'after'};
+ return (raw.filters||[]).map(f=>{const phases=[...new Set((raw.modules||[]).filter(m=>m.filterId===f.id).map(m=>m.phase))],phase=f.phase||phases[0]||presetPhases[f.id];if(!phase)return null;return {...f,phase,verdictMinutes:f.verdictMinutes||raw.decisionMinutes,conds:f.conds||[f].concat(f.conditions||[]),createdAt:old.get(f.id)?.createdAt||raw.activatedAt||now}}).filter(Boolean);
+}
 function edit(raw,action,snapshot=[],now=Date.now()){
  const cfg=catalog(raw),rows=combine({owner:cfg,auto:snapshot,now}),old=rows.find(m=>m.id===(action.id||action.module?.id));
  if(action.expectedSig!=null&&old?.evalSig!==action.expectedSig)throw Object.assign(Error('Module changed; reload'),{http:409});
@@ -40,4 +44,4 @@ function manualTest(modules,rows,{ids,phase,level,positiveCount,negativeCount},n
  if(A.length<positiveCount||B.length<negativeCount)throw TypeError('Insufficient labeled bank');
  const results=ids.map(id=>{const m=modules.find(m=>m.id===id&&m.phase===phase&&m.level===String(level));if(!m)throw TypeError('Unknown selected module');const a=A.map(r=>evaluation(featuresFor(r,m),{conds:m.conds})),b=B.map(r=>evaluation(featuresFor(r,m),{conds:m.conds}));const pl=a.filter(x=>x==='pass').length,pd=b.filter(x=>x==='pass').length,rejected=b.filter(x=>x==='reject').length;return {id,pl,tl:A.length,pd,td:B.length,unknownPositive:a.filter(x=>x==='unknown').length,unknownNegative:b.filter(x=>x==='unknown').length,score:pl/A.length+rejected/B.length-1,at:now}}).sort((a,b)=>b.score-a.score||a.id.localeCompare(b.id));return results.map((r,i)=>({...r,rank:i+1,of:results.length}));
 }
-module.exports={freezeFeatureTimes,featureTimes,featuresFor,liveStats,moduleSignature,definition,catalog,combine,edit,windowConfig,manualTest};
+module.exports={freezeFeatureTimes,featureTimes,featuresFor,liveStats,moduleSignature,definition,catalog,combine,configuredModules,edit,windowConfig,manualTest};

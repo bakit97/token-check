@@ -9,6 +9,7 @@ const fs=require('fs'),zlib=require('zlib');
 let HEALTH=null,PROFILES=null;
 let COMPLETED=null,ACTIVE_HISTORY=null;
 const fullCoin=c=>ACTIVE_HISTORY?ACTIVE_HISTORY.hydrate(c):c;
+const PUBLIC_FEEDS={busy:false,sourceAt:0,libraryAt:0,storageAt:0,error:''},RESEARCH_EXPORTS={busy:false,oneAt:0,twoAt:0,error:''};let SOURCE_DAY_PUBLISHED_AT=0;
 const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:30000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0,pendingWork:0,cancelledGT:0};
 let RESOURCE=null;
 const resourcePressure=()=>process.memoryUsage().rss>=360*1024*1024;
@@ -525,7 +526,7 @@ async function initPathsV2(){
   const config=await getObj('config/pass-filters.json');
   if(!config)throw Error('Missing server filter configuration');
   await refreshLibrary(config);
-  PASS_V2=new (require(DIR+'/pass-runtime.js').PassRuntime)({dir:DIR,config:require(DIR+'/pass-runtime.js').verdictConfig(require(DIR+'/module-library.js').windowConfig(config,LIBRARY_ROWS,LIBRARY_CONFIG.deleted))});
+  PASS_V2=new (require(DIR+'/pass-runtime.js').PassRuntime)({dir:DIR,config:require(DIR+'/pass-runtime.js').verdictConfig(require(DIR+'/module-library.js').windowConfig(config,LIBRARY_CONFIG.modules,LIBRARY_CONFIG.deleted))});
   const {ResearchTwoRuntime,configOf}=require(DIR+'/research-two-runtime.js');
   const {ResearchEpoch}=require(DIR+'/research-config.js');
   const requested=await getObj('config/research-two.json')||configOf();
@@ -584,15 +585,14 @@ async function reloadResearchConfig(){
 }
 async function refreshLibrary(raw){
  const lib=require(DIR+'/module-library.js');LIBRARY_CONFIG=lib.catalog(await getObj('config/modules.json')||{schema:1,modules:[],deleted:[]});
- const old=new Map(LIBRARY_ROWS.map(m=>[m.id,m])),configured=[];
- for(const m of raw.modules||[]){const f=(raw.filters||[]).find(f=>f.id===m.filterId);if(!f)continue;configured.push({...f,phase:m.phase,verdictMinutes:f.verdictMinutes||raw.decisionMinutes,conds:f.conds||[f].concat(f.conditions||[]),createdAt:old.get(f.id)?.createdAt||raw.activatedAt||PASS_V2?.config?.activatedAt||Date.now()})}
+ const configured=lib.configuredModules(raw,LIBRARY_ROWS,PASS_V2?.config?.activatedAt||Date.now());
  LIBRARY_ROWS=lib.combine({owner:LIBRARY_CONFIG,auto:AUTO_STUDIES?[...AUTO_STUDIES.modules.values()]:[],configured});
  for(const m of LIBRARY_ROWS){const score=LIBRARY_SCORES[m.id];if(score?.evalSig===m.evalSig)m.eval={...m.eval,live:score.live}}
 }
-async function publishLibrary(now){
+async function publishLibrary(now,{score=true}={}){
  if(!AUTO_STUDIES||!PASS_V2)return;
  await refreshLibrary(PASS_V2.config);
- if(RESEARCH_BANKS&&now-LIBRARY_SCORE_AT>=60*60e3){const scores=await require(DIR+'/module-library.js').liveStats(LIBRARY_ROWS,RESEARCH_BANKS.rows());
+ if(score&&RESEARCH_BANKS&&now-LIBRARY_SCORE_AT>=60*60e3){const scores=await require(DIR+'/module-library.js').liveStats(LIBRARY_ROWS,RESEARCH_BANKS.rows());
   for(const m of LIBRARY_ROWS){const live=scores.get(m.id);if(live&&(live.totalPositive||live.totalNegative)){m.eval={...m.eval,live};LIBRARY_SCORES[m.id]={evalSig:m.evalSig,live}}}
   const ids=new Set(LIBRARY_ROWS.map(m=>m.id));for(const id of Object.keys(LIBRARY_SCORES))if(!ids.has(id))delete LIBRARY_SCORES[id];
   const file=DIR+'/module-live-evaluations.json',tmp=file+'.tmp',fd=fs.openSync(tmp,'w',0o600);try{fs.writeFileSync(fd,JSON.stringify(LIBRARY_SCORES));fs.fsyncSync(fd)}finally{fs.closeSync(fd)}fs.renameSync(tmp,file);require(DIR+'/durable-json.js').syncDirectory(DIR);LIBRARY_SCORE_AT=now;
@@ -606,7 +606,7 @@ async function reloadPassConfig(){
     const config=await getObj('config/pass-filters.json');
     if(!config)throw Error('No pass configuration');
     await refreshLibrary(config);
-    if(PASS_V2.applyConfig(require(DIR+'/pass-runtime.js').verdictConfig(require(DIR+'/module-library.js').windowConfig(config,LIBRARY_ROWS,LIBRARY_CONFIG.deleted))))
+    if(PASS_V2.applyConfig(require(DIR+'/pass-runtime.js').verdictConfig(require(DIR+'/module-library.js').windowConfig(config,LIBRARY_CONFIG.modules,LIBRARY_CONFIG.deleted))))
       log('применена новая серверная версия фильтров',PASS_V2.configHash);
     PASS_CFG_ERR='';
   }catch(e){
@@ -1083,8 +1083,8 @@ async function exportSource(now) {
   // Предмиграционный адаптер пока не активен: не выдавать пустоту за готовность.
   AI_SNAP.source=summary;
   await upload('source/status.json',{...summary,cardUnits:{sol:'SOL',top10:'percent',b5:'transactions',s5:'transactions',createdAt:'unix-ms'},mode:'verified-pre-post',preConnected:preFlowing(),preLive:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:preFlowing()&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
-  await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});
   await upload('source/live.json',{updated:now,count:today.length,coins:SOURCE.latest(200).map(enrich)});
+  if(now-SOURCE_DAY_PUBLISHED_AT>=5*60e3){await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});SOURCE_DAY_PUBLISHED_AT=now;}
 }
 function researchCoins(){const contract=require(DIR+'/observation-contract.js');return {get:mint=>{const c=C.get(mint)||(typeof COMPLETED!=='undefined'&&COMPLETED?COMPLETED.readCoin(mint):null);return c?contract.toLegacy(contract.project(fullCoin(c),{metadata:fullCoin(c),admission:SOURCE?.get(mint)||null})):null}}}
 async function exportResearchV2(now) {
@@ -1138,7 +1138,6 @@ async function exportPathsV2(now){
   }
   TWO_ERR='';
   RESEARCH_BANKS?.upsert(RESEARCH_TWO.select({limit:20000}));
-  if(RESEARCH_BANKS)await upload('research-v2/storage.json',{...RESEARCH_BANKS.summary(),updated:now});
   AI_SNAP.r2=result;
   await upload('research-v2/status-two.json',result);
   if(result.added>0||now-TWO_BANK_UPLOADED>20*60e3){
@@ -1189,7 +1188,7 @@ async function exportPathsV2(now){
 }
 // Critical path: durable first-level matches must not wait for the 120s
 // export cycle, especially when the decision timer is only one minute.
-let FAST_PASS_PUBLISH_AT=0,FAST_PASS_CONFIG_AT=0,FAST_PASS_ATTEMPTS=0,FAST_PASS_LAST_ADDED=0;
+let FAST_PASS_PUBLISH_AT=0,FAST_PASS_STATUS_AT=0,FAST_PASS_CONFIG_AT=0,FAST_PASS_ATTEMPTS=0,FAST_PASS_LAST_ADDED=0;
 async function fastPassedLoop(){
   for(;;){
     const now=Date.now();
@@ -1205,6 +1204,7 @@ async function fastPassedLoop(){
           FAST_PASS_LAST_ADDED=outcome.added;
           if(outcome.added||now-FAST_PASS_PUBLISH_AT>=30000){
             const publishAt=Date.now();
+            if(publishAt-FAST_PASS_STATUS_AT>=60000){await upload('passed-v2/status.json',{...PASS_V2.summary(publishAt),controlError:PASS_CFG_ERR||null,serverConfig:PASS_V2.config,serverOnly:true});FAST_PASS_STATUS_AT=publishAt;}
             await upload('passed-v2/live.json',{
               updated:publishAt,origin:'server-journal',
               coins:PASS_V2.latest(1000).filter(x=>x.schema===2?publishAt-x.firstSeenAt<5*60e3:x.zeroAt>publishAt)
@@ -1290,16 +1290,32 @@ async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayK
   }
   const stateCommitted=completedDays.length&&save();
   await flushUploads();
-  try{await exportSource(now)}catch(e){SOURCE_ERR='выгрузка источника: '+e.message;err('source export '+e.message)}
-  try{await exportResearchV2(now)}catch(e){RESEARCH_V2_ERR=e.message;err('research-v2 export '+e.message)}
-  try{await exportPathsV2(now)}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('pass/r2 export '+e.message)}
-  try{await exportAiSummary(now)}catch(e){err('ai summary '+e.message)}
+  // Lightweight feeds and bounded research have independent timers.
+
   if(stateCommitted){const activeDays=new Set([...C.values()].map(c=>dayKey(c.t)));for(const d of completedDays)if(!activeDays.has(d)&&COMPLETED.index.has(d))COMPLETED.seal(d,now)}
+}
+async function publicFeedsCycle(){
+ if(PUBLIC_FEEDS.busy)return;PUBLIC_FEEDS.busy=true;const errors=[];
+ try{
+  if(SOURCE)try{await exportSource(Date.now());PUBLIC_FEEDS.sourceAt=Date.now();SOURCE_ERR=''}catch(e){SOURCE_ERR='source publication failed';errors.push('source');err('source export '+e.message)}
+  if(AUTO_STUDIES&&PASS_V2)try{await publishLibrary(Date.now(),{score:false});PUBLIC_FEEDS.libraryAt=Date.now()}catch(e){errors.push('library');err('library export '+e.message)}
+  if(RESEARCH_BANKS&&Date.now()-PUBLIC_FEEDS.storageAt>=2*60e3)try{await upload('research-v2/storage.json',{...RESEARCH_BANKS.summary(),updated:Date.now()});PUBLIC_FEEDS.storageAt=Date.now()}catch(e){errors.push('storage');err('storage export '+e.message)}
+  try{await exportAiSummary(Date.now())}catch(e){err('ai summary '+e.message)}
+  PUBLIC_FEEDS.error=errors.join(',');
+ }finally{PUBLIC_FEEDS.busy=false}
+}
+async function researchExportsCycle(){
+ if(RESEARCH_EXPORTS.busy)return;RESEARCH_EXPORTS.busy=true;const errors=[];
+ try{
+  if(RESEARCH_V2&&SOURCE)try{await exportResearchV2(Date.now());RESEARCH_EXPORTS.oneAt=Date.now();RESEARCH_V2_ERR=''}catch(e){RESEARCH_V2_ERR=e.message;errors.push('one');err('research-v2 export '+e.message)}
+  if(PASS_V2&&RESEARCH_TWO&&SOURCE)try{await exportPathsV2(Date.now());RESEARCH_EXPORTS.twoAt=Date.now()}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;errors.push('two');err('pass/r2 export '+e.message)}
+  RESEARCH_EXPORTS.error=errors.join(',');
+ }finally{RESEARCH_EXPORTS.busy=false}
 }
 let STATUS_BUSY=false;
 async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const now=Date.now(),today=dayKey(now);
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,coinProfiles:PROFILES?.stats||null,resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,coinProfiles:PROFILES?.stats||null,resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,publishedAt:FAST_PASS_PUBLISH_AT},
@@ -1343,6 +1359,8 @@ const STARTED=Date.now();
   const updateProfiles=()=>PROFILES.update({coins:C,source:SOURCE,rpc:(m,p)=>rpc(m,p,{priority:'identity',context:'карточка',source:'coin-profile'})}).catch(e=>err('profiles '+e.message));
   setInterval(updateProfiles,60000);updateProfiles();
   chainWatch();setInterval(()=>exportStatus().catch(e=>err('status '+e.message)),60000);exportStatus().catch(e=>err('status '+e.message));
+  publicFeedsCycle().catch(e=>err('public feeds '+e.message));setInterval(()=>publicFeedsCycle().catch(e=>err('public feeds '+e.message)),60000);
+  setTimeout(()=>researchExportsCycle().catch(e=>err('research exports '+e.message)),15000);setInterval(()=>researchExportsCycle().catch(e=>err('research exports '+e.message)),120000);
   startDiscoveryBootstrap();
   setInterval(pollNew,90000);
   (async()=>{for(;;){try{await pollDS()}catch(e){err('dsloop '+e.message)}await sleep(15000)}})();
@@ -1353,7 +1371,7 @@ const STARTED=Date.now();
   setTimeout(()=>deduplicateClosedArchiveRows().catch(e=>err('archive dedup '+e.message)),1000);
   setInterval(()=>{prune();save();deduplicateClosedArchiveRows().catch(e=>err('archive dedup '+e.message))},120000);
   fastPassedLoop().catch(e=>err('fast pass loop '+e.message));
-  (async()=>{for(;;){await sleep(120000);try{await exportDays()}catch(e){err('export '+e.message)}}})();
+  (async()=>{for(;;){await sleep(5*60e3);try{await exportDays()}catch(e){err('export '+e.message)}}})();
   (async()=>{await sleep(45000);for(;;){try{await exportLive()}catch(e){err('live '+e.message)}await sleep(30000)}})();
   setTimeout(()=>exportDays().catch(e=>err('export '+e.message)),30000);
   setInterval(async()=>{try{const g=await codeGen();if(g&&VERSION!=='dev'&&g!==VERSION){log('новая версия кода',g,'— перезапуск');save();process.exit(0)}}catch{}},60000);
