@@ -4,7 +4,7 @@
 const fs=require('node:fs'),path=require('node:path');
 const crypto=require('node:crypto');
 function semantic(cfg){if(Array.isArray(cfg))return cfg.map(semantic);if(!cfg||typeof cfg!=='object')return cfg;
- const out=Object.fromEntries(Object.entries(cfg).filter(([k])=>!['targetLive','targetDead','targetStrong','targetWeak'].includes(k)).map(([k,v])=>[k,semantic(v)]));
+ const out=Object.fromEntries(Object.entries(cfg).filter(([k])=>!['targetLive','targetDead','targetStrong','targetWeak','missPenalty'].includes(k)).map(([k,v])=>[k,semantic(v)]));
  if(out.phases){const base={...out};delete base.phases;if(Object.values(out.phases).every(v=>JSON.stringify(v)===JSON.stringify(base)))delete out.phases}return out;
 }
 const hashOf=cfg=>crypto.createHash('sha256').update(JSON.stringify(semantic(cfg))).digest('hex').slice(0,20);

@@ -20,8 +20,8 @@ test('changing only targets preserves epoch, observations and activation across 
  assert.equal(restarted.apply({...withPhases,phases:{before:{hours:2},after:{hours:5}}}),true);
 });
 test('auto modules have stable server birth, phase, time, compound conditions and genuinely future live cohorts',t=>{
- const d=dir(t),a=new AutoStudies({dir:d}),now=T+H;
+ const d=dir(t),a=new AutoStudies({dir:d}),now=T+40*H;
  const rows=Array.from({length:40},(_,i)=>({mint:mint+i,phase:'before',label:i<20?'live':'dead',acceptedAt:T+i*M,time:T+i*M,features:{buys:i<20?100+i:1+i/100,quoteSol:i<20?10:1}}));
- const cfg={targetLive:10,targetDead:10,decisionMinutes:10};let report=a.report(rows,{settings:cfg,now});assert.ok(report.rules.length);const first=report.rules[0];assert.equal(first.phase,'before');assert.equal(first.verdictMinutes,10);assert.equal(first.createdAt,now);assert.equal(first.eval.live,null);assert.ok(first.conds.length>=1&&first.conds.length<=3);
+ const cfg={targetLive:10,targetDead:10,decisionMinutes:10};let report=a.report(rows,{settings:cfg,now});assert.equal(report.rules.length,0,'training-only proposals must not be born');rows.push(...Array.from({length:120},(_,i)=>({mint:'holdout'+i,phase:'before',label:i%2?'live':'dead',acceptedAt:T+24*H+i*M,time:T+24*H+i*M,features:{buys:i%2?150:1,quoteSol:i%2?10:1}})));report=a.report(rows,{settings:cfg,now});assert.ok(report.rules.length);const first=report.rules[0];assert.equal(first.phase,'before');assert.equal(first.verdictMinutes,10);assert.equal(first.createdAt,now);assert.equal(first.eval.live,null);assert.ok(first.conds.length>=1&&first.conds.length<=3);
  const b=new AutoStudies({dir:d});report=b.report(rows.concat([{mint:'future',phase:'before',label:'live',acceptedAt:now+M,time:now+M,features:{buys:200,quoteSol:10}}]),{settings:cfg,now:now+2*M});const old=report.rules.find(x=>x.id===first.id);assert.equal(old.createdAt,now);assert.equal(old.eval.live.totalPositive,1);assert.equal(old.eval.live.totalNegative,0);assert.deepEqual(old.eval.train,first.eval.train);
 });

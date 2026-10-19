@@ -664,7 +664,7 @@ function modConds(m,openG){var GR=m.level==='2'||String(m.id).indexOf('a2-')===0
     (nk.length?'<button type="button" class="add1" style="margin-top:6px" data-madd="'+nk[0]+'">+ условие</button>':'')+'</details>'}).join('')}
 function modEvalHtml(m){var ev=m.eval||{},stale=modSig(m)!==m.evalSig&&!!(ev.train||ev.test||ev.live);return (stale?'<div class="warn">⚠ Условия изменены — оценка устарела, нужен перетест</div>':'')+'<div style="'+(stale?'opacity:.45':'')+'">тест '+modEv(ev.train)+'<br>проверка '+modEv(ev.holdout)+'<br>сейчас '+modEv(ev.live)+'</div>'}
 function modBlk(t,cls,title){var l='—',d='';if(t){var tp=t.totalPositive,tn=t.totalNegative,pp=t.passedPositive!=null?t.passedPositive:tp!=null&&t.positiveRecall!=null?Math.round(t.positiveRecall*tp):null,pn=t.falsePositive!=null?t.falsePositive:tn!=null&&t.rejectedNegative!=null&&t.missingNegative!=null?tn-t.rejectedNegative-t.missingNegative:tn!=null&&t.negativeRejection!=null?Math.round((1-t.negativeRejection)*tn):null;
- l='🟢 '+modPc(tp?pp/tp:null)+(tp!=null?' <span>'+(pp==null?'—':pp)+' из '+tp+'</span>':'');d='<br>🔴 '+modPc(tn?pn/tn:null)+(tn!=null?' <span>'+(pn==null?'—':pn)+' из '+tn+'</span>':'');if(t.unknown)d+=' <span>нет данных: '+t.unknown+'</span>'}
+ l='🟢 '+modPc(tp?pp/tp:null)+(tp!=null?' <span>'+(pp==null?'—':pp)+' из '+tp+'</span>':'');d='<br>🔴 '+modPc(tn?pn/tn:null)+(tn!=null?' <span>'+(pn==null?'—':pn)+' из '+tn+'</span>':'');if(t.unknown)d+=' <span>нет данных: '+t.unknown+'</span>';if(t.positiveRecallLower95!=null)d+='<br><span>НГ95: 🟢 '+modPc(t.positiveRecallLower95)+' · 🔴 '+modPc(t.negativePassLower95)+'; ВГ95 🔴 '+modPc(t.negativePassUpper95)+'</span>';if(t.rulesTried!=null)d+='<br><span>Проверено правил: '+fmt(t.rulesTried)+' · цена ошибки ×'+(t.missPenalty??3)+'</span>';if(t.period?.from)d+='<br><span>'+new Date(t.period.from+5*3600e3).toISOString().slice(0,10)+'…'+new Date(t.period.to+5*3600e3).toISOString().slice(0,10)+'</span>'}
  return '<div class="mblk '+cls+'"><i>'+title+'</i>'+l+d+'</div>'}
 
 function modTestBlk(t){if(!t)return '';var pc=function(a,b){return b?Math.round(100*a/b)+'%':'—'};
@@ -729,7 +729,7 @@ function renderR1(){
       $('r1Auto').textContent+=' '+text+' Предложено условий: '+fmt(autoOne.rules.length)+'.';
     }
     var r1ar=$('r1ApplyRow').classList;if(!r1ar.contains||r1ar.contains('hide')){$('r1Hours').value=cfg.hours;$('r1HoursValue').textContent=cfg.hours+' ч';$('r1Activity').value=cfg.minActive;$('r1ActivityValue').textContent=cfg.minActive+'%';$('r1Idle').value=cfg.maxIdle;$('r1IdleValue').textContent=cfg.maxIdle+' мин';$('r1Drop').value=100-cfg.minPriceKeep;$('r1DropV').textContent=(100-cfg.minPriceKeep)+'%';$('r1Uniq').value=cfg.minUniqueBuyers;$('r1UniqV').textContent=cfg.minUniqueBuyers;$('r1LastTrades').value=cfg.lastHourTrades;$('r1LastTradesV').textContent=cfg.lastHourTrades;$('r1LastWallets').value=cfg.lastHourWallets;$('r1LastWalletsV').textContent=cfg.lastHourWallets;$('r1UseActivity').checked=cfg.useActivity===true;$('r1UseIdle').checked=cfg.useIdle===true}
-    var T=r1T(),rr=$('r1ResApplyRow').classList;if(!rr.contains||rr.contains('hide')){$('r1TL').value=T.l;$('r1TLv').textContent=T.l;$('r1TD').value=T.d;$('r1TDv').textContent=T.d;$('r1Dec').value=cfg.decisionMinutes;$('r1DecV').textContent=cfg.decisionMinutes+' мин'}
+    var T=r1T(),rr=$('r1ResApplyRow').classList;if(!rr.contains||rr.contains('hide')){$('r1TL').value=T.l;$('r1TLv').textContent=T.l;$('r1TD').value=T.d;$('r1TDv').textContent=T.d;$('r1Dec').value=cfg.decisionMinutes;$('r1DecV').textContent=cfg.decisionMinutes+' мин';$('r1Pen').value=cfg.missPenalty??3;$('r1PenV').textContent='×'+(cfg.missPenalty??3)}
     if(R1DEC&&R1DEC===cfg.decisionMinutes)R1DEC=0;$('r1ResSum').textContent='🟢 '+a+'/'+T.l+' · 🔴 '+b+'/'+T.d+' · '+(R1DEC?R1DEC+' мин ⏳':cfg.decisionMinutes+' мин');$('r1Meter').style.width=Math.min(100,Math.min(a/T.l,b/T.d)*100)+'%';
     if(researchMeta.counts?.entered!=null){var cc=R1P==='all'?researchMeta.counts:researchMeta.byPhase?.[R1P];if(cc)$('r1Auto').textContent+=' Вошло '+cc.entered+' = 🟢 '+cc.live+' + 🔴 '+cc.dead+' + ⏳ '+cc.pending+' + ❓ '+cc.unknown;}
     var isLive=function(x){if(x.label)return x.label==='live';var c=onePhaseSettings(researchMeta.settings,r1Phase(x));return x.activity>=c.minActive&&x.idle<=c.maxIdle},cs1=+(researchMeta&&researchMeta.cohortStart)||0,all=bank['1'].filter(function(x){return R1P==='all'||r1Phase(x)===R1P});
@@ -823,7 +823,7 @@ function renderR2(){
   var ar2=$('r2ApplyRow').classList;if(!ar2.contains||ar2.contains('hide')){$('r2Strong').value=thr;$('r2StrongValue').textContent=thr+'%'}
   $('r2Sum').textContent='≥ '+thr+'% из 300 мин';$('r2AllN').textContent=r.strong+r.weak;$('r2SN').textContent=r.strong;$('r2WN').textContent=r.weak;$('r2Wait').textContent=r.pending;
   $('r2ResSum').textContent='🟢 '+r.strong+'/'+T2.l+' · 🔴 '+r.weak+'/'+T2.d+' · '+T2.m+' мин';
-  var rr2=$('r2ResApplyRow').classList;if(!rr2.contains||rr2.contains('hide')){$('r2TL').value=T2.l;$('r2TLv').textContent=T2.l;$('r2TD').value=T2.d;$('r2TDv').textContent=T2.d;$('r2Dec').value=T2.m;$('r2DecV').textContent=T2.m+' мин'}
+  var rr2=$('r2ResApplyRow').classList;if(!rr2.contains||rr2.contains('hide')){$('r2TL').value=T2.l;$('r2TLv').textContent=T2.l;$('r2TD').value=T2.d;$('r2TDv').textContent=T2.d;$('r2Dec').value=T2.m;$('r2DecV').textContent=T2.m+' мин';var pp2=(twoMeta?.settings?.phases?.[s.r2Stream]||twoMeta?.settings||{}).missPenalty??3;$('r2Pen').value=pp2;$('r2PenV').textContent='×'+pp2}
   var rows2=(r.lines||[]).filter(function(x){return R2F==='all'||x.label===R2F}).slice(-R2N).reverse();
   $('r2Rows').innerHTML=rows2.length?rows2.map(function(x){var mt=x.mint||(x.coin&&mint(x.coin)),c=mt&&lastAccepted.find(function(d){return mint(d)===mt}),st=x.label==='strong',bd='<span class="badge '+(st?'good':'bad')+'">'+(st?'🟢':'🔴')+'</span>';
     return coinHtml(c||coinOf(Object.assign({mint:mt},x)),bd)}).join(''):'<div class="empty-state">Пока нет</div>';
@@ -1083,7 +1083,7 @@ async function publishResearchLevel(level){
     cfg={hours:Number($('r1Hours').value),
       decisionMinutes:Number($('r1Dec').value)||researchMeta.settings.decisionMinutes,
       minActive:Number($('r1Activity').value),
-      maxIdle:Number($('r1Idle').value),targetLive:Number($('r1TL').value),targetDead:Number($('r1TD').value),
+      maxIdle:Number($('r1Idle').value),targetLive:Number($('r1TL').value),targetDead:Number($('r1TD').value),missPenalty:Number($('r1Pen').value)||3,
       lastHourTrades:Number($('r1LastTrades').value??onePhaseSettings(researchMeta.settings,R1P).lastHourTrades??1),lastHourWallets:Number($('r1LastWallets').value??onePhaseSettings(researchMeta.settings,R1P).lastHourWallets??1),maxDrop:Number($('r1Drop').value),minPriceKeep:100-Number($('r1Drop').value),minUniqueBuyers:Number($('r1Uniq').value??30),useActivity:$('r1UseActivity').checked,useIdle:$('r1UseIdle').checked,
       minCoverage:researchMeta.settings.minCoverage,...(researchMeta.settings.intake?{intake:researchMeta.settings.intake}:{})};
     if(!Number.isInteger(cfg.hours)||cfg.hours<1||cfg.hours>24||
@@ -1092,7 +1092,7 @@ async function publishResearchLevel(level){
       note('Неверные параметры первого исследования');return;
     }
   }else{
-    cfg={minAbove:Number($('r2Strong').value),decisionMinutes:Number($('r2Dec').value),targetStrong:Number($('r2TL').value),targetWeak:Number($('r2TD').value),minCoverage:twoMeta.settings.minCoverage};
+    cfg={minAbove:Number($('r2Strong').value),decisionMinutes:Number($('r2Dec').value),targetStrong:Number($('r2TL').value),targetWeak:Number($('r2TD').value),missPenalty:Number($('r2Pen').value)||3,minCoverage:twoMeta.settings.minCoverage};
     if(!Number.isFinite(cfg.minAbove)||cfg.minAbove<0||cfg.minAbove>100){
       note('Неверный порог второго исследования');return;
     }

@@ -48,7 +48,7 @@ function intakeDecision(intake,row,features,passes){
 }
 function settings(cfg={}) {
   const result={
-    outcomeVersion:2,
+    outcomeVersion:2,missPenalty:cfg.missPenalty??3,
     lastHourTrades:cfg.lastHourTrades??1,lastHourWallets:cfg.lastHourWallets??1,minPriceKeep:cfg.minPriceKeep??(100-(cfg.maxDrop??70)),minUniqueBuyers:cfg.minUniqueBuyers??30,
     useActivity:cfg.useActivity===true,useIdle:cfg.useIdle===true,
     hours:cfg.hours??5,
@@ -67,6 +67,7 @@ function settings(cfg={}) {
     throw new RangeError('Invalid first-level observation settings');
   }
   for(const key of ['targetLive','targetDead'])if(!Number.isInteger(result[key])||result[key]<10||result[key]>5000)throw RangeError('Invalid research target');
+  if(!Number.isFinite(result.missPenalty)||result.missPenalty<1||result.missPenalty>5)throw RangeError('Invalid miss penalty');
   for(const [key,max] of [['lastHourTrades',1000000],['lastHourWallets',100000],['minPriceKeep',100],['minUniqueBuyers',200]])if(!Number.isFinite(result[key])||result[key]<0||result[key]>max)throw RangeError('Invalid live threshold');
   if(cfg.phases){result.phases={};for(const phase of ['before','after'])result.phases[phase]=settings({...result,...cfg.phases[phase],phases:null})}
   return result;

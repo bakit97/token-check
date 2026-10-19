@@ -8,10 +8,11 @@ const {strengthOutcome,capBank,evaluation,featuresAt,levelTwoFeaturesAt}=require
 const MIN=60000,HOUR=60*MIN,FRESH=48*HOUR,RETRY=15*MIN;
 const MAX_PER_CLASS=5000,MAX_CHECKS=200;
 function configOf(raw={}){
-  const cfg={minAbove:raw.minAbove??70,minCoverage:raw.minCoverage??.9,decisionMinutes:raw.decisionMinutes??5,targetStrong:raw.targetStrong??40,targetWeak:raw.targetWeak??40};
+  const cfg={missPenalty:raw.missPenalty??3,minAbove:raw.minAbove??70,minCoverage:raw.minCoverage??.9,decisionMinutes:raw.decisionMinutes??5,targetStrong:raw.targetStrong??40,targetWeak:raw.targetWeak??40};
   if(typeof cfg.minAbove!=='number'||cfg.minAbove<0||cfg.minAbove>100||
      typeof cfg.minCoverage!=='number'||cfg.minCoverage<.5||cfg.minCoverage>1)
     throw RangeError('Invalid level-two research config');
+  if(!Number.isFinite(cfg.missPenalty)||cfg.missPenalty<1||cfg.missPenalty>5)throw RangeError('Invalid miss penalty');
   if(!Number.isInteger(cfg.decisionMinutes)||cfg.decisionMinutes<1||cfg.decisionMinutes>15)throw RangeError('Invalid similarity time');
   for(const k of ['targetStrong','targetWeak'])if(!Number.isInteger(cfg[k])||cfg[k]<10||cfg[k]>5000)throw RangeError('Invalid research target');
   if(raw.phases){cfg.phases={};for(const phase of ['before','after'])cfg.phases[phase]=configOf({...cfg,...raw.phases[phase],phases:null})}

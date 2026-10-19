@@ -276,6 +276,8 @@ function evaluation(F,rule){
 }
 function passes(F,rule){return evaluation(F,rule)==='pass'}
 function ruleKey(r){return [r.key,r.op,Number(r.value).toPrecision(8),...(r.op==='between'?[Number(r.value2).toPrecision(8)]:[])].join('|')}
+function wilsonInterval(k,n,z=1.959963984540054){if(!Number.isFinite(k)||!Number.isFinite(n)||n<=0||k<0||k>n)return {low:null,high:null};const p=k/n,q=z*z/n,center=(p+q/2)/(1+q),half=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n))/(1+q);return {low:Math.max(0,center-half),high:Math.min(1,center+half)};}
+function weightedScore(stats,penalty=3){const yes=wilsonInterval(stats.passedPositive,stats.totalPositive),no=wilsonInterval(stats.falsePositive,stats.totalNegative);return (yes.low*stats.totalPositive-penalty*no.high*stats.totalNegative)/(stats.totalPositive+penalty*stats.totalNegative);}
 function ruleStats(rows,rule,positive,negative){
   const yes=rows.filter(r=>r.label===positive);
   const no=rows.filter(r=>r.label===negative);
@@ -285,7 +287,8 @@ function ruleStats(rows,rule,positive,negative){
   const reject=n.filter(x=>x==='reject').length;
   const missingPositive=y.filter(x=>x==='unknown').length;
   const missingNegative=n.filter(x=>x==='unknown').length;
-  return {passedPositive:pass,totalPositive:yes.length,rejectedNegative:reject,
+  const positiveCI=wilsonInterval(pass,yes.length),negativeCI=wilsonInterval(n.filter(x=>x==='pass').length,no.length),rejectionCI=wilsonInterval(reject,no.length);
+  return {positiveRecallLower95:positiveCI.low,positiveRecallUpper95:positiveCI.high,negativePassLower95:negativeCI.low,negativePassUpper95:negativeCI.high,negativeRejectionLower95:rejectionCI.low,negativeRejectionUpper95:rejectionCI.high,confidenceMethod:'wilson-95',passedPositive:pass,totalPositive:yes.length,rejectedNegative:reject,
     totalNegative:no.length,positiveRecall:yes.length?pass/yes.length:null,
     negativeRejection:no.length?reject/no.length:null,
     // Unknown ≠ correctly rejected; denominators reflect ALL labeled coins.
@@ -296,60 +299,16 @@ function ruleStats(rows,rule,positive,negative){
 }
 /** Train on the existing labeled observations only. Independently validate on
  *  later, unseen events; never feed future outcomes into early-time features. */
-function proposeRules(rows,{positive='live',negative='dead',minPos=100,minNeg=1,maxRules=12}={}){
-  const pos=rows.filter(r=>r.label===positive);
-  const neg=rows.filter(r=>r.label===negative);
-  if(pos.length<minPos||neg.length<minNeg)return [];
-  const sorted=[...rows].sort((a,b)=>a.time-b.time);
-  const out=[];
-  const seenRules=new Set();
-  // Перебираем и базовые, и стартовые признаки (покупатели 10 мин, SOL, контракт, держатели).
-  for(const key of RULE_KEYS){
-    const vals=sorted.map(r=>r.features?.[key]).filter(v=>typeof v==='number'&&Number.isFinite(v)).sort((a,b)=>a-b);
-    if(vals.length<Math.max(12,Math.floor(rows.length*.4)))continue;
-    for(const p of Array.from({length:49},(_,i)=>(i+1)/50)){
-      const threshold=vals[Math.floor((vals.length-1)*p)];
-      for(const op of ['>=','<=']){
-        const rule={key,op,value:+threshold.toPrecision(8)};
-        if(seenRules.has(ruleKey(rule)))continue;
-        seenRules.add(ruleKey(rule));
-        const stat=ruleStats(rows,rule,positive,negative);
-        if(stat.positiveRecall===null||stat.negativeRejection===null)continue;
-        if(stat.positiveRecall<.55||stat.negativeRejection<.5)continue;
-        if(stat.evaluablePositive/pos.length<.85||stat.evaluableNegative/neg.length<.85)continue;
-        const score=2*stat.positiveRecall*stat.negativeRejection/
-          (stat.positiveRecall+stat.negativeRejection);
-        out.push({rule,train:stat,score});
-      }
-    }
-  }
-  for(const key of RULE_KEYS){const values=sorted.map(r=>r.features?.[key]).filter(v=>typeof v==='number'&&Number.isFinite(v)).sort((a,b)=>a-b);if(values.length<Math.max(12,rows.length*.4))continue;const bounds=[...new Set(Array.from({length:21},(_,i)=>values[Math.floor((values.length-1)*i/20)]))];for(let i=0;i<bounds.length;i++)for(let j=i+1;j<bounds.length;j++){const rule={key,op:'between',value:bounds[i],value2:bounds[j]},sig=ruleKey(rule);if(seenRules.has(sig))continue;seenRules.add(sig);const stat=ruleStats(rows,rule,positive,negative);if(stat.positiveRecall<.55||stat.negativeRejection<.5||stat.evaluablePositive/pos.length<.85||stat.evaluableNegative/neg.length<.85)continue;const score=2*stat.positiveRecall*stat.negativeRejection/(stat.positiveRecall+stat.negativeRejection);out.push({rule,train:stat,score});}}
-  const rank=(a,b)=>b.score-a.score||b.train.positiveRecall-a.train.positiveRecall;
-  out.sort(rank);
-  const leaves=out.slice(0,24),beam=out.slice(0,16);
-  for(let size=2;size<=3;size++){
-    const next=[];
-    for(const parent of beam.filter(x=>(x.rule.conds?.length||1)===size-1))for(const leaf of leaves){
-      const conds=[...(parent.rule.conds||[parent.rule]),leaf.rule];
-      if(new Set(conds.map(x=>x.key)).size!==size)continue;
-      conds.sort((a,b)=>ruleKey(a).localeCompare(ruleKey(b)));
-      const sig=conds.map(ruleKey).join('&');if(seenRules.has(sig))continue;seenRules.add(sig);
-      const rule={...conds[0],conditions:conds.slice(1),conds},stat=ruleStats(rows,rule,positive,negative);
-      if(stat.positiveRecall<.55||stat.negativeRejection<.5||stat.evaluablePositive/pos.length<.85||stat.evaluableNegative/neg.length<.85)continue;
-      // An extra condition must improve rejection by >=5pp without losing positives.
-      if(stat.positiveRecall+1e-9<parent.train.positiveRecall||stat.negativeRejection-parent.train.negativeRejection<.05-1e-9)continue;
-      const score=2*stat.positiveRecall*stat.negativeRejection/(stat.positiveRecall+stat.negativeRejection);
-      next.push({rule,train:stat,score,improvementOf:JSON.stringify(parent.rule.conds||[parent.rule])});
-    }
-    next.sort(rank);beam.push(...next.slice(0,16));out.push(...next.slice(0,16));
-  }
-  out.sort(rank);const unique=[];
-  for(const item of out){
-    const keys=r=>(r.conds||[r]).map(c=>c.key+'|'+c.op).sort().join('&');
-    if(unique.some(x=>keys(x.rule)===keys(item.rule)&&Math.abs(x.train.positiveRecall-item.train.positiveRecall)<.03&&Math.abs(x.train.negativeRejection-item.train.negativeRejection)<.03))continue;
-    unique.push(item);if(unique.length>=maxRules)break;
-  }
-  return unique;
+function proposeRules(rows,{positive='live',negative='dead',minPos=100,minNeg=20,maxRules=12,missPenalty=3,metrics={}}={}){
+ if(!Number.isFinite(missPenalty)||missPenalty<1||missPenalty>5)throw RangeError('Invalid miss penalty');const pos=rows.filter(r=>r.label===positive),neg=rows.filter(r=>r.label===negative);metrics.rulesTried=0;if(pos.length<Math.max(20,minPos)||neg.length<Math.max(20,minNeg))return [];
+ const seen=new Set(),leaves=[],out=[],rank=(a,b)=>b.score-a.score||(a.rule.conds?.length||1)-(b.rule.conds?.length||1)||b.train.positiveRecall-a.train.positiveRecall;
+ const assess=rule=>{const sig=(rule.conds||[rule]).map(ruleKey).sort().join('&');if(seen.has(sig))return null;seen.add(sig);metrics.rulesTried++;const train=ruleStats(rows,rule,positive,negative);if(train.evaluablePositive<20||train.evaluableNegative<20||train.evaluablePositive/pos.length<.85||train.evaluableNegative/neg.length<.85||train.positiveRecall<.55)return null;return {rule,train,score:weightedScore(train,missPenalty)};};
+ for(const key of RULE_KEYS){const vals=rows.map(r=>r.features?.[key]).filter(v=>typeof v==='number'&&Number.isFinite(v)).sort((a,b)=>a-b);if(vals.length<Math.max(40,rows.length*.4))continue;for(let i=1;i<50;i++){const value=+vals[Math.floor((vals.length-1)*i/50)].toPrecision(8);for(const op of ['>=','<=']){const item=assess({key,op,value});if(item&&item.train.negativeRejection>=.05){leaves.push(item);if(item.train.negativeRejection>=.5)out.push(item);}}}
+ const bounds=[...new Set(Array.from({length:21},(_,i)=>vals[Math.floor((vals.length-1)*i/20)]))];for(let i=0;i<bounds.length;i++)for(let j=i+1;j<bounds.length;j++){const item=assess({key,op:'between',value:bounds[i],value2:bounds[j]});if(item&&item.train.negativeRejection>=.05){leaves.push(item);if(item.train.negativeRejection>=.5)out.push(item);}}}
+ leaves.sort(rank);const diverse=[],perKey=new Map();for(const l of leaves){const k=l.rule.key+'|'+l.rule.op;if((perKey.get(k)||0)>=2)continue;diverse.push(l);perKey.set(k,(perKey.get(k)||0)+1);if(diverse.length>=48)break;}let beam=diverse.slice(0,24);
+ for(let depth=2;depth<=3;depth++){const next=[];for(const parent of beam)for(const leaf of diverse){const conds=[...(parent.rule.conds||[parent.rule]),leaf.rule];if(new Set(conds.map(c=>c.key)).size!==conds.length)continue;conds.sort((a,b)=>ruleKey(a).localeCompare(ruleKey(b)));const item=assess({...conds[0],conditions:conds.slice(1),conds});if(!item||item.score<=parent.score+1e-9)continue;if(item.train.positiveRecall>=parent.train.positiveRecall-1e-9&&item.train.negativeRejection-parent.train.negativeRejection>=.05-1e-9)item.improvementOf=JSON.stringify(parent.rule.conds||[parent.rule]);next.push(item);if(item.train.negativeRejection>=.5)out.push(item);}next.sort(rank);beam=next.slice(0,24);}
+ out.sort(rank);const unique=[];for(const item of out){const cs=item.rule.conds||[item.rule],similar=(x,y)=>Math.abs(x.train.positiveRecall-y.train.positiveRecall)<.03&&Math.abs(x.train.negativeRejection-y.train.negativeRejection)<.03;if(out.some(simple=>(simple.rule.conds?.length||1)<cs.length&&similar(simple,item)&&(simple.rule.conds||[simple.rule]).every(c=>cs.some(d=>ruleKey(c)===ruleKey(d)))))continue;const shape=rule=>(rule.conds||[rule]).map(c=>c.key+'|'+c.op).sort().join('&');if(unique.some(x=>shape(x.rule)===shape(item.rule)&&similar(x,item)))continue;unique.push(item);if(unique.length>=maxRules)break;}
+ return unique;
 }
 function capBank(rows,labelFn=it=>it.label,positive='live',negative='dead',max=5000){
   const seen=new Set();
@@ -361,4 +320,4 @@ function capBank(rows,labelFn=it=>it.label,positive='live',negative='dead',max=5
   return [...p,...n].sort((a,b)=>a.time-b.time);
 }
 module.exports={KEYS,LEVEL1_KEYS,RULE_KEYS,LEVEL2_KEYS,levelTwoFeaturesAt,samples,candles,featuresAt,starterFeaturesAt,activityOutcome,
-  classifyActivity,activityEvidence,tradeOutcomeEvidence,strengthOutcome,evaluation,passes,ruleKey,ruleStats,proposeRules,capBank};
+  classifyActivity,activityEvidence,tradeOutcomeEvidence,strengthOutcome,evaluation,passes,ruleKey,ruleStats,wilsonInterval,weightedScore,proposeRules,capBank};

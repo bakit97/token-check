@@ -607,7 +607,7 @@ async function reloadResearchConfig(){
 async function refreshLibrary(raw){
  const lib=require(DIR+'/module-library.js');LIBRARY_CONFIG=lib.catalog(await getObj('config/modules.json')||{schema:1,modules:[],deleted:[]});
  const configured=lib.configuredModules(raw,LIBRARY_ROWS,PASS_V2?.config?.activatedAt||Date.now());
- LIBRARY_ROWS=lib.combine({owner:LIBRARY_CONFIG,auto:AUTO_STUDIES?[...AUTO_STUDIES.modules.values()]:[],configured});
+ LIBRARY_ROWS=lib.combine({owner:LIBRARY_CONFIG,auto:AUTO_STUDIES?[...AUTO_STUDIES.modules.values()].filter(m=>m.validatedBirth===true):[],configured});
  for(const m of LIBRARY_ROWS){const score=LIBRARY_SCORES[m.id];if(score?.evalSig===m.evalSig)m.eval={...m.eval,live:score.live}}
 }
 async function publishLibrary(now,{score=true}={}){

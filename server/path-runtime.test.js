@@ -136,7 +136,7 @@ test('research epochs preserve earlier version when an observation threshold cha
 test('automatic research keeps calendar days separate between training and holdout',()=>{
   const t=Date.UTC(2026,9,12,12,0);
   const rows=[];
-  for(let i=0;i<84;i++){
+  for(let i=0;i<180;i++){
     const train=i<60;
     const label=i%2?'live':'dead';
     rows.push({mint:'SYN'+i,time:t+(train?0:86400000)+i*1000,
@@ -145,10 +145,10 @@ test('automatic research keeps calendar days separate between training and holdo
   const r=discover(rows,{level:'1',minTrainPositive:20,minTrainNegative:20,minValidation:20});
   assert.equal(r.status,'rolling-holdout-ready');
   assert.equal(r.training.total,60);
-  assert.equal(r.validation.total,24);
+  assert.equal(r.validation.total,120);
   assert.equal(new Set(r.trainingDays.concat(r.validationDays)).size,2);
   assert.ok(r.rules.length>0);
-  assert.ok(r.rules.every(f=>f.holdout&&f.holdout.totalPositive===12));
+  assert.ok(r.rules.every(f=>f.holdout&&f.holdout.totalPositive===60));
 });
 
 test('reject unknown level-two filter modules and duplicate filter IDs',()=>{
