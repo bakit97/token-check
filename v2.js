@@ -360,7 +360,7 @@ function pathHtml(c){var e=c._entry||{},m=mint(c),t=now(),chain=[],det=[];
     det.push('<details class="step fold"><summary><span class="si">'+icon1+'</span><b>Уровень 1:</b> '+sum+(wait?'· решение через '+left(wait.left):'')+'</summary>'+
       f1.map(function(x){return '<div class="sub">'+({ok:'✅',no:'❌',wait:'⏳',skip:'⚪'})[x.st]+' '+esc(x.name)+'</div>'}).join('')+'</details>')}
   var hrs=researchMeta&&researchMeta.settings?researchMeta.settings.hours:5,b1=(bank['1']||[]).find(function(x){return x.mint===m});
-  if(b1){var st=researchMeta.settings,live=b1.activity>=st.minActive&&b1.idle<=st.maxIdle;chain.push(['Иссл.1',live?'🟢':'🔴']);det.push(stepRow(live?'🟢':'🔴','Исследование 1:',(live?'живая':'мёртвая')+' · активность '+b1.activity.toFixed(0)+'%, простой '+b1.idle+' мин'))}
+  if(b1){var st=researchMeta.settings,live=b1.label?b1.label==='live':(b1.activity>=st.minActive&&b1.idle<=st.maxIdle);chain.push(['Иссл.1',live?'🟢':'🔴']);det.push(stepRow(live?'🟢':'🔴','Исследование 1:',(live?'живая':'мёртвая')+' · активность '+b1.activity.toFixed(0)+'%, простой '+b1.idle+' мин'))}
   else{var end1=(e.acceptedAt||0)+hrs*3600e3;chain.push(['Иссл.1',t<end1?'⏳':'—']);det.push(stepRow('⏳','Исследование 1:',t<end1?'итог через '+left(end1-t):'нет итога (мало данных)'))}
   if(row){var r2=serverR2Rows.find(function(x){return x.mint===m}),sl=row.secondLevelRules||[];
     chain.push(['Ур.2',sl.length?'🔹 '+sl.length:'—']);
@@ -1337,9 +1337,9 @@ function bind(){
   $('r1ResApply').addEventListener('click',function(){publishResearchLevel('1')});
   ['r1Hours','r1Activity','r1Idle','r1Drop','r1Uniq','r1LastTrades','r1LastWallets','r1UseActivity','r1UseIdle'].forEach(function(id){$(id).addEventListener('input',function(){$('r1ApplyRow').classList.remove('hide');if(id==='r1Drop')$('r1DropV').textContent=this.value+'%';if(id==='r1Uniq')$('r1UniqV').textContent=this.value;if(id==='r1LastTrades')$('r1LastTradesV').textContent=this.value;if(id==='r1LastWallets')$('r1LastWalletsV').textContent=this.value})});
   function liveKey(){return 'r1live_'+R1P}
-  function liveLoad(){var v={d:70,u:30};try{v=Object.assign(v,JSON.parse(localStorage.getItem(liveKey())||'{}'))}catch(e){}$('r1Drop').value=v.d;$('r1DropV').textContent=v.d+'%';$('r1Uniq').value=v.u;$('r1UniqV').textContent=v.u}
+  function liveLoad(){var v={d:70,u:30,cap:10};try{v=Object.assign(v,JSON.parse(localStorage.getItem(liveKey())||'{}'))}catch(e){}$('r1Drop').value=v.d;$('r1DropV').textContent=v.d+'%';$('r1Cap').value=v.cap;$('r1CapV').textContent='$'+v.cap+'K';$('r1Uniq').value=v.u;$('r1UniqV').textContent=v.u}
   liveLoad();$('r1Ph').addEventListener('click',liveLoad);
-  $('publishResearchOne').addEventListener('click',function(){try{localStorage.setItem(liveKey(),JSON.stringify({d:+$('r1Drop').value,u:+$('r1Uniq').value}))}catch(e){}});
+  $('publishResearchOne').addEventListener('click',function(){try{localStorage.setItem(liveKey(),JSON.stringify({d:+$('r1Drop').value,u:+$('r1Uniq').value,cap:+$('r1Cap').value}))}catch(e){}});
   $('r1Rows').addEventListener('click',function(e){var b=e.target.closest('[data-coin]');if(!b)return;showCoinDetail(coinOf(bank['1'].find(function(x){return x.mint===b.dataset.coin})||b.dataset.coin),'r1Rows')});
   $('coinList').addEventListener('click',function(e){
     const button=e.target.closest('[data-coin]');if(!button)return;

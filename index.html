@@ -117,6 +117,7 @@
 <div class="prow"><label><input id="r1UseActivity" type="checkbox"> Учитывать активность</label></div><div class="prow"><label for="r1Activity">Сделки не меньше <b id="r1ActivityValue">70%</b> времени</label><input id="r1Activity" type="range" min="0" max="100" step="5"></div>
 <div class="prow"><label><input id="r1UseIdle" type="checkbox"> Учитывать простой</label></div><div class="prow"><label for="r1Idle">Простой не больше <b id="r1IdleValue">60 мин</b></label><input id="r1Idle" type="range" min="5" max="120" step="5"></div>
 <div class="prow"><label>Сделок за последний час ≥ <b id="r1LastTradesV">1</b></label><input id="r1LastTrades" type="range" min="0" max="1000" step="1" value="1"></div><div class="prow"><label>Разных кошельков за последний час ≥ <b id="r1LastWalletsV">1</b></label><input id="r1LastWallets" type="range" min="0" max="200" step="1" value="1"></div><div class="prow"><label for="r1Drop">Цена упала не больше <b id="r1DropV">70%</b> к концу наблюдения</label><input id="r1Drop" type="range" min="10" max="100" step="5" value="70"></div>
+<div class="prow"><label for="r1Cap">Капитализация в конце не меньше <b id="r1CapV">$10K</b></label><input id="r1Cap" type="range" min="3" max="100" step="1" value="10"></div>
 <div class="prow"><label for="r1Uniq">Разных покупателей не меньше <b id="r1UniqV">30</b></label><input id="r1Uniq" type="range" min="0" max="200" step="5" value="30"></div>
 <div class="row applyrow hide" id="r1ApplyRow"><button type="button" class="primary pbtn" id="publishResearchOne" style="margin-left:auto">Применить</button></div>
 <p class="hint" id="researchOneControlState" style="margin:4px 0 0"></p></details>
@@ -202,7 +203,7 @@
 
 </main>
 <script src="./server/observation-contract.js?v=20261018-admission-3" defer></script>
-<script src="./v2.js?v=20261020-dist-1" defer></script>
+<script src="./v2.js?v=20261020-lbl-1" defer></script>
 <noscript>Текстовая сводка для ИИ: https://storage.googleapis.com/sol-scan-511718-data/ai/summary.md (JSON: ai/summary.json)</noscript>
 </body></html>
 
