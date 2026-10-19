@@ -1,30 +1,31 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "1b8fe75cf44615594b1269d8a9baf429075646e8f089d271e7c00313b60f0699",
+    "collector.js": "23f38f901fb93ea67c10496250808c0999f28d9b9bc7c3e4970d40e20e51c810",
     "event-clock.js": "ae835ddd6a280ae888d1b264a4e2acf665bdd62d895a3ea42c255339e793e2ad",
     "admission.js": "99feba0f235ce8e262f01b1e517a9373c906fb6c51353a2951a184ef5bfacde8",
     "source-runtime.js": "089dc694373e09fea9cd0598d9697c4f441b04c374006f677caab0502cde4e21",
     "pump-pre.js": "c3a05cd8b79e807409b7f5b86d320205835db468c068839b82668606e004bbd8",
     "pre-watcher.js": "079b33d70d39bfd25364763db0559c3d20f5ab3d130668a20c78d4a3203cfb1b",
-    "research-v2.js": "cb8280a12e65e54141748adf1ebe1e0f95bb3ac16529aed3e1bf95d69c1b2c25",
+    "research-v2.js": "c978fa03c28d306d87f87b2a576cca674d5d5c1557da4a890775eae0e71df4fa",
     "research-runtime.js": "011884d3c7694e548072b2c318552548cd169374a6ef145460382254fd525b99",
     "research-config.js": "29a6d3f306524b576aff6eac212c766ba110a3b560a835118a7be72a0523183a",
-    "pass-runtime.js": "2d088ec60b529d8280646fd75346b074bb06755b0e24515370c9857d9c020bea",
+    "pass-runtime.js": "efdc57b4e4cca02ac988068948895e9cc80209e29c49c0752474ce7f71d36cb7",
     "research-two-runtime.js": "4f8d786ce59691852f2ab0ae14f0f076a0a2a5b77ace29e0466886575dd17ced",
     "auto-research-v2.js": "b51791cbcf00b32d410685314758c3f296b444b2b2b6c29a6ea6524d2e618c34",
     "filter-audit.js": "75b842d42f9c98dfedfee7e93a4f59de2b14fc7fd7fda5c7f9f31b1080f978e1",
     "resource-budget.js": "a2986e642e74e4ed182edc56550188264478f1073f3c862dbd6b9a9c3aaf9905",
     "runtime-health.js": "001b44ef3198e679008fd58aa3e9f90f7843303775cbc74b3a21eda745a9ba84",
     "stream-json.js": "b212a8cabdb25f9f8ef5fe7e7c081d04dbda3e4218e6c3df6adfb453d6a48461",
-    "observation-contract.js": "3f7576f6db94baa8c9b6b7ecc59544b8f31bfe651077f1091133322745f8a866",
+    "observation-contract.js": "e47c2dae9a22daa7c4b126d7d9da6faf13623d15d095d392c81a8dc0c7d17871",
     "packed-observations.js": "6e2622a57f6d8939411b9884ec1f9c80bd8e091b8d734c8276465789128204e4",
-    "completed-coins.js": "c935a104b97740f85b4ae547be5a2b23c567b777ce026138a71d7dca9b17c46a",
+    "completed-coins.js": "79c70849147f84d0e364e56358cfbd41ade531b780e215427b712d5ff56e5c9d",
     "seed-completed.js": "01522182858aba7faab6cd85a5badd7552795cecbac2c12f00755a8ce985e1a4",
     "coin-profile.js": "ee57d1fe3bd35e64e0699306d6836bd1329111f6162be48cd633afbe7dbae2c7",
     "durable-json.js": "a042526c285613abc0935b43db8dffb98502054b1b9d43a8355438620dc8f192",
     "research-banks.js": "05c9ea4673d23814f5954622c0e508c85d81352e1998792a0b85277176b56dd1",
     "module-library.js": "69ac7ff48c6db333f5e04183e610cff01bbcb8a9e464912bf62ac2f4ca5003f3",
-    "active-history.js": "5492de7925391b7cd8bea9a28b518405515bca75c979be9ba2512d505f87886b"
+    "active-history.js": "5492de7925391b7cd8bea9a28b518405515bca75c979be9ba2512d505f87886b",
+    "launch-history.js": "fce3b45fcd513c24673ceaafe31f747cb01c7e77f264a559414ce235b0905c49"
   }
 }

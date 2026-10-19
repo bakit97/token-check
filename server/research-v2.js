@@ -5,7 +5,7 @@
 const MIN=60_000, FIVE=5*MIN;
 const KEYS=['buyers','trades','volume','liq','mc','buys','sells','buySellRatio'];
 const LEVEL2_KEYS=['chg1m','chg3m','chg5m','fromPeak','drawdown','buyerAccel','volAccel','bigBuyShare','repeatBuys','avgBuy','sellShare1m','bigHolderSell','devSold','top10Drift','holderGrowth','poolGrowth','toMigration','ageMin','hourOfDay','solTrend','launchRate'];
-const RULE_KEYS=[...KEYS,'buyers10','quoteSol','safeContract','top1','top10','token2022','hasImage','hasDescription','sellShare','averageTrade',...LEVEL2_KEYS];
+const RULE_KEYS=['isFirstOfName','cloneCount','cloneRank',...KEYS,'buyers10','quoteSol','safeContract','top1','top10','token2022','hasImage','hasDescription','sellShare','averageTrade',...LEVEL2_KEYS];
 const inRange=(x,a,b)=>Number.isFinite(x)&&x>=a&&x<=b;
 function samples(coin) {
   const src=[coin?.preObs,...(coin?.origs||[]),coin].filter(Boolean);
@@ -52,8 +52,9 @@ function featuresAt(coin,decisionAt,context={}){
     volume:finite(d?.volume??null),liq:finite(d?.liq??null),
     mc:finite(d?.mc??null),buys:finite(buys),sells:finite(sells),
     buySellRatio:finite(ratio)};
-  const ct=coin?.ct,metaAt=coin?.metadataAt;
-  return {...F,...starterFeaturesAt(coin,decisionAt,context),
+  const ct=coin?.ct,metaAt=coin?.metadataAt,discovery=coin?.discoveryFeatures;
+  const clone=discovery&&discovery.at<=decisionAt?{isFirstOfName:discovery.isFirstOfName,cloneCount:discovery.cloneCount,cloneRank:discovery.cloneRank,...(discovery.cloneCountLowerBound?{lowerBoundKeys:['cloneCount','cloneRank']}:{})}:{isFirstOfName:null,cloneCount:null,cloneRank:null};
+  return {...F,...clone,...starterFeaturesAt(coin,decisionAt,context),
     token2022:ct&&ct.at<=decisionAt&&['token','token2022'].includes(ct.prog)?(ct.prog==='token2022'?1:0):null,
     hasImage:Number.isFinite(metaAt)&&metaAt<=decisionAt?(coin.img||coin.i?1:0):null,
     hasDescription:Number.isFinite(metaAt)&&metaAt<=decisionAt?(coin.description?1:0):null,
@@ -243,6 +244,7 @@ function evaluation(F,rule){
     if(results.includes('reject'))return 'reject';if(results.includes('unknown'))return 'unknown';}
   const v=F[rule.key];
   if(typeof v!=='number'||!Number.isFinite(v))return 'unknown';
+  if(F.lowerBoundKeys?.includes(rule.key)){if(rule.op==='>=')return v>=rule.value?'pass':'unknown';if(rule.op==='<=')return v>rule.value?'reject':'unknown';if(rule.op==='between')return v>rule.value2?'reject':'unknown';}
   if(rule.op==='between'){if(rule.key==='buyers10'&&F.buyers10LowerBound===true)return v>rule.value2?'reject':'unknown';return v>=rule.value&&v<=rule.value2?'pass':'reject';}
   if(rule.key==='buyers10'&&F.buyers10LowerBound===true)return rule.op==='>='?(v>=rule.value?'pass':'unknown'):(v>rule.value?'reject':'unknown');
   return rule.op==='>='?(v>=rule.value?'pass':'reject'):(v<=rule.value?'pass':'reject');
