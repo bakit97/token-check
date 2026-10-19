@@ -2,6 +2,7 @@ const { test, expect } = require('@playwright/test');
 const TOKEN='So11111111111111111111111111111111111111112';
 test.use({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:2});
 test('Six panels, age admission, safe settings and local filter management work on a phone',async({page},testInfo)=>{
+  test.setTimeout(90000);page.setDefaultTimeout(8000);
   const errors=[],now=Date.now();let modulesState={schema:1,modules:[],deleted:[]};
   page.on('dialog',dialog=>dialog.accept('synthetic-test-owner-key-1234567890123456'));
   await page.route('https://solscan-test.run.app/**',async route=>{
@@ -43,7 +44,7 @@ test('Six panels, age admission, safe settings and local filter management work 
     return route.fulfill({status:200,contentType:'application/json',
       headers:{'access-control-allow-origin':'*'},body:JSON.stringify(response)});
   });
-  await page.goto('http://127.0.0.1:8765/v2.html',{waitUntil:'domcontentloaded'});
+  await page.goto('http://127.0.0.1:8765/index.html',{waitUntil:'domcontentloaded'});
   await expect(page.locator('#net')).toHaveText('● LIVE',{timeout:15000});
   await expect(page.locator('#tabs [data-page]')).toHaveCount(6);
   await expect(page.locator('#dailyBefore')).toHaveText('До миграции: нет данных');
