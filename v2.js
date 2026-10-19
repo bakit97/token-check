@@ -1064,6 +1064,7 @@ function validControlEndpoint(value){
       u.origin:null;
   }catch(e){return null}
 }
+function phaseResearchConfig(base,phase,update){var copy=JSON.parse(JSON.stringify(base)),phases=copy.phases||{before:Object.assign({},copy),after:Object.assign({},copy)};['before','after'].forEach(function(p){phases[p]=Object.assign({},phases[p]);if(phase==='all'||phase===p)Object.assign(phases[p],update);delete phases[p].phases});return Object.assign({},copy,phase==='all'?update:{},{phases:phases})}
 async function publishResearchLevel(level){
   const one=level==='1',keyField=one?'ownerResearchOneKey':'ownerResearchTwoKey';
   const checkField=one?'confirmResearchOne':'confirmResearchTwo';
@@ -1097,8 +1098,8 @@ async function publishResearchLevel(level){
       note('Неверный порог второго исследования');return;
     }
   }
-  if(one){var base=JSON.parse(JSON.stringify(researchMeta.settings)),phases=base.phases||{before:Object.assign({},base),after:Object.assign({},base)};var update=cfg;['before','after'].forEach(function(phase){if(R1P==='all'||R1P===phase)phases[phase]=Object.assign({},phases[phase],update);delete phases[phase].phases});cfg=Object.assign({},base,{phases:phases})}
-  if(!one){var base2=JSON.parse(JSON.stringify(twoMeta.settings));delete base2.hours;var phases2=base2.phases||{before:Object.assign({},base2),after:Object.assign({},base2)},update2=cfg;['before','after'].forEach(function(phase){if(s.r2Stream==='all'||s.r2Stream===phase)phases2[phase]=Object.assign({},phases2[phase],update2);delete phases2[phase].phases});cfg=Object.assign({},base2,{phases:phases2})}
+  if(one)cfg=phaseResearchConfig(researchMeta.settings,R1P,cfg);
+  if(!one){var base2=JSON.parse(JSON.stringify(twoMeta.settings));delete base2.hours;cfg=phaseResearchConfig(base2,s.r2Stream,cfg)}
   $(buttonField).disabled=true;
   say('Отправка…');if(btnEl){btnEl.disabled=true;btnEl.textContent='Отправка…'}
   const abort=new AbortController(),timer=setTimeout(function(){abort.abort()},20000);
