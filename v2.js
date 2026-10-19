@@ -537,7 +537,7 @@ async function applyModules(){var key=keyFrom('modKey'),d=draft();
     $('modKey').value='';rememberIfOk(r,key);if(r.ok){MOD_DIRTY=false;$('modMsg').textContent='✓ Принято, сервер применит за пару минут'}else $('modMsg').textContent='Отклонено: HTTP '+r.status+(r.status===401?' (пароль)':'')}
   catch(e){$('modMsg').textContent='Ошибка связи'}finally{$('modApply').disabled=false}}
 // ---- Вход в Исследование 1 ----
-function intakeFromUI(){return {manual:{enabled:$('inManual').checked,phase:$('inPhaseOn').checked?$('inPhase').value:'both',
+function intakeFromUI(){return {manual:{enabled:$('inManual').checked,phase:$('inPhase').value||'both',
     buyers10:{on:$('inBuyOn').checked,min:Number($('inBuy').value)},quoteSol:{on:$('inSolOn').checked,min:Number($('inSol').value)},
     sample:{on:$('inSampleOn').checked,pct:Number($('inSample').value)}},modules:{enabled:true}}}
 var INTAKE_DIRTY=false;
@@ -545,14 +545,14 @@ function renderIntake(){if(!$('intakeBox'))return;var st=researchMeta&&researchM
   $('intakeState').textContent=!researchMeta?'нет данных':x?'вкл.':'все из «Все»';
   if(!INTAKE_DIRTY){var m=x?x.manual:{enabled:true,phase:'both',buyers10:{on:true,min:3},quoteSol:{on:true,min:0.5},sample:{on:false,pct:100}};
     $('inManual').checked=!!m.enabled;$('inModules').checked=x?!!x.modules.enabled:true;
-    $('inPhaseOn').checked=m.phase!=='both';$('inPhase').value=m.phase;
+    $('inPhase').value=m.phase||'both';
     $('inBuyOn').checked=m.buyers10.on;$('inBuy').value=m.buyers10.min;$('inSolOn').checked=m.quoteSol.on;$('inSol').value=m.quoteSol.min;
     $('inSampleOn').checked=m.sample.on;$('inSample').value=m.sample.pct}
   $('inBuyV').textContent=$('inBuy').value;$('inSolV').textContent=$('inSol').value;$('inSampleV').textContent=$('inSample').value;
   $('inManualBox').classList.toggle('dim',!$('inManual').checked);
   var ms=$('inManualSw');if(ms){var on=$('inManual').checked;ms.classList.toggle('on',on);var t1=ms.querySelector&&ms.querySelector('.tg');if(t1)t1.classList.toggle('on',on)}
   var dw=draft(),won=!!(dw&&dw.r1&&(dw.r1.before||dw.r1.after)),ws=$('inWinSw');if(ws){ws.classList.toggle('on',won);var t2=ws.querySelector&&ws.querySelector('.tg');if(t2)t2.classList.toggle('on',won)}
-  var parts=[];if($('inPhaseOn').checked)parts.push({before:'до',after:'после',both:'оба'}[$('inPhase').value]);if($('inBuyOn').checked)parts.push('пок. ≥ '+$('inBuy').value);if($('inSolOn').checked)parts.push('SOL ≥ '+$('inSol').value);if($('inSampleOn').checked)parts.push($('inSample').value+'%');
+  var ipv=$('inPhase').value||'both';if(document.querySelectorAll)document.querySelectorAll('#inPhaseSeg [data-ip]').forEach(function(x){x.classList.toggle('active',x.dataset.ip===ipv)});var parts=[];if(ipv!=='both')parts.push({before:'до',after:'после',both:'оба'}[$('inPhase').value]);if($('inBuyOn').checked)parts.push('пок. ≥ '+$('inBuy').value);if($('inSolOn').checked)parts.push('SOL ≥ '+$('inSol').value);if($('inSampleOn').checked)parts.push($('inSample').value+'%');
   $('inManualSum').textContent=$('inManual').checked?(parts.join(' · ')||'без условий'):'выкл.';
   var c=serverCfg(),r=c&&c.r1||{};$('inModSum').textContent=(r.before||r.after)?'вкл':'выкл';
   var acc=researchMeta&&researchMeta.intakeAccepted||{},rej=researchMeta&&researchMeta.intakeRejected||{};
@@ -1270,6 +1270,7 @@ function bind(){
   $('modPickerList').addEventListener('click',function(e){var b=e.target.closest('[data-pick]');if(b)pickFilter(b.dataset.pick)});
   $('winR1').addEventListener('click',function(){var d=draft();if(!d)return;var v=!(d.r1&&(d.r1.before||d.r1.after));d.r1={before:v,after:v};MOD_DIRTY=true;renderServerModules();renderIntake()});
   $('mods1').addEventListener('click',modClick);$('mods2').addEventListener('click',modClick);$('modApply').addEventListener('click',applyModules);
+  $('inPhaseSeg').addEventListener('click',function(e){var b=e.target.closest('[data-ip]');if(!b)return;$('inPhase').value=b.dataset.ip;INTAKE_DIRTY=true;renderIntake()});
   ['inManual','inModules','inPhaseOn','inPhase','inBuyOn','inBuy','inSolOn','inSol','inSampleOn','inSample'].forEach(function(id){$(id).addEventListener('input',function(){INTAKE_DIRTY=true;renderIntake()})});
   $('intakeApply').addEventListener('click',applyIntake);
   $('inManualSw').addEventListener('click',function(e){e.preventDefault();e.stopPropagation();$('inManual').checked=!$('inManual').checked;INTAKE_DIRTY=true;renderIntake()});
