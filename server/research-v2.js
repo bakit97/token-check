@@ -101,11 +101,20 @@ function legacyActivityOutcome(coin,entryAt,{hours=5,minActive=70,maxIdle=60,min
 }
 function classifyActivity(m,cfg={}){
  if(!m||m.coverage<(cfg.minCoverage??.8)||m.maxGap>10)return {label:'unknown',why:'collector-gap'};
- const tests=[['last-hour-trades',m.lastHourTrades,cfg.lastHourTrades??1],['last-hour-wallets',m.lastHourWallets,cfg.lastHourWallets??1],['price-retention',m.priceKeep,cfg.minPriceKeep??30],['unique-buyers',m.uniqueBuyers,cfg.minUniqueBuyers??30]];
+ // Reclassify old completed rows from their original minute observations too.
+ let minutes=m.minutes;try{if(!minutes&&m.outcomePacked)minutes=JSON.parse(require('node:zlib').inflateSync(Buffer.from(m.outcomePacked,'base64'),{maxOutputLength:2000000}).toString())}catch{return {label:'unknown',why:'collector-gap'}}
+ const end=m.windowEnd??minutes?.at(-1)?.[0],hour=(minutes||[]).filter(r=>r.length>=4&&r[0]>end-60*MIN&&r[0]<=end),observed=hour.filter(r=>r[1]===1),active=observed.filter(r=>r[2]===1).length;
+ if(hour.length&&observed.length<Math.ceil(hour.length*(cfg.minCoverage??.8)))return {label:'unknown',why:'collector-gap'};
+ if(hour.length&&observed.length&&active===0&&observed.every(r=>r[2]===0))return {label:'dead',why:'last-hour-inactive'};
+ // Activity minutes are an explicit fallback criterion, not an invented count
+ // of trades or distinct wallets. Keep the original null metrics unchanged.
+ const proxy=v=>v!=null?v:hour.length&&observed.length?active:null;
+ const effective={...m,lastHourTrades:proxy(m.lastHourTrades),lastHourWallets:proxy(m.lastHourWallets),uniqueBuyers:m.uniqueBuyers??((minutes||[]).filter(r=>r[1]===1&&r[2]===1).length||null)};
+ const tests=[['last-hour-trades',effective.lastHourTrades,cfg.lastHourTrades??1],['last-hour-wallets',effective.lastHourWallets,cfg.lastHourWallets??1],['price-retention',m.priceKeep,cfg.minPriceKeep??30],['unique-buyers',effective.uniqueBuyers,cfg.minUniqueBuyers??30]];
  if(cfg.useActivity)tests.push(['activity',m.activePct,cfg.minActive??70]);
  if(cfg.useIdle)tests.push(['idle',m.maxIdleObserved==null?null:-(m.maxIdleObserved),-(cfg.maxIdle??60)]);
  const failed=tests.find(([k,v,n])=>v!=null&&v<n&&!m.lowerBounds?.includes(k));if(failed)return {label:'dead',why:failed[0]};
- const missing=tests.find(([k,v,n])=>n>0&&(v==null||(m.lowerBounds?.includes(k)&&v<n)));return missing?{label:'unknown',why:'unobserved-'+missing[0]}:{label:'live',why:null};
+ const missing=tests.find(([k,v,n])=>n>0&&(v==null||(m.lowerBounds?.includes(k)&&v<n)));return missing?{label:'dead',why:'insufficient-evidence-'+missing[0]}:{label:'live',why:null};
 }
 function extendedFeaturesAt(coin,t,context,F){
  const out={},ct=coin?.ct,known=ct?.at<=t&&ct.safetyVersion===1,bool=v=>typeof v==='boolean'?v?1:0:null;
