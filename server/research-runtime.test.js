@@ -18,7 +18,8 @@ function stream(active) {
    Math.floor((T+m*M)/1000),1-m/800,3000,5000,
    active(m)?3:0,active(m)?2:0,active(m)?200:0
  ]);
- return {ds};
+ const x={};for(let m=1;m<300;m++)if(active(m))for(const [i,w] of [A,B].entries())x[m+'-'+i]=[(T+m*M+i*1000)/1000,1,1,w,1,.1,T+m*M+2000];
+ return {ds,tr:{x}};
 }
 function mockSource(){
  return {records:new Map([

@@ -106,6 +106,7 @@ function legacyActivityOutcome(coin,entryAt,{hours=5,minActive=70,maxIdle=60,min
   return {label,coverage,activePct,maxIdleObserved:longest,seen,blocks};
 }
 function classifyActivity(m,cfg={}){
+ if(cfg.activityRuleVersion===3){let minutes=m?.minutes||[];try{if(!minutes.length&&m?.outcomePacked)minutes=JSON.parse(require('node:zlib').inflateSync(Buffer.from(m.outcomePacked,'base64'),{maxOutputLength:2000000}).toString())}catch{}const evidence=m?.activitySlices||require('./activity-slices').unpack(m?.activitySlicesPacked)||require('./activity-slices').evidence({start:m?.windowStart??minutes[0]?.[0]-MIN,end:m?.windowEnd??minutes.at(-1)?.[0],minutes});return require('./activity-slices').classify({...m,activitySlices:evidence},cfg);}
  if(m?.recoveryPending)return {label:'pending',why:'backfill-pending'};
  if(!m||m.coverage<(cfg.minCoverage??.8)||m.maxGap>10)return {label:'unknown',why:m?.recoveryWhy||'collector-gap'};
  // Reclassify old completed rows from their original minute observations too.
@@ -169,14 +170,17 @@ function activityEvidence(coin,start,end,decisionMinutes){
  let recent=history.filter(x=>x.at>end-60*MIN);let rolling=0,rollingSeen=0;for(let t=end;t>end-60*MIN;t-=FIVE){const d=latestBefore(recent,t,2*MIN,x=>x.at);if(d&&d.at>=t-2*MIN&&d.buys!=null&&d.sells!=null){rolling+=d.buys+d.sells;rollingSeen++}}
  // Zero trades in all twelve non-overlapping rolling windows is conclusive.
  const hourTrades=tapeCovered?lastTrades:rollingSeen===12?rolling:null;
- return {coverage:seen/bins,maxGap,activePct:seen?active/bins*100:null,maxIdleObserved:seen?maxIdleObserved:null,lastHourTrades:tail?.lastHourTrades??hourTrades,lastHourWallets:tail?.lastHourWallets??(tapeCovered?lastWallets.size:hourTrades===0?0:null),uniqueBuyers:tail?.uniqueBuyers??(tapeCovered?buyers.size:null),lowerBounds:tail?.lowerBounds||[],priceKeep:p0>0&&pe!=null?pe/p0*100:null,priceAtDecision:p0,priceAtEnd:pe,minutes,windowStart:start,windowEnd:end,tradeCoverage:tapeCovered};
+ const swaps=[...tape.values(),...(tail?.trades||[])],completeWindows=[...(tail?.complete?[{start,end,complete:true}]:[]),...(coin?.activityTape?.windows||[])];
+ for(const e of coin?.recoveryEvidence||[]){swaps.push(...(e.trades||[]));if(e.tradeWindow)completeWindows.push(e.tradeWindow);}
+ const activityAPI=require('./activity-slices'),activitySlices=activityAPI.merge(activityAPI.unpack(coin?.activityTapePacked),activityAPI.evidence({start,end,minutes,trades:swaps,completeWindows}));
+ return {activitySlices,coverage:seen/bins,maxGap,activePct:seen?active/bins*100:null,maxIdleObserved:seen?maxIdleObserved:null,lastHourTrades:tail?.lastHourTrades??hourTrades,lastHourWallets:tail?.lastHourWallets??(tapeCovered?lastWallets.size:hourTrades===0?0:null),uniqueBuyers:tail?.uniqueBuyers??(tapeCovered?buyers.size:null),lowerBounds:tail?.lowerBounds||[],priceKeep:p0>0&&pe!=null?pe/p0*100:null,priceAtDecision:p0,priceAtEnd:pe,minutes,windowStart:start,windowEnd:end,tradeCoverage:tapeCovered};
 }
 function tradeOutcomeEvidence(rows,start,end,at){
- const clean=rows.filter(r=>Array.isArray(r)&&Number.isFinite(r[0])),oldest=Math.min(...clean.map(r=>r[0]*1000)),complete=(at-start<=24*60*MIN&&rows.length<300)||oldest<=start,tailComplete=(at-(end-60*MIN)<=24*60*MIN&&rows.length<300)||oldest<=end-60*MIN;
+ const clean=rows.filter(r=>Array.isArray(r)&&Number.isFinite(r[0])),oldest=Math.min(...clean.map(r=>r[0]*1000)),complete=clean.length>0&&((at-start<=24*60*MIN&&rows.length<300)||oldest<=start),tailComplete=(at-(end-60*MIN)<=24*60*MIN&&rows.length<300)||oldest<=end-60*MIN;
  const buyers=new Set(),wallets=new Set(),minute=new Map();let trades=0;
  for(const r of clean){const t=r[0]*1000;if(t<start||t>end)continue;const wallet=typeof r[3]==='string'&&r[3].length>=32?r[3]:null;if(r[1]&&wallet)buyers.add(wallet);if(t>=end-60*MIN){trades++;if(wallet)wallets.add(wallet);}const m=Math.floor(t/MIN)*MIN,old=minute.get(m)||[m,0,null];old[1]++;if(r[4]>0)old[2]=r[4];minute.set(m,old);}
  const identities=clean.every(r=>typeof r[3]==='string'&&r[3].length>=32);
- return {at,windowStart:start,windowEnd:end,complete,minutes:[...minute.values()].sort((a,b)=>a[0]-b[0]),lastHourTrades:trades,lastHourWallets:identities?wallets.size:null,uniqueBuyers:identities?buyers.size:null,lowerBounds:[...(!tailComplete?['last-hour-trades','last-hour-wallets']:[]),...(!complete?['unique-buyers']:[])]};
+ return {at,windowStart:start,windowEnd:end,complete,trades:clean,minutes:[...minute.values()].sort((a,b)=>a[0]-b[0]),lastHourTrades:trades,lastHourWallets:identities?wallets.size:null,uniqueBuyers:identities?buyers.size:null,lowerBounds:[...(!tailComplete?['last-hour-trades','last-hour-wallets']:[]),...(!complete?['unique-buyers']:[])]};
 }
 function strengthOutcome(coin,zeroAt,{minAbove=70,minCoverage=.9}={},now=Date.now()){
   if(!inRange(minAbove,0,100))throw RangeError('Invalid level-two settings');

@@ -50,12 +50,10 @@ function intakeDecision(intake,row,features,passes){
 function settings(cfg={}) {
   const result={
     outcomeVersion:2,missPenalty:cfg.missPenalty??3,
-    lastHourTrades:cfg.lastHourTrades??1,lastHourWallets:cfg.lastHourWallets??1,minPriceKeep:cfg.minPriceKeep??(100-(cfg.maxDrop??70)),minUniqueBuyers:cfg.minUniqueBuyers??30,
-    useActivity:cfg.useActivity===true,useIdle:cfg.useIdle===true,
+    activityRuleVersion:3,minTradeSol:cfg.minTradeSol??.05,minWallets:cfg.minWallets??2,
     hours:cfg.hours??5,
     decisionMinutes:cfg.decisionMinutes??10,
-    minActive:cfg.minActive??70,
-    maxIdle:cfg.maxIdle??60,
+    minActive:cfg.minActive??60,
     minCoverage:cfg.minCoverage??.8,
     targetLive:cfg.targetLive??100,targetDead:cfg.targetDead??40,
     ...(cfg.intake!=null?{intake:intakeSettings(cfg.intake)}:{})
@@ -63,13 +61,12 @@ function settings(cfg={}) {
   if(!Number.isInteger(result.hours)||result.hours<1||result.hours>12 ||
      !Number.isInteger(result.decisionMinutes)||result.decisionMinutes<2||result.decisionMinutes>15 ||
      !Number.isFinite(result.minActive)||result.minActive<0||result.minActive>100 ||
-     !Number.isInteger(result.maxIdle)||result.maxIdle<5||result.maxIdle>1440||
      !Number.isFinite(result.minCoverage)||result.minCoverage<.5||result.minCoverage>1) {
     throw new RangeError('Invalid first-level observation settings');
   }
   for(const key of ['targetLive','targetDead'])if(!Number.isInteger(result[key])||result[key]<10||result[key]>5000)throw RangeError('Invalid research target');
   if(!Number.isFinite(result.missPenalty)||result.missPenalty<1||result.missPenalty>5)throw RangeError('Invalid miss penalty');
-  for(const [key,max] of [['lastHourTrades',1000000],['lastHourWallets',100000],['minPriceKeep',100],['minUniqueBuyers',200]])if(!Number.isFinite(result[key])||result[key]<0||result[key]>max)throw RangeError('Invalid live threshold');
+  if(!Number.isFinite(result.minTradeSol)||result.minTradeSol<.01||result.minTradeSol>1||!Number.isInteger(result.minWallets)||result.minWallets<2||result.minWallets>10)throw RangeError('Invalid single-swap activity settings');
   if(cfg.phases){result.phases={};for(const phase of ['before','after'])result.phases[phase]=settings({...result,...cfg.phases[phase],phases:null})}
   return result;
 }
@@ -141,7 +138,7 @@ class ResearchRuntime {
       const result=activityOutcome(coin,at,cfg,now);if(result.label==='pending')continue;
       // Recompute from original receipt cutoffs. Relabelling old frozen values
       // with an earlier timestamp would leak observations from after the decision.
-      const fresh={...old,...result,eventAt:at,featureAnchor:'eventAt',marketScopeVersion:2,decisionAt,
+      const fresh={...old,...result,activitySlices:undefined,activitySlicesPacked:require('./activity-slices').pack(result.activitySlices),eventAt:at,featureAnchor:'eventAt',marketScopeVersion:2,decisionAt,
         features:featuresAt(coin,decisionAt,{eventAt:at,phase:old.phase}),
         featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,at,'1',old.phase),
         earlyWallets:require('./early-intelligence').frozenWallets(coin,decisionAt),
@@ -211,7 +208,7 @@ class ResearchRuntime {
       this.rows.push({via:gate.via,
         mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,featureAnchor:'eventAt',marketScopeVersion:2,eventAt:eventAnchor(row),featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,eventAnchor(row),'1',row.phase),curve:observationCurve(coin,eventAnchor(row),cfg.hours),curveUnit:'price-usd',
         acceptedAt:row.acceptedAt,decisionAt,earlyWallets:require('./early-intelligence').frozenWallets(coin,decisionAt),
-        ...result,outcomeAt:now,minutes:undefined,outcomePacked:require('node:zlib').deflateSync(Buffer.from(JSON.stringify(result.minutes||[]))).toString('base64'),
+        ...result,activitySlices:undefined,activitySlicesPacked:require('./activity-slices').pack(result.activitySlices),outcomeAt:now,minutes:undefined,outcomePacked:require('node:zlib').deflateSync(Buffer.from(JSON.stringify(result.minutes||[]))).toString('base64'),
         hours:cfg.hours,label:result.label,
         activePct:result.activePct,
         maxIdleObserved:result.maxIdleObserved,
@@ -250,8 +247,8 @@ class ResearchRuntime {
     return {schema:2,updated:this.lastAt,eventMigration:this.eventMigration||null,cohortStart:this.cohortStart,settings:{...this.config},intakePending:[...this.admitted.values()].filter(a=>a.intakePending).length,counts,byPhase,unknownReasons,distributions:this.distributions(),pending:{...this.pending,'not-yet-finished':counts.pending-recovering,'backfill-pending':recovering,'collector-gap':counts.unknown},bankCapacityPerClass:MAX_BANK_PER_CLASS,status:'observational',secondLevel:'separate-server-verified-pass-stream'};
   }
   view(){const complete=new Map(this.rows.map(r=>[r.mint,r]));return [...this.admitted.values()].filter(a=>!a.intakePending).map(a=>{const r=complete.get(a.mint);if(r){const v=r.outcomeVersion===2?classifyActivity(r,phaseSettings(this.config,r.phase)):{label:'unknown',why:'legacy-observation-awaiting-recheck'};return {...r,...v,features:verifiedFeatures(r.features)};};const cfg=phaseSettings(this.config,a.phase),ended=this.lastAt>=eventAnchor(a)+cfg.hours*HOURS+3*MIN,why=this.lastAttemptAt.get(a.mint)?.why;return {...a,label:ended&&why&&why!=='deferred-by-batch'?'unknown':'pending',why:ended?why||'deferred-by-batch':'not-yet-finished'};}).sort((a,b)=>a.acceptedAt-b.acceptedAt);}
-  distributions(){const histogram=(rows,key,edges)=>{const bins=edges.map((lo,i)=>({from:lo,to:edges[i+1]??(key==='activePct'?100:null),count:0}));let unknown=0;for(const r of rows){const x=r[key];if(typeof x!=='number'||!Number.isFinite(x)){unknown++;continue;}let i=edges.findLastIndex(n=>x>=n);if(i<0)i=0;bins[i].count++;}return {bins,known:rows.length-unknown,unknown};};return Object.fromEntries(['before','after'].map(phase=>{const rows=this.rows.filter(r=>r.phase===phase&&r.outcomeVersion===2).map(r=>({...r,priceChangePct:r.priceKeep==null?null:r.priceKeep-100}));return [phase,{completed:rows.length,activePct:histogram(rows,'activePct',Array.from({length:10},(_,i)=>i*10)),maxIdleObserved:histogram(rows,'maxIdleObserved',[0,15,30,60,120]),priceChangePct:histogram(rows,'priceChangePct',[-100,-90,-70,-50,-30,-10,0,10,50,100]),uniqueBuyers:histogram(rows,'uniqueBuyers',[0,10,30,50,100,200]),lowerBounds:rows.filter(r=>r.lowerBounds?.includes('unique-buyers')).length}];}));}
-  debugSample(limit=20,{coins=null,now=this.lastAt}={}){const crypto=require('node:crypto'),zlib=require('node:zlib');return this.view().map(r=>({r,rank:crypto.createHash('sha256').update(String(this.cohortStart)+r.mint).digest('hex')})).sort((a,b)=>a.rank.localeCompare(b.rank)).slice(0,limit).map(({r})=>{const cfg=phaseSettings(this.config,r.phase),plannedWindowEnd=eventAnchor(r)+cfg.hours*HOURS,observedUntil=Math.min(now,plannedWindowEnd);if(!r.outcomePacked&&coins?.get&&observedUntil>eventAnchor(r)){const c=coins.get(r.mint);if(c)r={...activityEvidence(c,eventAnchor(r),observedUntil,cfg.decisionMinutes),...r};}let minutes=r.minutes||[];try{if(r.outcomePacked)minutes=JSON.parse(zlib.inflateSync(Buffer.from(r.outcomePacked,'base64'),{maxOutputLength:2000000}).toString())}catch{}return {plannedWindowEnd,observedUntil,metricsProvisional:r.label==='pending',mint:r.mint,phase:r.phase,acceptedAt:r.acceptedAt,windowStart:r.windowStart,windowEnd:r.windowEnd,label:r.label,why:r.why,coverage:r.coverage,activePct:r.activePct,maxIdleObserved:r.maxIdleObserved,priceAtDecision:r.priceAtDecision,priceAtEnd:r.priceAtEnd,priceKeep:r.priceKeep,lastHourTrades:r.lastHourTrades,lastHourWallets:r.lastHourWallets,uniqueBuyers:r.uniqueBuyers,backfilledMinutes:r.backfilledMinutes||0,recoveryWhy:r.recoveryWhy||null,minuteColumns:['at','collectorObserved','activityObserved','price','recovery'],minutes};});}
+  distributions(){const histogram=(rows,key,edges)=>{const bins=edges.map((lo,i)=>({from:lo,to:edges[i+1]??(key==='activePct'?100:null),count:0}));let unknown=0;for(const r of rows){const x=r[key];if(typeof x!=='number'||!Number.isFinite(x)){unknown++;continue;}let i=edges.findLastIndex(n=>x>=n);if(i<0)i=0;bins[i].count++;}return {bins,known:rows.length-unknown,unknown};};return Object.fromEntries(['before','after'].map(phase=>{const rows=this.rows.filter(r=>r.phase===phase&&r.outcomeVersion===2).map(r=>({...r,...classifyActivity(r,phaseSettings(this.config,r.phase)),priceChangePct:r.priceKeep==null?null:r.priceKeep-100}));return [phase,{completed:rows.length,activePct:histogram(rows,'activePct',Array.from({length:10},(_,i)=>i*10)),maxIdleObserved:histogram(rows,'maxIdleObserved',[0,15,30,60,120]),priceChangePct:histogram(rows,'priceChangePct',[-100,-90,-70,-50,-30,-10,0,10,50,100]),uniqueBuyers:histogram(rows,'uniqueBuyers',[0,10,30,50,100,200]),lowerBounds:rows.filter(r=>r.lowerBounds?.includes('unique-buyers')).length}];}));}
+  debugSample(limit=20,{coins=null,now=this.lastAt}={}){const crypto=require('node:crypto'),zlib=require('node:zlib');return this.view().map(r=>({r,rank:crypto.createHash('sha256').update(String(this.cohortStart)+r.mint).digest('hex')})).sort((a,b)=>a.rank.localeCompare(b.rank)).slice(0,limit).map(({r})=>{const cfg=phaseSettings(this.config,r.phase),plannedWindowEnd=eventAnchor(r)+cfg.hours*HOURS,observedUntil=Math.min(now,plannedWindowEnd);if(!r.outcomePacked&&coins?.get&&observedUntil>eventAnchor(r)){const c=coins.get(r.mint);if(c)r={...activityEvidence(c,eventAnchor(r),observedUntil,cfg.decisionMinutes),...r};}let minutes=r.minutes||[];try{if(r.outcomePacked)minutes=JSON.parse(zlib.inflateSync(Buffer.from(r.outcomePacked,'base64'),{maxOutputLength:2000000}).toString())}catch{}return {plannedWindowEnd,observedUntil,metricsProvisional:r.label==='pending',mint:r.mint,phase:r.phase,acceptedAt:r.acceptedAt,windowStart:r.windowStart,windowEnd:r.windowEnd,label:r.label,why:r.why,coverage:r.coverage,activePct:r.activePct,activeSlices:classifyActivity(r,cfg).activeSlices,totalSlices:classifyActivity(r,cfg).totalSlices,maxIdleObserved:r.maxIdleObserved,priceAtDecision:r.priceAtDecision,priceAtEnd:r.priceAtEnd,priceKeep:r.priceKeep,lastHourTrades:r.lastHourTrades,lastHourWallets:r.lastHourWallets,uniqueBuyers:r.uniqueBuyers,backfilledMinutes:r.backfilledMinutes||0,recoveryWhy:r.recoveryWhy||null,minuteColumns:['at','collectorObserved','activityObserved','price','recovery'],minutes};});}
   select({phase,label,limit=100}={}) {
     if(phase&&!['before','after'].includes(phase))throw TypeError('bad phase');
     if(label&&!['live','dead','pending','unknown'].includes(label))throw TypeError('bad label');

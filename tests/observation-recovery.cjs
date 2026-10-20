@@ -21,7 +21,7 @@ test('recovered historical prices help outcomes but cannot leak into decision fe
 test('budget deferral stays pending across restart, reuses downloaded candles, then persists verified recovery',async t=>{
  const dir=temp(t),updates=[];let now=T+61*M,gets=0,calls=0,deny=true;const options={dir,now:()=>now,gt:async()=>{gets++;return response([])},rpc:async()=>{calls++;if(deny)throw Object.assign(Error('budget'),{code:'BUDGET_DEFERRED'});return [{signature:'first',blockTime:T/1000-1,err:null}]},onUpdated:(j,p)=>updates.push(j.state)};
  let manager=new R.ObservationRecovery(options),job=manager.enqueue({mint,pool:'pool',start:T,end:T+60*M});await manager.run(job);a.equal(job.state,'waiting-budget');
- manager=new R.ObservationRecovery(options);job=manager.jobs.get(job.id);now+=16000;deny=false;await manager.run(job);a.equal(gets,1);a.equal(calls,2);a.equal(job.state,'recovered');a.equal(manager.attach({a:mint,p:'pool'}).recoveryEvidence.length,1);a.deepEqual(updates,['recovered']);
+ manager=new R.ObservationRecovery(options);job=manager.jobs.get(job.id);now+=16000;deny=false;await manager.run(job);a.equal(gets,2);a.equal(calls,2);a.equal(job.state,'recovered');a.equal(manager.attach({a:mint,p:'pool'}).recoveryEvidence.length,1);a.deepEqual(updates,['recovered']);
 });
 
 test('unavailable OHLCV still permits exact chain inactivity recovery',async t=>{

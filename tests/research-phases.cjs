@@ -9,7 +9,8 @@ test('research phases observe their own hours and thresholds from detection',t=>
  const runtime=new ResearchRuntime({dir:dir(t),config:{lastHourWallets:0,minUniqueBuyers:0,phases:{before:{hours:1,minActive:70},after:{hours:2,minActive:90}}}});
  const source={records:new Map([['a',{mint:'a',phase:'before',acceptedAt:T,eventAt:T}],['b',{mint:'b',phase:'after',acceptedAt:T,eventAt:T}]])};
  const ds=Array.from({length:121},(_,i)=>[(T+i*M)/1000,1,100,100,3,1,20]);
- const coins=new Map([['a',{ds}],['b',{ds}]]);let r=runtime.update({source,coins,now:T+H+5*M});assert.equal(r.added,1);assert.equal(r.counts.preLive,1);assert.equal(r.pending['not-yet-finished'],1);
+ const x={};for(let m=1;m<120;m++)for(let i=0;i<2;i++)x[m+'-'+i]=[(T+m*M+i*1000)/1000,1,1,i?'A'.repeat(32):'B'.repeat(32),1,.1,T+m*M+2000];
+ const coins=new Map([['a',{ds,tr:{x}}],['b',{ds,tr:{x}}]]);let r=runtime.update({source,coins,now:T+H+5*M});assert.equal(r.added,1);assert.equal(r.counts.preLive,1);assert.equal(r.pending['not-yet-finished'],1);
  r=runtime.update({source,coins,now:T+2*H+5*M});assert.equal(r.added,1);assert.equal(r.counts.postLive,1);assert.equal(runtime.select({phase:'before'})[0].decisionAt,T+10*M);
 });
 test('changing only targets preserves epoch, observations and activation across restart',t=>{
