@@ -2,6 +2,7 @@
 const TOKEN='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',T22='TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
 const {starterFeaturesAt}=require('./research-v2');
 const MIN=60000;
+function tokenInfoDue(c,now){return !c.tokAt||((!c.n||!c.s||!c.i)&&now-c.tokAt>=5*MIN);}
 function cardAt(c,at){
  const f=starterFeaturesAt(c||{},at),d=(c?.ds||[]).filter(x=>Number.isFinite(x?.[0])&&x[0]*1000<=at&&at-x[0]*1000<=7*MIN).at(-1),count=v=>Number.isInteger(v)&&v>=0?v:null;
  const WSOL='So11111111111111111111111111111111111111112',qi=c?.vmint?.indexOf(WSOL),vault=qi>=0&&c.vmint.length===2&&c.vmint[1-qi]===c.a&&c.vaultIdentityAt<=at;
@@ -68,4 +69,4 @@ class CoinProfiles{
   }finally{this.busy=false}
  }
 }
-module.exports={cardAt,imageUrl,metadataUrl,metadataImage,parseMetadata,verifiesMintCreation,findCreation,CoinProfiles,applyIdentity,applyMintIdentity};
+module.exports={cardAt,imageUrl,metadataUrl,metadataImage,parseMetadata,verifiesMintCreation,findCreation,CoinProfiles,applyIdentity,applyMintIdentity,tokenInfoDue};

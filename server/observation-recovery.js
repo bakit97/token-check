@@ -23,6 +23,16 @@ function relabel(row,evidence,cfg){let minutes=[];try{minutes=row.minutes||JSON.
  if(silent){next.lastHourTrades=0;next.lastHourWallets=0;}let intervals=0,open=false;for(const r of minutes){if(r[4]?.backfilled){if(!open)intervals++;open=true;}else open=false;}next.backfilledIntervals=intervals;return {...next,...require('./research-v2').classifyActivity(next,cfg)};
 }
 function atomic(file,value){const temp=file+'.tmp',fd=fs.openSync(temp,'w',0o600);try{fs.writeFileSync(fd,JSON.stringify(value));fs.fsyncSync(fd)}finally{fs.closeSync(fd)}fs.renameSync(temp,file);require('./durable-json').syncDirectory(path.dirname(file));}
+class RecoveryRPC{
+ constructor({fallback,fetch:read=globalThis.fetch,now=Date.now}){this.fallback=fallback;this.fetch=read;this.now=now;this.cache=new Map();this.state={publicCalls:0,publicSuccess:0,publicErrors:0,publicRateDeferred:0,lastPublicAt:0,lastError:null};}
+ async call(method,params){let deferred;try{return await this.fallback(method,params);}catch(e){if(e.code!=='BUDGET_DEFERRED')throw e;deferred=e;}
+  if(method!=='getSignaturesForAddress')throw deferred;const key=JSON.stringify(params),cached=this.cache.get(key);if(cached&&this.now()-cached.at<15000)return cached.rows;
+  if(this.now()-this.state.lastPublicAt<20000){this.state.publicRateDeferred++;throw deferred;}this.state.lastPublicAt=this.now();this.state.publicCalls++;
+  try{const response=await this.fetch('https://api.mainnet-beta.solana.com',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params}),signal:AbortSignal.timeout(8000)});if(!response.ok)throw Error('http-'+response.status);const body=await require('./early-intelligence').readBoundedJSON(response,2*1024*1024);if(body.error||!Array.isArray(body.result))throw Error('rpc-unavailable');this.state.publicSuccess++;this.state.lastError=null;this.cache.set(key,{at:this.now(),rows:body.result});while(this.cache.size>16)this.cache.delete(this.cache.keys().next().value);return body.result;
+  }catch(e){this.state.publicErrors++;this.state.lastError=/^http-\d+$/.test(e.message)?e.message:'public-provider-unavailable';throw deferred;}
+ }
+ summary(){return {...this.state,cache:this.cache.size,minPublicIntervalMs:20000,publicHasHeliusCredits:false};}
+}
 class ObservationRecovery{
  constructor({dir,gt,rpc,resolveCoin,onUpdated,now=Date.now}){this.dir=path.join(dir,'observation-recovery-v1');fs.mkdirSync(this.dir,{recursive:true});this.file=path.join(this.dir,'jobs.json');this.gt=gt;this.rpc=rpc;this.resolveCoin=resolveCoin;this.onUpdated=onUpdated;this.now=now;this.jobs=new Map(fs.existsSync(this.file)?JSON.parse(fs.readFileSync(this.file,'utf8')).jobs:[]);if(this.jobs.size>1000||[...this.jobs].some(([id,j])=>!/^[a-f0-9]{64}$/.test(id)||j.id!==id))throw Error('Invalid recovery ledger');this.active=0;this.cache=new Map();for(const j of this.jobs.values())if(j.state==='fetching')j.state='queued';}
  persist(){atomic(this.file,{schema:1,jobs:[...this.jobs]});}
@@ -40,4 +50,4 @@ class ObservationRecovery{
  tick(){const ready=[...this.jobs.values()].filter(j=>['queued','waiting-budget'].includes(j.state)&&(!j.retryAt||j.retryAt<=this.now())).sort((a,b)=>Number(a.state==='waiting-budget')-Number(b.state==='waiting-budget')||a.at-b.at);for(const j of ready){if(this.active>=2)break;this.run(j).catch(()=>{});}}
  summary(){const states={},reasons={};let minutes=0;for(const j of this.jobs.values()){states[j.state]=(states[j.state]||0)+1;minutes+=j.recoveredMinutes||0;if(j.state==='unavailable')reasons[j.reason]=(reasons[j.reason]||0)+1;}return {jobs:this.jobs.size,active:this.active,states,backfilledMinutes:minutes,unavailableReasons:reasons,cache:this.cache.size};}
 }
-module.exports={candlesOf,signaturesOf,applyMinutes,minuteStats,relabel,ObservationRecovery};
+module.exports={candlesOf,signaturesOf,applyMinutes,minuteStats,relabel,ObservationRecovery,RecoveryRPC};

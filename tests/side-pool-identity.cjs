@@ -21,3 +21,7 @@ test('revoked side pool cannot reappear after restart and does not prevent a lat
  const restored=new SourceRuntime({dir:d,fsync:false});a.equal(restored.has(mint),false);a.equal(restored.get(mint),null);a.equal(restored.before({mint,publicTradingAt:now,observedAt:now,verified:true}).reason,'rejected-side-pool');
  const result=restored._admit({mint,phase:'after',migrationAt:now,migrationVerified:true},now,{pool:'official',kind:'migration'});a.equal(result.admitted,true);a.equal(new SourceRuntime({dir:d,fsync:false}).get(mint).phase,'after');
 });
+
+test('empty early token catalogue is retried for missing identity, while complete cards do not poll it again',()=>{
+ const {tokenInfoDue}=require('../server/coin-profile');a.equal(tokenInfoDue({n:'',s:'',i:'',tokAt:1000},1000+5*60000),true);a.equal(tokenInfoDue({n:'name',s:'SYM',i:'image',tokAt:1000},1000+30*60000),false);a.equal(tokenInfoDue({n:'',s:'',i:'',tokAt:1000},1000+60000),false);
+});

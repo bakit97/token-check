@@ -40,3 +40,8 @@ test('a recovered gap never claims inactivity outside its requested interval and
  const result=R.applyMinutes(minutes,[e]);a.deepEqual(result.map(r=>r[1]),[null,null,1,null,null]);a.equal(result[2][4].windowStart,e.start);a.equal(result[2][4].recoveryVersion,2);
  const bad=minutes.map(r=>[r[0],1,0,null,{backfilled:true,source:'chain-pool-signatures'}]);a.deepEqual(R.applyMinutes(bad,[e]).map(r=>r[1]),[null,null,1,null,null]);
 });
+
+test('recovery may use a rate-limited public history fallback when Helius is reserved for live migration',async()=>{
+ let now=T,calls=0;const deferred=()=>Object.assign(Error('budget'),{code:'BUDGET_DEFERRED'}),rows=[{signature:'first',blockTime:T/1000,err:null}],adapter=new R.RecoveryRPC({now:()=>now,fallback:async()=>{throw deferred()},fetch:async(url,opt)=>{calls++;a.equal(url,'https://api.mainnet-beta.solana.com');a.equal(opt.headers.Authorization,undefined);a.equal(JSON.parse(opt.body).method,'getSignaturesForAddress');return {ok:true,headers:{get:()=>null},body:[Buffer.from(JSON.stringify({result:rows}))]};}});
+ a.deepEqual(await adapter.call('getSignaturesForAddress',['pool',{}]),rows);a.deepEqual(await adapter.call('getSignaturesForAddress',['pool',{}]),rows);a.equal(calls,1);await a.rejects(adapter.call('getSignaturesForAddress',['other',{}]),{code:'BUDGET_DEFERRED'});now+=20001;await adapter.call('getSignaturesForAddress',['other',{}]);a.equal(calls,2);a.equal(adapter.summary().publicSuccess,2);
+});

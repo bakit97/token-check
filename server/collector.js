@@ -7,7 +7,7 @@ if(typeof WebSocket==='undefined'&&!process.env.WSX){const ch=require('child_pro
    Каждые 2 минуты выгружает перепись дня (по Алматы, с 00:00) в Cloud Storage. */
 const fs=require('fs'),zlib=require('zlib');
 let HEALTH=null,PROFILES=null;
-let COMPLETED=null,ACTIVE_HISTORY=null,OBS_RECOVERY=null;
+let COMPLETED=null,ACTIVE_HISTORY=null,OBS_RECOVERY=null,RECOVERY_RPC=null;
 const fullCoin=c=>ACTIVE_HISTORY?ACTIVE_HISTORY.hydrate(c):c;
 const PUBLIC_FEEDS={busy:false,sourceAt:0,libraryAt:0,storageAt:0,error:''},RESEARCH_EXPORTS={busy:false,oneAt:0,twoAt:0,error:''};let SOURCE_DAY_PUBLISHED_AT=0;
 const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:30000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0,pendingWork:0,cancelledGT:0};
@@ -751,7 +751,7 @@ async function pollDS(){const now=Date.now(),pins=collectionPins(now);
   // everyone else by last actual attempt, independent of migration phase.
   const ok=chooseDue(need.filter(observedEligible),{now,limit:1200,earlyShare:.3});
   const rest=chooseDue(need.filter(c=>!observedEligible(c)),{now,limit:600,earlyShare:.3});
-  const tokFirst=ok.filter(c=>!c.tokAt).slice(0,300);
+  const tokFirst=ok.filter(c=>require(DIR+'/coin-profile.js').tokenInfoDue(c,now)).slice(0,300);
   for(let i=0;i<ok.length;i+=30){const part=ok.slice(i,i+30);
     const attempted=Date.now();for(const c of part)c.dsTryAt=attempted;
     try{const j=await getJSON(`${DS}/latest/dex/pairs/solana/${part.map(c=>c.p).join(',')}`);const at=Date.now(),by={};(j.pairs||[]).forEach(p=>by[p.pairAddress]=p);
@@ -1195,7 +1195,8 @@ async function exportSource(now) {
 }
 function initObservationRecovery(){
  const api=require(DIR+'/observation-recovery.js');
- OBS_RECOVERY=new api.ObservationRecovery({dir:DIR,gt,rpc:(m,p)=>rpc(m,p,{priority:'recovery',context:'дозагрузка',source:'recovery',urgent:true,maxBytes:2*1024*1024}),resolveCoin:mint=>C.get(mint)||COMPLETED?.readCoin(mint),onUpdated:(job,payload)=>{
+ RECOVERY_RPC=new api.RecoveryRPC({fallback:(m,p)=>rpc(m,p,{priority:'recovery',context:'дозагрузка',source:'recovery',urgent:true,maxBytes:2*1024*1024})});
+ OBS_RECOVERY=new api.ObservationRecovery({dir:DIR,gt,rpc:(m,p)=>RECOVERY_RPC.call(m,p),resolveCoin:mint=>C.get(mint)||COMPLETED?.readCoin(mint),onUpdated:(job,payload)=>{
   const row=RESEARCH_V2?.rows.find(r=>r.mint===job.mint&&(!r.p||r.p===job.pool));if(row){const cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase),next=api.relabel(row,OBS_RECOVERY.evidence(job.mint,job.pool),cfg);Object.assign(row,next,{recoveryJobId:job.id,recoveredAt:Date.now(),outcomeAt:Date.now()});job.recoveredMinutes=next.backfilledMinutes||0;RESEARCH_BANKS?.upsert([row]);}
   if(job.kind.startsWith('two')){RESEARCH_TWO?.retry.delete(job.mint);RESEARCH_TWO?.processed.delete(job.mint);}
   const name='observations-v2/backfill/'+dayKey(job.start)+'/'+job.mint+'-'+job.id+'.json';if(!payload.mirrored){uploadLater(name,{...payload,backfilled:true});payload.mirrored=true;OBS_RECOVERY.store(job,payload);}const c=C.get(job.mint);if(c)c.recoveryRef={name,at:Date.now(),start:job.start,end:job.end};
@@ -1442,7 +1443,7 @@ async function researchExportsCycle(){
 let STATUS_BUSY=false;
 async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const now=Date.now(),today=dayKey(now);
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,observationRecovery:OBS_RECOVERY?{...OBS_RECOVERY.summary(),r1Unknown:RESEARCH_V2?.summary().counts.unknown??null}:null,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:discoveryStatus(),poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,observationRecovery:OBS_RECOVERY?{...OBS_RECOVERY.summary(),rpc:RECOVERY_RPC?.summary()||null,r1Unknown:RESEARCH_V2?.summary().counts.unknown??null}:null,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:discoveryStatus(),poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,publishedAt:FAST_PASS_PUBLISH_AT},
