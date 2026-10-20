@@ -32,3 +32,18 @@ test('existing UI data adapters preserve server zero/unknown values and real age
 test('birth pagination resumes behind the previous oldest signature and verifies the true initialization',async()=>{const c=coin(),calls=[];let page=0;const rpc=async(m,p)=>{calls.push([m,p]);if(m==='getSignaturesForAddress'){if(page++===0)return Array.from({length:1000},(_,i)=>({signature:'recent'+i,err:null}));assert.equal(p[1].before,'recent999');return [{signature:'birth',err:null}];}assert.equal(p[0],'birth');return {blockTime:Math.floor((T-100*M)/1000),meta:{err:null},transaction:{message:{instructions:[{programId:TOKEN,parsed:{type:'initializeMint',info:{mint:c.a}}}]}}};};assert.equal((await findCreation(c,rpc,T)).createdAt,null);assert.equal((await findCreation(c,rpc,T)).createdAt,T-100*M);assert.equal(calls.length,3);});
 
 test('source uses immutable server clone metadata and marks the age of last measured native reserves',()=>{const c=coin();c.discoveryFeatures={at:T-1000,cloneCount:3,cloneRank:4,isFirstOfName:0};c.lq[0][0]=(T-20*M)/1000;let card=cardAt(c,T);assert.equal(card.sol,6);assert.equal(card.solAgeMs,20*M);assert.equal(card.cloneCount,3);assert.equal(card.cloneRank,4);assert.equal(cardAt(c,T-2000).cloneCount,null);assert.equal(cardAt(c,T+20*M).sol,null);});
+
+
+test('IPFS rate limit retries the identical CID through one known gateway without following redirects',async()=>{
+ const api=require('../server/coin-profile'),cid='Qm'+'a'.repeat(44),urls=[];
+ const result=await api.metadataImage('https://ipfs.io/ipfs/'+cid,{fetch:async(url,opt)=>{urls.push(url);assert.equal(opt.redirect,'error');if(urls.length===1)return {ok:false,status:429,headers:{get:()=>null}};return {ok:true,headers:{get:()=>null},body:[Buffer.from(JSON.stringify({name:'Coin',image:'ipfs://'+cid}))]};}});
+ assert.equal(urls.length,2);assert.equal(urls[1],'https://gateway.pinata.cloud/ipfs/'+cid);assert.ok(result.image);
+});
+
+
+test('profile queue reaches older unattempted admitted coins before retrying recent failures',async()=>{
+ const {CoinProfiles}=require('../server/coin-profile'),now=Date.UTC(2026,9,20),coins=new Map(),records=new Map();
+ for(let i=0;i<8;i++){const a='m'+i;records.set(a,{mint:a,phase:'before',eventAt:now-(i+1)*3600000,acceptedAt:now-(i+1)*3600000});coins.set(a,{a,uri:'https://ipfs.io/ipfs/'+'Qm'+'a'.repeat(44),...(i<4?{profileAttemptAt:now-11*60000}:{})});}
+ const profiles=new CoinProfiles();await profiles.update({coins,source:{get:a=>records.get(a)},now,fetch:async()=>({ok:true,headers:{get:()=>null},body:[Buffer.from(JSON.stringify({image:'https://example.com/a.png'}))]})});
+ assert.equal(profiles.stats.imageAttempts,4);for(let i=4;i<8;i++)assert.ok(coins.get('m'+i).i);for(let i=0;i<4;i++)assert.equal(coins.get('m'+i).i,undefined);
+});

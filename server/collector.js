@@ -1196,7 +1196,7 @@ async function exportSource(now) {
 function initObservationRecovery(){
  const api=require(DIR+'/observation-recovery.js');
  RECOVERY_RPC=new api.RecoveryRPC({fallback:(m,p)=>rpc(m,p,{priority:'recovery',context:'дозагрузка',source:'recovery',urgent:true,maxBytes:2*1024*1024})});
- OBS_RECOVERY=new api.ObservationRecovery({dir:DIR,gt,preferChain:()=>gtStats().oldestSec>60,rpc:(m,p)=>RECOVERY_RPC.call(m,p),resolveCoin:mint=>C.get(mint)||COMPLETED?.readCoin(mint),onUpdated:(job,payload)=>{
+ OBS_RECOVERY=new api.ObservationRecovery({dir:DIR,gt,preferChain:()=>true,rpc:(m,p)=>RECOVERY_RPC.call(m,p),resolveCoin:mint=>C.get(mint)||COMPLETED?.readCoin(mint),onUpdated:(job,payload)=>{
   const row=RESEARCH_V2?.rows.find(r=>r.mint===job.mint&&(!r.p||r.p===job.pool));if(row){const cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase),next=api.relabel(row,OBS_RECOVERY.evidence(job.mint,job.pool),cfg);Object.assign(row,next,{recoveryJobId:job.id,recoveredAt:Date.now(),outcomeAt:Date.now()});job.recoveredMinutes=next.backfilledMinutes||0;RESEARCH_BANKS?.upsert([row]);}
   if(job.kind.startsWith('two')){RESEARCH_TWO?.retry.delete(job.mint);RESEARCH_TWO?.processed.delete(job.mint);}
   const name='observations-v2/backfill/'+dayKey(job.start)+'/'+job.mint+'-'+job.id+'.json';if(!payload.mirrored){uploadLater(name,{...payload,backfilled:true});payload.mirrored=true;OBS_RECOVERY.store(job,payload);}const c=C.get(job.mint);if(c)c.recoveryRef={name,at:Date.now(),start:job.start,end:job.end};

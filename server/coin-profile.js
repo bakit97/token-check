@@ -23,7 +23,7 @@ function imageUrl(raw){
 function metadataUrl(raw){const value=imageUrl(raw);if(!value)return null;const u=new URL(value);
  return ['ipfs.io','arweave.net','gateway.pinata.cloud','pump.mypinata.cloud','nftstorage.link','cloudflare-ipfs.com'].includes(u.hostname)?u.href:null;
 }
-async function metadataImage(uri,{fetch:read=globalThis.fetch}={}){
+async function readMetadata(uri,{fetch:read=globalThis.fetch}={}){
  const url=metadataUrl(uri);if(!url)return {image:null,reason:'unsupported-metadata-host'};
  const control=new AbortController(),timer=setTimeout(()=>control.abort(),6000);timer.unref?.();
  try{const r=await read(url,{redirect:'error',signal:control.signal,headers:{accept:'application/json'}});
@@ -31,6 +31,15 @@ async function metadataImage(uri,{fetch:read=globalThis.fetch}={}){
   let bytes=0;const chunks=[];for await(const b of r.body){bytes+=b.length;if(bytes>262144){control.abort();throw Error('metadata-too-large')}chunks.push(Buffer.from(b))}
   const data=JSON.parse(Buffer.concat(chunks).toString('utf8'));const link=(raw,hosts)=>{const u=imageUrl(raw);if(!u)return false;return !hosts||hosts.includes(new URL(u).hostname.replace(/^www\./,''));};const social={at:Date.now(),hasTwitter:link(data.twitter||data.extensions?.twitter,['twitter.com','x.com']),hasTelegram:link(data.telegram||data.extensions?.telegram,['t.me','telegram.me','telegram.org']),hasWebsite:link(data.website||data.extensions?.website)};return {social,name:typeof data.name==='string'?data.name.slice(0,128):null,symbol:typeof data.symbol==='string'?data.symbol.slice(0,32):null,image:imageUrl(data.image),description:typeof data.description==='string'?data.description.slice(0,4096):null};
  }finally{clearTimeout(timer)}
+}
+async function metadataImage(uri,options={}){
+ try{return await readMetadata(uri,options)}catch(first){
+  const value=metadataUrl(uri);if(!value)throw first;const u=new URL(value);
+  // Retry the same content-addressed document, never a supplied redirect.
+  if(!['ipfs.io','gateway.pinata.cloud','pump.mypinata.cloud','cloudflare-ipfs.com','nftstorage.link'].includes(u.hostname)||!/^\/ipfs\/[A-Za-z0-9]{32,120}(?:\/|$)/.test(u.pathname))throw first;
+  const host=u.hostname==='gateway.pinata.cloud'?'ipfs.io':'gateway.pinata.cloud';
+  return readMetadata('https://'+host+u.pathname,options);
+ }
 }
 function applyIdentity(c,meta,at){if(!meta)return;if(typeof meta.name==='string'&&meta.name.trim()&&!c.n){c.n=meta.name.trim().slice(0,128);c.nameObservedAt=at;}if(typeof meta.symbol==='string'&&meta.symbol.trim()&&!c.s)c.s=meta.symbol.trim().slice(0,32);if(typeof meta.uri==='string'&&meta.uri.trim())c.uri=meta.uri.trim().slice(0,2048);}
 function applyMintIdentity(c,value,at){for(const ext of value?.data?.parsed?.info?.extensions||[])if(ext.extension==='tokenMetadata')applyIdentity(c,ext.state,at);}
@@ -57,13 +66,13 @@ async function findCreation(c,rpc,now){
  return {createdAt:at,source:'verified-mint-initialization',signature:first.signature};
 }
 class CoinProfiles{
- constructor(){this.busy=false;this.lastRun=0;this.stats={images:0,created:0,deferred:0,unknown:0,errors:0}}
+ constructor(){this.busy=false;this.lastRun=0;this.stats={images:0,created:0,deferred:0,unknown:0,errors:0,imageAttempts:0,imageReasons:{}}}
  async update({coins,source,rpc,now=Date.now(),fetch}={}){
   if(this.busy||now-this.lastRun<MIN)return;this.busy=true;this.lastRun=now;
-  try{const rows=[...coins.values()].filter(c=>{const a=source?.get(c.a);return a&&now-require('./event-clock').eventAnchor(a)<2*3600000});
+  try{const rows=[...coins.values()].filter(c=>{const a=source?.get(c.a);return a&&now-require('./event-clock').eventAnchor(a)<26*3600000});
    for(const c of rows)if(!c.createdAt&&Number.isSafeInteger(c.preTradingAt)){c.createdAt=c.preTradingAt;c.createdAtObservedAt=source.get(c.a)?.acceptedAt||now;c.createdAtSource='verified-create-log-slot-time'}
-   const needs=rows.filter(c=>!c.i&&now-(c.profileAttemptAt||0)>10*MIN&& (c.uri||c.ct?.uri||source.get(c.a)?.proof?.uri)).sort((a,b)=>source.get(b.a).acceptedAt-source.get(a.a).acceptedAt).slice(0,4);
-   for(const c of needs){c.profileAttemptAt=now;try{const m=await metadataImage(c.uri||c.ct?.uri||source.get(c.a).proof.uri,{fetch});if(!m.reason){c.metadataAt=Date.now();c.socialFeatures=m.social;applyIdentity(c,m,c.metadataAt);}if(m.image){c.i=m.image;c.profileAt=Date.now();this.stats.images++}if(m.description!=null)c.description=m.description;c.profileReason=m.reason||null}catch{c.profileReason='metadata-unavailable';this.stats.errors++}}
+   const needs=rows.filter(c=>!c.i&&now-(c.profileAttemptAt||0)>10*MIN&& (c.uri||c.ct?.uri||source.get(c.a)?.proof?.uri)).sort((a,b)=>(a.profileAttemptAt||0)-(b.profileAttemptAt||0)||source.get(b.a).acceptedAt-source.get(a.a).acceptedAt).slice(0,4);
+   for(const c of needs){c.profileAttemptAt=now;this.stats.imageAttempts++;try{const m=await metadataImage(c.uri||c.ct?.uri||source.get(c.a).proof.uri,{fetch});if(!m.reason){c.metadataAt=Date.now();c.socialFeatures=m.social;applyIdentity(c,m,c.metadataAt);}if(m.image){c.i=m.image;c.profileAt=Date.now();c.imageObservedAt=c.profileAt;this.stats.images++}if(m.description!=null)c.description=m.description;c.profileReason=m.reason||(!m.image?'metadata-without-image':null);if(c.profileReason)this.stats.imageReasons[c.profileReason]=(this.stats.imageReasons[c.profileReason]||0)+1}catch{c.profileReason='metadata-unavailable';this.stats.imageReasons[c.profileReason]=(this.stats.imageReasons[c.profileReason]||0)+1;this.stats.errors++}}
    const c=rows.filter(c=>source.get(c.a).phase==='after'&&!c.createdAt&&now-(c.creationAttemptAt||0)>60*MIN).sort((a,b)=>source.get(b.a).acceptedAt-source.get(a.a).acceptedAt)[0];
    if(c){try{const result=await findCreation(c,rpc,now);c.creationAttemptAt=result.reason==='history-page-pending'?now-59*MIN:now;c.creationReason=result.reason||null;if(result.createdAt){c.createdAt=result.createdAt;c.createdAtObservedAt=Date.now();c.createdAtSource=result.source;c.creationSignature=result.signature;delete c.creationCandidate;this.stats.created++}else this.stats.unknown++}catch(e){if(e.code==='BUDGET_DEFERRED')this.stats.deferred++;else{c.creationAttemptAt=now;c.creationReason='creation-unavailable';this.stats.errors++}}}
   }finally{this.busy=false}
