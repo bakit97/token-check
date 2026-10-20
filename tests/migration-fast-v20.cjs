@@ -76,3 +76,17 @@ test('fresh backlog blocks competing RPC and can use remaining budget beyond a c
  a.equal(b.allow(1,'migration-fast'),true);while(b.allow(1,'migration-fast'))b.reserveRPC('getTransaction','migration-fast');a.ok(b.summary().creditsMinute<=17);a.ok(b.laneTotal('migration-fast',60000)>6);
 });
 test('backlog callback includes waiting tasks and returns to zero on terminal completion',async()=>{const levels=[];const q=new FastSignals({onPending:n=>levels.push(n),process:async()=>({outcome:'accepted'})});q.offer({signature:'one'});await flush();a.ok(levels.some(x=>x>0));a.equal(levels.at(-1),0);});
+
+
+test('successful DBC WithdrawLeftover on the notified curve is recognized as administrative, never migration proof',()=>{
+ const {administrativeUpdate}=require('../server/migration-fast'),crypto=require('node:crypto'),t=tx(specs.find(s=>s.family==='dbc'));
+ const ix=t.transaction.message.instructions[0];ix.accounts=[0,1,2];t.transaction.message.accountKeys[2]='curve';ix.data=crypto.createHash('sha256').update('global:withdraw_leftover').digest().subarray(0,8).toString('hex');
+ a.equal(administrativeUpdate(t,'curve',x=>Buffer.from(x,'hex')),true);a.equal(migrationCandidates(t,x=>Buffer.from(x,'hex')).length,0);a.equal(administrativeUpdate(t,'other',x=>Buffer.from(x,'hex')),false);t.meta.err={failed:true};a.equal(administrativeUpdate(t,'curve',x=>Buffer.from(x,'hex')),false);
+});
+
+
+test('collector resolves a verified administrative notification without admitting a coin or retrying proof',async t=>{
+ const source=new SourceRuntime({dir:temp(t),fsync:false}),calls=[],transaction=tx(specs.find(s=>s.family==='dbc')),ix=transaction.transaction.message.instructions[0];transaction.transaction.message.accountKeys[2]='curve';ix.accounts=[0,1,2];ix.data=require('node:crypto').createHash('sha256').update('global:withdraw_leftover').digest().subarray(0,8).toString('hex');
+ const ctx={require,DIR:path.join(__dirname,'../server'),Buffer,Date,Map,Set,TextEncoder,SOURCE:source,rpc:async(m)=>{calls.push(m);return m==='getSignaturesForAddress'?[{signature:'sig',slot:10,err:null}]:transaction;},b58dec:x=>Buffer.from(x,'hex')};vm.createContext(ctx);const code=fs.readFileSync(path.join(__dirname,'../server/collector.js'),'utf8');vm.runInContext(code.slice(code.indexOf('async function processFastMigration('),code.indexOf('function offerFastMigration('))+'\nthis.run=processFastMigration;',ctx);
+ const result=await ctx.run({curve:'curve',mint:M,kind:'dbc',slot:10,receivedAt:Date.now()});a.equal(result.outcome,'non-migration-update');a.equal(source.has(M),false);a.deepEqual(calls,['getSignaturesForAddress','getTransaction']);a.equal(source.dailySummary().after.unverifiedByReason['non-migration-update'],1);
+});

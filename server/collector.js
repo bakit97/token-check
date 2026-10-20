@@ -986,12 +986,14 @@ function pumpCurveComplete(curve,u,slot){const now=Date.now();if(!u||u.length<49
   c.migrationSlot=slot||c.migrationSlot;c.migrationSignalAt=now;c.discoverySource='pump-complete';c.wsSeen=c.wsSeen||now;
   queueMigrationSignal(c,now);if(c.mg){c.mg.force=1;delete c.mg.final}}
 async function processFastMigration(task){
+ if(task.mint&&SOURCE.get(task.mint)?.phase==='after')return {outcome:'already-admitted'};
  const api=require(DIR+'/migration-fast.js'),options={priority:'migration-fast',context:'миграция:быстро',source:'migration-fast',urgent:true,maxBytes:3*1024*1024};
  let signatures=task.signature?[task.signature]:Object.keys(task.proofs||{}).filter(sig=>task.proofs[sig].some(v=>v.curve===task.curve));let outcome=null,proofSeen=false;
  if(!signatures.length){const rows=await rpc('getSignaturesForAddress',[task.curve,{limit:6,commitment:'confirmed'}],{...options,cache:false});signatures=(rows||[]).filter(r=>r.err===null&&(!task.slot||Math.abs(r.slot-task.slot)<=2)).map(r=>r.signature).slice(0,6);}
  if(!signatures.length)throw Object.assign(Error('migration transaction pending'),{code:'TX_PENDING'});
  task.proofs=task.proofs||{};
  for(const signature of signatures){const tx=task.proofs[signature]?null:await rpc('getTransaction',[signature,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}],options);if(!tx&&!task.proofs[signature])throw Object.assign(Error('migration transaction pending'),{code:'TX_PENDING'});
+  if(tx&&tx.slot===task.slot&&api.administrativeUpdate(tx,task.curve,b58dec))task.administrativeUpdate=true;
   const candidates=task.proofs[signature]||(task.proofs[signature]=api.migrationCandidates(tx,b58dec));
   for(const v of candidates){if(v.signature!==signature||(task.curve&&v.curve!==task.curve))continue;proofSeen=true;task.mint=v.mint;let official=false;
    if(v.family==='pump')official=await bondingCurveOf(v.mint)===v.curve&&await canonicalPoolOf(v.mint,v.quote)===v.pool;
@@ -1007,6 +1009,7 @@ async function processFastMigration(task){
    if(task.curve)return {outcome};
   }
  }
+ if(!outcome&&task.administrativeUpdate){if(task.mint)SOURCE.observe({mint:task.mint,phase:'after',origin:'ws-'+task.kind,reason:'non-migration-update'});return {outcome:'non-migration-update'};}
  if(!outcome)throw Object.assign(Error('migration instruction or official pool proof not found'),{code:task.curve&&!proofSeen?'TX_PENDING':'PROOF_NOT_FOUND'});
  return {outcome};
 }
