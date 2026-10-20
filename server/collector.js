@@ -740,7 +740,7 @@ function dsApply(c,p,at){const e=dsEntry(p,at);
   if(observedEligible(c))schedulePassOnObservation();
 }
 // сведения о монете (имя, соцсети, когда родилась на кривой) — по адресу монеты
-function dsTokenInfo(c,arr,at){if(!arr.length)return;const curve=arr.find(p=>(isCurve(p.dexId)||/dbc|launch/i.test(p.dexId||''))&&p.baseToken?.address===c.a&&p.pairAddress);if(curve){c.creatorCurveCandidate=curve.pairAddress;c.creatorCurveCandidateAt=at;}
+function dsTokenInfo(c,arr,at){const record=typeof SOURCE==='undefined'?null:SOURCE?.get(c.a);require(DIR+'/coin-profile.js').birthFromPairs(c,arr,record,at);if(!arr.length)return;const curve=arr.find(p=>(isCurve(p.dexId)||/dbc|launch/i.test(p.dexId||''))&&p.baseToken?.address===c.a&&p.pairAddress);if(curve){c.creatorCurveCandidate=curve.pairAddress;c.creatorCurveCandidateAt=at;}
   if(!c.n&&arr[0].baseToken){c.nameObservedAt=at;c.n=(arr[0].baseToken.name||'').slice(0,40);c.s=(arr[0].baseToken.symbol||'').slice(0,16)}
   const cv=arr.filter(p=>isCurve(p.dexId)||/dbc|launch/i.test(p.dexId||'')).map(p=>p.pairCreatedAt).filter(Boolean);
   const all=arr.map(p=>p.pairCreatedAt).filter(Boolean);const born=Math.min(...(cv.length?cv:all));if(isFinite(born)&&born<c.t-60e3){const nt=Math.min(c.tk||Infinity,born);if(nt!==c.tk){c.tk=nt;c.tkAt=at}}
@@ -785,7 +785,7 @@ function candleTasks(){const now=Date.now(),pins=collectionPins(now);
           let k2=[];if(k1.length&&k1[0][0]*1000>c.t)k2=kList(await gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=1000&before_timestamp=${k1[0][0]}&currency=usd`,3,'p24b:'+pool));
           if(c.p===pool)c.path={at:Date.now(),upto:24,c:mergeK(mergeK(c.path?.c,k2),k1)}})
         .catch(e=>{if(e.code!=='OBSERVATION_COMPLETE')err('path24 '+e.message)}).finally(()=>{c.pTry=0})}}
-  researchActivityTape(now);researchTradeTail(now);tradeTasks(now,pins)}
+  birthBackfill(now);researchActivityTape(now);researchTradeTail(now);tradeTasks(now,pins)}
 async function censusTick(now=Date.now()){
  if(!HOLDER_CENSUS||!SOURCE||resourcePressure())return;const choices=[];
  for(const c of C.values()){const row=SOURCE.get(c.a);if(!row||now-row.acceptedAt>21*60000||!c.vaults||!c.supplyRaw||!c.ct)continue;const age=(now-row.acceptedAt)/60000;
@@ -797,6 +797,7 @@ function captureFeatureSnapshots(now=Date.now()){
  if(!SOURCE||resourcePressure())return;const api=require(DIR+'/feature-snapshots.js');
  for(const c of C.values()){const row=SOURCE.get(c.a);if(!row||now-row.acceptedAt>21*60000||now<row.acceptedAt+60000)continue;const complete=fullCoin(c);api.capture(complete,row,now);if(complete.featureSnapshotsPacked)c.featureSnapshotsPacked=complete.featureSnapshotsPacked;}
 }
+function birthBackfill(now){if(!SOURCE||gtPending('birth-curve'))return;const c=[...C.values()].filter(c=>!c.createdAt&&(c.creatorCurveCandidate||c.mg?.watch||SOURCE.get(c.a)?.proof?.curve)&&SOURCE.has(c.a)&&now-(c.birthAttemptAt||0)>30*60000).sort((a,b)=>(a.birthAttemptAt||0)-(b.birthAttemptAt||0))[0];if(!c)return;c.birthAttemptAt=now;const curve=c.creatorCurveCandidate||c.mg?.watch||SOURCE.get(c.a)?.proof?.curve;gt('/pools/'+curve,2,'birth-curve').then(response=>require(DIR+'/coin-profile.js').birthFromGT(c,response,SOURCE.get(c.a),Date.now())).catch(()=>{});}
 function researchActivityTape(now){
  if(!RESEARCH_V2||gtPending('r1-activity'))return;
  const candidates=[...RESEARCH_V2.admitted.values()].map(row=>({row,c:C.get(row.mint)})).filter(({row,c})=>c?.p&&now-(c.activityAttemptAt||0)>10*60000&&now<require(DIR+'/event-clock.js').eventAnchor(row)+(require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase).hours*60+30)*60000).sort((a,b)=>(a.c.activityAttemptAt||0)-(b.c.activityAttemptAt||0));
@@ -1191,14 +1192,14 @@ async function exportAiSummary(now){if(now-AI_LAST<5*60e3||!SOURCE)return;AI_LAS
   await uploadText('ai/summary.md',md,'text/markdown; charset=utf-8');
   await uploadText('ai/summary.json',JSON.stringify(json,null,1),'application/json; charset=utf-8');
 }
-function withPoolReference(row){const mint=row.mint||row.a,admission=SOURCE?.get(mint),pool=admission?.proof?.pool||null;return {...row,p:pool,pair:pool,phaseKey:row.phase==='before'?'pool':row.phase};}
+function withPoolReference(row){const mint=row.mint||row.a,admission=SOURCE?.get(mint),pool=admission?.proof?.pool||row.p||row.pair||null,c=C.get(mint)||COMPLETED?.metadata(mint),event=admission?.eventAt??row.eventAt,createdAt=c?.createdAt??row.createdAt??null;return {...row,p:pool,pair:pool,createdAt,createdAtSource:c?.createdAtSource??row.createdAtSource??null,createdAtObservedAt:c?.createdAtObservedAt??row.createdAtObservedAt??null,ageAtMigrationMin:Number.isSafeInteger(event)&&Number.isSafeInteger(createdAt)&&createdAt<=event?(event-createdAt)/60000:null,phaseKey:row.phase==='before'?'pool':row.phase};}
 async function exportSource(now) {
   if(!SOURCE)return;
   const d=dayKey(now);
   const enrich=x=>{
     const c=C.get(x.mint)||COMPLETED?.metadata(x.mint);
     return {...require(DIR+'/coin-profile.js').cardAt(c,now),p:x.proof?.pool||null,pair:x.proof?.pool||null,openingMetrics:x.proof?.openingMetrics||null,a:x.mint,phase:x.phase,phaseKey:x.phase==='before'?'pool':x.phase,launchpad:x.proof?.launchpad??null,dex:x.proof?.dex??null,venue:x.proof?.venue??null,eventAt:x.eventAt,acceptedAt:x.acceptedAt,
-      n:c?.n||'',s:c?.s||'',i:c?.i||'',family:x.proof?.family||null,curve:x.proof?.curve||c?.mg?.watch||null,
+      ageAtMigrationMin:c?.createdAt&&c.createdAt<=x.eventAt?(x.eventAt-c.createdAt)/60000:null,n:c?.n||'',s:c?.s||'',i:c?.i||'',family:x.proof?.family||null,curve:x.proof?.curve||c?.mg?.watch||null,
       proofSig:x.proof?.signature||null,uri:c?.uri||x.proof?.uri||null,migrationPool:x.proof?.pool||null,proofKind:x.proof?.kind||null,eventSlot:x.proof?.slot||null,eventTimeSource:x.proof?.timeSource||null};
   };
   const summary=SOURCE.summary(now);

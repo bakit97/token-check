@@ -23,5 +23,5 @@ test('revoked side pool cannot reappear after restart and does not prevent a lat
 });
 
 test('empty early token catalogue is retried for missing identity, while complete cards do not poll it again',()=>{
- const {tokenInfoDue}=require('../server/coin-profile');a.equal(tokenInfoDue({n:'',s:'',i:'',tokAt:1000},1000+5*60000),true);a.equal(tokenInfoDue({n:'name',s:'SYM',i:'image',tokAt:1000},1000+30*60000),false);a.equal(tokenInfoDue({n:'',s:'',i:'',tokAt:1000},1000+60000),false);
+ const {tokenInfoDue}=require('../server/coin-profile');a.equal(tokenInfoDue({n:'',s:'',i:'',tokAt:1000},1000+5*60000),true);a.equal(tokenInfoDue({n:'name',s:'SYM',i:'image',createdAt:1000,tokAt:1000},1000+30*60000),false);a.equal(tokenInfoDue({n:'',s:'',i:'',tokAt:1000},1000+60000),false);
 });

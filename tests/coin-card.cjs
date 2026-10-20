@@ -47,3 +47,10 @@ test('profile queue reaches older unattempted admitted coins before retrying rec
  const profiles=new CoinProfiles();await profiles.update({coins,source:{get:a=>records.get(a)},now,fetch:async()=>({ok:true,headers:{get:()=>null},body:[Buffer.from(JSON.stringify({image:'https://example.com/a.png'}))]})});
  assert.equal(profiles.stats.imageAttempts,4);for(let i=4;i<8;i++)assert.ok(coins.get('m'+i).i);for(let i=0;i<4;i++)assert.equal(coins.get('m'+i).i,undefined);
 });
+
+
+test('free birth time uses the old launch curve and preserves migration/event time',()=>{const api=require('../server/coin-profile'),c={a:'mint',p:'new',t:T,mg:{st:'ok',mT:T,pool:'new'}},row={phase:'after',eventAt:T,acceptedAt:T+1000};const a=assert;a.equal(api.birthFromPairs(c,[{chainId:'solana',baseToken:{address:'mint'},dexId:'meteoradbc',pairAddress:'curve',pairCreatedAt:T-30*M}],row,T+M),true);a.equal(c.createdAt,T-30*M);a.equal(c.t,T);a.equal(c.createdAtSource,'dexscreener-launch-curve-pair');const f=require('../server/research-v2').featuresAt(c,T+2*M,{eventAt:T+1000,phase:'after'});a.equal(f.ageAtMigrationMin,30);a.equal(require('../server/research-v2').featuresAt(c,T,{eventAt:T,phase:'after'}).ageAtMigrationMin,null);});
+test('manual pool birth is opening time and wrong-token GT history cannot fill birth',()=>{const api=require('../server/coin-profile'),c={a:'mint',t:T},row={phase:'before',eventAt:T,acceptedAt:T,proof:{kind:'manual-pool-open-v1'}};assert.equal(api.birthFromPairs(c,[],row,T),true);assert.equal(c.createdAt,T);assert.equal(api.birthFromGT({a:'mint'},{data:{relationships:{base_token:{data:{id:'solana_foreign'}}},attributes:{pool_created_at:new Date(T-M).toISOString()}}},row,T),false);});
+
+
+test('profile update never invokes paid RPC for missing birth time',async()=>{let calls=0;const {CoinProfiles}=require('../server/coin-profile'),c={a:'mint',p:'new'},now=T+M;await new CoinProfiles().update({coins:new Map([['mint',c]]),source:{get:()=>({phase:'after',eventAt:T,acceptedAt:T})},now,rpc:async()=>{calls++;throw Error('must not call')}});assert.equal(calls,0);assert.equal(c.createdAt,undefined);});

@@ -2,7 +2,7 @@
 const TOKEN='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',T22='TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
 const {starterFeaturesAt}=require('./research-v2');
 const MIN=60000;
-function tokenInfoDue(c,now){return !c.tokAt||((!c.n||!c.s||!c.i)&&now-c.tokAt>=5*MIN);}
+function tokenInfoDue(c,now){return !c.tokAt||((!c.n||!c.s||!c.i||!c.createdAt)&&now-c.tokAt>=5*MIN);}
 function cardAt(c,at){
  const f=starterFeaturesAt(c||{},at),d=(c?.ds||[]).filter(x=>Number.isFinite(x?.[0])&&x[0]*1000<=at&&at-x[0]*1000<=7*MIN).at(-1),count=v=>Number.isInteger(v)&&v>=0?v:null;
  const WSOL='So11111111111111111111111111111111111111112',qi=c?.vmint?.indexOf(WSOL),vault=qi>=0&&c.vmint.length===2&&c.vmint[1-qi]===c.a&&c.vaultIdentityAt<=at;
@@ -65,6 +65,13 @@ async function findCreation(c,rpc,now){
  const at=tx.blockTime*1000;if(at>now||Number.isFinite(c.mg?.mT)&&at>c.mg.mT)return {createdAt:null,reason:'creation-after-migration'};
  return {createdAt:at,source:'verified-mint-initialization',signature:first.signature};
 }
+function birthFromPairs(coin,pairs,record,at){if(!record||!Array.isArray(pairs))return false;const event=record.eventAt??record.acceptedAt;
+ const curves=pairs.filter(p=>p.chainId==='solana'&&p.baseToken?.address===coin.a&&/pump-?fun|dbc|launch/i.test(p.dexId||'')&&!/swap/i.test(p.dexId||'')&&Number.isSafeInteger(p.pairCreatedAt)&&p.pairCreatedAt>=1577836800000&&p.pairCreatedAt<=event);
+ const candidate=curves.sort((a,b)=>a.pairCreatedAt-b.pairCreatedAt)[0];const born=candidate?.pairCreatedAt??(record.phase==='before'&&record.proof?.kind==='manual-pool-open-v1'?event:null);if(!born)return false;
+ if(Number.isSafeInteger(coin.createdAt)&&['verified-mint-initialization','verified-create-log-slot-time'].includes(coin.createdAtSource)){if(!Number.isFinite(coin.createdAtObservedAt))coin.createdAtObservedAt=at;return false;}
+ if(coin.createdAt===born&&Number.isFinite(coin.createdAtObservedAt))return false;coin.createdAt=born;coin.createdAtObservedAt=at;coin.createdAtSource=candidate?'dexscreener-launch-curve-pair':'verified-pool-open-no-earlier-curve';if(candidate){coin.birthCurve=candidate.pairAddress||null;coin.creatorCurveCandidate=coin.birthCurve;}return true;
+}
+function birthFromGT(coin,response,record,at){if(response?.data?.relationships?.base_token?.data?.id!=='solana_'+coin.a)return false;const born=Date.parse(response?.data?.attributes?.pool_created_at),event=record?.eventAt??record?.acceptedAt;if(!Number.isSafeInteger(born)||born<1577836800000||born>event||Number.isSafeInteger(coin.createdAt))return false;coin.createdAt=born;coin.createdAtObservedAt=at;coin.createdAtSource='geckoterminal-launch-curve-pool';return true;}
 class CoinProfiles{
  constructor(){this.busy=false;this.lastRun=0;this.stats={images:0,created:0,deferred:0,unknown:0,errors:0,imageAttempts:0,imageReasons:{}}}
  async update({coins,source,rpc,now=Date.now(),fetch}={}){
@@ -73,9 +80,9 @@ class CoinProfiles{
    for(const c of rows)if(!c.createdAt&&Number.isSafeInteger(c.preTradingAt)){c.createdAt=c.preTradingAt;c.createdAtObservedAt=source.get(c.a)?.acceptedAt||now;c.createdAtSource='verified-create-log-slot-time'}
    const missing=rows.filter(c=>!c.i&&now-(c.profileAttemptAt||0)>10*MIN&&(c.uri||c.ct?.uri||source.get(c.a)?.proof?.uri)).sort((a,b)=>(a.profileAttemptAt||0)-(b.profileAttemptAt||0)||source.get(b.a).acceptedAt-source.get(a.a).acceptedAt),early=missing.filter(c=>now-source.get(c.a).acceptedAt<20*MIN).slice(0,2),needs=[...early,...missing.filter(c=>!early.includes(c))].slice(0,4);
    for(const c of needs){c.profileAttemptAt=now;this.stats.imageAttempts++;try{const m=await metadataImage(c.uri||c.ct?.uri||source.get(c.a).proof.uri,{fetch});if(!m.reason){c.metadataAt=Date.now();c.socialFeatures=m.social;applyIdentity(c,m,c.metadataAt);}if(m.image){c.i=m.image;c.profileAt=Date.now();c.imageObservedAt=c.profileAt;this.stats.images++}if(m.description!=null)c.description=m.description;c.profileReason=m.reason||(!m.image?'metadata-without-image':null);if(c.profileReason)this.stats.imageReasons[c.profileReason]=(this.stats.imageReasons[c.profileReason]||0)+1}catch{c.profileReason='metadata-unavailable';this.stats.imageReasons[c.profileReason]=(this.stats.imageReasons[c.profileReason]||0)+1;this.stats.errors++}}
-   const c=rows.filter(c=>source.get(c.a).phase==='after'&&!c.createdAt&&now-(c.creationAttemptAt||0)>60*MIN).sort((a,b)=>source.get(b.a).acceptedAt-source.get(a.a).acceptedAt)[0];
-   if(c){try{const result=await findCreation(c,rpc,now);c.creationAttemptAt=result.reason==='history-page-pending'?now-59*MIN:now;c.creationReason=result.reason||null;if(result.createdAt){c.createdAt=result.createdAt;c.createdAtObservedAt=Date.now();c.createdAtSource=result.source;c.creationSignature=result.signature;delete c.creationCandidate;this.stats.created++}else this.stats.unknown++}catch(e){if(e.code==='BUDGET_DEFERRED')this.stats.deferred++;else{c.creationAttemptAt=now;c.creationReason='creation-unavailable';this.stats.errors++}}}
+   for(const c of rows)if(!c.createdAt&&source.get(c.a).phase==='before')birthFromPairs(c,[],source.get(c.a),now);
+
   }finally{this.busy=false}
  }
 }
-module.exports={cardAt,imageUrl,metadataUrl,metadataImage,parseMetadata,verifiesMintCreation,findCreation,CoinProfiles,applyIdentity,applyMintIdentity,tokenInfoDue};
+module.exports={birthFromPairs,birthFromGT,cardAt,imageUrl,metadataUrl,metadataImage,parseMetadata,verifiesMintCreation,findCreation,CoinProfiles,applyIdentity,applyMintIdentity,tokenInfoDue};

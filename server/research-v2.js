@@ -5,7 +5,7 @@
 const MIN=60_000, FIVE=5*MIN;
 const KEYS=['buyers','trades','volume','liq','mc','buys','sells','buySellRatio'];
 const LEVEL2_KEYS=['chg1m','chg3m','chg5m','fromPeak','drawdown','buyerAccel','volAccel','bigBuyShare','repeatBuys','avgBuy','sellShare1m','bigHolderSell','devSold','top10Drift','holderGrowth','poolGrowth','toMigration','ageMin','hourOfDay','solTrend','launchRate'];
-const LEVEL1_KEYS=["safeContract", "mintRevoked", "freezeRevoked", "metaImmutable", "token2022", "t22Safe", "lpBurned", "devBuySol", "devHoldPct", "devHold", "devSold", "devLaunches", "devRugShare", "sniperShare", "bundleShare", "bundledWallets", "top1", "top10", "holders", "holderGrowth", "buyers10", "buyers", "uniqBuyersPerMin", "botShare", "smartBuyers", "smartShare", "trades", "tradesPerMin", "buys", "sells", "buySellRatio", "sellShare", "averageTrade", "volume", "quoteSol", "postPoolSol", "poolGrowth", "mc", "hasImage", "hasDescription", "hasTwitter", "hasTelegram", "hasWebsite", "isFirstOfName", "cloneCount", "cloneRank"];
+const LEVEL1_KEYS=["ageAtMigrationMin","safeContract", "mintRevoked", "freezeRevoked", "metaImmutable", "token2022", "t22Safe", "lpBurned", "devBuySol", "devHoldPct", "devHold", "devSold", "devLaunches", "devRugShare", "sniperShare", "bundleShare", "bundledWallets", "top1", "top10", "holders", "holderGrowth", "buyers10", "buyers", "uniqBuyersPerMin", "botShare", "smartBuyers", "smartShare", "trades", "tradesPerMin", "buys", "sells", "buySellRatio", "sellShare", "averageTrade", "volume", "quoteSol", "postPoolSol", "poolGrowth", "mc", "hasImage", "hasDescription", "hasTwitter", "hasTelegram", "hasWebsite", "isFirstOfName", "cloneCount", "cloneRank"];
 const RULE_KEYS=[...new Set([...KEYS,...LEVEL1_KEYS,...LEVEL2_KEYS])];
 const inRange=(x,a,b)=>Number.isFinite(x)&&x>=a&&x<=b;
 function marketPools(coin){
@@ -61,7 +61,7 @@ function featuresAt(coin,decisionAt,context={}){
     buySellRatio:finite(ratio)};
   const ct=coin?.ct,metaAt=coin?.metadataAt,discovery=coin?.discoveryFeatures;
   const clone=discovery&&discovery.at<=decisionAt?{isFirstOfName:discovery.isFirstOfName,cloneCount:discovery.cloneCount,cloneRank:discovery.cloneRank,...(discovery.cloneCountLowerBound?{lowerBoundKeys:['cloneCount','cloneRank']}:{})}:{isFirstOfName:null,cloneCount:null,cloneRank:null};
-  const extra=extendedFeaturesAt(coin,decisionAt,context,F);
+  const extra=extendedFeaturesAt(coin,decisionAt,context,F);const migrationAt=coin?.mg?.mT??coin?.openingMetrics?.eventAt??context.eventAt;extra.ageAtMigrationMin=Number.isSafeInteger(coin?.createdAt)&&Number.isFinite(coin?.createdAtObservedAt)&&coin.createdAtObservedAt<=decisionAt&&Number.isSafeInteger(migrationAt)&&migrationAt>=coin.createdAt?(migrationAt-coin.createdAt)/MIN:null;
   return {...Object.fromEntries(RULE_KEYS.map(k=>[k,null])),...extra,...F,...clone,...starterFeaturesAt(coin,decisionAt,context),lowerBoundKeys:[...new Set([...(extra.lowerBoundKeys||[]),...(clone.lowerBoundKeys||[])])],
     token2022:ct&&ct.at<=decisionAt&&['token','token2022'].includes(ct.prog)?(ct.prog==='token2022'?1:0):null,
     hasImage:Number.isFinite(metaAt)&&metaAt<=decisionAt?(coin.img||coin.i?1:0):Number.isFinite(coin?.imageObservedAt)&&coin.imageObservedAt<=decisionAt&&(coin.img||coin.i)?1:null,
