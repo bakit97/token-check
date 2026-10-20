@@ -437,7 +437,7 @@ async function admitVerifiedPublicLaunch(launch,record) {
 }
 let OPENING_PROOFS=null;
 async function openingTick(now=Date.now()){
- if(!OPENING_PROOFS||OPENING_PROOFS.busy||!SOURCE||resourcePressure()||process.memoryUsage().rss>300e6)return;
+ if(!OPENING_PROOFS||OPENING_PROOFS.busy||!SOURCE||resourcePressure()||process.memoryUsage().rss>300e6)return;if((HEALTH?.lagMs||0)>1000){OPENING_PROOFS.stats.cpuDeferred=(OPENING_PROOFS.stats.cpuDeferred||0)+1;return;}
  const api=require(DIR+'/opening-evidence.js'),rows=[...C.values()].filter(c=>{const r=SOURCE.get(c.a);return r&&!c.openingDone&&!c.openingUnavailable&&c.supplyRaw&&now-r.acceptedAt<20*60000&&api.openingTarget(c,r);}).sort((a,b)=>SOURCE.get(b.a).acceptedAt-SOURCE.get(a.a).acceptedAt);
  const c=rows.find(c=>c.a===OPENING_PROOFS.job?.mint)||rows[0];if(!c){if(OPENING_PROOFS.job&&now-OPENING_PROOFS.job.startedAt>3*60000){OPENING_PROOFS.job=null;OPENING_PROOFS.stats.expired++;}return;}const r=SOURCE.get(c.a),snapshot=await OPENING_PROOFS.step(c,r,{decode58:b58dec});if(!snapshot)return;
  if(!(c.tokenProgram==='TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'||c.ct?.safetyVersion===1&&c.ct.fee===0&&!c.ct.hook&&c.ct.unknownExtensions?.length===0)){snapshot.features.sniperShare=null;snapshot.features.bundleShare=null;}appendIntelligence(c,snapshot);c.earlyWallets=snapshot.earlyWallets;c.earlyWalletsAt=snapshot.at;c.earlyWalletsComplete=false;c.openingDone=snapshot.openingComplete===true;
@@ -1532,7 +1532,7 @@ const STARTED=Date.now();
   try{await initPathsV2()}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('серверные пути не запустились: '+e.message)}
   captureFeatureSnapshots();setInterval(()=>{try{captureFeatureSnapshots()}catch(e){err('feature snapshots '+e.message)}},30000);
   initObservationRecovery();setTimeout(()=>recoveryTick(),20000);setInterval(()=>{try{recoveryTick()}catch(e){err('recovery '+e.message)}},15000);
-  setInterval(()=>freeIdentityTick(),10000);OPENING_PROOFS=new (require(DIR+'/opening-evidence.js').OpeningEvidence)({});setInterval(()=>openingTick().catch(e=>err('opening proof '+e.message)),5000);PROFILES=new (require(DIR+'/coin-profile.js').CoinProfiles)();HOLDER_CENSUS=new (require(DIR+'/holder-census.js').HolderCensus)({});setInterval(()=>censusTick().catch(e=>err('holder census '+e.message)),10000);LP_PROOFS=new (require(DIR+'/liquidity-proof.js').LiquidityProofs)({});setInterval(()=>liquidityTick().catch(e=>err('liquidity proof '+e.message)),10000);
+  setInterval(()=>freeIdentityTick(),10000);OPENING_PROOFS=new (require(DIR+'/opening-evidence.js').OpeningEvidence)({});setInterval(()=>openingTick().catch(e=>err('opening proof '+e.message)),2000);PROFILES=new (require(DIR+'/coin-profile.js').CoinProfiles)();HOLDER_CENSUS=new (require(DIR+'/holder-census.js').HolderCensus)({});setInterval(()=>censusTick().catch(e=>err('holder census '+e.message)),10000);LP_PROOFS=new (require(DIR+'/liquidity-proof.js').LiquidityProofs)({});setInterval(()=>liquidityTick().catch(e=>err('liquidity proof '+e.message)),10000);
   const LAUNCH_HISTORY=new (require(DIR+'/launch-history.js').LaunchHistory)();
   const updateLaunchHistory=()=>{try{LAUNCH_HISTORY.update({source:SOURCE,coins:C,metadata:mint=>COMPLETED?.metadata(mint),now:Date.now()})}catch(e){err('launch history '+e.message)}};updateLaunchHistory();setInterval(updateLaunchHistory,60000);
   const updateProfiles=()=>PROFILES.update({coins:C,source:SOURCE,rpc:(m,p)=>rpc(m,p,{priority:'identity',context:'карточка',source:'coin-profile'})}).catch(e=>err('profiles '+e.message));
