@@ -143,9 +143,9 @@ class ResearchRuntime {
       considered++;
       const cfg=phaseSettings(this.config,row.phase);
       let admission=this.admitted.get(row.mint);if(admission?.intakePending&&row.acceptedAt<this.admissionUpgradeAt){admission={...admission,intakePending:false,via:'preserved-observed-cohort'};this.admitted.set(row.mint,admission);}
-      if(!admission&&(row.acceptedAt<this.admissionUpgradeAt||!cfg.intake)){admission={mint:row.mint,phase:row.phase,acceptedAt:row.acceptedAt,features:{},via:'preserved-observed-cohort'};this.admitted.set(row.mint,admission);}
-      if((!admission||admission.intakePending)&&age>=cfg.decisionMinutes*MIN&&gateChecks++<MAX_CLASSIFICATION_CHECKS){const c=coins.get(row.mint);if(c){const features=featuresAt(c,row.acceptedAt+cfg.decisionMinutes*MIN,{eventAt:row.acceptedAt,phase:row.phase}),gate=intakeDecision(cfg.intake,row,features,passes);if(!gate.ok){this.admitted.delete(row.mint);this.processed.set(row.mint,row.acceptedAt);this.intakeRejected[gate.why]=(this.intakeRejected[gate.why]||0)+1;continue}admission={mint:row.mint,phase:row.phase,acceptedAt:row.acceptedAt,features,via:gate.via};this.admitted.set(row.mint,admission);this.intakeAccepted[gate.via]=(this.intakeAccepted[gate.via]||0)+1;}}
-      if(!admission){admission={mint:row.mint,phase:row.phase,acceptedAt:row.acceptedAt,features:{},intakePending:true};this.admitted.set(row.mint,admission);}
+      if(!admission&&(row.acceptedAt<this.admissionUpgradeAt||!cfg.intake)){admission={mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,acceptedAt:row.acceptedAt,features:{},via:'preserved-observed-cohort'};this.admitted.set(row.mint,admission);}
+      if((!admission||admission.intakePending)&&age>=cfg.decisionMinutes*MIN&&gateChecks++<MAX_CLASSIFICATION_CHECKS){const c=coins.get(row.mint);if(c){const features=featuresAt(c,row.acceptedAt+cfg.decisionMinutes*MIN,{eventAt:row.acceptedAt,phase:row.phase}),gate=intakeDecision(cfg.intake,row,features,passes);if(!gate.ok){this.admitted.delete(row.mint);this.processed.set(row.mint,row.acceptedAt);this.intakeRejected[gate.why]=(this.intakeRejected[gate.why]||0)+1;continue}admission={mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,acceptedAt:row.acceptedAt,features,via:gate.via};this.admitted.set(row.mint,admission);this.intakeAccepted[gate.via]=(this.intakeAccepted[gate.via]||0)+1;}}
+      if(!admission){admission={mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,acceptedAt:row.acceptedAt,features:{},intakePending:true};this.admitted.set(row.mint,admission);}
 
       if(admission.intakePending||age<cfg.hours*HOURS+3*MIN){
         const why=age<cfg.hours*HOURS+3*MIN?'not-yet-finished':'deferred-by-batch';pending[why]=(pending[why]||0)+1;
@@ -179,7 +179,7 @@ class ResearchRuntime {
       const gate={via:admission.via||'all'};
       this.rows=this.rows.filter(x=>x.mint!==row.mint);
       this.rows.push({via:gate.via,
-        mint:row.mint,phase:row.phase,featureAnchor:'acceptedAt',featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,row.acceptedAt,'1',row.phase),curve:observationCurve(coin,row.acceptedAt,cfg.hours),curveUnit:'price-usd',
+        mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,featureAnchor:'acceptedAt',featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,row.acceptedAt,'1',row.phase),curve:observationCurve(coin,row.acceptedAt,cfg.hours),curveUnit:'price-usd',
         acceptedAt:row.acceptedAt,decisionAt,earlyWallets:require('./early-intelligence').frozenWallets(coin,decisionAt),
         ...result,outcomeAt:now,minutes:undefined,outcomePacked:require('node:zlib').deflateSync(Buffer.from(JSON.stringify(result.minutes||[]))).toString('base64'),
         hours:cfg.hours,label:result.label,

@@ -210,7 +210,7 @@ class PassRuntime {
           .map(m=>available.get(m.filterId)).filter(Boolean)
           .map(f=>({...f}));
         const item={
-          schema:1,mint:row.mint,phase:row.phase,
+          schema:1,mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,
           acceptedAt:row.acceptedAt,eventAt:row.eventAt,firstSeenAt:now,
           zeroAt:row.acceptedAt+cfg.decisionMinutes*MIN,
           configHash:this.configHash,features:F,matches,secondLevelRules,
@@ -248,7 +248,7 @@ class PassRuntime {
         });
         if(verdicts.some(x=>x.result==='unknown')){missingFeatures++;continue}
         if(verdicts.some(x=>x.result!=='pass')){rejected++;continue}
-        this._append({schema:2,mint:row.mint,phase:row.phase,acceptedAt:row.acceptedAt,eventAt:row.eventAt,
+        this._append({schema:2,mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,acceptedAt:row.acceptedAt,eventAt:row.eventAt,
           firstSeenAt:now,zeroAt,passMode:cfg.passMode[row.phase],verdictMinutes:minutes,configHash:this.configHash,
           features:featuresAt(coin,zeroAt,{eventAt:row.acceptedAt,phase:row.phase}),
           matches:verdicts.filter(x=>x.filter.level==='1').map(x=>({...x.filter})),

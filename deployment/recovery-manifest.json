@@ -1,23 +1,23 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "00b2312eeab545feee56cb37fd215058ea6499da50fabe3d7c4255961b4211fb",
+    "collector.js": "a66ce9d623b32da351e02e148312f244f8c58b20b06110d4b05331e7fa94c50c",
     "event-clock.js": "ae835ddd6a280ae888d1b264a4e2acf665bdd62d895a3ea42c255339e793e2ad",
     "admission.js": "99feba0f235ce8e262f01b1e517a9373c906fb6c51353a2951a184ef5bfacde8",
-    "source-runtime.js": "a972deb50ae1c531a9c5226a29312bd96ca0afc1464cd9535e2db2e9d8cde6cb",
+    "source-runtime.js": "14dbc38ed14f57137c694a93b20d83d3192144b548d03d7e21269480acc7cbde",
     "pump-pre.js": "8f01365922819d7900219eb316213f044e331c146f4cb71db9f1f398bbddac06",
     "pre-watcher.js": "72879fa8a144c40ec5c3bca90c64a0276ffb1582b39c1960fdc5ad7721e41dd3",
     "research-v2.js": "c625a89954bf6e7e466069a19be3c703155c7cce820ac7f4550c7f59a6ba7e7a",
-    "research-runtime.js": "8e541a07b1e4b38c0ebb5de03571a58d444753308d82ae7759709c3bb2deb141",
+    "research-runtime.js": "9940b90a928d41021dc833b79c3fdb2de9253633ea3da4e3c8c499bfc0cf77e5",
     "research-config.js": "a1420977fffa5cca0207845a0ce8bdaf82de81d94316572975466c8ebb403c15",
-    "pass-runtime.js": "acf3682d1acb53398779cc678855469758c07911b110a73b576073596c1292fa",
-    "research-two-runtime.js": "7325593b4f5a7089791e4ebdce9b6d0da987ac51f353ddd77e79e746e6cf3b5e",
+    "pass-runtime.js": "07f741a6320d836ca9226ff25614b7b4fe8d74c4b1ddb4132dba72e188729c41",
+    "research-two-runtime.js": "2df9ed24124c088c811a5e29224bb98bd46e8e5283d57eb9ed3781d069c9a13d",
     "auto-research-v2.js": "44e5d3e207590bae4d605c4d7a8df1dc65be839994ac5e29b1a6c6878f4e2008",
     "filter-audit.js": "75b842d42f9c98dfedfee7e93a4f59de2b14fc7fd7fda5c7f9f31b1080f978e1",
-    "resource-budget.js": "56b754950b1bb4a2e8589ec01c8fdf20cca10f43021a32ed8cbd7ef527607d31",
+    "resource-budget.js": "ec9a62fd87f0630d4adfc56c3367d4f73e6419dfdd1e8d5b1eecfa4a1922063f",
     "runtime-health.js": "001b44ef3198e679008fd58aa3e9f90f7843303775cbc74b3a21eda745a9ba84",
     "stream-json.js": "b212a8cabdb25f9f8ef5fe7e7c081d04dbda3e4218e6c3df6adfb453d6a48461",
-    "observation-contract.js": "ad7026fadab0ffa4aec94ba87c07a636c85b3997d389fced4bc1951659554e5a",
+    "observation-contract.js": "b1daead7249adcff451d4822614c79c978af30f999e204e4c4107a04a6b07121",
     "packed-observations.js": "6e2622a57f6d8939411b9884ec1f9c80bd8e091b8d734c8276465789128204e4",
     "completed-coins.js": "79c70849147f84d0e364e56358cfbd41ade531b780e215427b712d5ff56e5c9d",
     "seed-completed.js": "01522182858aba7faab6cd85a5badd7552795cecbac2c12f00755a8ce985e1a4",
@@ -28,7 +28,9 @@
     "active-history.js": "5492de7925391b7cd8bea9a28b518405515bca75c979be9ba2512d505f87886b",
     "launch-history.js": "fce3b45fcd513c24673ceaafe31f747cb01c7e77f264a559414ce235b0905c49",
     "early-intelligence.js": "a7cae60b20bfc289482d8a875094a889de02f83ce4077b0bd6cd2f28bf1d3a06",
-    "migration-fast.js": "cadbbb8996f0ece8ceb79766a8f99d17ac10468b61f0aab1334621d3cbb43510",
-    "legacy-birth-cleanup.js": "4a2d77a67115da171cef1cdeb76c30c9cc9db79c26a3dff522443887b7d77534"
+    "migration-fast.js": "f48a022334805df30fd12d875c2035c6d3460f416fd4226d73a06f87201335a4",
+    "legacy-birth-cleanup.js": "4a2d77a67115da171cef1cdeb76c30c9cc9db79c26a3dff522443887b7d77534",
+    "manual-pools.js": "ca1373e0d8db6a816ba7dece0c7a835fa42343cc08a986cb20a347601c4f8bd6",
+    "pool-logs.js": "ff168a080fc1b0be199a45a5a3bfa5c3306271d8419770ab281fdef074f43628"
   }
 }

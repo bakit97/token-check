@@ -11,7 +11,7 @@ let COMPLETED=null,ACTIVE_HISTORY=null;
 const fullCoin=c=>ACTIVE_HISTORY?ACTIVE_HISTORY.hydrate(c):c;
 const PUBLIC_FEEDS={busy:false,sourceAt:0,libraryAt:0,storageAt:0,error:''},RESEARCH_EXPORTS={busy:false,oneAt:0,twoAt:0,error:''};let SOURCE_DAY_PUBLISHED_AT=0;
 const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:30000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0,pendingWork:0,cancelledGT:0};
-let RESOURCE=null,FAST_DISCOVERY=null;const POOL_TRANSITION={mode:'pools-v1',legacySourceRemoved:0,legacyDataCleanupPending:true};
+let RESOURCE=null,FAST_DISCOVERY=null,POOL_DISCOVERY=null,POOL_LOGS=null;const POOL_TRANSITION={mode:'pools-v1',legacySourceRemoved:0,legacyDataCleanupPending:true};
 const resourcePressure=()=>process.memoryUsage().rss>=360*1024*1024;
 const BUCKET='sol-scan-511718-data',DIR=process.env.SOLSCAN_DIR||'/var/solscan',TZ=5*3600e3;
 const GT='https://api.geckoterminal.com/api/v2/networks/solana',DS='https://api.dexscreener.com';
@@ -443,7 +443,7 @@ async function collectIntelligence(){const now=Date.now();if(INTEL_BUSY||now-INT
 // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
 // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
 const MODULES=['event-clock.js','admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
-  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js','module-library.js','active-history.js','launch-history.js','early-intelligence.js','migration-fast.js','legacy-birth-cleanup.js'];
+  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js','module-library.js','active-history.js','launch-history.js','early-intelligence.js','migration-fast.js','legacy-birth-cleanup.js','manual-pools.js','pool-logs.js'];
 let MODULES_OK=null;
 function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
   for(const name of MODULES){const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
@@ -457,6 +457,7 @@ async function initSource() {
   // Отсутствующий/повреждённый журнал НЕ очищать; источник лучше отключить,
   // чем повторно занести монеты после рестарта.
   SOURCE=new (require(DIR+'/source-runtime.js').SourceRuntime)({dir:DIR});
+  const epochFile=DIR+'/manual-pool-epoch-v1.json';if(!fs.existsSync(epochFile)){const at=Date.now();fs.writeFileSync(epochFile+'.tmp',JSON.stringify({schema:1,phase:'pool',id:'pool-'+at,startedAt:at}));fs.renameSync(epochFile+'.tmp',epochFile);require(DIR+'/durable-json.js').syncDirectory(DIR);}POOL_TRANSITION.poolEpoch=JSON.parse(fs.readFileSync(epochFile,'utf8'));POOL_TRANSITION.phaseAliases={before:'pool'};
   const removed=SOURCE.removeLegacyBirths();POOL_TRANSITION.legacySourceRemoved=removed.length;
   if(removed.length){for(const mint of removed)C.delete(mint);fs.writeFileSync(DIR+'/legacy-before-purge-pending.json',JSON.stringify({schema:1,createdAt:Date.now(),mints:removed,reason:'owner-TZ20-delete-legacy-birth-data'}));save();}
   POOL_TRANSITION.localCleanup=require(DIR+'/legacy-birth-cleanup.js').cleanup({dir:DIR});
@@ -476,6 +477,7 @@ async function initSource() {
       pools:[item.proof.curve],mg:{v:MGV,st:'curve',k:'curve-pump',final:1,
       lastAt:item.acceptedAt},fv:FV});seedLaunchEvidence(C.get(item.mint),item.proof,item);
   }
+  for(const item of SOURCE.records.values())if(item.proof?.kind==='manual-pool-open-v1'&&!C.has(item.mint)&&Date.now()-item.acceptedAt<26*3600e3){const p=item.proof;C.set(item.mint,{a:item.mint,n:'',s:'',i:'',p:p.pool,d:({'PumpSwap':'pumpswap','Raydium CPMM':'raydium-cpmm','Raydium CLMM':'raydium-clmm','Meteora DLMM':'meteora-dlmm','Meteora DAMM v2':'meteora-damm-v2','Orca':'orca-whirlpools'})[p.dex],q:p.quote,t:item.eventAt,seen:item.acceptedAt,pools:[p.pool],preCurve:0,fv:FV,disc:'manual-pool',discoverySource:'manual-pool',mg:{v:MGV,st:'ok',k:'manual-pool',pool:p.pool,sig:p.signature,mT:item.eventAt,owner:p.dexProgram},ct:p.ct,creatorAddress:p.creatorAddress,openingMetrics:p.openingMetrics,admissionVerifiedAt:p.verifiedAt,launchpad:null,dex:p.dex,venue:p.venue,vaults:[p.baseVault,p.quoteVault]});}
   SOURCE_ERR='';
   log('главный источник готов, принято',SOURCE.records.size,'настройки',SOURCE.settings());
 }
@@ -824,7 +826,7 @@ function finishTrades(c,why){const tr=c.tr;c.trDone=1;if(!tr||!tr.f.length){c.bx
   const name=rawArchiveName(c,'trades');c.archiveRefs={...(c.archiveRefs||{}),trades:name};uploadLater(name,{a:c.a,p:c.p,t:c.t,f:tr.f,x:tr.x});c.tr={f:tr.f}}
 
 /* ---------- 4. блокчейн в моменте: держатели (3/5/10 мин), состояние пула и хранилищ (ключевые моменты + каждые 5 минут) ---------- */
-const VAULT_OFF={[PUMP_AMM]:[139,171],[CPMM]:[72,104],[DAMM2]:[232,264],[AMM4]:[336,368]};
+const VAULT_OFF={[PUMP_AMM]:[139,171],[CPMM]:[72,104],[DAMM2]:[232,264],[AMM4]:[336,368],CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK:[137,169],LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo:[152,184],whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc:[133,213]};
 const qDec=new Map([[WSOL,9],[USDC,6],[USDT,6]]);
 const HOLD_M=[10],RAW_M=[1,3,5,10,15,30,60,120,240,480,720,1440];
 const u64=(u,o)=>{let x=0n;for(let i=7;i>=0;i--)x=(x<<8n)+BigInt(u[o+i]);return Number(x)};
@@ -1013,6 +1015,24 @@ async function processFastMigration(task){
  if(!outcome)throw Object.assign(Error('migration instruction or official pool proof not found'),{code:task.curve&&!proofSeen?'TX_PENDING':'PROOF_NOT_FOUND'});
  return {outcome};
 }
+async function processManualPool(task){
+ const api=require(DIR+'/manual-pools.js'),options={priority:'pool-discovery',context:'ручные пулы',source:'pool-discovery',urgent:true,maxBytes:3*1024*1024};
+ if(!task.candidates){const tx=await rpc('getTransaction',[task.signature,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}],options);if(!tx)throw Object.assign(Error('manual pool transaction pending'),{code:'TX_PENDING'});if(require(DIR+'/migration-fast.js').migrationCandidates(tx,b58dec).length)return {outcome:'migration-excluded'};task.candidates=api.manualPoolCandidates(tx,b58dec);}
+ if(!task.candidates.length)return {outcome:'not-direct-sol-pool'};
+ let outcome='not-direct-sol-pool';
+ for(const v of task.candidates){task.mint=v.mint;if(SOURCE.has(v.mint)){outcome='already-admitted';continue;}SOURCE.observe({mint:v.mint,phase:'before',origin:'manual-pool'});
+  const now=Date.now(),limit=SOURCE.settings().beforeMinutes*60000;if(now-v.eventAt>limit){SOURCE.observe({mint:v.mint,phase:'before',outcome:'tooOld',lateMs:now-v.eventAt-limit,origin:'manual-pool'});outcome='too-old';continue;}
+  const r=await rpc('getMultipleAccounts',[[v.pool,v.mint,v.baseVault,v.quoteVault],{encoding:'jsonParsed',commitment:'confirmed'}],options),at=Date.now();if(!r?.value?.[0])throw Object.assign(Error('manual pool account pending'),{code:'TX_PENDING'});
+  const snapshot=api.poolSnapshot(v,r.value);if(!snapshot)return {outcome:'unverified'};if(!snapshot.funded)throw Object.assign(Error('manual pool liquidity pending'),{code:'TX_PENDING',retryAfterMs:20000});
+  const opening={pool:v.pool,quoteMint:WSOL,eventAt:v.eventAt,at,scope:'creation-transaction-end',liquiditySol:v.liquiditySol,liquidityUsd:null,marketCapUsd:null,liquidityToMarketCap:null,creatorAddress:v.creatorAddress,creatorDepositSol:null,lpEvidence:null};
+  const ct=ctFromMint(r.value[1]);ct.at=at;const proof={kind:'manual-pool-open-v1',poolEpoch:POOL_TRANSITION.poolEpoch,pool:v.pool,signature:task.signature,slot:v.slot,timeSource:'block',family:'manual-pool',dex:v.dex,dexProgram:v.dexProgram,launchpad:null,venue:v.dex,quote:WSOL,baseVault:v.baseVault,quoteVault:v.quoteVault,creatorAddress:v.creatorAddress,fundedAt:at,verifiedAt:at,openingMetrics:opening,ct};
+  const decision=SOURCE.before({mint:v.mint,publicTradingAt:v.eventAt,observedAt:at,verified:true,proof});if(!decision.admitted){outcome=decision.reason;continue;}
+  const c={a:v.mint,n:'',s:'',i:'',p:v.pool,d:({'PumpSwap':'pumpswap','Raydium CPMM':'raydium-cpmm','Raydium CLMM':'raydium-clmm','Meteora DLMM':'meteora-dlmm','Meteora DAMM v2':'meteora-damm-v2','Orca':'orca-whirlpools'})[v.dex],q:WSOL,t:v.eventAt,seen:task.receivedAt,disc:'manual-pool',discoverySource:'manual-pool',preCurve:0,pools:[v.pool],fv:FV,ct,creatorAddress:v.creatorAddress,creatorObservedAt:at,supplyRaw:snapshot.supplyRaw,openingMetrics:opening,admissionVerifiedAt:at,launchpad:null,dex:v.dex,venue:v.dex,vaults:[v.baseVault,v.quoteVault],vmint:[v.mint,WSOL],vdec:[snapshot.decimals,9],vaultIdentityAt:at,lq:[[Math.round(at/1000),r.context?.slot,snapshot.baseRaw,snapshot.quoteRaw]],lqAt:at};
+  setMg(c,'ok','manual-pool','',{owner:v.dexProgram,pool:v.pool,sig:task.signature,mT:v.eventAt});C.set(v.mint,c);POOL_DISCOVERY.accepted('pool',v.eventAt,null,at);outcome='accepted';
+ }
+ return {outcome};
+}
+function discoveryStatus(){const x=FAST_DISCOVERY?.summary();if(!x)return null;return {...x,manualPoolStreamReady:POOL_LOGS?.summary().available===true,latency:{...x.latency,pool:POOL_DISCOVERY?.summary().latency.pool||x.latency.pool}};}
 function offerFastMigration(task){if(!FAST_DISCOVERY)return;FAST_DISCOVERY.offer({...task,receivedAt:Date.now()});}
 function chainWatch(){
   RESOURCE.migrationWSOnly=true;RESOURCE.freshMigrationReserve=6; // fresh signatures precede legacy migration lookups
@@ -1051,6 +1071,8 @@ function chainWatch(){
       else{WS.on=false;WS.connected={dbc:false,ll:false,pc:false};WS.disconnects=(WS.disconnects||0)+1}
       setTimeout(()=>connect(channel),pre?10000:5000)};
   };
+  POOL_DISCOVERY=new (require(DIR+'/migration-fast.js').FastSignals)({process:processManualPool,maxQueue:64,workers:1,onError:(e,t)=>{if(t?.mint)SOURCE?.observe({mint:t.mint,phase:'before',origin:'manual-pool',reason:e.code||'RPC_ERROR'});err('manual pool '+(e.code||'RPC_ERROR'))}});
+  POOL_LOGS=new (require(DIR+'/pool-logs.js').PoolLogs)({WebSocket,definitions:require(DIR+'/manual-pools.js').definitions,onSignal:t=>POOL_DISCOVERY.offer(t)});POOL_LOGS.start();
   connect('migrations'); // TZ20: birth stream intentionally disabled; migration socket is never budget-paused.
 }
 
@@ -1136,13 +1158,13 @@ async function exportAiSummary(now){if(now-AI_LAST<5*60e3||!SOURCE)return;AI_LAS
   await uploadText('ai/summary.md',md,'text/markdown; charset=utf-8');
   await uploadText('ai/summary.json',JSON.stringify(json,null,1),'application/json; charset=utf-8');
 }
-function withPoolReference(row){const mint=row.mint||row.a,admission=SOURCE?.get(mint),pool=admission?.proof?.pool||null;return {...row,p:pool,pair:pool};}
+function withPoolReference(row){const mint=row.mint||row.a,admission=SOURCE?.get(mint),pool=admission?.proof?.pool||null;return {...row,p:pool,pair:pool,phaseKey:row.phase==='before'?'pool':row.phase};}
 async function exportSource(now) {
   if(!SOURCE)return;
   const d=dayKey(now);
   const enrich=x=>{
     const c=C.get(x.mint)||COMPLETED?.metadata(x.mint);
-    return {...require(DIR+'/coin-profile.js').cardAt(c,now),p:x.proof?.pool||null,pair:x.proof?.pool||null,openingMetrics:x.proof?.openingMetrics||null,a:x.mint,phase:x.phase,eventAt:x.eventAt,acceptedAt:x.acceptedAt,
+    return {...require(DIR+'/coin-profile.js').cardAt(c,now),p:x.proof?.pool||null,pair:x.proof?.pool||null,openingMetrics:x.proof?.openingMetrics||null,a:x.mint,phase:x.phase,phaseKey:x.phase==='before'?'pool':x.phase,launchpad:x.proof?.launchpad??null,dex:x.proof?.dex??null,venue:x.proof?.venue??null,eventAt:x.eventAt,acceptedAt:x.acceptedAt,
       n:c?.n||'',s:c?.s||'',i:c?.i||'',family:x.proof?.family||null,curve:x.proof?.curve||null,
       proofSig:x.proof?.signature||null,uri:c?.uri||x.proof?.uri||null,migrationPool:x.proof?.pool||null,proofKind:x.proof?.kind||null,eventSlot:x.proof?.slot||null,eventTimeSource:x.proof?.timeSource||null};
   };
@@ -1153,7 +1175,7 @@ async function exportSource(now) {
   // Нет задним числом добавленных кандидатов из обычной ленты.
   // Предмиграционный адаптер пока не активен: не выдавать пустоту за готовность.
   AI_SNAP.source=summary;
-  await upload('source/status.json',{...summary,phaseModel:'pool-after-transition',birthStreamEnabled:false,fastDiscovery:FAST_DISCOVERY?.summary()||null,solCoverage:PROFILES?.stats.solCoverage||null,solMissingReasons:solReasons,cardUnits:{sol:'SOL',top10:'percent',b5:'transactions',s5:'transactions',createdAt:'unix-ms'},mode:'verified-pre-post',preConnected:preFlowing(),preLive:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:preFlowing()&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
+  await upload('source/status.json',{...summary,phaseModel:'pool-after-with-before-alias',phaseAliases:{before:'pool'},poolDiscovery:POOL_DISCOVERY?.summary()||null,poolTransport:POOL_LOGS?.summary()||null,birthStreamEnabled:false,fastDiscovery:discoveryStatus(),solCoverage:PROFILES?.stats.solCoverage||null,solMissingReasons:solReasons,cardUnits:{sol:'SOL',top10:'percent',b5:'transactions',s5:'transactions',createdAt:'unix-ms'},mode:'verified-pre-post',preConnected:preFlowing(),preLive:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:POOL_LOGS?.summary().available===true&&!SOURCE_ERR,pool:POOL_LOGS?.summary().available===true&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
   await upload('source/live.json',{updated:now,count:today.length,coins:live});
   if(now-SOURCE_DAY_PUBLISHED_AT>=5*60e3){await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});SOURCE_DAY_PUBLISHED_AT=now;}
 }
@@ -1386,7 +1408,7 @@ async function researchExportsCycle(){
 let STATUS_BUSY=false;
 async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const now=Date.now(),today=dayKey(now);
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:FAST_DISCOVERY?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:discoveryStatus(),poolDiscovery:POOL_DISCOVERY?.summary()||null,poolTransport:POOL_LOGS?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,publishedAt:FAST_PASS_PUBLISH_AT},

@@ -109,7 +109,7 @@ class SourceRuntime {
       try{fs.writeFileSync(fd,JSON.stringify({schema:1,startedAt:this.dailyStartedAt,overflow:this.dailyOverflow,rows:[...this.dailyRows]}));if(this.fsync)fs.fsyncSync(fd)}finally{fs.closeSync(fd)}
       fs.renameSync(tmp,this.dailyPath);fs.writeFileSync(this.dailyLogPath,'');this.dailyDirty=false;this.dailySavedAt=at;
     }
-    return {schema:1,day,timezone:'UTC+5',startedAt:this.dailyStartedAt,partialDay:kzDay(this.dailyStartedAt)===day,complete:this.dailyOverflow!==day,...phases};
+    return {schema:1,day,timezone:'UTC+5',startedAt:this.dailyStartedAt,partialDay:kzDay(this.dailyStartedAt)===day,complete:this.dailyOverflow!==day,...phases,pool:{...phases.before}};
   }
 
   _replay() {
@@ -262,7 +262,7 @@ class SourceRuntime {
     const d=kzDay(at),today=this.day(d),before=today.filter(x=>x.phase==='before').length;
     return {updated:at,day:d,total:this.records.size,
       today:today.length,todayBefore:before,todayAfter:today.length-before,
-      capacity:{maxRecords:this.maxRecords,rejected:this.capacityRejected,full:this.records.size>=this.maxRecords},settings:this.settings(),stats:{...this.stats},daily:this.dailySummary(at)};
+      capacity:{maxRecords:this.maxRecords,rejected:this.capacityRejected,full:this.records.size>=this.maxRecords},settings:this.settings(),stats:{...this.stats,acceptedPool:this.stats.acceptedBefore,tooOldPool:this.stats.tooOldBefore},daily:this.dailySummary(at)};
   }
 }
 module.exports={SourceRuntime};

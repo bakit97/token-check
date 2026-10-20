@@ -3,6 +3,9 @@
 const crypto=require('node:crypto'),{keysOf}=require('./migration-fast');
 const WSOL='So11111111111111111111111111111111111111112';
 const definitions=[
+ ['CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C','initialize','Raydium CPMM',3,0,4,5,10,11],
+ ['whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc','initialize_pool','Orca',4,3,1,2,5,6],
+ ['whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc','initialize_pool_v2','Orca',6,5,1,2,7,8],
  ['pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA','create_pool','PumpSwap',0,2,3,4,9,10],
  ['CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK','create_pool','Raydium CLMM',2,0,3,4,5,6],
  ...['initialize_customizable_permissionless_lb_pair','initialize_customizable_permissionless_lb_pair2','initialize_lb_pair','initialize_lb_pair2'].map(name=>['LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo',name,'Meteora DLMM',0,8,2,3,4,5]),
@@ -13,7 +16,7 @@ const definitions=[
 function manualPoolCandidates(tx,decode58){
  if(tx?.meta?.err!==null||!Number.isSafeInteger(tx?.blockTime)||tx.blockTime<=0)return [];
  const keys=keysOf(tx),message=tx.transaction?.message,signers=new Set(keys.slice(0,message?.header?.numRequiredSignatures||0)),out=[];
- for(const ix of message?.instructions||[]){const program=ix.programId||keys[ix.programIdIndex];let raw;try{raw=Buffer.from(decode58(ix.data||'1'));}catch{continue;}
+ for(const ix of message?.instructions||[]){const program=ix.programId||keys[ix.programIdIndex];if(!definitions.some(s=>s.program===program)||typeof ix.data!=='string'||ix.data.length>8192)continue;let raw;try{raw=Buffer.from(decode58(ix.data||'1'));}catch{continue;}
   const spec=definitions.find(s=>s.program===program&&s.discriminator===raw.subarray(0,8).toString('hex'));if(!spec||!Array.isArray(ix.accounts))continue;
   const at=i=>typeof ix.accounts[i]==='number'?keys[ix.accounts[i]]:ix.accounts[i],pool=at(spec.pool),creator=at(spec.creator),a=at(spec.mintA),b=at(spec.mintB),index=keys.indexOf(pool);
   if(!pool||!creator||!signers.has(creator)||index<0||tx.meta.preBalances?.[index]!==0||!(tx.meta.postBalances?.[index]>0)||!a||!b||a===b||(a!==WSOL&&b!==WSOL))continue;
@@ -25,4 +28,13 @@ function manualPoolCandidates(tx,decode58){
  }
  return out;
 }
-module.exports={manualPoolCandidates,definitions};
+function poolSnapshot(candidate,values){
+ const [pool,mint,base,quote]=values||[],tokenPrograms=new Set(['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA','TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb']);
+ if(!pool||pool.owner!==candidate.dexProgram||!mint||!tokenPrograms.has(mint.owner)||mint.data?.parsed?.type!=='mint')return null;
+ if(![base,quote].every(x=>x&&tokenPrograms.has(x.owner)&&x.data?.parsed?.type==='account'))return null;
+ const b=base.data.parsed.info,q=quote.data.parsed.info,m=mint.data.parsed.info;if(b.mint!==candidate.mint||q.mint!==WSOL||q.tokenAmount?.decimals!==9||!Number.isInteger(m.decimals)||!/^\d+$/.test(m.supply||''))return null;
+ if(![b,q].every(x=>/^\d+$/.test(x.tokenAmount?.amount||'')))return null;
+ const quoteRaw=BigInt(q.tokenAmount.amount),baseRaw=BigInt(b.tokenAmount.amount);if(quoteRaw>BigInt(Number.MAX_SAFE_INTEGER))return null;
+ return {funded:quoteRaw>0n&&baseRaw>0n,quoteRaw:Number(quoteRaw),baseRaw:Number(baseRaw),quoteSol:Number(quoteRaw)/1e9,decimals:m.decimals,supplyRaw:m.supply};
+}
+module.exports={manualPoolCandidates,definitions,poolSnapshot};

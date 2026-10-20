@@ -193,7 +193,7 @@ class ResearchTwoRuntime {
       const secondLevelMatches=(pass.secondLevelRules||[])
         .filter(f=>evaluation(F,f)==='pass').map(f=>({...f}));
       newRows.push({
-        mint:pass.mint,phase:pass.phase,acceptedAt:pass.acceptedAt,
+        mint:pass.mint,phase:pass.phase,p:pass.p||coin.p||null,pair:pass.pair||coin.p||null,phaseEpoch:pass.phaseEpoch||null,acceptedAt:pass.acceptedAt,
         firstSeenAt:pass.firstSeenAt,zeroAt:pass.zeroAt,decisionAt:featureAt,outcomeAt:now,windowEnd:pass.zeroAt+300*MIN,earlyWallets:require('./early-intelligence').frozenWallets(coin,featureAt),featureAnchor:'acceptedAt',featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,pass.acceptedAt,'2',pass.phase),sourceFilterRules:pass.matches.map(f=>({...f})),
         configHash:pass.configHash,sourceFilterVersions:pass.matches.map(f=>({
           id:f.id,version:f.version,level:f.level
