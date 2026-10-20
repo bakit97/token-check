@@ -269,7 +269,7 @@ function spark(c){
   var points=(c.ds||[]).slice(-24).map(function(x){return Number(x[1])}).filter(function(x){return x>0});
   var h=LIVE_HIST[mint(c)]||[];if(h.length>points.length)points=h.slice(-30);
   if(points.length<2)return '<svg viewBox="0 0 46 20" class="spark"><path d="M2 14H44" stroke="#3a4157" stroke-width="1.5" stroke-dasharray="2 3"/></svg>';
-  var low=Math.min.apply(null,points),high=Math.max.apply(null,points);if(high===low)return '<span class="spark nospark">нет сделок</span>';var span=(high-low)||high*.02||1,W=46,H=20;
+  var low=Math.min.apply(null,points),high=Math.max.apply(null,points);if(high===low){var LM=cardMarket(c);if(LM&&LM.b5===0&&LM.s5===0)return '<span class="spark nospark">нет сделок</span>'}var span=(high-low)||high*.02||1,W=46,H=20;
   var xy=points.map(function(p,i){return [(i/(points.length-1)*(W-4)+2).toFixed(1),(H-3-(H-6)*(p-low)/span).toFixed(1)]});
   var line='M'+xy.map(function(q){return q.join(' ')}).join(' L'),up=points.at(-1)>=points[0],col=up?'#38d996':'#fc6b83',id='g'+(up?'u':'d');
   var last=xy[xy.length-1];
@@ -437,6 +437,9 @@ function renderAll(){
 // Наглядная скорость: белое — сколько обнаружили за сутки, зелёное — сколько успели по нашему фильтру возраста.
 function speedHtml(seen,passed){if(!Number.isSafeInteger(seen))return '';return fmt(seen)+(Number.isSafeInteger(passed)?' · <b class="pass">'+fmt(passed)+'</b>':'')}
 function renderSpeedCounters(){var d=sourceMeta&&sourceMeta.daily,ok=sourceActive&&d&&d.day===day(now()),b=ok&&d.before||{},a=ok&&d.after||{};
+  // «замечено» без утреннего мусора: старые неатрибутированные записи и старые пулы из GeckoTerminal (tooOld) — не пропуски быстрого канала
+  function eff(x){if(!Number.isSafeInteger(x.seen))return x.seen;var lg=(x.unverifiedByReason||{})['legacy-unattributed']||0;return Math.max(x.accepted||0,x.seen-lg-(x.tooOld||0))}
+  b=Object.assign({},b,{seen:eff(b)});a=Object.assign({},a,{seen:eff(a)});
   function sum(k){return Number.isSafeInteger(b[k])&&Number.isSafeInteger(a[k])?b[k]+a[k]:null}
   $('todayTab').innerHTML=ok?' '+speedHtml(sum('seen'),sum('accepted')):'';
   $('cntAll').innerHTML=ok?speedHtml(sum('seen'),sum('accepted')):'';
