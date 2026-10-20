@@ -67,3 +67,12 @@ test('curve signature indexing lag is retried without stale cache or repeated im
  vm.createContext(ctx);const code=fs.readFileSync(path.join(__dirname,'../server/collector.js'),'utf8');vm.runInContext(code.slice(code.indexOf('async function processFastMigration('),code.indexOf('function offerFastMigration('))+'\nthis.run=processFastMigration;',ctx);
  const task={curve:'curve',kind:'pump',receivedAt:Date.now(),slot:10};await a.rejects(ctx.run(task),e=>e.code==='TX_PENDING');a.equal((await ctx.run(task)).outcome,'accepted');a.deepEqual(calls.map(x=>x.m),['getSignaturesForAddress','getTransaction','getSignaturesForAddress','getTransaction']);a.equal(calls[0].o.cache,false);a.equal(calls[2].o.cache,false);
 });
+
+
+test('fresh backlog blocks competing RPC and can use remaining budget beyond a consumed fixed reserve',t=>{
+ const {ResourceBudget}=require('../server/resource-budget');const b=new ResourceBudget({dir:temp(t),now:()=>T,env:{HELIUS_RESET_AT:new Date(T+86400000).toISOString(),HELIUS_USED_CREDITS:'0'}});b.freshMigrationReserve=6;
+ for(let i=0;i<6;i++)b.reserveRPC('getTransaction','migration-fast');b.freshMigrationPending=2;
+ for(const lane of ['migration','pools','holders','metadata','reconcile','background'])a.equal(b.allow(1,lane),false,lane);
+ a.equal(b.allow(1,'migration-fast'),true);while(b.allow(1,'migration-fast'))b.reserveRPC('getTransaction','migration-fast');a.ok(b.summary().creditsMinute<=17);a.ok(b.laneTotal('migration-fast',60000)>6);
+});
+test('backlog callback includes waiting tasks and returns to zero on terminal completion',async()=>{const levels=[];const q=new FastSignals({onPending:n=>levels.push(n),process:async()=>({outcome:'accepted'})});q.offer({signature:'one'});await flush();a.ok(levels.some(x=>x>0));a.equal(levels.at(-1),0);});
