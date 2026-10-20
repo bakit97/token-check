@@ -11,6 +11,7 @@ const DEX_PROGRAMS={
 };
 const LAUNCHPADS={pump:'pump.fun',dbc:'Meteora DBC','dbc-v1':'Meteora DBC',launch:'Raydium LaunchLab','launch-v4':'Raydium LaunchLab'};
 function identity(c={},phase,at=Date.now(),admission=null){
+ c=c||{};// null metadata of a completed coin must not crash the research export
  const proof=admission?.proof||{},mg=c.mg||{st:c.mst,k:c.mk,seenAt:c.mSeen},manual=phase==='before'&&(proof.kind==='manual-pool-open-v1'||mg.k==='manual-pool');
  const migrated=phase==='after'&&(mg.st==='ok'||proof.signature&&proof.pool);
  const receivedAt=c.venueObservedAt??c.admissionVerifiedAt??proof.verifiedAt??mg.seenAt??(admission?.acceptedAt||null);
@@ -21,5 +22,5 @@ function identity(c={},phase,at=Date.now(),admission=null){
  const cached=(manual||Number.isFinite(c.venueObservedAt))&&(proof.dex||c.dex);const dex=knownDex||(Object.values(DEX_PROGRAMS).includes(cached)?cached:null);
  return {launchpad,dex,venue:dex?(launchpad?launchpad+' → '+dex:dex):null,venueObservedAt:receivedAt};
 }
-function features(c,phase,at){const {launchpad,dex}=identity(c,phase,at);return {launchpad,dex};}
+function features(c,phase,at){const {launchpad,dex}=identity(c||{},phase,at);return {launchpad,dex};}
 module.exports={identity,features,DEX_PROGRAMS,LAUNCHPADS};
