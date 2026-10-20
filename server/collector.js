@@ -443,7 +443,7 @@ async function collectIntelligence(){const now=Date.now();if(INTEL_BUSY||now-INT
 // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
 // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
 const MODULES=['event-clock.js','admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
-  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js','module-library.js','active-history.js','launch-history.js','early-intelligence.js','migration-fast.js'];
+  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js','module-library.js','active-history.js','launch-history.js','early-intelligence.js','migration-fast.js','legacy-birth-cleanup.js'];
 let MODULES_OK=null;
 function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
   for(const name of MODULES){const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
@@ -459,6 +459,7 @@ async function initSource() {
   SOURCE=new (require(DIR+'/source-runtime.js').SourceRuntime)({dir:DIR});
   const removed=SOURCE.removeLegacyBirths();POOL_TRANSITION.legacySourceRemoved=removed.length;
   if(removed.length){for(const mint of removed)C.delete(mint);fs.writeFileSync(DIR+'/legacy-before-purge-pending.json',JSON.stringify({schema:1,createdAt:Date.now(),mints:removed,reason:'owner-TZ20-delete-legacy-birth-data'}));save();}
+  POOL_TRANSITION.localCleanup=require(DIR+'/legacy-birth-cleanup.js').cleanup({dir:DIR});
   EVENT_CLOCK=new (require(DIR+'/event-clock.js').EventClock)({rpc:(method,params)=>rpc(method,params,{priority:'migration',context:'часы',source:'clock'})});
   await EVENT_CLOCK.refresh();
   setInterval(()=>{EVENT_CLOCK.refresh().catch(()=>{})},10000);
