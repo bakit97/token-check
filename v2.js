@@ -331,11 +331,11 @@ function pc(v){return v==null||!Number.isFinite(+v)?'—':(v>0?'+':'')+Number(v)
 function solInPool(c){if(Object.prototype.hasOwnProperty.call(c,'sol'))return Number.isFinite(c.sol)?c.sol:null;if(c.curveSol?.length){var cs=c.curveSol.at(-1);if(Number.isFinite(cs[1])&&now()-cs[0]<=7*60000)return cs[1]/1e9}if(!Array.isArray(c.lq)||!Array.isArray(c.vmint))return null;var qi=c.vmint.indexOf('So11111111111111111111111111111111111111112');if(qi<0)return null;
   var r=c.lq.at(-1);return r&&Number.isFinite(r[2+qi])?r[2+qi]/1e9:null}
 function topHold(c){if(Object.prototype.hasOwnProperty.call(c,'top10'))return Number.isFinite(c.top10)?{top10:c.top10/100,at:c.cardAt}:null;var best=null;Object.values(c.hold||{}).forEach(function(h){if(h&&!h.miss&&Number.isFinite(h.top10)&&(!best||h.at>best.at))best=h});return best}
-function detailStats(m){var c=DETAIL_COIN||{},L=cardMarket(c),sol=solInPool(c),h=topHold(c);
+function detailStats(m){var fr=(typeof lastAccepted!=='undefined'&&lastAccepted||[]).find(function(d){return mint(d)===m});if(fr&&DETAIL_COIN&&mint(DETAIL_COIN)===m)DETAIL_COIN=fr;var c=DETAIL_COIN||{},L=cardMarket(c),sol=solInPool(c),h=topHold(c);
   var safe=typeof c.safeContract==='boolean'?c.safeContract:null;
   var cells=[['Цена',price(L.price)],['Кап',usd(L.mc)],['Ликв.',usd(L.liq)],
     ['SOL в пуле',sol==null?'—':sol.toFixed(sol<10?2:0)],['Объём 5м',usd(L.v5)],['Пок/прод 5м',(L.b5==null&&L.s5==null)?'—':'<b class="bu">'+(L.b5||0)+'↑</b> <b class="sl">'+(L.s5||0)+'↓</b>'],
-    ['5м / 1ч',pc(L.ch5)+' / '+pc(L.ch1h)],['Топ-10',h?(h.top10*100).toFixed(0)+'%':'—'],['Контракт',safe==null?'—':safe?'<span class="good">чистый</span>':'<span class="bad">опасный</span>']];
+    ['5м / 1ч',pc(L.ch5)+' / '+pc(L.ch1h)],['Топ-10',h&&h.top10>0?(h.top10*100).toFixed(0)+'%':'—'],['Контракт',safe==null?'—':safe?'<span class="good">чистый</span>':'<span class="bad">опасный</span>']];
   return cells.map(function(x){return '<div class="mini"><span>'+x[0]+'</span><b>'+x[1]+'</b></div>'}).join('')}
 function chartSrc(m,c){var L=LIVE[m]||{};return 'https://dexscreener.com/solana/'+((c&&(c.pair||c.p))||L.pair||m)+'?embed=1&loadChartSettings=0&trades=0&tabs=0&info=0&chartLeftToolbar=0&chartTheme=dark&theme=dark&chartStyle=1&chartType=usd&interval=1'}
 // ---- Путь монеты по нашей системе: базовый фильтр → 1 уровень → исследование 1 → 2 уровень → исследование 2 ----
