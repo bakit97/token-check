@@ -36,3 +36,25 @@ test('fresh proof capacity remains reserved when old migration queue is empty an
  for(let i=0;i<3;i++)b.reserveRPC('getTransaction','migration-fast');
  a.ok(b.summary().creditsMinute<=17);a.equal(b.laneTotal('migration-fast',60000),3);
 });
+
+
+const flush=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
+test('budget wait survives a full accounting minute, with delayed work visible and no five-retry loss',async()=>{
+ let at=T,timer=null,calls=0;const q=new FastSignals({now:()=>at,setTimer:(fn,ms)=>{timer={fn,at:at+ms};return timer;},clearTimer:()=>{timer=null;},process:async()=>{calls++;if(at<T+61000)throw Object.assign(Error('budget'),{code:'BUDGET_DEFERRED',retryAfterMs:10000});return {outcome:'accepted'};}});
+ q.offer({signature:'later'});await flush();a.equal(q.summary().waitingBudget,1);
+ while(timer&&at<T+80000){const next=timer;timer=null;at=next.at;next.fn();await flush();}
+ a.ok(calls>5);a.equal(q.summary().counts.completed,1);a.equal(q.summary().counts.errors,0);a.equal(q.summary().queue,0);a.equal(q.summary().outcomes.accepted,1);
+});
+test('permanent proof rejection is counted explicitly, never as successful completion',async()=>{const q=new FastSignals({process:async()=>{throw Object.assign(Error('proof missing'),{code:'PROOF_NOT_FOUND'});}});q.offer({signature:'bad'});await flush();a.equal(q.summary().counts.completed,0);a.equal(q.summary().counts.errors,1);a.equal(q.summary().failureReasons.PROOF_NOT_FOUND,1);});
+test('a new fresh proof runs while older proof waits for budget',async()=>{let at=T;const done=[];const q=new FastSignals({now:()=>at,setTimer:()=>({}),clearTimer:()=>{},process:async t=>{if(t.signature==='waiting')throw Object.assign(Error('budget'),{code:'BUDGET_DEFERRED',retryAfterMs:60000});done.push(t.signature);return {outcome:'accepted'};}});q.offer({signature:'waiting'});await flush();q.offer({signature:'fresh'});await flush();a.deepEqual(done,['fresh']);a.equal(q.summary().waitingBudget,1);});
+test('decoded DBC proof is retained across a deferred pool-account verification',async t=>{
+ const source=new SourceRuntime({dir:temp(t),fsync:false}),calls=[],C=new Map(),spec=specs.find(s=>s.family==='dbc'),transaction=tx(spec);transaction.transaction.message.accountKeys[spec.quote]='So11111111111111111111111111111111111111112';let attempts=0;
+ const ctx={require,DIR:path.join(__dirname,'../server'),Buffer,Date,Map,Set,TextEncoder,SOURCE:source,C,FV:2,DEXOF:{dbc:'meteora'},FAST_DISCOVERY:{accepted:()=>{}},DAMM2:spec.dex,DBC_AUTH:'authority',officialPools:async()=>[],pk:()=> 'authority',pair2:()=> 'So11111111111111111111111111111111111111112',
+ rpc:async(m,p,o)=>{calls.push(m);if(m==='getTransaction')return transaction;if(++attempts===1)throw Object.assign(Error('budget'),{code:'BUDGET_DEFERRED'});return {value:{owner:spec.dex,data:['data']}};},b58dec:x=>Buffer.from(x,'hex'),setMg:(c,st,k,why,x)=>{c.mg={st,k,...x}},moveTo:()=>{},b64:()=>new Uint8Array(680)};
+ vm.createContext(ctx);const code=fs.readFileSync(path.join(__dirname,'../server/collector.js'),'utf8');vm.runInContext(code.slice(code.indexOf('async function processFastMigration('),code.indexOf('function offerFastMigration('))+'\nthis.run=processFastMigration;',ctx);
+ const task={signature:'sig',receivedAt:Date.now(),slot:10};await a.rejects(ctx.run(task),e=>e.code==='BUDGET_DEFERRED');const result=await ctx.run(task);a.equal(result.outcome,'accepted');a.deepEqual(calls,['getTransaction','getAccountInfo','getAccountInfo']);a.equal(source.get(M).phase,'after');
+});
+
+
+test('six fresh credits remain available after old proofs and pool observations',t=>{const {ResourceBudget}=require('../server/resource-budget');const b=new ResourceBudget({dir:temp(t),now:()=>T,env:{HELIUS_RESET_AT:new Date(T+86400000).toISOString(),HELIUS_USED_CREDITS:'0'}});b.freshMigrationReserve=6;while(b.allow(1,'migration'))b.reserveRPC('getTransaction','migration');while(b.allow(1,'pools'))b.reserveRPC('getMultipleAccounts','pools');for(let i=0;i<6;i++)b.reserveRPC('getTransaction','migration-fast');a.ok(b.summary().creditsMinute<=17);a.equal(b.laneTotal('migration-fast',60000),6);});
+test('daily unverified breakdown attributes known origins without inventing historical attribution',t=>{const s=new SourceRuntime({dir:temp(t),fsync:false,clock:()=>T});s.observe({mint:M,phase:'after',origin:'reconcile'});s.observe({mint:N,phase:'after',origin:'ws-dbc',reason:'BUDGET_DEFERRED'});const d=s.dailySummary(T).after;a.equal(d.unverified,2);a.equal(d.unverifiedByOrigin.reconcile,1);a.equal(d.unverifiedByReason.BUDGET_DEFERRED,1);});

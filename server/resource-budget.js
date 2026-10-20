@@ -61,7 +61,7 @@ class ResourceBudget{
     const poolFloor=Math.min(4,ceiling*.3),proofFloor=Math.min(10,Math.max(0,ceiling-poolFloor-.5));
     const proofReserve=this.migrationPending?Math.max(0,proofFloor-this.laneTotal('migration',MIN)-this.laneTotal('migration-fast',MIN)):0;
     const poolReserve=this.poolsPending?Math.max(0,poolFloor-this.laneTotal('pools',MIN)):0;
-    const freshReserve=Math.max(0,Math.min(3,this.freshMigrationReserve||0)-this.laneTotal('migration-fast',MIN));
+    const freshReserve=Math.max(0,Math.min(6,this.freshMigrationReserve||0)-this.laneTotal('migration-fast',MIN));
     const cap=Math.max(0,ceiling-(lane==='migration-fast'?poolReserve:lane==='migration'||lane==='reconcile'?poolReserve+freshReserve:lane==='pools'?Math.max(proofReserve,freshReserve):Math.max(proofReserve,freshReserve)+poolReserve));
     const hourly={metadata:60,holders:60,pre:0,background:30,reconcile:65}[lane]??Infinity;
     if(lane==='reconcile'&&this.migrationPending)return false;
@@ -71,8 +71,9 @@ class ResourceBudget{
     if(!b)this.state.buckets.push(b={at,rpc:0,ws:0,lanes:{}});b.lanes=b.lanes||{};b[type]+=cost;b.lanes[lane]=(b.lanes[lane]||0)+cost;
     if(type==='ws'){b.wsBytes=(b.wsBytes||0)+bytes;const entry=this.source(source);entry.wsBytes=(entry.wsBytes||0)+bytes;}
     this.source(source)[type==='rpc'?'rpcCredits':'wsCredits']+=cost;this.state.used+=cost;const samples=this.state.usageSamples,last=samples.at(-1),point=[this.now(),this.state.used];if(last&&Math.floor(last[0]/MIN)===Math.floor(point[0]/MIN))samples[samples.length-1]=point;else samples.push(point);while(samples.length&&samples[0][0]<this.now()-48*3600000)samples.shift();this.persist();}
+  retryAfterMs(){const at=this.now(),times=this.state.buckets.map(b=>b.at+MIN+25).filter(t=>t>at);return times.length?Math.max(1000,Math.min(...times)-at):5000;}
   reserveRPC(method,priority,source=this.lane(priority)){const cost=rpcCost(method),lane=this.lane(priority);
-    if(!this.allow(cost,priority)){this.deferred(source);throw new BudgetDeferred()}
+    if(!this.allow(cost,priority)){this.deferred(source);throw Object.assign(new BudgetDeferred(),{retryAfterMs:this.retryAfterMs()})}
     this.charge(cost,'rpc',lane,source);return cost;
   }
   stream(bytes,source='pre'){

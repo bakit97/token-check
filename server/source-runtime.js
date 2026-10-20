@@ -70,7 +70,7 @@ class SourceRuntime {
       this.observe({mint:row.mint,phase:row.phase,at:row.acceptedAt,outcome:'accepted'});
   }
 
-  observe({mint,phase,at=this.clock(),outcome='unverified',lateMs=0}={}) {
+  observe({mint,phase,at=this.clock(),outcome='unverified',lateMs=0,origin=null,reason=null}={}) {
     if(!['before','after'].includes(phase)||typeof mint!=='string'||!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(mint)||!goodTime(at))return;
     const today=kzDay(this.clock()),date=kzDay(at);
     // Keep only today's and yesterday's detection identities, never lifetime sets.
@@ -84,7 +84,7 @@ class SourceRuntime {
     if(old?.outcome==='accepted'||(old?.outcome==='tooOld'&&outcome!=='accepted'))return;
     if(outcome==='unverified'&&this.records?.has(mint))outcome='alreadyAdmitted';
     if(!old&&this.dailyRows.size>=this.maxRecords*2){this.dailyOverflow=date;this.dailyDirty=true;return}
-    const row={day:date,phase,outcome,lateMs:outcome==='tooOld'?Math.max(0,lateMs):0,startedAt:this.dailyStartedAt};
+    const row={day:date,phase,outcome,origin:origin||old?.origin||'legacy-unattributed',reason:reason||(outcome==='unverified'?old?.reason||'awaiting-proof':outcome),lateMs:outcome==='tooOld'?Math.max(0,lateMs):0,startedAt:this.dailyStartedAt};
     if(old&&JSON.stringify(old)===JSON.stringify(row))return;
     const fd=fs.openSync(this.dailyLogPath,'a');
     try{
@@ -94,12 +94,12 @@ class SourceRuntime {
     this.dailyRows.set(key,row);this.dailyDirty=true;
   }
   dailySummary(at=this.clock()) {
-    const day=kzDay(at),empty=()=>({seen:0,accepted:0,tooOld:0,unverified:0,alreadyAdmitted:0,other:0,lateTotalMs:0,averageLateMs:null});
+    const day=kzDay(at),empty=()=>({seen:0,accepted:0,tooOld:0,unverified:0,unverifiedByOrigin:{},unverifiedByReason:{},alreadyAdmitted:0,other:0,lateTotalMs:0,averageLateMs:null});
     const phases={before:empty(),after:empty()};
     for(const row of this.dailyRows.values())if(row.day===day){const p=phases[row.phase];p.seen++;
       if(row.outcome==='accepted')p.accepted++;
       else if(row.outcome==='tooOld'){p.tooOld++;p.lateTotalMs+=row.lateMs}
-      else if(row.outcome==='unverified')p.unverified++;
+      else if(row.outcome==='unverified'){p.unverified++;const origin=row.origin||'legacy-unattributed',reason=row.reason||'legacy-unattributed';p.unverifiedByOrigin[origin]=(p.unverifiedByOrigin[origin]||0)+1;p.unverifiedByReason[reason]=(p.unverifiedByReason[reason]||0)+1;}
       else if(row.outcome==='alreadyAdmitted')p.alreadyAdmitted++;
       else p.other++;
     }
