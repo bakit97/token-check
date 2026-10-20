@@ -34,3 +34,9 @@ test('signature pagination resumes with the oldest cursor and never claims uncov
 test('empty latest-24h trade endpoint cannot prove completeness of an older research window',()=>{
  const evidence=require('../server/research-v2').tradeOutcomeEvidence([],T,T+5*60*M,T+30*60*M);a.equal(evidence.complete,false);a.ok(evidence.lowerBounds.includes('last-hour-trades'));a.ok(evidence.lowerBounds.includes('unique-buyers'));
 });
+
+test('a recovered gap never claims inactivity outside its requested interval and old unscoped marks are revalidated',()=>{
+ const minutes=Array.from({length:5},(_,i)=>[T+(i+1)*M,null,null,null]),e={start:T+2*M,end:T+3*M,signatures:{from:T-M,through:T+5*M,receivedAt:T+6*M,txTimes:[],source:'chain-pool-signatures'}};
+ const result=R.applyMinutes(minutes,[e]);a.deepEqual(result.map(r=>r[1]),[null,null,1,null,null]);a.equal(result[2][4].windowStart,e.start);a.equal(result[2][4].recoveryVersion,2);
+ const bad=minutes.map(r=>[r[0],1,0,null,{backfilled:true,source:'chain-pool-signatures'}]);a.deepEqual(R.applyMinutes(bad,[e]).map(r=>r[1]),[null,null,1,null,null]);
+});
