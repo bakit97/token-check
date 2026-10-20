@@ -18,3 +18,5 @@
 .clone{font-size:10px;font-weight:800;padding:1px 5px;border-radius:5px;margin-right:2px;background:#2a3042;color:#c9d1e6;vertical-align:1px}.clone.orig{background:#123a2c;color:#7ff0c0}
 .trisw{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;flex-shrink:0}.trisw button{min-height:28px;padding:2px 9px;border:0;border-radius:0;background:transparent;font-size:12px;font-weight:700;color:var(--muted)}.trisw button.on{color:#fff;background:#3a3f55}.trisw button.on.yes{background:#1f6b4c}.trisw button.on.no{background:#7a2e3e}
 .dph{font-size:12.5px;font-weight:800;margin:8px 0 2px}.dh{margin:6px 0 10px}.dh b{font-size:12px}.dbars{display:flex;gap:3px;align-items:flex-end;margin-top:4px;overflow-x:auto}.db{flex:1 1 0;min-width:28px;display:flex;flex-direction:column;align-items:center;gap:1px}.db i{display:block;width:100%;background:var(--accent);border-radius:3px 3px 0 0}.db span{font-size:10px;font-weight:700}.db small{font-size:8.5px;color:var(--muted);white-space:nowrap}
+
+.spark.nospark{display:inline-block;font-size:10px;color:var(--muted);white-space:nowrap;text-align:right}
