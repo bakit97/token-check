@@ -128,7 +128,9 @@ class ResearchRuntime {
     this.carryFrom(carry);
   }
   carryFrom(previous){if(!previous)return;for(const row of previous.admitted.values())if(!this.admitted.has(row.mint))this.admitted.set(row.mint,{...row,intakePending:true,transferred:true});}
+  pruneRevoked(revoked){let n=0;for(const [mint,row] of this.admitted)if(row.phase==='before'&&revoked?.has(mint)){this.admitted.delete(mint);this.processed.delete(mint);this.lastAttemptAt.delete(mint);n++;}this.rows=this.rows.filter(r=>r.phase!=='before'||!revoked?.has(r.mint));return n;}
   update({source,coins,passes=null,now=Date.now()}={}) {
+    this.pruneRevoked(source?.revokedManual);
     if(!source?.records || !coins?.get)throw new TypeError('Need source ledger and coin map');
     let added=0,considered=0,attempted=0,gateChecks=0;
     const pending={},byPhase={before:{live:0,dead:0},after:{live:0,dead:0}};

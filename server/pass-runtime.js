@@ -80,7 +80,7 @@ class PassRuntime {
     this.journalDir=path.join(dir,'pass-v2-journal');
     fs.mkdirSync(this.journalDir,{recursive:true});
     this.activationFile=path.join(dir,'pass-v2-activation.json');
-    this.records=new Map();
+    this.records=new Map();const revocationFile=path.join(dir,'manual-pool-revocations-v1.json');this.revokedManual=new Map(fs.existsSync(revocationFile)?JSON.parse(fs.readFileSync(revocationFile,'utf8')).entries:[]);
     this.config=null;this.configHash='';
     this.applyConfig(config||{
       schema:1,enabled:false,activatedAt:0,decisionMinutes:10,filters:[],modules:[]
@@ -121,6 +121,7 @@ class PassRuntime {
       let item;
       try{item=JSON.parse(line)}
       catch{throw Error('Malformed committed pass journal JSON: '+path.basename(file))}
+      if(item.phase==='before'&&this.revokedManual.has(item.mint))continue;
       if(!isEvent(item))throw Error('Malformed committed pass journal row: '+path.basename(file));
       const old=this.records.get(item.mint);
       if(old&&(old.acceptedAt!==item.acceptedAt||old.firstSeenAt!==item.firstSeenAt))
@@ -176,6 +177,7 @@ class PassRuntime {
     this.appended++;
   }
   update({source,coins,now=Date.now()}={}){
+    for(const [mint,row] of this.records)if(row.phase==='before'&&source?.revokedManual?.has(mint))this.records.delete(mint);
     if(!source?.records||!coins?.get)throw new TypeError('Source ledger and candidate map required');
     let added=0,missingFeatures=0,considered=0;
     if(this.config.passMode)return this._updateVerdicts({source,coins,now});

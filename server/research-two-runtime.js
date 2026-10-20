@@ -91,7 +91,7 @@ class ResearchTwoRuntime {
           this.processed.set(pair[0],pair[1]);
       for(const row of this.rows)this.processed.set(row.mint,row.zeroAt);
     }
-    this._replayJournal();
+    this._replayJournal();const revFile=path.join(dir,'manual-pool-revocations-v1.json');if(fs.existsSync(revFile))this.pruneRevoked(new Map(JSON.parse(fs.readFileSync(revFile,'utf8')).entries));
   }
   _replayJournal(){
     if(!fs.existsSync(this.journalFile))return;
@@ -151,6 +151,7 @@ class ResearchTwoRuntime {
     finally{fs.closeSync(fd)}
     this.journalCount=0;this.compactedAt=now;
   }
+  pruneRevoked(revoked){for(const r of this.rows)if(r.phase==='before'&&revoked?.has(r.mint)){this.processed.delete(r.mint);this.retry.delete(r.mint);}this.rows=this.rows.filter(r=>r.phase!=='before'||!revoked?.has(r.mint));}
   update({passes,coins,now=Date.now()}={}){
     if(!passes?.records||!coins?.get)throw TypeError('Need verified pass journal and candidate map');
     let added=0,attempted=0,considered=0;

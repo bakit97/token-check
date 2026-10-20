@@ -34,6 +34,7 @@ class SourceRuntime {
     this.dir = dir;
     this.maxRecords=maxRecords;this.maxJournalBytes=maxJournalBytes;this.capacityRejected=0;
     fs.mkdirSync(dir, {recursive:true});
+    this.revokedPath=path.join(dir,'manual-pool-revocations-v1.json');this.revokedManual=new Map(fs.existsSync(this.revokedPath)?JSON.parse(fs.readFileSync(this.revokedPath,'utf8')).entries:[]);
     this.logPath = path.join(dir, 'source-accepted-v1.jsonl');
     const settingsFile = path.join(dir, 'source-settings-v1.json');
     this.settingsPath = settingsFile;
@@ -121,7 +122,7 @@ class SourceRuntime {
     for(const line of data.split('\n')) {
       if(!line)continue;
       if(this.records.size>=this.maxRecords)throw Error('Source journal exceeds memory-safe index capacity');
-      const record=JSON.parse(line);
+      const record=JSON.parse(line);if(record.phase==='before'&&this.revokedManual.has(record.mint)&&this.revokedManual.get(record.mint)?.pool===record.proof?.pool)continue;
       if(record.v!==1)throw new Error('Неизвестная версия журнала источника');
       // Реплей защищён той же схемой валидации, но не запускает возрастной фильтр.
       const gate=new AdmissionGate({beforeMinutes:this.gate.beforeMinutes,
@@ -154,6 +155,14 @@ class SourceRuntime {
     return removed;
   }
 
+  revokeManualPool(mint,why,at=this.clock()){
+    const row=this.records.get(mint);if(row?.phase!=='before'||row.proof?.kind!=='manual-pool-open-v1')return false;
+    const next=new Map(this.revokedManual);next.set(mint,{pool:row.proof.pool,why,at,acceptedAt:row.acceptedAt});if(next.size>10000)throw Error('Manual revocation capacity reached');
+    const temp=this.revokedPath+'.tmp',fd=fs.openSync(temp,'w',0o600);try{fs.writeFileSync(fd,JSON.stringify({schema:1,entries:[...next]}));fs.fsyncSync(fd)}finally{fs.closeSync(fd)}fs.renameSync(temp,this.revokedPath);require('./durable-json').syncDirectory(this.dir);this.revokedManual=next;
+    this.records.delete(mint);this.recent.delete(mint);this.gate.accepted.delete(mint);this.stats.acceptedBefore=Math.max(0,this.stats.acceptedBefore-1);
+    const key=kzDay(row.acceptedAt)+':before:'+mint;this.dailyRows.delete(key);this.observe({mint,phase:'before',at:row.acceptedAt,outcome:'rejectedSidePool',origin:'manual-pool-audit',reason:why});return true;
+  }
+
   configure(options) {
     const next=validateSettings(options);
     const tmp=this.settingsPath+'.tmp';
@@ -167,6 +176,7 @@ class SourceRuntime {
   get(mint){return this.records.get(mint)||null;}
 
   _admit(event, detectedAt, proof) {
+    if(event.phase==='before'&&this.revokedManual.has(event.mint))return {admitted:false,reason:'rejected-side-pool'};
     if(!this.has(event.mint)&&this.records.size>=this.maxRecords){this.capacityRejected++;return {admitted:false,reason:'resource-capacity'}}
     const decision=this.gate.offer(event, detectedAt);
     if(!decision.admitted){

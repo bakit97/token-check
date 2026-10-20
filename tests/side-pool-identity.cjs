@@ -14,3 +14,10 @@ test('mint and JSON metadata fill empty names and symbols at receipt time withou
  a.equal(c.n,'Google AI');a.equal(c.s,'GAI');a.equal(c.nameObservedAt,123);applyIdentity(c,{name:'different',symbol:'BAD'},124);a.equal(c.n,'Google AI');
  const result=await metadataImage('https://ipfs.io/ipfs/test',{fetch:async()=>({ok:true,headers:{get:()=>null},body:[Buffer.from(JSON.stringify({name:'Google AI',symbol:'GAI',image:'https://ipfs.io/ipfs/image'}))]})});a.equal(result.name,'Google AI');a.equal(result.symbol,'GAI');a.ok(result.image);
 });
+
+test('revoked side pool cannot reappear after restart and does not prevent a later real migration',t=>{
+ const {SourceRuntime}=require('../server/source-runtime'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),d=fs.mkdtempSync(path.join(os.tmpdir(),'side-revoke-'));t.after(()=>fs.rmSync(d,{recursive:true,force:true}));const mint='A'.repeat(32),now=Date.now(),s=new SourceRuntime({dir:d,fsync:false});
+ a.equal(s.before({mint,publicTradingAt:now-1000,observedAt:now,verified:true,proof:{kind:'manual-pool-open-v1',pool:'side'}}).admitted,true);a.equal(s.revokeManualPool(mint,'earlier-pool',now),true);a.equal(s.has(mint),false);a.equal(s.dailySummary(now).before.accepted,0);
+ const restored=new SourceRuntime({dir:d,fsync:false});a.equal(restored.has(mint),false);a.equal(restored.get(mint),null);a.equal(restored.before({mint,publicTradingAt:now,observedAt:now,verified:true}).reason,'rejected-side-pool');
+ const result=restored._admit({mint,phase:'after',migrationAt:now,migrationVerified:true},now,{pool:'official',kind:'migration'});a.equal(result.admitted,true);a.equal(new SourceRuntime({dir:d,fsync:false}).get(mint).phase,'after');
+});

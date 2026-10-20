@@ -1040,6 +1040,12 @@ async function processManualPool(task){
  }
  return {outcome};
 }
+const MANUAL_AUDIT={checked:0,revoked:0,errors:0,busy:false,lastAt:0};const MANUAL_AUDITED=new Set();
+async function auditManualPools(){if(MANUAL_AUDIT.busy||!SOURCE)return;MANUAL_AUDIT.busy=true;try{
+ const row=[...SOURCE.records.values()].find(r=>r.proof?.kind==='manual-pool-open-v1'&&Date.now()-r.acceptedAt<26*3600e3&&!MANUAL_AUDITED.has(r.mint));if(!row)return;
+ const earlier=await require(DIR+'/side-pools.js').catalogue({mint:row.mint,pool:row.proof.pool,eventAt:row.eventAt});MANUAL_AUDIT.checked++;MANUAL_AUDITED.add(row.mint);while(MANUAL_AUDITED.size>2000)MANUAL_AUDITED.delete(MANUAL_AUDITED.values().next().value);MANUAL_AUDIT.lastAt=Date.now();
+ if(earlier&&SOURCE.revokeManualPool(row.mint,'earlier-pool')){MANUAL_AUDIT.revoked++;C.delete(row.mint);RESEARCH_V2?.pruneRevoked(SOURCE.revokedManual);RESEARCH_TWO?.pruneRevoked(SOURCE.revokedManual);if(PASS_V2?.records.get(row.mint)?.phase==='before')PASS_V2.records.delete(row.mint);RESEARCH_BANKS?.removeRevoked(SOURCE.revokedManual);save();}
+ }catch{MANUAL_AUDIT.errors++;}finally{MANUAL_AUDIT.busy=false}}
 function discoveryStatus(){const x=FAST_DISCOVERY?.summary();if(!x)return null;return {...x,manualPoolStreamReady:POOL_LOGS?.summary().available===true,latency:{...x.latency,pool:POOL_DISCOVERY?.summary().latency.pool||x.latency.pool}};}
 function offerFastMigration(task){if(!FAST_DISCOVERY)return;FAST_DISCOVERY.offer({...task,receivedAt:Date.now()});}
 function chainWatch(){
@@ -1183,7 +1189,7 @@ async function exportSource(now) {
   // Нет задним числом добавленных кандидатов из обычной ленты.
   // Предмиграционный адаптер пока не активен: не выдавать пустоту за готовность.
   AI_SNAP.source=summary;
-  await upload('source/status.json',{...summary,phaseModel:'pool-after-with-before-alias',phaseAliases:{before:'pool'},poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0,manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,birthStreamEnabled:false,fastDiscovery:discoveryStatus(),solCoverage:PROFILES?.stats.solCoverage||null,solMissingReasons:solReasons,cardUnits:{sol:'SOL',top10:'percent',b5:'transactions',s5:'transactions',createdAt:'unix-ms'},mode:'verified-pre-post',preConnected:preFlowing(),preLive:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:POOL_LOGS?.summary().available===true&&!SOURCE_ERR,pool:POOL_LOGS?.summary().available===true&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
+  await upload('source/status.json',{...summary,phaseModel:'pool-after-with-before-alias',phaseAliases:{before:'pool'},poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,birthStreamEnabled:false,fastDiscovery:discoveryStatus(),solCoverage:PROFILES?.stats.solCoverage||null,solMissingReasons:solReasons,cardUnits:{sol:'SOL',top10:'percent',b5:'transactions',s5:'transactions',createdAt:'unix-ms'},mode:'verified-pre-post',preConnected:preFlowing(),preLive:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:POOL_LOGS?.summary().available===true&&!SOURCE_ERR,pool:POOL_LOGS?.summary().available===true&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
   await upload('source/live.json',{updated:now,count:today.length,coins:live});
   if(now-SOURCE_DAY_PUBLISHED_AT>=5*60e3){await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});SOURCE_DAY_PUBLISHED_AT=now;}
 }
@@ -1194,7 +1200,7 @@ async function exportResearchV2(now) {
   const result=RESEARCH_V2.update({source:SOURCE,coins:researchCoins(),passes:PASS_V2,now});
   // A settings change does NOT abandon previously admitted cohorts.
   // Earlier raw cohorts remain on disk; current labels must not be overwritten by old criteria.
-  RESEARCH_BANKS?.relabelOne(RESEARCH_V2.config);
+  RESEARCH_BANKS?.removeRevoked(SOURCE.revokedManual);RESEARCH_BANKS?.relabelOne(RESEARCH_V2.config);
   RESEARCH_BANKS?.upsert(RESEARCH_V2.select({limit:20000}));
   AI_SNAP.r1=result;
   const population=RESEARCH_V2.view().map(r=>withPoolReference({mint:r.mint,phase:r.phase,acceptedAt:r.acceptedAt,label:r.label,why:r.why||null,activePct:r.activePct??null,maxIdleObserved:r.maxIdleObserved??null,features:r.features||{}}));
@@ -1416,7 +1422,7 @@ async function researchExportsCycle(){
 let STATUS_BUSY=false;
 async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const now=Date.now(),today=dayKey(now);
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:discoveryStatus(),poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0,manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:discoveryStatus(),poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,publishedAt:FAST_PASS_PUBLISH_AT},
@@ -1461,6 +1467,7 @@ const STARTED=Date.now();
   const updateLaunchHistory=()=>{try{LAUNCH_HISTORY.update({source:SOURCE,coins:C,metadata:mint=>COMPLETED?.metadata(mint),now:Date.now()})}catch(e){err('launch history '+e.message)}};updateLaunchHistory();setInterval(updateLaunchHistory,60000);
   const updateProfiles=()=>PROFILES.update({coins:C,source:SOURCE,rpc:(m,p)=>rpc(m,p,{priority:'identity',context:'карточка',source:'coin-profile'})}).catch(e=>err('profiles '+e.message));
   setInterval(updateProfiles,60000);updateProfiles();setTimeout(()=>collectIntelligence(),30000);setInterval(()=>collectIntelligence(),60000);
+  setTimeout(()=>auditManualPools(),20000);setInterval(()=>auditManualPools(),30000);
   chainWatch();setInterval(()=>exportStatus().catch(e=>err('status '+e.message)),60000);exportStatus().catch(e=>err('status '+e.message));
   publicFeedsCycle().catch(e=>err('public feeds '+e.message));setInterval(()=>publicFeedsCycle().catch(e=>err('public feeds '+e.message)),60000);
   setTimeout(()=>researchExportsCycle().catch(e=>err('research exports '+e.message)),15000);setInterval(()=>researchExportsCycle().catch(e=>err('research exports '+e.message)),120000);
