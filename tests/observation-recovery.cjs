@@ -12,7 +12,7 @@ test('no successful pool transaction proves inactivity only inside the covered s
 });
 test('recovery relabels an actual collector gap without changing frozen decision features or inventing wallets',()=>{
  const minutes=Array.from({length:60},(_,i)=>[T+(i+1)*M,null,null,null]),row={mint,phase:'after',acceptedAt:T,eventAt:T,windowStart:T,windowEnd:T+60*M,decisionAt:T+10*M,features:{quoteSol:17.7},coverage:0,maxGap:60,outcomeVersion:2,featureAnchor:'eventAt',outcomePacked:zlib.deflateSync(Buffer.from(JSON.stringify(minutes))).toString('base64'),lastHourWallets:null,uniqueBuyers:null},sig={from:T-M,through:T+60*M,receivedAt:T+61*M,txTimes:[],source:'chain-pool-signatures'};
- const next=R.relabel(row,[{signatures:sig}],{});a.equal(next.label,'dead');a.equal(next.why,'last-hour-inactive');a.equal(next.backfilledMinutes,60);a.equal(next.backfilledIntervals,1);a.equal(next.uniqueBuyers,null);a.deepEqual(next.features,row.features);a.equal(next.decisionAt,row.decisionAt);a.equal(next.coverage,1);
+ const next=R.relabel(row,[{signatures:sig}],{});a.equal(next.label,'dead');a.equal(next.why,'last-hour-inactive');a.equal(next.backfilledMinutes,60);a.equal(next.backfilledIntervals,1);a.equal(next.uniqueBuyers,0,'complete successful silence proves no buyers');a.deepEqual(next.features,row.features);a.equal(next.decisionAt,row.decisionAt);a.equal(next.coverage,1);
  a.equal(classifyActivity({...row,recoveryPending:true}).label,'pending');
 });
 test('recovered historical prices help outcomes but cannot leak into decision features',()=>{
