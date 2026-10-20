@@ -139,7 +139,7 @@
 <section class="page" id="p-r2" hidden>
 <div class="chips seg" id="r2Streams"><button data-stream="all">Все</button><button data-stream="before">🧪 Ручной пул</button><button class="active" data-stream="after">🎓 После</button></div>
 <details class="frow" id="r2Fold"><summary><span class="fname">Фильтр <span class="hint" id="r2Sum"></span></span></summary>
-<div class="prow"><label for="r2Strong">Сильная, если цена выше точки 0 не меньше <b id="r2StrongValue">70%</b> из 300 мин</label><input type="range" id="r2Strong" min="1" max="100" value="70"></div>
+<div class="prow"><label for="r2Strong">💪 Сильная, если цена выше линии не меньше <b id="r2StrongValue">70%</b> времени окна</label><input type="range" id="r2Strong" min="1" max="100" value="70"></div><div class="prow"><label for="r2Margin">Запас над линией (комиссии) <b id="r2MarginV">10%</b></label><input type="range" id="r2Margin" min="0" max="50" step="1" value="10"></div><p class="hint" style="margin:2px 0 6px">Линия = цена в конце таймера «Прошли» (меняется на вкладке «Прошли»).</p>
 <div class="row applyrow hide" id="r2ApplyRow"><button type="button" class="primary pbtn" id="publishResearchTwo" style="margin-left:auto">Применить</button></div>
 <p class="hint" id="researchTwoControlState" style="margin:4px 0 0"></p></details>
 <div class="card compact" style="padding:8px"><div id="r2Graph" class="graph"></div></div>
@@ -205,7 +205,7 @@
 
 </main>
 <script src="./server/observation-contract.js?v=20261018-admission-3" defer></script>
-<script src="./v2.js?v=20261020-r1rule-1" defer></script>
+<script src="./v2.js?v=20261021-cat-1" defer></script>
 <noscript>Текстовая сводка для ИИ: https://storage.googleapis.com/sol-scan-511718-data/ai/summary.md (JSON: ai/summary.json)</noscript>
 </body></html>
 
