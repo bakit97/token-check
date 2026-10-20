@@ -1015,7 +1015,7 @@ async function processFastMigration(task){
 }
 function offerFastMigration(task){if(!FAST_DISCOVERY)return;FAST_DISCOVERY.offer({...task,receivedAt:Date.now()});}
 function chainWatch(){
-  RESOURCE.freshMigrationReserve=6; // fresh signatures precede legacy migration lookups
+  RESOURCE.migrationWSOnly=true;RESOURCE.freshMigrationReserve=6; // fresh signatures precede legacy migration lookups
   FAST_DISCOVERY=new (require(DIR+'/migration-fast.js').FastSignals)({process:processFastMigration,onPending:n=>{RESOURCE.freshMigrationPending=n},onError:(e,task)=>{if(task?.mint)SOURCE?.observe({mint:task.mint,phase:'after',origin:'fast-'+task.kind,reason:e.code||'RPC_ERROR'});err('fast migration '+(e.code||'RPC_ERROR')+' '+e.message)}});
   const PUMP_WITHDRAW_AUTH=require(DIR+'/migration-fast.js').PUMP_WITHDRAW_AUTH;
   const connect=async(channel)=>{const key=await heliusKey();if(!key||(channel==='pre'&&(!PRE||!RESOURCE?.streamAllowed('pre')))){setTimeout(()=>connect(channel),10000);return}

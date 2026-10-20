@@ -46,7 +46,7 @@ class ResourceBudget{
       usageSamples:this.state.usageSamples.filter(x=>x[0]>=this.now()-6*3600000),usageSampleIntervalMs:60000,usageSampleScope:'cumulative local estimate; latest charge in each minute; six-hour view',
       hourlyWindows:this.billingWindows(),
       comparisonWindow:{from:this.now()-60*MIN,to:this.now(),rpcCredits:h.rpc,wsCredits:h.ws,estimatedCredits:h.rpc+h.ws,providerCredits:null},
-      allocation:{freshMigrationReserve:this.freshMigrationReserve,migration:'fresh first; up to 10 RPC credits/min reserved',pools:'4 RPC credits/min; batched, 5 min before 2h / 30 min thereafter',holdersCreditsHour:60,preCreditsHour:0,preWS:'residual after migration/pool reserves; no fixed hourly cap',preMaxBudgetPauseMs:90000,wsHeadroomCredits:3.5},
+      allocation:{freshMigrationReserve:this.freshMigrationReserve,migration:'fresh first; up to 10 RPC credits/min reserved',pools:'4 RPC credits/min; batched, 5 min before 2h / 30 min thereafter',holdersCreditsHour:60,preCreditsHour:0,preWS:'residual after migration/pool reserves; no fixed hourly cap',preMaxBudgetPauseMs:90000,wsHeadroomCredits:this.migrationWSOnly?1:3.5},
       projectedAtReset:Math.ceil(this.state.used+observed*remainingMinutes),
       overForecast:this.state.used+observed*remainingMinutes>this.limit,
       lanes:Object.fromEntries(['migration-fast','migration','reconcile','pools','holders','metadata','pre'].map(lane=>[lane,{creditsMinute:this.laneTotal(lane,MIN),creditsHour:this.laneTotal(lane)}])),pending:{migration:this.migrationPending,pools:this.poolsPending,freshMigration:this.freshMigrationPending||0},reconcileCreditsHour:this.laneTotal('reconcile'),resetRequired:this.now()>=this.state.resetAt,deferred:this.state.deferred};}
@@ -58,7 +58,8 @@ class ResourceBudget{
   allow(cost,priority=0){const lane=this.lane(priority),m=this.totals(MIN),h=this.totals(60*MIN),rate=Math.min(this.target,this.rate());
     // Keep WS metering headroom. Fresh proof backlog takes priority over background RPC.
     if(this.freshMigrationPending&&lane!=='migration-fast')return false;
-    const ceiling=Math.max(0,rate-Math.max(.5,Math.min(3.5,Math.max(.5,rate-14))-m.ws)),total=m.rpc+m.ws;
+    const wsReserve=this.migrationWSOnly&&lane==='migration-fast'&&this.freshMigrationPending?1:Math.min(3.5,Math.max(.5,rate-14));
+    const ceiling=Math.max(0,rate-Math.max(.5,wsReserve-m.ws)),total=m.rpc+m.ws;
     const poolFloor=Math.min(4,ceiling*.3),proofFloor=Math.min(10,Math.max(0,ceiling-poolFloor-.5));
     const proofReserve=this.migrationPending?Math.max(0,proofFloor-this.laneTotal('migration',MIN)-this.laneTotal('migration-fast',MIN)):0;
     const poolReserve=this.poolsPending?Math.max(0,poolFloor-this.laneTotal('pools',MIN)):0;
