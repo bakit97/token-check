@@ -4,9 +4,11 @@
 // Outcomes are measured LATER; incomplete/missing coverage remains "pending".
 const MIN=60_000, FIVE=5*MIN;
 const KEYS=['buyers','trades','volume','liq','mc','buys','sells','buySellRatio'];
+const CATEGORY_KEYS=['launchpad','dex'];
 const LEVEL2_KEYS=['chg1m','chg3m','chg5m','fromPeak','drawdown','buyerAccel','volAccel','bigBuyShare','repeatBuys','avgBuy','sellShare1m','bigHolderSell','devSold','top10Drift','holderGrowth','poolGrowth','toMigration','ageMin','hourOfDay','solTrend','launchRate'];
-const LEVEL1_KEYS=["ageAtMigrationMin","safeContract", "mintRevoked", "freezeRevoked", "metaImmutable", "token2022", "t22Safe", "lpBurned", "devBuySol", "devHoldPct", "devHold", "devSold", "devLaunches", "devRugShare", "sniperShare", "bundleShare", "bundledWallets", "top1", "top10", "holders", "holderGrowth", "buyers10", "buyers", "uniqBuyersPerMin", "botShare", "smartBuyers", "smartShare", "trades", "tradesPerMin", "buys", "sells", "buySellRatio", "sellShare", "averageTrade", "volume", "quoteSol", "postPoolSol", "poolGrowth", "mc", "hasImage", "hasDescription", "hasTwitter", "hasTelegram", "hasWebsite", "isFirstOfName", "cloneCount", "cloneRank"];
+const LEVEL1_KEYS=[...CATEGORY_KEYS,"ageAtMigrationMin","safeContract", "mintRevoked", "freezeRevoked", "metaImmutable", "token2022", "t22Safe", "lpBurned", "devBuySol", "devHoldPct", "devHold", "devSold", "devLaunches", "devRugShare", "sniperShare", "bundleShare", "bundledWallets", "top1", "top10", "holders", "holderGrowth", "buyers10", "buyers", "uniqBuyersPerMin", "botShare", "smartBuyers", "smartShare", "trades", "tradesPerMin", "buys", "sells", "buySellRatio", "sellShare", "averageTrade", "volume", "quoteSol", "postPoolSol", "poolGrowth", "mc", "hasImage", "hasDescription", "hasTwitter", "hasTelegram", "hasWebsite", "isFirstOfName", "cloneCount", "cloneRank"];
 const RULE_KEYS=[...new Set([...KEYS,...LEVEL1_KEYS,...LEVEL2_KEYS])];
+function validCondition(c){if(!c||!RULE_KEYS.includes(c.key))return false;if(CATEGORY_KEYS.includes(c.key))return c.op==='in'&&Array.isArray(c.values)&&c.values.length>0&&c.values.length<=32&&new Set(c.values).size===c.values.length&&c.values.every(v=>typeof v==='string'&&v.trim()===v&&/^[\p{L}\p{N} ._+()/-]{1,64}$/u.test(v));return ['>=','<=','between'].includes(c.op)&&Number.isFinite(c.value)&&c.value>=(LEVEL2_KEYS.includes(c.key)?-1e12:0)&&c.value<=1e12&&(c.op!=='between'||Number.isFinite(c.value2)&&c.value2>=c.value&&c.value2<=1e12);}
 const inRange=(x,a,b)=>Number.isFinite(x)&&x>=a&&x<=b;
 function marketPools(coin){
  const pools=[coin?.preObs,...(coin?.origs||[]),coin].filter(Boolean);
@@ -62,7 +64,7 @@ function featuresAt(coin,decisionAt,context={}){
   const ct=coin?.ct,metaAt=coin?.metadataAt,discovery=coin?.discoveryFeatures;
   const clone=discovery&&discovery.at<=decisionAt?{isFirstOfName:discovery.isFirstOfName,cloneCount:discovery.cloneCount,cloneRank:discovery.cloneRank,...(discovery.cloneCountLowerBound?{lowerBoundKeys:['cloneCount','cloneRank']}:{})}:{isFirstOfName:null,cloneCount:null,cloneRank:null};
   const extra=extendedFeaturesAt(coin,decisionAt,context,F);const migrationAt=coin?.mg?.mT??coin?.openingMetrics?.eventAt??context.eventAt;extra.ageAtMigrationMin=Number.isSafeInteger(coin?.createdAt)&&Number.isFinite(coin?.createdAtObservedAt)&&coin.createdAtObservedAt<=decisionAt&&Number.isSafeInteger(migrationAt)&&migrationAt>=coin.createdAt?(migrationAt-coin.createdAt)/MIN:null;
-  return {...Object.fromEntries(RULE_KEYS.map(k=>[k,null])),...extra,...F,...clone,...starterFeaturesAt(coin,decisionAt,context),lowerBoundKeys:[...new Set([...(extra.lowerBoundKeys||[]),...(clone.lowerBoundKeys||[])])],
+  return {...Object.fromEntries(RULE_KEYS.map(k=>[k,null])),...extra,...F,...clone,...require('./venue-identity').features(coin,context.phase,decisionAt),...starterFeaturesAt(coin,decisionAt,context),lowerBoundKeys:[...new Set([...(extra.lowerBoundKeys||[]),...(clone.lowerBoundKeys||[])])],
     token2022:ct&&ct.at<=decisionAt&&['token','token2022'].includes(ct.prog)?(ct.prog==='token2022'?1:0):null,
     hasImage:Number.isFinite(metaAt)&&metaAt<=decisionAt?(coin.img||coin.i?1:0):Number.isFinite(coin?.imageObservedAt)&&coin.imageObservedAt<=decisionAt&&(coin.img||coin.i)?1:null,
     hasDescription:Number.isFinite(metaAt)&&metaAt<=decisionAt?(coin.description?1:0):null,
@@ -277,11 +279,11 @@ function levelTwoFeaturesAt(coin,decisionAt,{entryAt,acceptedAt,phase}={}){
 const INTEL_ZERO_KEYS=new Set(['devBuySol','devHold','devHoldPct','bundleShare','bundledWallets']);
 function verifiedFeatures(F={}){if(F.intelligenceEvidenceVersion===2)return F;const out={...F};for(const k of ['smartBuyers','smartShare'])if(k in out)out[k]=null;for(const k of INTEL_ZERO_KEYS)if(out[k]===0)out[k]=null;return out;}
 function evaluation(F,rule){
-  if(rule?.conds){if(!Array.isArray(rule.conds)||!rule.conds.length||rule.conds.length>8)return 'unknown';const results=rule.conds.map(c=>evaluation(F,{key:c?.key,op:c?.op,value:c?.value,value2:c?.value2}));return results.includes('reject')?'reject':results.includes('unknown')?'unknown':'pass'}
-  if(!F||!rule||!RULE_KEYS.includes(rule.key)||
-      !['>=','<=','between'].includes(rule.op)||!Number.isFinite(rule.value)||(rule.op==='between'&&(!Number.isFinite(rule.value2)||rule.value2<rule.value)))return 'unknown';
+  if(rule?.conds){if(!Array.isArray(rule.conds)||!rule.conds.length||rule.conds.length>8)return 'unknown';const results=rule.conds.map(c=>evaluation(F,{key:c?.key,op:c?.op,value:c?.value,value2:c?.value2,values:c?.values}));return results.includes('reject')?'reject':results.includes('unknown')?'unknown':'pass'}
+  if(!F||!validCondition(rule))return 'unknown';
   if(rule.conditions){if(!Array.isArray(rule.conditions)||rule.conditions.length>8)return 'unknown';const results=rule.conditions.map(c=>evaluation(F,c));
     if(results.includes('reject'))return 'reject';if(results.includes('unknown'))return 'unknown';}
+  if(CATEGORY_KEYS.includes(rule.key)){const v=F[rule.key];return typeof v==='string'?(rule.values.includes(v)?'pass':'reject'):'unknown';}
   if(F.intelligenceEvidenceVersion!==2&&(['smartBuyers','smartShare'].includes(rule.key)||F[rule.key]===0&&INTEL_ZERO_KEYS.has(rule.key)))return 'unknown';
   const v=F[rule.key];
   if(typeof v!=='number'||!Number.isFinite(v))return 'unknown';
@@ -291,7 +293,7 @@ function evaluation(F,rule){
   return rule.op==='>='?(v>=rule.value?'pass':'reject'):(v<=rule.value?'pass':'reject');
 }
 function passes(F,rule){return evaluation(F,rule)==='pass'}
-function ruleKey(r){return [r.key,r.op,Number(r.value).toPrecision(8),...(r.op==='between'?[Number(r.value2).toPrecision(8)]:[])].join('|')}
+function ruleKey(r){if(r.op==='in')return [r.key,'in',JSON.stringify([...(r.values||[])].sort())].join('|');return [r.key,r.op,Number(r.value).toPrecision(8),...(r.op==='between'?[Number(r.value2).toPrecision(8)]:[])].join('|')}
 function wilsonInterval(k,n,z=1.959963984540054){if(!Number.isFinite(k)||!Number.isFinite(n)||n<=0||k<0||k>n)return {low:null,high:null};const p=k/n,q=z*z/n,center=(p+q/2)/(1+q),half=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n))/(1+q);return {low:Math.max(0,center-half),high:Math.min(1,center+half)};}
 function weightedScore(stats,penalty=3){const yes=wilsonInterval(stats.passedPositive,stats.totalPositive),no=wilsonInterval(stats.falsePositive,stats.totalNegative);return (yes.low*stats.totalPositive-penalty*no.high*stats.totalNegative)/(stats.totalPositive+penalty*stats.totalNegative);}
 function ruleStats(rows,rule,positive,negative){
@@ -319,6 +321,7 @@ function proposeRules(rows,{positive='live',negative='dead',minPos=100,minNeg=20
  if(!Number.isFinite(missPenalty)||missPenalty<1||missPenalty>5)throw RangeError('Invalid miss penalty');const pos=rows.filter(r=>r.label===positive),neg=rows.filter(r=>r.label===negative);metrics.rulesTried=0;if(pos.length<Math.max(20,minPos)||neg.length<Math.max(20,minNeg))return [];
  const seen=new Set(),leaves=[],out=[],rank=(a,b)=>b.score-a.score||(a.rule.conds?.length||1)-(b.rule.conds?.length||1)||b.train.positiveRecall-a.train.positiveRecall;
  const assess=rule=>{const sig=(rule.conds||[rule]).map(ruleKey).sort().join('&');if(seen.has(sig))return null;seen.add(sig);metrics.rulesTried++;const train=ruleStats(rows,rule,positive,negative);if(train.evaluablePositive<20||train.evaluableNegative<20||train.evaluablePositive/pos.length<.85||train.evaluableNegative/neg.length<.85||train.positiveRecall<.55)return null;return {rule,train,score:weightedScore(train,missPenalty)};};
+ for(const key of CATEGORY_KEYS){const counts=new Map();for(const r of rows){const v=r.features?.[key];if(typeof v!=='string'||!validCondition({key,op:'in',values:[v]}))continue;const g=counts.get(v)||{positive:0,total:0};g.total++;if(r.label===positive)g.positive++;counts.set(v,g);}const ordered=[...counts].sort((a,b)=>b[1].positive/b[1].total-a[1].positive/a[1].total||a[0].localeCompare(b[0])).slice(0,32).map(x=>x[0]);const selections=ordered.map(v=>[v]);for(let i=2;i<=Math.min(8,ordered.length);i++)selections.push(ordered.slice(0,i));for(const values of selections){const item=assess({key,op:'in',values:values.sort()});if(item&&item.train.negativeRejection>=.05){leaves.push(item);if(item.train.negativeRejection>=.5)out.push(item);}}}
  for(const key of RULE_KEYS){const vals=rows.map(r=>r.features?.[key]).filter(v=>typeof v==='number'&&Number.isFinite(v)).sort((a,b)=>a-b);if(vals.length<Math.max(40,rows.length*.4))continue;for(let i=1;i<50;i++){const value=+vals[Math.floor((vals.length-1)*i/50)].toPrecision(8);for(const op of ['>=','<=']){const item=assess({key,op,value});if(item&&item.train.negativeRejection>=.05){leaves.push(item);if(item.train.negativeRejection>=.5)out.push(item);}}}
  const bounds=[...new Set(Array.from({length:21},(_,i)=>vals[Math.floor((vals.length-1)*i/20)]))];for(let i=0;i<bounds.length;i++)for(let j=i+1;j<bounds.length;j++){const item=assess({key,op:'between',value:bounds[i],value2:bounds[j]});if(item&&item.train.negativeRejection>=.05){leaves.push(item);if(item.train.negativeRejection>=.5)out.push(item);}}}
  leaves.sort(rank);const diverse=[],perKey=new Map();for(const l of leaves){const k=l.rule.key+'|'+l.rule.op;if((perKey.get(k)||0)>=2)continue;diverse.push(l);perKey.set(k,(perKey.get(k)||0)+1);if(diverse.length>=48)break;}let beam=diverse.slice(0,24);
@@ -335,5 +338,5 @@ function capBank(rows,labelFn=it=>it.label,positive='live',negative='dead',max=5
   const n=dedup.filter(x=>labelFn(x)===negative).slice(0,max);
   return [...p,...n].sort((a,b)=>a.time-b.time);
 }
-module.exports={verifiedFeatures,KEYS,LEVEL1_KEYS,RULE_KEYS,LEVEL2_KEYS,levelTwoFeaturesAt,samples,candles,featuresAt,starterFeaturesAt,activityOutcome,
+module.exports={CATEGORY_KEYS,validCondition,verifiedFeatures,KEYS,LEVEL1_KEYS,RULE_KEYS,LEVEL2_KEYS,levelTwoFeaturesAt,samples,candles,featuresAt,starterFeaturesAt,activityOutcome,
   classifyActivity,activityEvidence,tradeOutcomeEvidence,strengthOutcome,evaluation,passes,ruleKey,ruleStats,wilsonInterval,weightedScore,proposeRules,capBank};

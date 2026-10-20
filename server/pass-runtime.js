@@ -36,15 +36,14 @@ function configOf(raw={}){
   const ids=new Set();
   for(const original of cfg.filters){
     const f={...original};
-    if(f.conds!=null){if(!Array.isArray(f.conds)||!f.conds.length||f.conds.length>8)throw new TypeError('Invalid conds');Object.assign(f,{key:f.conds[0]?.key,op:f.conds[0]?.op,value:f.conds[0]?.value,value2:f.conds[0]?.value2});f.conditions=f.conds.slice(1)}
+    if(f.conds!=null){if(!Array.isArray(f.conds)||!f.conds.length||f.conds.length>8)throw new TypeError('Invalid conds');Object.assign(f,{key:f.conds[0]?.key,op:f.conds[0]?.op,value:f.conds[0]?.value,value2:f.conds[0]?.value2,values:f.conds[0]?.values});f.conditions=f.conds.slice(1)}
     if(!f||typeof f.id!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(f.id)||ids.has(f.id)||
        typeof f.name!=='string'||!f.name.trim()||f.name.length>64||
-       !['1','2'].includes(f.level)||!KEYS.has(f.key)||!['>=','<=','between'].includes(f.op)||
-       typeof f.value!=='number'||!Number.isFinite(f.value)||f.value<(require('./research-v2').LEVEL2_KEYS.includes(f.key)?-1e12:0)||f.value>1e12||
+       !['1','2'].includes(f.level)||!require('./research-v2').validCondition(f)||
        !Number.isInteger(f.version)||f.version<1)
       throw new TypeError('Invalid filter in pass configuration');
     if(f.op==='between'&&(!Number.isFinite(f.value2)||f.value2<f.value||f.value2>1e12))throw TypeError('Invalid interval bounds');
-    if(f.conditions!=null&&(!Array.isArray(f.conditions)||f.conditions.length>8||f.conditions.some(c=>!c||!KEYS.has(c.key)||!['>=','<=','between'].includes(c.op)||!Number.isFinite(c.value)||c.value<(require('./research-v2').LEVEL2_KEYS.includes(c.key)?-1e12:0)||c.value>1e12||(c.op==='between'&&(!Number.isFinite(c.value2)||c.value2<c.value||c.value2>1e12))||c.conditions!=null)))throw new TypeError('Invalid compound filter');
+    if(f.conditions!=null&&(!Array.isArray(f.conditions)||f.conditions.length>8||f.conditions.some(c=>!require('./research-v2').validCondition(c)||c.conditions!=null)))throw new TypeError('Invalid compound filter');
     if(f.verdictMinutes!=null&&(!Number.isInteger(f.verdictMinutes)||f.verdictMinutes<1||f.verdictMinutes>30))throw new TypeError('Invalid module verdictMinutes');
     if(f.phase!=null&&!PHASES.has(f.phase))throw new TypeError('Invalid filter phase');
     ids.add(f.id);
@@ -55,8 +54,8 @@ function configOf(raw={}){
        cfg.filters.find(f=>f.id===m.filterId).level!==m.level)
       throw new TypeError('Invalid module in pass configuration');
   }
-  cfg.filters=cfg.filters.map(original=>{const f={...original};if(f.conds){Object.assign(f,{key:f.conds[0]?.key,op:f.conds[0]?.op,value:f.conds[0]?.value,value2:f.conds[0]?.value2});f.conditions=f.conds.slice(1)}return {id:f.id,name:f.name.trim(),level:f.level,key:f.key,
-    op:f.op,value:f.value,...(f.op==='between'?{value2:f.value2}:{}),version:f.version,...(f.phase?{phase:f.phase}:{}),...(f.verdictMinutes!=null?{verdictMinutes:f.verdictMinutes}:{}),...(f.conds?{conds:f.conds.map(c=>({key:c.key,op:c.op,value:c.value,...(c.op==='between'?{value2:c.value2}:{})}))}:{}),...(f.conditions?{conditions:f.conditions.map(c=>({key:c.key,op:c.op,value:c.value,...(c.op==='between'?{value2:c.value2}:{})}))}:{})}});
+  cfg.filters=cfg.filters.map(original=>{const f={...original};if(f.conds){Object.assign(f,{key:f.conds[0]?.key,op:f.conds[0]?.op,value:f.conds[0]?.value,value2:f.conds[0]?.value2,values:f.conds[0]?.values});f.conditions=f.conds.slice(1)}return {id:f.id,name:f.name.trim(),level:f.level,key:f.key,
+    op:f.op,value:f.value,...(f.op==='in'?{values:[...f.values].sort()}:{}),...(f.op==='between'?{value2:f.value2}:{}),version:f.version,...(f.phase?{phase:f.phase}:{}),...(f.verdictMinutes!=null?{verdictMinutes:f.verdictMinutes}:{}),...(f.conds?{conds:f.conds.map(c=>c.op==='in'?{key:c.key,op:c.op,values:[...c.values].sort()}:{key:c.key,op:c.op,value:c.value,...(c.op==='between'?{value2:c.value2}:{})})}:{}),...(f.conditions?{conditions:f.conditions.map(c=>c.op==='in'?{key:c.key,op:c.op,values:[...c.values].sort()}:{key:c.key,op:c.op,value:c.value,...(c.op==='between'?{value2:c.value2}:{})})}:{})}});
   // toR1: монеты этого модуля идут и во вход Исследования 1 (поле отсутствует → прежний хеш конфигурации).
   cfg.modules=cfg.modules.map(m=>({filterId:m.filterId,phase:m.phase,level:m.level,enabled:m.enabled,...(m.toR1===true?{toR1:true}:{})}));
   return cfg;

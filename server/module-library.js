@@ -1,11 +1,11 @@
 'use strict';
 const crypto=require('node:crypto'),zlib=require('node:zlib');
-const {RULE_KEYS,LEVEL1_KEYS,LEVEL2_KEYS,evaluation,featuresAt,levelTwoFeaturesAt}=require('./research-v2');
-function moduleSignature(m){return crypto.createHash('sha256').update(JSON.stringify([String(m.level),m.phase,m.verdictMinutes,m.conds.map(c=>[c.key,c.op,c.value,...(c.op==='between'?[c.value2]:[])]).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)))])).digest('hex').slice(0,24)}
+const {ruleKey,validCondition,RULE_KEYS,LEVEL1_KEYS,LEVEL2_KEYS,evaluation,featuresAt,levelTwoFeaturesAt}=require('./research-v2');
+function moduleSignature(m){return crypto.createHash('sha256').update(JSON.stringify([String(m.level),m.phase,m.verdictMinutes,m.conds.map(c=>[c.key,c.op,c.op==='in'?[...c.values].sort():c.value,...(c.op==='between'?[c.value2]:[])]).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)))])).digest('hex').slice(0,24)}
 function definition(raw){
  if(!raw||typeof raw.id!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(raw.id)||!['1','2'].includes(String(raw.level))||!['before','after'].includes(raw.phase)||typeof raw.name!=='string'||!raw.name.trim()||raw.name.length>64||!Number.isInteger(raw.verdictMinutes)||raw.verdictMinutes<1||raw.verdictMinutes>15||!Array.isArray(raw.conds)||!raw.conds.length||raw.conds.length>8)throw TypeError('Invalid module');
  const level=String(raw.level),keys=level==='1'?LEVEL1_KEYS.concat(['liq']):RULE_KEYS;
- const conds=raw.conds.map(c=>{if(!c||!keys.includes(c.key)||!['>=','<=','between'].includes(c.op)||!Number.isFinite(c.value)||c.value < (LEVEL2_KEYS.includes(c.key)?-1e12:0)||c.value>1e12||(c.op==='between'&&(!Number.isFinite(c.value2)||c.value2<c.value||c.value2>1e12)))throw TypeError('Invalid module condition');return {key:c.key,op:c.op,value:c.value,...(c.op==='between'?{value2:c.value2}:{})}});
+ const conds=raw.conds.map(c=>{if(!c||!keys.includes(c.key)||!validCondition(c))throw TypeError('Invalid module condition');return c.op==='in'?{key:c.key,op:c.op,values:[...c.values].sort()}:{key:c.key,op:c.op,value:c.value,...(c.op==='between'?{value2:c.value2}:{})}});
  return {id:raw.id,level,phase:raw.phase,name:raw.name.trim(),verdictMinutes:raw.verdictMinutes,conds};
 }
 function catalog(raw={schema:1,modules:[],deleted:[]}){
@@ -27,7 +27,7 @@ function edit(raw,action,snapshot=[],now=Date.now()){
  const m={...d,version:same?(old.version||1):(old?(old.version||1)+1:1),evalSig:sig,createdAt:old?.createdAt||now,liveFrom:same?old.liveFrom:now,eval:same?old.eval:{train:null,holdout:null,live:null,test:null},...(old?.parentId?{parentId:old.parentId}:{})};
  cfg.modules=cfg.modules.filter(x=>x.id!==m.id).concat(m);cfg.deleted=cfg.deleted.filter(id=>id!==m.id);return {config:catalog(cfg),module:m};
 }
-function windowConfig(raw,modules,deleted=[]){const byId=new Map(modules.map(m=>[m.id,m])),removed=new Set(deleted);return {...raw,filters:raw.filters.filter(f=>!removed.has(f.id)).map(f=>{const m=byId.get(f.id);return m?{...f,name:m.name,phase:m.phase,level:m.level,version:m.version||f.version,verdictMinutes:m.verdictMinutes,key:m.conds[0].key,op:m.conds[0].op,value:m.conds[0].value,conds:m.conds,conditions:m.conds.slice(1)}:f}),modules:raw.modules.filter(m=>!removed.has(m.filterId)&&(!byId.has(m.filterId)||byId.get(m.filterId).phase===m.phase))}}
+function windowConfig(raw,modules,deleted=[]){const byId=new Map(modules.map(m=>[m.id,m])),removed=new Set(deleted);return {...raw,filters:raw.filters.filter(f=>!removed.has(f.id)).map(f=>{const m=byId.get(f.id);return m?{...f,name:m.name,phase:m.phase,level:m.level,version:m.version||f.version,verdictMinutes:m.verdictMinutes,key:m.conds[0].key,op:m.conds[0].op,value:m.conds[0].value,values:m.conds[0].values,conds:m.conds,conditions:m.conds.slice(1)}:f}),modules:raw.modules.filter(m=>!removed.has(m.filterId)&&(!byId.has(m.filterId)||byId.get(m.filterId).phase===m.phase))}}
 function freezeFeatureTimes(coin,acceptedAt,level,phase){const times={};for(let minute=1;minute<=20;minute++)times[minute]=require('./feature-snapshots').read(coin,acceptedAt,minute,phase,level);return zlib.deflateRawSync(Buffer.from(JSON.stringify(times)),{level:1}).toString('base64')}
 function featureTimes(row){return row.featureTimesPacked?JSON.parse(zlib.inflateRawSync(Buffer.from(row.featureTimesPacked,'base64'),{maxOutputLength:128*1024}).toString('utf8')):null}
 function featuresFor(row,module,times){return require('./research-v2').verifiedFeatures((times||featureTimes(row))?.[module.verdictMinutes]||(Number.isFinite(row.decisionAt)&&row.decisionAt===(row.featureAnchor==='acceptedAt'?row.acceptedAt:require('./event-clock').eventAnchor(row))+module.verdictMinutes*60000?row.features:{}))}

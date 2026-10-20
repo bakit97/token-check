@@ -464,3 +464,17 @@ createdAt/createdAtSource/observedAt/ageAtMigrationMin добавлены в pub
 Retention pins и дозагрузка И2 используют тот же lineClock/конец окна, а не старые5ч от вердикта. Список и счётчик активных schema2 Passed используют фазовый passWindowMinutes; поля lineAt/windowEnd публикуются сервером. UI не менялся: Claude должен отправлять серверные настройки и читать эти поля, localStorage сам сервером не используется.
 
 Проверено378 Node,4 publisher,37 canonical modules. Новые тесты: поздний receipt, точный порог, window1ч, отсутствие цены на линии, raw replay без coin после смены margin, перенос банков туда/обратно без потери, рестарт, отсутствие сброса эпохи для margin/minAbove и новая эпоха для timer/hours. Старые тесты линий обновлены по новому ТЗ: удвоение ДО покупки и последующая плоская цена теперь weak. Живая проверка — после выкладки. П.27 >=90% всё ещё не закрыт;23/18/GCS далее.
+
+
+П.22 выложен4a541d6 (поверх UI-коммита Claude ff8d62e), live1792521616222274: age57с, Helius14,46222/мин,RSS211МБ,state16,13МБ,DBC/LL=true,modules/feeds=true. status-two подтверждает lineVersion2/passWindowMinutes5/minAboveMarginPct10/hours5. Владелец minAbove37 сохранён, не заменён дефолтом70. И2 counts0, pending{}: новых Passed ещё нет, поэтому живой пятичасовой исход не заявляется; raw replay проверен тестами.
+
+## П.23: категории площадки/пула — подготовлено
+venue-identity.js отображает ПРОВЕРЕННЫЙ pool program в PumpSwap/Raydium AMM/CPMM/CLMM/Meteora DAMM/DAMM v2/DLMM/Orca, migration family в pump.fun/Meteora DBC/Raydium LaunchLab. Для ручного pool launchpad=null, venue=DEX; after venue=launchpad → DEX. Moonshot/Believe/bonk не выдумываются: пока нет их отдельного подтверждённого адаптера/конфига, соответствующий бренд не присваивается. Generic LaunchLab не доказывает bonk. Неизвестный owner оставляет dex=null.
+
+Source migration proof сохраняет dexProgram/launchpad/dex/venue/venueObservedAt; source/live, общая проекция списков, observation contract и лёгкий индекс completed получают эти поля. Ранние features обоих уровней читают venue только при фактическом receipt<=deadline; поздний публичный заголовок не переписывает ранний snapshot. Не требуется дополнительный RPC.
+
+Условия {key:launchpad|dex,op:in,values:[...]} проходят control-api через валидаторы research/pass/module; числовые операции для категорий и in для чисел запрещены. Поддержаны compound rules, canonical sorted values, signature/version, window config, server verdict, manual test и liveStats. Разные списки больше не сворачиваются в NaN-signature. Числовые прежние module signatures сохранены.
+
+Автопоиск сравнивает одиночные категории и ограниченные группы по обучающей части, может комбинировать с числовыми условиями; позже-дневной holdout/Wilson/минимум20 каждого класса/поправка множественных проверок остаются обязательными. В фазовом отчёте categories.train/holdout — распределения/границы/опора по площадкам. Исправлена ещё одна точка п.27: auto compatibility для featureAnchor=acceptedAt проверяет N от обнаружения, а не eventAt. Иначе миграционная задержка отсеивала честные snapshots.
+
+Проверки382 Node,4 publisher,38 canonical modules. Новые тесты: verified owner/receipt cutoff/manual launchpad=null/no guessed bonk, валидация типов/пустых/дубликатов, стабильная signature и изменение выбора, одинаковая категория в window/manual/live, auto in module с later-day holdout/Wilson. UI не менялся. Живую проверку выполнить после выкладки. П.27 заполнение>=90% остаётся незавершённым;18/сбор DEX wallets и очисткаGCS ещё впереди.

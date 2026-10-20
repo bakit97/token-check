@@ -22,6 +22,7 @@ function receiptTimes(coin,at){const last=(xs,time)=>xs.filter(x=>time(x)<=at).s
  times.hasImage=coin.imageObservedAt??coin.metadataAt;times.hasDescription=coin.metadataAt;
  for(const k of ['hasTwitter','hasTelegram','hasWebsite'])times[k]=coin.socialFeatures?.at;
  for(const k of ['isFirstOfName','cloneCount','cloneRank'])times[k]=coin.discoveryFeatures?.at;
+ const venue=require('./venue-identity').identity(coin,coin.mg?.k==='manual-pool'?'before':'after',at);times.launchpad=venue.venueObservedAt;times.dex=venue.venueObservedAt;
  times.lpBurned=coin.lpEvidence?.at;times.ageAtMigrationMin=coin.createdAtObservedAt;times.ageMin=coin.createdAtObservedAt;
  for(const snap of (coin.intelligenceSnapshots||[]).filter(x=>x.at<=at).sort((a,b)=>a.at-b.at))for(const k of Object.keys(snap.features||{}))times[k]=snap.at;
  return Object.fromEntries(Object.entries(times).filter(([,v])=>Number.isFinite(v)&&v<=at));
