@@ -1,0 +1,4495 @@
+{
+  "observedAt": 1792527428845,
+  "runtimeGeneration": "1792527257999927",
+  "source": "https://storage.googleapis.com/sol-scan-511718-data/status.json",
+  "targetPercent": 90,
+  "denominator": "all-snapshots-in-phase-including-missing-keys",
+  "receiptTimeOnly": true,
+  "allKeyFeaturesTargetMet": false,
+  "phases": {
+    "before": {
+      "coins": 59,
+      "minutes": {
+        "1": {
+          "coins": 59,
+          "features": {
+            "holders": {
+              "known": 41,
+              "total": 59,
+              "percent": 69.49152542372882
+            },
+            "top1": {
+              "known": 41,
+              "total": 59,
+              "percent": 69.49152542372882
+            },
+            "top10": {
+              "known": 41,
+              "total": 59,
+              "percent": 69.49152542372882
+            },
+            "devBuySol": {
+              "known": 2,
+              "total": 59,
+              "percent": 3.389830508474576
+            },
+            "devHoldPct": {
+              "known": 41,
+              "total": 59,
+              "percent": 69.49152542372882
+            },
+            "devSold": {
+              "known": 2,
+              "total": 59,
+              "percent": 3.389830508474576
+            },
+            "devLaunches": {
+              "known": 57,
+              "total": 59,
+              "percent": 96.61016949152543
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 59,
+              "percent": 8.47457627118644
+            },
+            "sniperShare": {
+              "known": 3,
+              "total": 59,
+              "percent": 5.084745762711865
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 59,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 4,
+              "total": 59,
+              "percent": 6.779661016949152
+            },
+            "hasDescription": {
+              "known": 4,
+              "total": 59,
+              "percent": 6.779661016949152
+            },
+            "hasTwitter": {
+              "known": 4,
+              "total": 59,
+              "percent": 6.779661016949152
+            },
+            "hasTelegram": {
+              "known": 4,
+              "total": 59,
+              "percent": 6.779661016949152
+            },
+            "hasWebsite": {
+              "known": 4,
+              "total": 59,
+              "percent": 6.779661016949152
+            },
+            "lpBurned": {
+              "known": 9,
+              "total": 59,
+              "percent": 15.254237288135593
+            },
+            "ageAtMigrationMin": {
+              "known": 40,
+              "total": 59,
+              "percent": 67.79661016949152
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "2": {
+          "coins": 59,
+          "features": {
+            "holders": {
+              "known": 43,
+              "total": 59,
+              "percent": 72.88135593220339
+            },
+            "top1": {
+              "known": 43,
+              "total": 59,
+              "percent": 72.88135593220339
+            },
+            "top10": {
+              "known": 43,
+              "total": 59,
+              "percent": 72.88135593220339
+            },
+            "devBuySol": {
+              "known": 3,
+              "total": 59,
+              "percent": 5.084745762711865
+            },
+            "devHoldPct": {
+              "known": 43,
+              "total": 59,
+              "percent": 72.88135593220339
+            },
+            "devSold": {
+              "known": 3,
+              "total": 59,
+              "percent": 5.084745762711865
+            },
+            "devLaunches": {
+              "known": 59,
+              "total": 59,
+              "percent": 100
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 59,
+              "percent": 8.47457627118644
+            },
+            "sniperShare": {
+              "known": 3,
+              "total": 59,
+              "percent": 5.084745762711865
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 59,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 7,
+              "total": 59,
+              "percent": 11.864406779661017
+            },
+            "hasDescription": {
+              "known": 7,
+              "total": 59,
+              "percent": 11.864406779661017
+            },
+            "hasTwitter": {
+              "known": 7,
+              "total": 59,
+              "percent": 11.864406779661017
+            },
+            "hasTelegram": {
+              "known": 7,
+              "total": 59,
+              "percent": 11.864406779661017
+            },
+            "hasWebsite": {
+              "known": 7,
+              "total": 59,
+              "percent": 11.864406779661017
+            },
+            "lpBurned": {
+              "known": 9,
+              "total": 59,
+              "percent": 15.254237288135593
+            },
+            "ageAtMigrationMin": {
+              "known": 40,
+              "total": 59,
+              "percent": 67.79661016949152
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "3": {
+          "coins": 58,
+          "features": {
+            "holders": {
+              "known": 43,
+              "total": 58,
+              "percent": 74.13793103448276
+            },
+            "top1": {
+              "known": 43,
+              "total": 58,
+              "percent": 74.13793103448276
+            },
+            "top10": {
+              "known": 43,
+              "total": 58,
+              "percent": 74.13793103448276
+            },
+            "devBuySol": {
+              "known": 2,
+              "total": 58,
+              "percent": 3.4482758620689653
+            },
+            "devHoldPct": {
+              "known": 43,
+              "total": 58,
+              "percent": 74.13793103448276
+            },
+            "devSold": {
+              "known": 2,
+              "total": 58,
+              "percent": 3.4482758620689653
+            },
+            "devLaunches": {
+              "known": 58,
+              "total": 58,
+              "percent": 100
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 58,
+              "percent": 8.620689655172415
+            },
+            "sniperShare": {
+              "known": 2,
+              "total": 58,
+              "percent": 3.4482758620689653
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 58,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 8,
+              "total": 58,
+              "percent": 13.793103448275861
+            },
+            "hasDescription": {
+              "known": 8,
+              "total": 58,
+              "percent": 13.793103448275861
+            },
+            "hasTwitter": {
+              "known": 8,
+              "total": 58,
+              "percent": 13.793103448275861
+            },
+            "hasTelegram": {
+              "known": 8,
+              "total": 58,
+              "percent": 13.793103448275861
+            },
+            "hasWebsite": {
+              "known": 8,
+              "total": 58,
+              "percent": 13.793103448275861
+            },
+            "lpBurned": {
+              "known": 9,
+              "total": 58,
+              "percent": 15.517241379310345
+            },
+            "ageAtMigrationMin": {
+              "known": 39,
+              "total": 58,
+              "percent": 67.24137931034483
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "4": {
+          "coins": 57,
+          "features": {
+            "holders": {
+              "known": 43,
+              "total": 57,
+              "percent": 75.43859649122807
+            },
+            "top1": {
+              "known": 43,
+              "total": 57,
+              "percent": 75.43859649122807
+            },
+            "top10": {
+              "known": 43,
+              "total": 57,
+              "percent": 75.43859649122807
+            },
+            "devBuySol": {
+              "known": 2,
+              "total": 57,
+              "percent": 3.508771929824561
+            },
+            "devHoldPct": {
+              "known": 43,
+              "total": 57,
+              "percent": 75.43859649122807
+            },
+            "devSold": {
+              "known": 2,
+              "total": 57,
+              "percent": 3.508771929824561
+            },
+            "devLaunches": {
+              "known": 57,
+              "total": 57,
+              "percent": 100
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 57,
+              "percent": 8.771929824561402
+            },
+            "sniperShare": {
+              "known": 2,
+              "total": 57,
+              "percent": 3.508771929824561
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 57,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 12,
+              "total": 57,
+              "percent": 21.052631578947366
+            },
+            "hasDescription": {
+              "known": 12,
+              "total": 57,
+              "percent": 21.052631578947366
+            },
+            "hasTwitter": {
+              "known": 12,
+              "total": 57,
+              "percent": 21.052631578947366
+            },
+            "hasTelegram": {
+              "known": 12,
+              "total": 57,
+              "percent": 21.052631578947366
+            },
+            "hasWebsite": {
+              "known": 12,
+              "total": 57,
+              "percent": 21.052631578947366
+            },
+            "lpBurned": {
+              "known": 9,
+              "total": 57,
+              "percent": 15.789473684210526
+            },
+            "ageAtMigrationMin": {
+              "known": 38,
+              "total": 57,
+              "percent": 66.66666666666666
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "5": {
+          "coins": 57,
+          "features": {
+            "holders": {
+              "known": 45,
+              "total": 57,
+              "percent": 78.94736842105263
+            },
+            "top1": {
+              "known": 45,
+              "total": 57,
+              "percent": 78.94736842105263
+            },
+            "top10": {
+              "known": 45,
+              "total": 57,
+              "percent": 78.94736842105263
+            },
+            "devBuySol": {
+              "known": 2,
+              "total": 57,
+              "percent": 3.508771929824561
+            },
+            "devHoldPct": {
+              "known": 45,
+              "total": 57,
+              "percent": 78.94736842105263
+            },
+            "devSold": {
+              "known": 2,
+              "total": 57,
+              "percent": 3.508771929824561
+            },
+            "devLaunches": {
+              "known": 57,
+              "total": 57,
+              "percent": 100
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 57,
+              "percent": 8.771929824561402
+            },
+            "sniperShare": {
+              "known": 2,
+              "total": 57,
+              "percent": 3.508771929824561
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 57,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 13,
+              "total": 57,
+              "percent": 22.807017543859647
+            },
+            "hasDescription": {
+              "known": 13,
+              "total": 57,
+              "percent": 22.807017543859647
+            },
+            "hasTwitter": {
+              "known": 13,
+              "total": 57,
+              "percent": 22.807017543859647
+            },
+            "hasTelegram": {
+              "known": 13,
+              "total": 57,
+              "percent": 22.807017543859647
+            },
+            "hasWebsite": {
+              "known": 13,
+              "total": 57,
+              "percent": 22.807017543859647
+            },
+            "lpBurned": {
+              "known": 9,
+              "total": 57,
+              "percent": 15.789473684210526
+            },
+            "ageAtMigrationMin": {
+              "known": 38,
+              "total": 57,
+              "percent": 66.66666666666666
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "6": {
+          "coins": 56,
+          "features": {
+            "holders": {
+              "known": 45,
+              "total": 56,
+              "percent": 80.35714285714286
+            },
+            "top1": {
+              "known": 45,
+              "total": 56,
+              "percent": 80.35714285714286
+            },
+            "top10": {
+              "known": 45,
+              "total": 56,
+              "percent": 80.35714285714286
+            },
+            "devBuySol": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "devHoldPct": {
+              "known": 45,
+              "total": 56,
+              "percent": 80.35714285714286
+            },
+            "devSold": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "devLaunches": {
+              "known": 56,
+              "total": 56,
+              "percent": 100
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 56,
+              "percent": 8.928571428571429
+            },
+            "sniperShare": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 56,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 14,
+              "total": 56,
+              "percent": 25
+            },
+            "hasDescription": {
+              "known": 14,
+              "total": 56,
+              "percent": 25
+            },
+            "hasTwitter": {
+              "known": 14,
+              "total": 56,
+              "percent": 25
+            },
+            "hasTelegram": {
+              "known": 14,
+              "total": 56,
+              "percent": 25
+            },
+            "hasWebsite": {
+              "known": 14,
+              "total": 56,
+              "percent": 25
+            },
+            "lpBurned": {
+              "known": 9,
+              "total": 56,
+              "percent": 16.071428571428573
+            },
+            "ageAtMigrationMin": {
+              "known": 39,
+              "total": 56,
+              "percent": 69.64285714285714
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "7": {
+          "coins": 56,
+          "features": {
+            "holders": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "top1": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "top10": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "devBuySol": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "devHoldPct": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "devSold": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "devLaunches": {
+              "known": 56,
+              "total": 56,
+              "percent": 100
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 56,
+              "percent": 8.928571428571429
+            },
+            "sniperShare": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 56,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasDescription": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasTwitter": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasTelegram": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasWebsite": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "lpBurned": {
+              "known": 10,
+              "total": 56,
+              "percent": 17.857142857142858
+            },
+            "ageAtMigrationMin": {
+              "known": 41,
+              "total": 56,
+              "percent": 73.21428571428571
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "8": {
+          "coins": 56,
+          "features": {
+            "holders": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "top1": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "top10": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "devBuySol": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "devHoldPct": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "devSold": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "devLaunches": {
+              "known": 56,
+              "total": 56,
+              "percent": 100
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 56,
+              "percent": 8.928571428571429
+            },
+            "sniperShare": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 56,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasDescription": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasTwitter": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasTelegram": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasWebsite": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "lpBurned": {
+              "known": 10,
+              "total": 56,
+              "percent": 17.857142857142858
+            },
+            "ageAtMigrationMin": {
+              "known": 41,
+              "total": 56,
+              "percent": 73.21428571428571
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "9": {
+          "coins": 56,
+          "features": {
+            "holders": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "top1": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "top10": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "devBuySol": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "devHoldPct": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "devSold": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "devLaunches": {
+              "known": 56,
+              "total": 56,
+              "percent": 100
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 56,
+              "percent": 8.928571428571429
+            },
+            "sniperShare": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 56,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasDescription": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasTwitter": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasTelegram": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasWebsite": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "lpBurned": {
+              "known": 10,
+              "total": 56,
+              "percent": 17.857142857142858
+            },
+            "ageAtMigrationMin": {
+              "known": 42,
+              "total": 56,
+              "percent": 75
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "10": {
+          "coins": 56,
+          "features": {
+            "holders": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "top1": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "top10": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "devBuySol": {
+              "known": 3,
+              "total": 56,
+              "percent": 5.357142857142857
+            },
+            "devHoldPct": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "devSold": {
+              "known": 3,
+              "total": 56,
+              "percent": 5.357142857142857
+            },
+            "devLaunches": {
+              "known": 56,
+              "total": 56,
+              "percent": 100
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 56,
+              "percent": 8.928571428571429
+            },
+            "sniperShare": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 56,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasDescription": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasTwitter": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasTelegram": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasWebsite": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "lpBurned": {
+              "known": 8,
+              "total": 56,
+              "percent": 14.285714285714285
+            },
+            "ageAtMigrationMin": {
+              "known": 42,
+              "total": 56,
+              "percent": 75
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "11": {
+          "coins": 56,
+          "features": {
+            "holders": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "top1": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "top10": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "devBuySol": {
+              "known": 3,
+              "total": 56,
+              "percent": 5.357142857142857
+            },
+            "devHoldPct": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "devSold": {
+              "known": 3,
+              "total": 56,
+              "percent": 5.357142857142857
+            },
+            "devLaunches": {
+              "known": 56,
+              "total": 56,
+              "percent": 100
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 56,
+              "percent": 8.928571428571429
+            },
+            "sniperShare": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 56,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasDescription": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasTwitter": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasTelegram": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasWebsite": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "lpBurned": {
+              "known": 9,
+              "total": 56,
+              "percent": 16.071428571428573
+            },
+            "ageAtMigrationMin": {
+              "known": 44,
+              "total": 56,
+              "percent": 78.57142857142857
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "12": {
+          "coins": 56,
+          "features": {
+            "holders": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "top1": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "top10": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "devBuySol": {
+              "known": 3,
+              "total": 56,
+              "percent": 5.357142857142857
+            },
+            "devHoldPct": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "devSold": {
+              "known": 3,
+              "total": 56,
+              "percent": 5.357142857142857
+            },
+            "devLaunches": {
+              "known": 56,
+              "total": 56,
+              "percent": 100
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 56,
+              "percent": 8.928571428571429
+            },
+            "sniperShare": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 56,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasDescription": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasTwitter": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasTelegram": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "hasWebsite": {
+              "known": 15,
+              "total": 56,
+              "percent": 26.785714285714285
+            },
+            "lpBurned": {
+              "known": 11,
+              "total": 56,
+              "percent": 19.642857142857142
+            },
+            "ageAtMigrationMin": {
+              "known": 45,
+              "total": 56,
+              "percent": 80.35714285714286
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "13": {
+          "coins": 56,
+          "features": {
+            "holders": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "top1": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "top10": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "devBuySol": {
+              "known": 3,
+              "total": 56,
+              "percent": 5.357142857142857
+            },
+            "devHoldPct": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "devSold": {
+              "known": 3,
+              "total": 56,
+              "percent": 5.357142857142857
+            },
+            "devLaunches": {
+              "known": 56,
+              "total": 56,
+              "percent": 100
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 56,
+              "percent": 8.928571428571429
+            },
+            "sniperShare": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 56,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 17,
+              "total": 56,
+              "percent": 30.357142857142854
+            },
+            "hasDescription": {
+              "known": 17,
+              "total": 56,
+              "percent": 30.357142857142854
+            },
+            "hasTwitter": {
+              "known": 17,
+              "total": 56,
+              "percent": 30.357142857142854
+            },
+            "hasTelegram": {
+              "known": 17,
+              "total": 56,
+              "percent": 30.357142857142854
+            },
+            "hasWebsite": {
+              "known": 17,
+              "total": 56,
+              "percent": 30.357142857142854
+            },
+            "lpBurned": {
+              "known": 11,
+              "total": 56,
+              "percent": 19.642857142857142
+            },
+            "ageAtMigrationMin": {
+              "known": 46,
+              "total": 56,
+              "percent": 82.14285714285714
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "14": {
+          "coins": 56,
+          "features": {
+            "holders": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "top1": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "top10": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "devBuySol": {
+              "known": 3,
+              "total": 56,
+              "percent": 5.357142857142857
+            },
+            "devHoldPct": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            },
+            "devSold": {
+              "known": 3,
+              "total": 56,
+              "percent": 5.357142857142857
+            },
+            "devLaunches": {
+              "known": 56,
+              "total": 56,
+              "percent": 100
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 56,
+              "percent": 8.928571428571429
+            },
+            "sniperShare": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 56,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 18,
+              "total": 56,
+              "percent": 32.142857142857146
+            },
+            "hasDescription": {
+              "known": 18,
+              "total": 56,
+              "percent": 32.142857142857146
+            },
+            "hasTwitter": {
+              "known": 18,
+              "total": 56,
+              "percent": 32.142857142857146
+            },
+            "hasTelegram": {
+              "known": 18,
+              "total": 56,
+              "percent": 32.142857142857146
+            },
+            "hasWebsite": {
+              "known": 18,
+              "total": 56,
+              "percent": 32.142857142857146
+            },
+            "lpBurned": {
+              "known": 11,
+              "total": 56,
+              "percent": 19.642857142857142
+            },
+            "ageAtMigrationMin": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "15": {
+          "coins": 56,
+          "features": {
+            "holders": {
+              "known": 52,
+              "total": 56,
+              "percent": 92.85714285714286
+            },
+            "top1": {
+              "known": 52,
+              "total": 56,
+              "percent": 92.85714285714286
+            },
+            "top10": {
+              "known": 52,
+              "total": 56,
+              "percent": 92.85714285714286
+            },
+            "devBuySol": {
+              "known": 3,
+              "total": 56,
+              "percent": 5.357142857142857
+            },
+            "devHoldPct": {
+              "known": 52,
+              "total": 56,
+              "percent": 92.85714285714286
+            },
+            "devSold": {
+              "known": 3,
+              "total": 56,
+              "percent": 5.357142857142857
+            },
+            "devLaunches": {
+              "known": 56,
+              "total": 56,
+              "percent": 100
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 56,
+              "percent": 8.928571428571429
+            },
+            "sniperShare": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 56,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 20,
+              "total": 56,
+              "percent": 35.714285714285715
+            },
+            "hasDescription": {
+              "known": 20,
+              "total": 56,
+              "percent": 35.714285714285715
+            },
+            "hasTwitter": {
+              "known": 20,
+              "total": 56,
+              "percent": 35.714285714285715
+            },
+            "hasTelegram": {
+              "known": 20,
+              "total": 56,
+              "percent": 35.714285714285715
+            },
+            "hasWebsite": {
+              "known": 20,
+              "total": 56,
+              "percent": 35.714285714285715
+            },
+            "lpBurned": {
+              "known": 11,
+              "total": 56,
+              "percent": 19.642857142857142
+            },
+            "ageAtMigrationMin": {
+              "known": 47,
+              "total": 56,
+              "percent": 83.92857142857143
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "devBuySol",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "16": {
+          "coins": 56,
+          "features": {
+            "holders": {
+              "known": 52,
+              "total": 56,
+              "percent": 92.85714285714286
+            },
+            "top1": {
+              "known": 52,
+              "total": 56,
+              "percent": 92.85714285714286
+            },
+            "top10": {
+              "known": 52,
+              "total": 56,
+              "percent": 92.85714285714286
+            },
+            "devBuySol": {
+              "known": 3,
+              "total": 56,
+              "percent": 5.357142857142857
+            },
+            "devHoldPct": {
+              "known": 52,
+              "total": 56,
+              "percent": 92.85714285714286
+            },
+            "devSold": {
+              "known": 3,
+              "total": 56,
+              "percent": 5.357142857142857
+            },
+            "devLaunches": {
+              "known": 56,
+              "total": 56,
+              "percent": 100
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 56,
+              "percent": 8.928571428571429
+            },
+            "sniperShare": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 56,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 20,
+              "total": 56,
+              "percent": 35.714285714285715
+            },
+            "hasDescription": {
+              "known": 20,
+              "total": 56,
+              "percent": 35.714285714285715
+            },
+            "hasTwitter": {
+              "known": 20,
+              "total": 56,
+              "percent": 35.714285714285715
+            },
+            "hasTelegram": {
+              "known": 20,
+              "total": 56,
+              "percent": 35.714285714285715
+            },
+            "hasWebsite": {
+              "known": 20,
+              "total": 56,
+              "percent": 35.714285714285715
+            },
+            "lpBurned": {
+              "known": 12,
+              "total": 56,
+              "percent": 21.428571428571427
+            },
+            "ageAtMigrationMin": {
+              "known": 48,
+              "total": 56,
+              "percent": 85.71428571428571
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "devBuySol",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "17": {
+          "coins": 56,
+          "features": {
+            "holders": {
+              "known": 52,
+              "total": 56,
+              "percent": 92.85714285714286
+            },
+            "top1": {
+              "known": 52,
+              "total": 56,
+              "percent": 92.85714285714286
+            },
+            "top10": {
+              "known": 52,
+              "total": 56,
+              "percent": 92.85714285714286
+            },
+            "devBuySol": {
+              "known": 3,
+              "total": 56,
+              "percent": 5.357142857142857
+            },
+            "devHoldPct": {
+              "known": 52,
+              "total": 56,
+              "percent": 92.85714285714286
+            },
+            "devSold": {
+              "known": 3,
+              "total": 56,
+              "percent": 5.357142857142857
+            },
+            "devLaunches": {
+              "known": 56,
+              "total": 56,
+              "percent": 100
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 56,
+              "percent": 8.928571428571429
+            },
+            "sniperShare": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 56,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 21,
+              "total": 56,
+              "percent": 37.5
+            },
+            "hasDescription": {
+              "known": 21,
+              "total": 56,
+              "percent": 37.5
+            },
+            "hasTwitter": {
+              "known": 21,
+              "total": 56,
+              "percent": 37.5
+            },
+            "hasTelegram": {
+              "known": 21,
+              "total": 56,
+              "percent": 37.5
+            },
+            "hasWebsite": {
+              "known": 21,
+              "total": 56,
+              "percent": 37.5
+            },
+            "lpBurned": {
+              "known": 12,
+              "total": 56,
+              "percent": 21.428571428571427
+            },
+            "ageAtMigrationMin": {
+              "known": 48,
+              "total": 56,
+              "percent": 85.71428571428571
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "devBuySol",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "18": {
+          "coins": 56,
+          "features": {
+            "holders": {
+              "known": 53,
+              "total": 56,
+              "percent": 94.64285714285714
+            },
+            "top1": {
+              "known": 53,
+              "total": 56,
+              "percent": 94.64285714285714
+            },
+            "top10": {
+              "known": 53,
+              "total": 56,
+              "percent": 94.64285714285714
+            },
+            "devBuySol": {
+              "known": 3,
+              "total": 56,
+              "percent": 5.357142857142857
+            },
+            "devHoldPct": {
+              "known": 53,
+              "total": 56,
+              "percent": 94.64285714285714
+            },
+            "devSold": {
+              "known": 3,
+              "total": 56,
+              "percent": 5.357142857142857
+            },
+            "devLaunches": {
+              "known": 56,
+              "total": 56,
+              "percent": 100
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 56,
+              "percent": 8.928571428571429
+            },
+            "sniperShare": {
+              "known": 2,
+              "total": 56,
+              "percent": 3.571428571428571
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 56,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 21,
+              "total": 56,
+              "percent": 37.5
+            },
+            "hasDescription": {
+              "known": 21,
+              "total": 56,
+              "percent": 37.5
+            },
+            "hasTwitter": {
+              "known": 21,
+              "total": 56,
+              "percent": 37.5
+            },
+            "hasTelegram": {
+              "known": 21,
+              "total": 56,
+              "percent": 37.5
+            },
+            "hasWebsite": {
+              "known": 21,
+              "total": 56,
+              "percent": 37.5
+            },
+            "lpBurned": {
+              "known": 12,
+              "total": 56,
+              "percent": 21.428571428571427
+            },
+            "ageAtMigrationMin": {
+              "known": 49,
+              "total": 56,
+              "percent": 87.5
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "devBuySol",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "19": {
+          "coins": 55,
+          "features": {
+            "holders": {
+              "known": 53,
+              "total": 55,
+              "percent": 96.36363636363636
+            },
+            "top1": {
+              "known": 53,
+              "total": 55,
+              "percent": 96.36363636363636
+            },
+            "top10": {
+              "known": 53,
+              "total": 55,
+              "percent": 96.36363636363636
+            },
+            "devBuySol": {
+              "known": 2,
+              "total": 55,
+              "percent": 3.6363636363636362
+            },
+            "devHoldPct": {
+              "known": 53,
+              "total": 55,
+              "percent": 96.36363636363636
+            },
+            "devSold": {
+              "known": 2,
+              "total": 55,
+              "percent": 3.6363636363636362
+            },
+            "devLaunches": {
+              "known": 55,
+              "total": 55,
+              "percent": 100
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 55,
+              "percent": 9.090909090909092
+            },
+            "sniperShare": {
+              "known": 2,
+              "total": 55,
+              "percent": 3.6363636363636362
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 55,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 20,
+              "total": 55,
+              "percent": 36.36363636363637
+            },
+            "hasDescription": {
+              "known": 20,
+              "total": 55,
+              "percent": 36.36363636363637
+            },
+            "hasTwitter": {
+              "known": 20,
+              "total": 55,
+              "percent": 36.36363636363637
+            },
+            "hasTelegram": {
+              "known": 20,
+              "total": 55,
+              "percent": 36.36363636363637
+            },
+            "hasWebsite": {
+              "known": 20,
+              "total": 55,
+              "percent": 36.36363636363637
+            },
+            "lpBurned": {
+              "known": 11,
+              "total": 55,
+              "percent": 20
+            },
+            "ageAtMigrationMin": {
+              "known": 50,
+              "total": 55,
+              "percent": 90.9090909090909
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "devBuySol",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned"
+            ]
+          }
+        },
+        "20": {
+          "coins": 55,
+          "features": {
+            "holders": {
+              "known": 53,
+              "total": 55,
+              "percent": 96.36363636363636
+            },
+            "top1": {
+              "known": 53,
+              "total": 55,
+              "percent": 96.36363636363636
+            },
+            "top10": {
+              "known": 53,
+              "total": 55,
+              "percent": 96.36363636363636
+            },
+            "devBuySol": {
+              "known": 2,
+              "total": 55,
+              "percent": 3.6363636363636362
+            },
+            "devHoldPct": {
+              "known": 53,
+              "total": 55,
+              "percent": 96.36363636363636
+            },
+            "devSold": {
+              "known": 2,
+              "total": 55,
+              "percent": 3.6363636363636362
+            },
+            "devLaunches": {
+              "known": 55,
+              "total": 55,
+              "percent": 100
+            },
+            "devRugShare": {
+              "known": 5,
+              "total": 55,
+              "percent": 9.090909090909092
+            },
+            "sniperShare": {
+              "known": 2,
+              "total": 55,
+              "percent": 3.6363636363636362
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 55,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 20,
+              "total": 55,
+              "percent": 36.36363636363637
+            },
+            "hasDescription": {
+              "known": 20,
+              "total": 55,
+              "percent": 36.36363636363637
+            },
+            "hasTwitter": {
+              "known": 20,
+              "total": 55,
+              "percent": 36.36363636363637
+            },
+            "hasTelegram": {
+              "known": 20,
+              "total": 55,
+              "percent": 36.36363636363637
+            },
+            "hasWebsite": {
+              "known": 20,
+              "total": 55,
+              "percent": 36.36363636363637
+            },
+            "lpBurned": {
+              "known": 10,
+              "total": 55,
+              "percent": 18.181818181818183
+            },
+            "ageAtMigrationMin": {
+              "known": 50,
+              "total": 55,
+              "percent": 90.9090909090909
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "devBuySol",
+              "devSold",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned"
+            ]
+          }
+        }
+      }
+    },
+    "after": {
+      "coins": 294,
+      "minutes": {
+        "1": {
+          "coins": 294,
+          "features": {
+            "holders": {
+              "known": 61,
+              "total": 294,
+              "percent": 20.74829931972789
+            },
+            "top1": {
+              "known": 61,
+              "total": 294,
+              "percent": 20.74829931972789
+            },
+            "top10": {
+              "known": 61,
+              "total": 294,
+              "percent": 20.74829931972789
+            },
+            "devBuySol": {
+              "known": 1,
+              "total": 294,
+              "percent": 0.3401360544217687
+            },
+            "devHoldPct": {
+              "known": 47,
+              "total": 294,
+              "percent": 15.98639455782313
+            },
+            "devSold": {
+              "known": 1,
+              "total": 294,
+              "percent": 0.3401360544217687
+            },
+            "devLaunches": {
+              "known": 49,
+              "total": 294,
+              "percent": 16.666666666666664
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 294,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 1,
+              "total": 294,
+              "percent": 0.3401360544217687
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 294,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 24,
+              "total": 294,
+              "percent": 8.16326530612245
+            },
+            "hasDescription": {
+              "known": 16,
+              "total": 294,
+              "percent": 5.442176870748299
+            },
+            "hasTwitter": {
+              "known": 24,
+              "total": 294,
+              "percent": 8.16326530612245
+            },
+            "hasTelegram": {
+              "known": 24,
+              "total": 294,
+              "percent": 8.16326530612245
+            },
+            "hasWebsite": {
+              "known": 24,
+              "total": 294,
+              "percent": 8.16326530612245
+            },
+            "lpBurned": {
+              "known": 49,
+              "total": 294,
+              "percent": 16.666666666666664
+            },
+            "ageAtMigrationMin": {
+              "known": 110,
+              "total": 294,
+              "percent": 37.41496598639456
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "2": {
+          "coins": 293,
+          "features": {
+            "holders": {
+              "known": 95,
+              "total": 293,
+              "percent": 32.42320819112628
+            },
+            "top1": {
+              "known": 95,
+              "total": 293,
+              "percent": 32.42320819112628
+            },
+            "top10": {
+              "known": 95,
+              "total": 293,
+              "percent": 32.42320819112628
+            },
+            "devBuySol": {
+              "known": 7,
+              "total": 293,
+              "percent": 2.3890784982935154
+            },
+            "devHoldPct": {
+              "known": 74,
+              "total": 293,
+              "percent": 25.25597269624573
+            },
+            "devSold": {
+              "known": 6,
+              "total": 293,
+              "percent": 2.04778156996587
+            },
+            "devLaunches": {
+              "known": 136,
+              "total": 293,
+              "percent": 46.41638225255973
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 293,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 8,
+              "total": 293,
+              "percent": 2.7303754266211606
+            },
+            "bundleShare": {
+              "known": 1,
+              "total": 293,
+              "percent": 0.3412969283276451
+            },
+            "hasImage": {
+              "known": 50,
+              "total": 293,
+              "percent": 17.064846416382252
+            },
+            "hasDescription": {
+              "known": 42,
+              "total": 293,
+              "percent": 14.334470989761092
+            },
+            "hasTwitter": {
+              "known": 50,
+              "total": 293,
+              "percent": 17.064846416382252
+            },
+            "hasTelegram": {
+              "known": 50,
+              "total": 293,
+              "percent": 17.064846416382252
+            },
+            "hasWebsite": {
+              "known": 50,
+              "total": 293,
+              "percent": 17.064846416382252
+            },
+            "lpBurned": {
+              "known": 55,
+              "total": 293,
+              "percent": 18.771331058020476
+            },
+            "ageAtMigrationMin": {
+              "known": 126,
+              "total": 293,
+              "percent": 43.003412969283275
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "3": {
+          "coins": 292,
+          "features": {
+            "holders": {
+              "known": 119,
+              "total": 292,
+              "percent": 40.75342465753425
+            },
+            "top1": {
+              "known": 119,
+              "total": 292,
+              "percent": 40.75342465753425
+            },
+            "top10": {
+              "known": 119,
+              "total": 292,
+              "percent": 40.75342465753425
+            },
+            "devBuySol": {
+              "known": 9,
+              "total": 292,
+              "percent": 3.0821917808219177
+            },
+            "devHoldPct": {
+              "known": 92,
+              "total": 292,
+              "percent": 31.506849315068493
+            },
+            "devSold": {
+              "known": 8,
+              "total": 292,
+              "percent": 2.73972602739726
+            },
+            "devLaunches": {
+              "known": 161,
+              "total": 292,
+              "percent": 55.13698630136986
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 292,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 10,
+              "total": 292,
+              "percent": 3.4246575342465753
+            },
+            "bundleShare": {
+              "known": 1,
+              "total": 292,
+              "percent": 0.3424657534246575
+            },
+            "hasImage": {
+              "known": 63,
+              "total": 292,
+              "percent": 21.575342465753426
+            },
+            "hasDescription": {
+              "known": 55,
+              "total": 292,
+              "percent": 18.835616438356166
+            },
+            "hasTwitter": {
+              "known": 63,
+              "total": 292,
+              "percent": 21.575342465753426
+            },
+            "hasTelegram": {
+              "known": 63,
+              "total": 292,
+              "percent": 21.575342465753426
+            },
+            "hasWebsite": {
+              "known": 63,
+              "total": 292,
+              "percent": 21.575342465753426
+            },
+            "lpBurned": {
+              "known": 58,
+              "total": 292,
+              "percent": 19.863013698630137
+            },
+            "ageAtMigrationMin": {
+              "known": 133,
+              "total": 292,
+              "percent": 45.54794520547945
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "4": {
+          "coins": 292,
+          "features": {
+            "holders": {
+              "known": 119,
+              "total": 292,
+              "percent": 40.75342465753425
+            },
+            "top1": {
+              "known": 119,
+              "total": 292,
+              "percent": 40.75342465753425
+            },
+            "top10": {
+              "known": 119,
+              "total": 292,
+              "percent": 40.75342465753425
+            },
+            "devBuySol": {
+              "known": 11,
+              "total": 292,
+              "percent": 3.767123287671233
+            },
+            "devHoldPct": {
+              "known": 92,
+              "total": 292,
+              "percent": 31.506849315068493
+            },
+            "devSold": {
+              "known": 9,
+              "total": 292,
+              "percent": 3.0821917808219177
+            },
+            "devLaunches": {
+              "known": 163,
+              "total": 292,
+              "percent": 55.821917808219176
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 292,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 12,
+              "total": 292,
+              "percent": 4.10958904109589
+            },
+            "bundleShare": {
+              "known": 1,
+              "total": 292,
+              "percent": 0.3424657534246575
+            },
+            "hasImage": {
+              "known": 73,
+              "total": 292,
+              "percent": 25
+            },
+            "hasDescription": {
+              "known": 65,
+              "total": 292,
+              "percent": 22.26027397260274
+            },
+            "hasTwitter": {
+              "known": 73,
+              "total": 292,
+              "percent": 25
+            },
+            "hasTelegram": {
+              "known": 73,
+              "total": 292,
+              "percent": 25
+            },
+            "hasWebsite": {
+              "known": 73,
+              "total": 292,
+              "percent": 25
+            },
+            "lpBurned": {
+              "known": 59,
+              "total": 292,
+              "percent": 20.205479452054796
+            },
+            "ageAtMigrationMin": {
+              "known": 134,
+              "total": 292,
+              "percent": 45.89041095890411
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "5": {
+          "coins": 290,
+          "features": {
+            "holders": {
+              "known": 138,
+              "total": 290,
+              "percent": 47.58620689655172
+            },
+            "top1": {
+              "known": 138,
+              "total": 290,
+              "percent": 47.58620689655172
+            },
+            "top10": {
+              "known": 138,
+              "total": 290,
+              "percent": 47.58620689655172
+            },
+            "devBuySol": {
+              "known": 11,
+              "total": 290,
+              "percent": 3.793103448275862
+            },
+            "devHoldPct": {
+              "known": 104,
+              "total": 290,
+              "percent": 35.86206896551724
+            },
+            "devSold": {
+              "known": 9,
+              "total": 290,
+              "percent": 3.103448275862069
+            },
+            "devLaunches": {
+              "known": 165,
+              "total": 290,
+              "percent": 56.896551724137936
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 290,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 12,
+              "total": 290,
+              "percent": 4.137931034482759
+            },
+            "bundleShare": {
+              "known": 1,
+              "total": 290,
+              "percent": 0.3448275862068966
+            },
+            "hasImage": {
+              "known": 77,
+              "total": 290,
+              "percent": 26.551724137931032
+            },
+            "hasDescription": {
+              "known": 69,
+              "total": 290,
+              "percent": 23.79310344827586
+            },
+            "hasTwitter": {
+              "known": 77,
+              "total": 290,
+              "percent": 26.551724137931032
+            },
+            "hasTelegram": {
+              "known": 77,
+              "total": 290,
+              "percent": 26.551724137931032
+            },
+            "hasWebsite": {
+              "known": 77,
+              "total": 290,
+              "percent": 26.551724137931032
+            },
+            "lpBurned": {
+              "known": 60,
+              "total": 290,
+              "percent": 20.689655172413794
+            },
+            "ageAtMigrationMin": {
+              "known": 134,
+              "total": 290,
+              "percent": 46.206896551724135
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "6": {
+          "coins": 289,
+          "features": {
+            "holders": {
+              "known": 145,
+              "total": 289,
+              "percent": 50.17301038062284
+            },
+            "top1": {
+              "known": 145,
+              "total": 289,
+              "percent": 50.17301038062284
+            },
+            "top10": {
+              "known": 145,
+              "total": 289,
+              "percent": 50.17301038062284
+            },
+            "devBuySol": {
+              "known": 10,
+              "total": 289,
+              "percent": 3.4602076124567476
+            },
+            "devHoldPct": {
+              "known": 109,
+              "total": 289,
+              "percent": 37.71626297577855
+            },
+            "devSold": {
+              "known": 8,
+              "total": 289,
+              "percent": 2.768166089965398
+            },
+            "devLaunches": {
+              "known": 164,
+              "total": 289,
+              "percent": 56.747404844290664
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 289,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 11,
+              "total": 289,
+              "percent": 3.8062283737024223
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 289,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 87,
+              "total": 289,
+              "percent": 30.103806228373703
+            },
+            "hasDescription": {
+              "known": 75,
+              "total": 289,
+              "percent": 25.951557093425603
+            },
+            "hasTwitter": {
+              "known": 86,
+              "total": 289,
+              "percent": 29.757785467128027
+            },
+            "hasTelegram": {
+              "known": 86,
+              "total": 289,
+              "percent": 29.757785467128027
+            },
+            "hasWebsite": {
+              "known": 86,
+              "total": 289,
+              "percent": 29.757785467128027
+            },
+            "lpBurned": {
+              "known": 60,
+              "total": 289,
+              "percent": 20.761245674740483
+            },
+            "ageAtMigrationMin": {
+              "known": 164,
+              "total": 289,
+              "percent": 56.747404844290664
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "7": {
+          "coins": 288,
+          "features": {
+            "holders": {
+              "known": 153,
+              "total": 288,
+              "percent": 53.125
+            },
+            "top1": {
+              "known": 153,
+              "total": 288,
+              "percent": 53.125
+            },
+            "top10": {
+              "known": 153,
+              "total": 288,
+              "percent": 53.125
+            },
+            "devBuySol": {
+              "known": 10,
+              "total": 288,
+              "percent": 3.4722222222222223
+            },
+            "devHoldPct": {
+              "known": 117,
+              "total": 288,
+              "percent": 40.625
+            },
+            "devSold": {
+              "known": 8,
+              "total": 288,
+              "percent": 2.7777777777777777
+            },
+            "devLaunches": {
+              "known": 168,
+              "total": 288,
+              "percent": 58.333333333333336
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 288,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 11,
+              "total": 288,
+              "percent": 3.8194444444444446
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 288,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 93,
+              "total": 288,
+              "percent": 32.29166666666667
+            },
+            "hasDescription": {
+              "known": 80,
+              "total": 288,
+              "percent": 27.77777777777778
+            },
+            "hasTwitter": {
+              "known": 93,
+              "total": 288,
+              "percent": 32.29166666666667
+            },
+            "hasTelegram": {
+              "known": 93,
+              "total": 288,
+              "percent": 32.29166666666667
+            },
+            "hasWebsite": {
+              "known": 93,
+              "total": 288,
+              "percent": 32.29166666666667
+            },
+            "lpBurned": {
+              "known": 59,
+              "total": 288,
+              "percent": 20.48611111111111
+            },
+            "ageAtMigrationMin": {
+              "known": 169,
+              "total": 288,
+              "percent": 58.68055555555556
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "8": {
+          "coins": 287,
+          "features": {
+            "holders": {
+              "known": 153,
+              "total": 287,
+              "percent": 53.31010452961672
+            },
+            "top1": {
+              "known": 153,
+              "total": 287,
+              "percent": 53.31010452961672
+            },
+            "top10": {
+              "known": 153,
+              "total": 287,
+              "percent": 53.31010452961672
+            },
+            "devBuySol": {
+              "known": 16,
+              "total": 287,
+              "percent": 5.574912891986063
+            },
+            "devHoldPct": {
+              "known": 117,
+              "total": 287,
+              "percent": 40.76655052264808
+            },
+            "devSold": {
+              "known": 16,
+              "total": 287,
+              "percent": 5.574912891986063
+            },
+            "devLaunches": {
+              "known": 170,
+              "total": 287,
+              "percent": 59.23344947735192
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 287,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 11,
+              "total": 287,
+              "percent": 3.8327526132404177
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 287,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 98,
+              "total": 287,
+              "percent": 34.146341463414636
+            },
+            "hasDescription": {
+              "known": 85,
+              "total": 287,
+              "percent": 29.61672473867596
+            },
+            "hasTwitter": {
+              "known": 98,
+              "total": 287,
+              "percent": 34.146341463414636
+            },
+            "hasTelegram": {
+              "known": 98,
+              "total": 287,
+              "percent": 34.146341463414636
+            },
+            "hasWebsite": {
+              "known": 98,
+              "total": 287,
+              "percent": 34.146341463414636
+            },
+            "lpBurned": {
+              "known": 59,
+              "total": 287,
+              "percent": 20.557491289198605
+            },
+            "ageAtMigrationMin": {
+              "known": 169,
+              "total": 287,
+              "percent": 58.88501742160279
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "9": {
+          "coins": 285,
+          "features": {
+            "holders": {
+              "known": 153,
+              "total": 285,
+              "percent": 53.68421052631579
+            },
+            "top1": {
+              "known": 153,
+              "total": 285,
+              "percent": 53.68421052631579
+            },
+            "top10": {
+              "known": 153,
+              "total": 285,
+              "percent": 53.68421052631579
+            },
+            "devBuySol": {
+              "known": 19,
+              "total": 285,
+              "percent": 6.666666666666667
+            },
+            "devHoldPct": {
+              "known": 117,
+              "total": 285,
+              "percent": 41.05263157894737
+            },
+            "devSold": {
+              "known": 20,
+              "total": 285,
+              "percent": 7.017543859649122
+            },
+            "devLaunches": {
+              "known": 169,
+              "total": 285,
+              "percent": 59.29824561403508
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 285,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 9,
+              "total": 285,
+              "percent": 3.1578947368421053
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 285,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 102,
+              "total": 285,
+              "percent": 35.78947368421053
+            },
+            "hasDescription": {
+              "known": 89,
+              "total": 285,
+              "percent": 31.2280701754386
+            },
+            "hasTwitter": {
+              "known": 102,
+              "total": 285,
+              "percent": 35.78947368421053
+            },
+            "hasTelegram": {
+              "known": 102,
+              "total": 285,
+              "percent": 35.78947368421053
+            },
+            "hasWebsite": {
+              "known": 102,
+              "total": 285,
+              "percent": 35.78947368421053
+            },
+            "lpBurned": {
+              "known": 59,
+              "total": 285,
+              "percent": 20.701754385964914
+            },
+            "ageAtMigrationMin": {
+              "known": 168,
+              "total": 285,
+              "percent": 58.94736842105262
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "10": {
+          "coins": 281,
+          "features": {
+            "holders": {
+              "known": 153,
+              "total": 281,
+              "percent": 54.44839857651246
+            },
+            "top1": {
+              "known": 153,
+              "total": 281,
+              "percent": 54.44839857651246
+            },
+            "top10": {
+              "known": 153,
+              "total": 281,
+              "percent": 54.44839857651246
+            },
+            "devBuySol": {
+              "known": 20,
+              "total": 281,
+              "percent": 7.11743772241993
+            },
+            "devHoldPct": {
+              "known": 117,
+              "total": 281,
+              "percent": 41.637010676156585
+            },
+            "devSold": {
+              "known": 21,
+              "total": 281,
+              "percent": 7.473309608540925
+            },
+            "devLaunches": {
+              "known": 167,
+              "total": 281,
+              "percent": 59.430604982206404
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 281,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 9,
+              "total": 281,
+              "percent": 3.202846975088968
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 281,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 109,
+              "total": 281,
+              "percent": 38.79003558718861
+            },
+            "hasDescription": {
+              "known": 96,
+              "total": 281,
+              "percent": 34.16370106761566
+            },
+            "hasTwitter": {
+              "known": 109,
+              "total": 281,
+              "percent": 38.79003558718861
+            },
+            "hasTelegram": {
+              "known": 109,
+              "total": 281,
+              "percent": 38.79003558718861
+            },
+            "hasWebsite": {
+              "known": 109,
+              "total": 281,
+              "percent": 38.79003558718861
+            },
+            "lpBurned": {
+              "known": 61,
+              "total": 281,
+              "percent": 21.70818505338078
+            },
+            "ageAtMigrationMin": {
+              "known": 166,
+              "total": 281,
+              "percent": 59.07473309608541
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "11": {
+          "coins": 278,
+          "features": {
+            "holders": {
+              "known": 153,
+              "total": 278,
+              "percent": 55.03597122302158
+            },
+            "top1": {
+              "known": 153,
+              "total": 278,
+              "percent": 55.03597122302158
+            },
+            "top10": {
+              "known": 153,
+              "total": 278,
+              "percent": 55.03597122302158
+            },
+            "devBuySol": {
+              "known": 18,
+              "total": 278,
+              "percent": 6.474820143884892
+            },
+            "devHoldPct": {
+              "known": 117,
+              "total": 278,
+              "percent": 42.086330935251794
+            },
+            "devSold": {
+              "known": 22,
+              "total": 278,
+              "percent": 7.913669064748201
+            },
+            "devLaunches": {
+              "known": 168,
+              "total": 278,
+              "percent": 60.431654676258994
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 278,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 9,
+              "total": 278,
+              "percent": 3.237410071942446
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 278,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 111,
+              "total": 278,
+              "percent": 39.92805755395683
+            },
+            "hasDescription": {
+              "known": 99,
+              "total": 278,
+              "percent": 35.61151079136691
+            },
+            "hasTwitter": {
+              "known": 109,
+              "total": 278,
+              "percent": 39.20863309352518
+            },
+            "hasTelegram": {
+              "known": 109,
+              "total": 278,
+              "percent": 39.20863309352518
+            },
+            "hasWebsite": {
+              "known": 109,
+              "total": 278,
+              "percent": 39.20863309352518
+            },
+            "lpBurned": {
+              "known": 66,
+              "total": 278,
+              "percent": 23.741007194244602
+            },
+            "ageAtMigrationMin": {
+              "known": 163,
+              "total": 278,
+              "percent": 58.63309352517986
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "12": {
+          "coins": 277,
+          "features": {
+            "holders": {
+              "known": 153,
+              "total": 277,
+              "percent": 55.23465703971119
+            },
+            "top1": {
+              "known": 153,
+              "total": 277,
+              "percent": 55.23465703971119
+            },
+            "top10": {
+              "known": 153,
+              "total": 277,
+              "percent": 55.23465703971119
+            },
+            "devBuySol": {
+              "known": 19,
+              "total": 277,
+              "percent": 6.859205776173286
+            },
+            "devHoldPct": {
+              "known": 117,
+              "total": 277,
+              "percent": 42.238267148014444
+            },
+            "devSold": {
+              "known": 23,
+              "total": 277,
+              "percent": 8.303249097472925
+            },
+            "devLaunches": {
+              "known": 172,
+              "total": 277,
+              "percent": 62.093862815884485
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 277,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 9,
+              "total": 277,
+              "percent": 3.2490974729241873
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 277,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 114,
+              "total": 277,
+              "percent": 41.15523465703971
+            },
+            "hasDescription": {
+              "known": 100,
+              "total": 277,
+              "percent": 36.101083032490976
+            },
+            "hasTwitter": {
+              "known": 114,
+              "total": 277,
+              "percent": 41.15523465703971
+            },
+            "hasTelegram": {
+              "known": 114,
+              "total": 277,
+              "percent": 41.15523465703971
+            },
+            "hasWebsite": {
+              "known": 114,
+              "total": 277,
+              "percent": 41.15523465703971
+            },
+            "lpBurned": {
+              "known": 66,
+              "total": 277,
+              "percent": 23.826714801444044
+            },
+            "ageAtMigrationMin": {
+              "known": 171,
+              "total": 277,
+              "percent": 61.73285198555957
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "13": {
+          "coins": 272,
+          "features": {
+            "holders": {
+              "known": 151,
+              "total": 272,
+              "percent": 55.51470588235294
+            },
+            "top1": {
+              "known": 151,
+              "total": 272,
+              "percent": 55.51470588235294
+            },
+            "top10": {
+              "known": 151,
+              "total": 272,
+              "percent": 55.51470588235294
+            },
+            "devBuySol": {
+              "known": 17,
+              "total": 272,
+              "percent": 6.25
+            },
+            "devHoldPct": {
+              "known": 115,
+              "total": 272,
+              "percent": 42.279411764705884
+            },
+            "devSold": {
+              "known": 22,
+              "total": 272,
+              "percent": 8.088235294117647
+            },
+            "devLaunches": {
+              "known": 172,
+              "total": 272,
+              "percent": 63.23529411764706
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 272,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 9,
+              "total": 272,
+              "percent": 3.308823529411765
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 272,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 114,
+              "total": 272,
+              "percent": 41.911764705882355
+            },
+            "hasDescription": {
+              "known": 100,
+              "total": 272,
+              "percent": 36.76470588235294
+            },
+            "hasTwitter": {
+              "known": 114,
+              "total": 272,
+              "percent": 41.911764705882355
+            },
+            "hasTelegram": {
+              "known": 114,
+              "total": 272,
+              "percent": 41.911764705882355
+            },
+            "hasWebsite": {
+              "known": 114,
+              "total": 272,
+              "percent": 41.911764705882355
+            },
+            "lpBurned": {
+              "known": 60,
+              "total": 272,
+              "percent": 22.058823529411764
+            },
+            "ageAtMigrationMin": {
+              "known": 166,
+              "total": 272,
+              "percent": 61.029411764705884
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "14": {
+          "coins": 270,
+          "features": {
+            "holders": {
+              "known": 151,
+              "total": 270,
+              "percent": 55.925925925925924
+            },
+            "top1": {
+              "known": 151,
+              "total": 270,
+              "percent": 55.925925925925924
+            },
+            "top10": {
+              "known": 151,
+              "total": 270,
+              "percent": 55.925925925925924
+            },
+            "devBuySol": {
+              "known": 18,
+              "total": 270,
+              "percent": 6.666666666666667
+            },
+            "devHoldPct": {
+              "known": 115,
+              "total": 270,
+              "percent": 42.592592592592595
+            },
+            "devSold": {
+              "known": 23,
+              "total": 270,
+              "percent": 8.518518518518519
+            },
+            "devLaunches": {
+              "known": 173,
+              "total": 270,
+              "percent": 64.07407407407408
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 270,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 8,
+              "total": 270,
+              "percent": 2.9629629629629632
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 270,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 119,
+              "total": 270,
+              "percent": 44.074074074074076
+            },
+            "hasDescription": {
+              "known": 105,
+              "total": 270,
+              "percent": 38.88888888888889
+            },
+            "hasTwitter": {
+              "known": 119,
+              "total": 270,
+              "percent": 44.074074074074076
+            },
+            "hasTelegram": {
+              "known": 119,
+              "total": 270,
+              "percent": 44.074074074074076
+            },
+            "hasWebsite": {
+              "known": 119,
+              "total": 270,
+              "percent": 44.074074074074076
+            },
+            "lpBurned": {
+              "known": 67,
+              "total": 270,
+              "percent": 24.814814814814813
+            },
+            "ageAtMigrationMin": {
+              "known": 165,
+              "total": 270,
+              "percent": 61.111111111111114
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "15": {
+          "coins": 268,
+          "features": {
+            "holders": {
+              "known": 172,
+              "total": 268,
+              "percent": 64.17910447761194
+            },
+            "top1": {
+              "known": 172,
+              "total": 268,
+              "percent": 64.17910447761194
+            },
+            "top10": {
+              "known": 172,
+              "total": 268,
+              "percent": 64.17910447761194
+            },
+            "devBuySol": {
+              "known": 21,
+              "total": 268,
+              "percent": 7.835820895522389
+            },
+            "devHoldPct": {
+              "known": 134,
+              "total": 268,
+              "percent": 50
+            },
+            "devSold": {
+              "known": 26,
+              "total": 268,
+              "percent": 9.701492537313433
+            },
+            "devLaunches": {
+              "known": 175,
+              "total": 268,
+              "percent": 65.29850746268657
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 268,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 8,
+              "total": 268,
+              "percent": 2.9850746268656714
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 268,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 121,
+              "total": 268,
+              "percent": 45.149253731343286
+            },
+            "hasDescription": {
+              "known": 107,
+              "total": 268,
+              "percent": 39.92537313432835
+            },
+            "hasTwitter": {
+              "known": 121,
+              "total": 268,
+              "percent": 45.149253731343286
+            },
+            "hasTelegram": {
+              "known": 121,
+              "total": 268,
+              "percent": 45.149253731343286
+            },
+            "hasWebsite": {
+              "known": 121,
+              "total": 268,
+              "percent": 45.149253731343286
+            },
+            "lpBurned": {
+              "known": 67,
+              "total": 268,
+              "percent": 25
+            },
+            "ageAtMigrationMin": {
+              "known": 164,
+              "total": 268,
+              "percent": 61.19402985074627
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "16": {
+          "coins": 266,
+          "features": {
+            "holders": {
+              "known": 177,
+              "total": 266,
+              "percent": 66.54135338345864
+            },
+            "top1": {
+              "known": 177,
+              "total": 266,
+              "percent": 66.54135338345864
+            },
+            "top10": {
+              "known": 177,
+              "total": 266,
+              "percent": 66.54135338345864
+            },
+            "devBuySol": {
+              "known": 20,
+              "total": 266,
+              "percent": 7.518796992481203
+            },
+            "devHoldPct": {
+              "known": 139,
+              "total": 266,
+              "percent": 52.255639097744364
+            },
+            "devSold": {
+              "known": 25,
+              "total": 266,
+              "percent": 9.398496240601503
+            },
+            "devLaunches": {
+              "known": 173,
+              "total": 266,
+              "percent": 65.0375939849624
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 266,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 8,
+              "total": 266,
+              "percent": 3.007518796992481
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 266,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 125,
+              "total": 266,
+              "percent": 46.99248120300752
+            },
+            "hasDescription": {
+              "known": 112,
+              "total": 266,
+              "percent": 42.10526315789473
+            },
+            "hasTwitter": {
+              "known": 125,
+              "total": 266,
+              "percent": 46.99248120300752
+            },
+            "hasTelegram": {
+              "known": 125,
+              "total": 266,
+              "percent": 46.99248120300752
+            },
+            "hasWebsite": {
+              "known": 125,
+              "total": 266,
+              "percent": 46.99248120300752
+            },
+            "lpBurned": {
+              "known": 67,
+              "total": 266,
+              "percent": 25.18796992481203
+            },
+            "ageAtMigrationMin": {
+              "known": 163,
+              "total": 266,
+              "percent": 61.278195488721806
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "17": {
+          "coins": 263,
+          "features": {
+            "holders": {
+              "known": 180,
+              "total": 263,
+              "percent": 68.44106463878326
+            },
+            "top1": {
+              "known": 180,
+              "total": 263,
+              "percent": 68.44106463878326
+            },
+            "top10": {
+              "known": 180,
+              "total": 263,
+              "percent": 68.44106463878326
+            },
+            "devBuySol": {
+              "known": 19,
+              "total": 263,
+              "percent": 7.224334600760455
+            },
+            "devHoldPct": {
+              "known": 139,
+              "total": 263,
+              "percent": 52.851711026615966
+            },
+            "devSold": {
+              "known": 24,
+              "total": 263,
+              "percent": 9.125475285171103
+            },
+            "devLaunches": {
+              "known": 170,
+              "total": 263,
+              "percent": 64.63878326996198
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 263,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 8,
+              "total": 263,
+              "percent": 3.041825095057034
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 263,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 129,
+              "total": 263,
+              "percent": 49.049429657794676
+            },
+            "hasDescription": {
+              "known": 116,
+              "total": 263,
+              "percent": 44.106463878327
+            },
+            "hasTwitter": {
+              "known": 129,
+              "total": 263,
+              "percent": 49.049429657794676
+            },
+            "hasTelegram": {
+              "known": 129,
+              "total": 263,
+              "percent": 49.049429657794676
+            },
+            "hasWebsite": {
+              "known": 129,
+              "total": 263,
+              "percent": 49.049429657794676
+            },
+            "lpBurned": {
+              "known": 66,
+              "total": 263,
+              "percent": 25.09505703422053
+            },
+            "ageAtMigrationMin": {
+              "known": 164,
+              "total": 263,
+              "percent": 62.3574144486692
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "18": {
+          "coins": 263,
+          "features": {
+            "holders": {
+              "known": 185,
+              "total": 263,
+              "percent": 70.34220532319392
+            },
+            "top1": {
+              "known": 185,
+              "total": 263,
+              "percent": 70.34220532319392
+            },
+            "top10": {
+              "known": 185,
+              "total": 263,
+              "percent": 70.34220532319392
+            },
+            "devBuySol": {
+              "known": 19,
+              "total": 263,
+              "percent": 7.224334600760455
+            },
+            "devHoldPct": {
+              "known": 142,
+              "total": 263,
+              "percent": 53.99239543726235
+            },
+            "devSold": {
+              "known": 24,
+              "total": 263,
+              "percent": 9.125475285171103
+            },
+            "devLaunches": {
+              "known": 170,
+              "total": 263,
+              "percent": 64.63878326996198
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 263,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 8,
+              "total": 263,
+              "percent": 3.041825095057034
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 263,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 132,
+              "total": 263,
+              "percent": 50.19011406844106
+            },
+            "hasDescription": {
+              "known": 119,
+              "total": 263,
+              "percent": 45.247148288973385
+            },
+            "hasTwitter": {
+              "known": 132,
+              "total": 263,
+              "percent": 50.19011406844106
+            },
+            "hasTelegram": {
+              "known": 132,
+              "total": 263,
+              "percent": 50.19011406844106
+            },
+            "hasWebsite": {
+              "known": 132,
+              "total": 263,
+              "percent": 50.19011406844106
+            },
+            "lpBurned": {
+              "known": 66,
+              "total": 263,
+              "percent": 25.09505703422053
+            },
+            "ageAtMigrationMin": {
+              "known": 169,
+              "total": 263,
+              "percent": 64.25855513307985
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "19": {
+          "coins": 262,
+          "features": {
+            "holders": {
+              "known": 189,
+              "total": 262,
+              "percent": 72.13740458015268
+            },
+            "top1": {
+              "known": 189,
+              "total": 262,
+              "percent": 72.13740458015268
+            },
+            "top10": {
+              "known": 189,
+              "total": 262,
+              "percent": 72.13740458015268
+            },
+            "devBuySol": {
+              "known": 18,
+              "total": 262,
+              "percent": 6.870229007633588
+            },
+            "devHoldPct": {
+              "known": 145,
+              "total": 262,
+              "percent": 55.343511450381676
+            },
+            "devSold": {
+              "known": 23,
+              "total": 262,
+              "percent": 8.778625954198473
+            },
+            "devLaunches": {
+              "known": 169,
+              "total": 262,
+              "percent": 64.50381679389314
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 262,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 8,
+              "total": 262,
+              "percent": 3.0534351145038165
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 262,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 135,
+              "total": 262,
+              "percent": 51.526717557251914
+            },
+            "hasDescription": {
+              "known": 121,
+              "total": 262,
+              "percent": 46.18320610687023
+            },
+            "hasTwitter": {
+              "known": 135,
+              "total": 262,
+              "percent": 51.526717557251914
+            },
+            "hasTelegram": {
+              "known": 135,
+              "total": 262,
+              "percent": 51.526717557251914
+            },
+            "hasWebsite": {
+              "known": 135,
+              "total": 262,
+              "percent": 51.526717557251914
+            },
+            "lpBurned": {
+              "known": 67,
+              "total": 262,
+              "percent": 25.572519083969464
+            },
+            "ageAtMigrationMin": {
+              "known": 169,
+              "total": 262,
+              "percent": 64.50381679389314
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        },
+        "20": {
+          "coins": 260,
+          "features": {
+            "holders": {
+              "known": 188,
+              "total": 260,
+              "percent": 72.3076923076923
+            },
+            "top1": {
+              "known": 188,
+              "total": 260,
+              "percent": 72.3076923076923
+            },
+            "top10": {
+              "known": 188,
+              "total": 260,
+              "percent": 72.3076923076923
+            },
+            "devBuySol": {
+              "known": 17,
+              "total": 260,
+              "percent": 6.538461538461539
+            },
+            "devHoldPct": {
+              "known": 147,
+              "total": 260,
+              "percent": 56.53846153846154
+            },
+            "devSold": {
+              "known": 22,
+              "total": 260,
+              "percent": 8.461538461538462
+            },
+            "devLaunches": {
+              "known": 167,
+              "total": 260,
+              "percent": 64.23076923076924
+            },
+            "devRugShare": {
+              "known": 0,
+              "total": 260,
+              "percent": 0
+            },
+            "sniperShare": {
+              "known": 7,
+              "total": 260,
+              "percent": 2.6923076923076925
+            },
+            "bundleShare": {
+              "known": 0,
+              "total": 260,
+              "percent": 0
+            },
+            "hasImage": {
+              "known": 137,
+              "total": 260,
+              "percent": 52.69230769230769
+            },
+            "hasDescription": {
+              "known": 123,
+              "total": 260,
+              "percent": 47.30769230769231
+            },
+            "hasTwitter": {
+              "known": 137,
+              "total": 260,
+              "percent": 52.69230769230769
+            },
+            "hasTelegram": {
+              "known": 137,
+              "total": 260,
+              "percent": 52.69230769230769
+            },
+            "hasWebsite": {
+              "known": 137,
+              "total": 260,
+              "percent": 52.69230769230769
+            },
+            "lpBurned": {
+              "known": 64,
+              "total": 260,
+              "percent": 24.615384615384617
+            },
+            "ageAtMigrationMin": {
+              "known": 169,
+              "total": 260,
+              "percent": 65
+            }
+          },
+          "target": {
+            "percent": 90,
+            "met": false,
+            "belowTarget": [
+              "holders",
+              "top1",
+              "top10",
+              "devBuySol",
+              "devHoldPct",
+              "devSold",
+              "devLaunches",
+              "devRugShare",
+              "sniperShare",
+              "bundleShare",
+              "hasImage",
+              "hasDescription",
+              "hasTwitter",
+              "hasTelegram",
+              "hasWebsite",
+              "lpBurned",
+              "ageAtMigrationMin"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

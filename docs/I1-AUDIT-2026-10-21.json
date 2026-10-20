@@ -1,6 +1,6 @@
 {
   "source": "https://storage.googleapis.com/sol-scan-511718-data/research-v2/debug-sample.json",
-  "observedAt": 1792525177881,
+  "observedAt": 1792527418834,
   "selection": "named-mints-then-sha256",
   "coins": [
     {
