@@ -20,3 +20,5 @@
 .dph{font-size:12.5px;font-weight:800;margin:8px 0 2px}.dh{margin:6px 0 10px}.dh b{font-size:12px}.dbars{display:flex;gap:3px;align-items:flex-end;margin-top:4px;overflow-x:auto}.db{flex:1 1 0;min-width:28px;display:flex;flex-direction:column;align-items:center;gap:1px}.db i{display:block;width:100%;background:var(--accent);border-radius:3px 3px 0 0}.db span{font-size:10px;font-weight:700}.db small{font-size:8.5px;color:var(--muted);white-space:nowrap}
 
 .spark.nospark{display:inline-block;font-size:10px;color:var(--muted);white-space:nowrap;text-align:right}
+
+.subfold{margin:2px 0 6px}.subfold>summary{cursor:pointer;list-style:none}.subfold>summary::-webkit-details-marker{display:none}

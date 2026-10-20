@@ -722,7 +722,7 @@ function renderR1(){
     var a=counts.live||0,b=counts.dead||0;
     $('r1Live').textContent=fmt(a);$('r1Dead').textContent=fmt(b);
     $('r1Auto').textContent='Серверные наблюдения · '+cfg.hours+' ч · активность ≥'+cfg.minActive+
-      '% · простой ≤'+cfg.maxIdle+' мин. Размечено живых: '+a+
+      '% кусочков (сделка ≥'+(cfg.minTradeSol??0.05)+' SOL от ≥'+(cfg.minWallets??2)+' кош.). Размечено живых: '+a+
       '/100. Ожидают окончания наблюдения: '+(p['not-yet-finished']||0)+
       ', ❓ сбой/нет подтверждённых наблюдений: '+(p['collector-gap']||0)+
       '. Автоподбор: требуется не меньше 100 живых и 40 мёртвых в обучении, затем отдельные 100 на поздней проверке.';
@@ -733,7 +733,7 @@ function renderR1(){
         'Накопление обучающих живых и мёртвых.';
       $('r1Auto').textContent+=' '+text+' Предложено условий: '+fmt(autoOne.rules.length)+'.';
     }
-    var r1ar=$('r1ApplyRow').classList;if(!r1ar.contains||r1ar.contains('hide')){$('r1Hours').value=cfg.hours;$('r1HoursValue').textContent=cfg.hours+' ч';$('r1Activity').value=cfg.minActive;$('r1ActivityValue').textContent=cfg.minActive+'%';$('r1Idle').value=cfg.maxIdle;$('r1IdleValue').textContent=cfg.maxIdle+' мин';$('r1Drop').value=100-cfg.minPriceKeep;$('r1DropV').textContent=(100-cfg.minPriceKeep)+'%';$('r1Uniq').value=cfg.minUniqueBuyers;$('r1UniqV').textContent=cfg.minUniqueBuyers;$('r1LastTrades').value=cfg.lastHourTrades;$('r1LastTradesV').textContent=cfg.lastHourTrades;$('r1LastWallets').value=cfg.lastHourWallets;$('r1LastWalletsV').textContent=cfg.lastHourWallets;$('r1UseActivity').checked=cfg.useActivity===true;$('r1UseIdle').checked=cfg.useIdle===true}
+    var r1ar=$('r1ApplyRow').classList;if(!r1ar.contains||r1ar.contains('hide')){$('r1Hours').value=cfg.hours;$('r1HoursValue').textContent=cfg.hours+' ч';$('r1Activity').value=cfg.minActive;$('r1ActivityValue').textContent=cfg.minActive+'%';$('r1Idle').value=cfg.maxIdle;$('r1IdleValue').textContent=cfg.maxIdle+' мин';$('r1Drop').value=100-cfg.minPriceKeep;$('r1DropV').textContent=(100-cfg.minPriceKeep)+'%';$('r1Uniq').value=cfg.minUniqueBuyers;$('r1UniqV').textContent=cfg.minUniqueBuyers;$('r1LastTrades').value=cfg.lastHourTrades;$('r1LastTradesV').textContent=cfg.lastHourTrades;$('r1LastWallets').value=cfg.lastHourWallets;$('r1LastWalletsV').textContent=cfg.lastHourWallets;$('r1UseActivity').checked=cfg.useActivity===true;$('r1UseIdle').checked=cfg.useIdle===true;if(window.r1GearSet)window.r1GearSet(cfg.minTradeSol??0.05,cfg.minWallets??2)}
     var T=r1T(),rr=$('r1ResApplyRow').classList;if(!rr.contains||rr.contains('hide')){$('r1TL').value=T.l;$('r1TLv').textContent=T.l;$('r1TD').value=T.d;$('r1TDv').textContent=T.d;$('r1Dec').value=cfg.decisionMinutes;$('r1DecV').textContent=cfg.decisionMinutes+' мин';$('r1Pen').value=cfg.missPenalty??3;$('r1PenV').textContent='×'+(cfg.missPenalty??3)}
     if(R1DEC&&R1DEC===cfg.decisionMinutes)R1DEC=0;$('r1ResSum').textContent='🟢 '+a+'/'+T.l+' · 🔴 '+b+'/'+T.d+' · '+(R1DEC?R1DEC+' мин ⏳':cfg.decisionMinutes+' мин');$('r1Meter').style.width=Math.min(100,Math.min(a/T.l,b/T.d)*100)+'%';
     if(researchMeta.counts?.entered!=null){var cc=R1P==='all'?researchMeta.counts:researchMeta.byPhase?.[R1P];if(cc)$('r1Auto').textContent+=' Вошло '+cc.entered+' = 🟢 '+cc.live+' + 🔴 '+cc.dead+' + ⏳ '+cc.pending+' + ❓ '+cc.unknown;}
@@ -747,7 +747,7 @@ function renderR1(){
       de.innerHTML=dist?phs.map(function(ph){var dp=dist[ph];if(!dp)return '';tot+=dp.completed||0;var allUnk=dp.uniqueBuyers&&dp.uniqueBuyers.known===0;
         return '<div class="dph">'+(ph==='before'?'🧪 Ручной пул':'🎓 После')+' · завершено '+dp.completed+'</div>'+bars('Активность, % времени',dp.activePct,'')+bars('Самый долгий простой, мин',dp.maxIdleObserved,'')+bars('Цена к концу, %',dp.priceChangePct,'')+(allUnk?'<p class="hint">Разные покупатели: пока не считаются сервером</p>':bars('Разные покупатели',dp.uniqueBuyers,''))}).join(''):'<p class="hint">Пока нет</p>';
       $('r1DistSum').textContent=dist?'завершено '+tot:''}
-    $('r1Sum').textContent=cfg.hours+' ч · '+cfg.minActive+'% · '+cfg.maxIdle+' мин';
+    $('r1Sum').textContent=cfg.hours+' ч · ≥'+cfg.minActive+'% · '+(cfg.minTradeSol??0.05)+' SOL · '+(cfg.minWallets??2)+' кош.';
     var sel=all.filter(function(x){return R1F==='all'||x.label===R1F}).slice(-R1N).reverse();
     $('r1Rows').innerHTML=sel.length?sel.map(function(x){var lv=isLive(x),c=lastAccepted.find(function(d){return mint(d)===x.mint}),bd='<span class="badge '+(x.label==='live'?'good':x.label==='dead'?'bad':'')+'" title="'+esc(x.why||'')+'">'+({live:'🟢',dead:'🔴',pending:'⏳',unknown:'❓'}[x.label]||'❓')+'</span>';
       return coinHtml(c||coinOf(x),bd)}).join(''):'<div class="empty-state">Пока нет</div>';
@@ -1093,7 +1093,7 @@ async function publishResearchLevel(level){
   if(one){
     cfg={hours:Number($('r1Hours').value),
       decisionMinutes:Number($('r1Dec').value)||researchMeta.settings.decisionMinutes,
-      minActive:Number($('r1Activity').value),
+      minActive:Number($('r1Activity').value),minTradeSol:Number($('r1MinSol').value),minWallets:Number($('r1MinWal').value),useActivity:true,
       maxIdle:Number($('r1Idle').value),targetLive:Number($('r1TL').value),targetDead:Number($('r1TD').value),missPenalty:Number($('r1Pen').value)||3,
       lastHourTrades:Number($('r1LastTrades').value??onePhaseSettings(researchMeta.settings,R1P).lastHourTrades??1),lastHourWallets:Number($('r1LastWallets').value??onePhaseSettings(researchMeta.settings,R1P).lastHourWallets??1),maxDrop:Number($('r1Drop').value),minPriceKeep:100-Number($('r1Drop').value),minUniqueBuyers:Number($('r1Uniq').value??30),useActivity:$('r1UseActivity').checked,useIdle:$('r1UseIdle').checked,
       minCoverage:researchMeta.settings.minCoverage,...(researchMeta.settings.intake?{intake:researchMeta.settings.intake}:{})};
@@ -1341,6 +1341,8 @@ function bind(){
   [['r1TL','r1TLv',''],['r1TD','r1TDv',''],['r1Dec','r1DecV',' мин']].forEach(function(a){$(a[0]).addEventListener('input',function(){$(a[1]).textContent=$(a[0]).value+a[2];$('r1ResApplyRow').classList.remove('hide')})});
   $('r1ResApply').addEventListener('click',function(){publishResearchLevel('1')});
   ['r1Hours','r1Activity','r1Idle','r1Drop','r1Uniq','r1LastTrades','r1LastWallets','r1UseActivity','r1UseIdle'].forEach(function(id){$(id).addEventListener('input',function(){$('r1ApplyRow').classList.remove('hide');if(id==='r1Drop')$('r1DropV').textContent=this.value+'%';if(id==='r1Uniq')$('r1UniqV').textContent=this.value;if(id==='r1LastTrades')$('r1LastTradesV').textContent=this.value;if(id==='r1LastWallets')$('r1LastWalletsV').textContent=this.value})});
+  window.r1GearSet=function(sol,w){$('r1MinSol').value=sol;$('r1MinWal').value=w;$('r1MinSolV').textContent=sol+' SOL';$('r1MinWalV').textContent=w;$('r1MinSolV2').textContent=sol;$('r1MinWalV2').textContent=w};
+  ['r1MinSol','r1MinWal','r1Activity','r1Hours'].forEach(function(id){$(id).addEventListener('input',function(){$('r1ApplyRow').classList.remove('hide');if(id==='r1Activity')$('r1ActivityValue').textContent=this.value+'%';if(id==='r1Hours')$('r1HoursValue').textContent=this.value+' ч';if(id==='r1MinSol'||id==='r1MinWal')window.r1GearSet(+$('r1MinSol').value,+$('r1MinWal').value)})});
   function liveKey(){return 'r1live_'+R1P}
   function liveLoad(){var v={d:70,u:30,cap:10};try{v=Object.assign(v,JSON.parse(localStorage.getItem(liveKey())||'{}'))}catch(e){}$('r1Drop').value=v.d;$('r1DropV').textContent=v.d+'%';$('r1Cap').value=v.cap;$('r1CapV').textContent='$'+v.cap+'K';$('r1Uniq').value=v.u;$('r1UniqV').textContent=v.u}
   liveLoad();$('r1Ph').addEventListener('click',liveLoad);
