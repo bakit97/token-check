@@ -3,7 +3,7 @@
   "files": {
     "collector.js": "ff70f844048b06d32bd0345d3d50b039f69e880a1df8fe9845adf387712ee78f",
     "pool-trade-observer.js": "f7b3f02ff15cbac724c36a31666ed561ff8a595d424173105f3e00c2913c1f42",
-    "opening-evidence.js": "8a06cb94da8c1e8a6db0591d9cfce4e5f11fa2905f8f68ffedb0830b33493961",
+    "opening-evidence.js": "adb8ece21e62a3f5420b475a97f71d3481b5007d00f80f16a565defece1c9dac",
     "holder-census.js": "9ec77d8504239901ad4bf5c3fcf5d4cbed7cb3d3a39fc68c20647743254d9672",
     "liquidity-proof.js": "80aec08bcd3dbbc3daf304e33555c1d977e738ac7c5243699ba831b6cbaec6ad",
     "venue-identity.js": "41335e3e48009553c4e89754d5ed45111109af97203d423c6538231755a6b378",
