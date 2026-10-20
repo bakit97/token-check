@@ -230,6 +230,7 @@ function starterFeaturesAt(coin,decisionAt,context={}){
   const row=latestBefore([...(coin.lq||[])].sort((a,b)=>a[0]-b[0]),decisionAt,7*MIN,x=>x[0]*1000);
   if(row&&Number.isFinite(row[2+qi])&&row[2+qi]>=0)quoteSol=row[2+qi]/1e9;
  }
+ const opening=coin?.openingMetrics;if(quoteSol==null&&coin?.mg?.st==='ok'&&coin.mg.pool===coin.p&&opening?.pool===coin.p&&opening.quoteMint===WSOL&&opening.at<=decisionAt&&decisionAt-opening.at<=7*MIN&&Number.isFinite(opening.liquiditySol)&&opening.liquiditySol>=0)quoteSol=opening.liquiditySol;
  // До миграции: SOL в кривой pump (real_sol_reserves), замер не старше 7 мин и не позже момента решения.
  if(quoteSol==null&&coin?.mg?.st!=='ok'&&/pump-?fun/i.test(coin?.d||'')&&Array.isArray(coin?.curveSol)&&(!coin.q||coin.q===WSOL)){
   let best=null;for(const r of coin.curveSol)if(Array.isArray(r)&&r[0]<=decisionAt&&decisionAt-r[0]<=7*MIN&&Number.isFinite(r[1])&&r[1]>=0&&(!best||r[0]>best[0]))best=r;

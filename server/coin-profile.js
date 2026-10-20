@@ -7,6 +7,7 @@ function cardAt(c,at){
  const WSOL='So11111111111111111111111111111111111111112',qi=c?.vmint?.indexOf(WSOL),vault=qi>=0&&c.vmint.length===2&&c.vmint[1-qi]===c.a&&c.vaultIdentityAt<=at;
  const native=vault?(c.lq||[]).filter(r=>r[0]*1000<=at&&at-r[0]*1000<=35*MIN).at(-1):null,curve=c?.mg?.st!=='ok'&&/pump-?fun/i.test(c?.d||'')&&(!c.q||c.q===WSOL)?(c.curveSol||[]).filter(r=>r[0]<=at&&at-r[0]<=35*MIN).at(-1):null;
  let sol=f.quoteSol,measuredAt=null;if(native&&Number.isFinite(native[2+qi])){sol=native[2+qi]/1e9;measuredAt=native[0]*1000;}else if(curve&&Number.isFinite(curve[1])){sol=curve[1]/1e9;measuredAt=curve[0];}
+ const opening=c?.openingMetrics;if(measuredAt==null&&c?.mg?.st==='ok'&&c.mg.pool===c.p&&opening?.pool===c.p&&opening.quoteMint===WSOL&&opening.at<=at&&at-opening.at<=35*MIN&&Number.isFinite(opening.liquiditySol)&&opening.liquiditySol>=0){sol=opening.liquiditySol;measuredAt=opening.eventAt||opening.at;}
  const solQuoteMint=c?.q||null,solUnavailableReason=sol!=null?null:solQuoteMint&&solQuoteMint!==WSOL?'non-native-quote':'not-observed';
  const clone=c?.discoveryFeatures&&c.discoveryFeatures.at<=at?c.discoveryFeatures:{};
  return {cloneCount:clone.cloneCount??null,cloneRank:clone.cloneRank??null,isFirstOfName:clone.isFirstOfName??null,cloneCountLowerBound:clone.cloneCountLowerBound===true,sol,solQuoteMint,solUnavailableReason,solMeasuredAt:measuredAt,solAgeMs:measuredAt!=null?at-measuredAt:null,b5:count(d?.[4]),s5:count(d?.[5]),top10:f.top10,safeContract:f.safeContract==null?null:f.safeContract===1,

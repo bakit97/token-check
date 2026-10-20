@@ -11,7 +11,7 @@ let COMPLETED=null,ACTIVE_HISTORY=null;
 const fullCoin=c=>ACTIVE_HISTORY?ACTIVE_HISTORY.hydrate(c):c;
 const PUBLIC_FEEDS={busy:false,sourceAt:0,libraryAt:0,storageAt:0,error:''},RESEARCH_EXPORTS={busy:false,oneAt:0,twoAt:0,error:''};let SOURCE_DAY_PUBLISHED_AT=0;
 const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:30000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0,pendingWork:0,cancelledGT:0};
-let RESOURCE=null;
+let RESOURCE=null,FAST_DISCOVERY=null;const POOL_TRANSITION={mode:'pools-v1',legacySourceRemoved:0,legacyDataCleanupPending:true};
 const resourcePressure=()=>process.memoryUsage().rss>=360*1024*1024;
 const BUCKET='sol-scan-511718-data',DIR=process.env.SOLSCAN_DIR||'/var/solscan',TZ=5*3600e3;
 const GT='https://api.geckoterminal.com/api/v2/networks/solana',DS='https://api.dexscreener.com';
@@ -103,7 +103,7 @@ async function rpc(method,params,options={}){
       if(cacheKey&&d.result){RPC_CACHE.delete(cacheKey);RPC_CACHE.set(cacheKey,{value:d.result,until:Date.now()+(method==='getSlot'?10000:method==='getSignaturesForAddress'?10000:5*60e3)});while(RPC_CACHE.size>128)RPC_CACHE.delete(RPC_CACHE.keys().next().value)}
       return d.result}
     throw new Error('rpc 429')};
-  const p=rpcBusy.then(go,go);rpcBusy=p.then(()=>sleep(150),()=>sleep(150));return p}
+  if(options.urgent)return go();const p=rpcBusy.then(go,go);rpcBusy=p.then(()=>sleep(150),()=>sleep(150));return p}
 const globalRPC=rpc;
 function budgetSource(c){return c?.discoverySource||(c?.d?.includes('dbc')||c?.d?.includes('meteora')?'dbc':c?.d?.includes('launch')?'ll':'pump')}
 function rpcFor(c,context){return async(method,params)=>{const value=await rpc(method,params,{context,source:context==='миграция'?budgetSource(c):context});if(context==='миграция')c.proofProgressAt=Date.now();return value}}
@@ -443,7 +443,7 @@ async function collectIntelligence(){const now=Date.now();if(INTEL_BUSY||now-INT
 // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
 // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
 const MODULES=['event-clock.js','admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
-  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js','module-library.js','active-history.js','launch-history.js','early-intelligence.js'];
+  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js','module-library.js','active-history.js','launch-history.js','early-intelligence.js','migration-fast.js'];
 let MODULES_OK=null;
 function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
   for(const name of MODULES){const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
@@ -457,6 +457,8 @@ async function initSource() {
   // Отсутствующий/повреждённый журнал НЕ очищать; источник лучше отключить,
   // чем повторно занести монеты после рестарта.
   SOURCE=new (require(DIR+'/source-runtime.js').SourceRuntime)({dir:DIR});
+  const removed=SOURCE.removeLegacyBirths();POOL_TRANSITION.legacySourceRemoved=removed.length;
+  if(removed.length){for(const mint of removed)C.delete(mint);fs.writeFileSync(DIR+'/legacy-before-purge-pending.json',JSON.stringify({schema:1,createdAt:Date.now(),mints:removed,reason:'owner-TZ20-delete-legacy-birth-data'}));save();}
   EVENT_CLOCK=new (require(DIR+'/event-clock.js').EventClock)({rpc:(method,params)=>rpc(method,params,{priority:'migration',context:'часы',source:'clock'})});
   await EVENT_CLOCK.refresh();
   setInterval(()=>{EVENT_CLOCK.refresh().catch(()=>{})},10000);
@@ -943,7 +945,7 @@ function wsCandidate(kind,acc,u,slot,owner){const now=Date.now();if(wsSeen.has(a
   if(kind==='dbc'){mint=pk(u,136)}
   else if(kind==='ll'){mint=pk(u,205);quote=pk(u,237)}
   else if(kind==='pump'){const b=pk(u,43),q=pk(u,75);if(SKIP.has(b)){mint=q;quote=b}else{mint=b;quote=q}if(SKIP.has(mint))return}
-  if(!mint)return;SOURCE?.observe({mint,phase:'after'});WS.cand[kind]=(WS.cand[kind]||0)+1;let c=C.get(mint);if(!c&&typeof COMPLETED!=='undefined'&&COMPLETED){const old=COMPLETED.metadata(mint);if(old?.poolKeys.includes(pool))return;if(old){c=COMPLETED.readCoin(mint);C.set(mint,c)}}
+  if(!mint)return;if(kind==='dbc'||kind==='ll')offerFastMigration({curve:acc,slot,kind});SOURCE?.observe({mint,phase:'after'});WS.cand[kind]=(WS.cand[kind]||0)+1;let c=C.get(mint);if(!c&&typeof COMPLETED!=='undefined'&&COMPLETED){const old=COMPLETED.metadata(mint);if(old?.poolKeys.includes(pool))return;if(old){c=COMPLETED.readCoin(mint);C.set(mint,c)}}
   const snapshot=((kind==='dbc'&&owner===DBC&&u.length===424&&u[305]===1)||(kind==='ll'&&owner===LAUNCH&&u.length>268&&u[17]===2))?{address:acc,owner,at:now,slot:slot||null,data:Buffer.from(u).toString('base64')}:null;
   if(c){if(snapshot)c.wsMigrationSnapshot=snapshot;c.migrationSlot=slot||c.migrationSlot;c.migrationSignalAt=now;queueMigrationSignal(c,now);c.discoverySource=kind;if(!isOk(c)&&c.mg)c.mg.force=1;c.wsSeen=c.wsSeen||now;c.firstPostSeenAt=c.firstPostSeenAt||now;return}
   C.set(mint,{a:mint,n:'',s:'',i:'',p:pool,d:kind==='pump'?'pumpswap':kind==='ll'?'raydium-launchlab':'meteora-dbc',q:quote,t:now,tSrc:'ws',wsMigrationSnapshot:snapshot,migrationSlot:slot||null,migrationSignalAt:now,seen:now,disc:'ws',discoverySource:kind,proofEnqueuedAt:now,wsSeen:now,firstPostSeenAt:now,pools:[pool],fv:FV})}
@@ -979,10 +981,33 @@ function pumpCurveComplete(curve,u,slot){const now=Date.now();if(!u||u.length<49
   if(c&&isOk(c))return;
   if(!c){c={a:info.mint,n:info.n,s:info.s,i:'',p:curve,d:'pump-fun',q:info.q,t:info.t,tSrc:'pre',preTradingAt:info.t,seen:now,disc:'ws-pump-complete',
       preCurve:1,pools:[curve],fv:FV,mg:{v:MGV,st:'curve',k:'curve-pump',lastAt:now}};C.set(info.mint,c)}
-  if(SOURCE?.has(c.a))return; // уже в «Все» как «до миграции»: второй вход запрещён
+  if(SOURCE?.get(c.a)?.phase==='after')return; // уже в «Все» как «до миграции»: второй вход запрещён
   c.migrationSlot=slot||c.migrationSlot;c.migrationSignalAt=now;c.discoverySource='pump-complete';c.wsSeen=c.wsSeen||now;
   queueMigrationSignal(c,now);if(c.mg){c.mg.force=1;delete c.mg.final}}
+async function processFastMigration(task){
+ const api=require(DIR+'/migration-fast.js'),options={priority:'migration',context:'миграция:быстро',source:'migration-fast',urgent:true,maxBytes:3*1024*1024};
+ let signatures=task.signature?[task.signature]:[];
+ if(!signatures.length){const rows=await rpc('getSignaturesForAddress',[task.curve,{limit:3,commitment:'confirmed'}],options);signatures=(rows||[]).filter(r=>r.err===null&&(!task.slot||Math.abs(r.slot-task.slot)<=2)).map(r=>r.signature).slice(0,2);}
+ if(!signatures.length)throw Object.assign(Error('migration transaction pending'),{code:'TX_PENDING'});
+ for(const signature of signatures){const tx=await rpc('getTransaction',[signature,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}],options);if(!tx)throw Object.assign(Error('migration transaction pending'),{code:'TX_PENDING'});
+  for(const v of api.migrationCandidates(tx,b58dec)){if(v.signature!==signature)continue;let official=false;
+   if(v.family==='pump')official=await bondingCurveOf(v.mint)===v.curve&&await canonicalPoolOf(v.mint,v.quote)===v.pool;
+   else if(v.family==='launch'){const [a,b]=cmpAsc(v.mint,v.quote);official=await launchPoolOf(v.mint,v.quote)===v.curve&&await findPDA([new TextEncoder().encode('pool'),b58dec(v.config),b58dec(a),b58dec(b)],CPMM)===v.pool;}
+   else if(v.family==='launch-v4')official=await launchPoolOf(v.mint,v.quote)===v.curve&&await findPDA([b58dec(AMM4),b58dec(v.market),new TextEncoder().encode('amm_associated_seed')],AMM4)===v.pool;
+   else if(v.family==='dbc-v1'){const [a,b]=orderKeys(v.mint,v.quote);official=await findPDA([a,b,b58dec(v.config)],DAMM1)===v.pool;}
+   else if(v.family==='dbc'){official=(await officialPools('dbc',v.mint,v.quote)).includes(v.pool);if(!official){const account=(await rpc('getAccountInfo',[v.pool,{encoding:'base64'}],options))?.value,u=b64(account?.data?.[0]);official=account?.owner===DAMM2&&u?.length>=680&&pk(u,648)===DBC_AUTH&&pair2(u,168,200,v.mint)===v.quote;}}
+   if(!official)continue;SOURCE.observe({mint:v.mint,phase:'after',at:task.receivedAt});if(SOURCE.get(v.mint)?.phase==='after')continue;
+   const now=Date.now(),limit=SOURCE.settings().afterMinutes*60000;if(v.eventAt>now)throw Object.assign(Error('migration block clock pending'),{code:'TX_PENDING'});if(now-v.eventAt>limit){SOURCE.observe({mint:v.mint,phase:'after',outcome:'tooOld',lateMs:now-v.eventAt-limit});continue;}
+   const family=v.family==='dbc-v1'?'dbc':v.family;let c=C.get(v.mint);if(!c){c={a:v.mint,n:'',s:'',i:'',p:v.pool,d:DEXOF[family],q:v.quote,t:v.eventAt,seen:task.receivedAt,firstPostSeenAt:Math.max(task.receivedAt,v.eventAt),disc:'migration-signature',discoverySource:'migration-fast',pools:[v.pool],fv:FV};C.set(v.mint,c)}else moveTo(c,v.pool,family,{t:v.eventAt});
+   c.openingMetrics={pool:v.pool,quoteMint:v.quote,at:now,eventAt:v.eventAt,scope:'creation-transaction-end',liquiditySol:v.openingQuoteSol,liquidityUsd:null,marketCapUsd:null,liquidityToMarketCap:null,creatorAddress:null,creatorDepositSol:null,lpEvidence:null};c.admissionVerifiedAt=now;c.t=v.eventAt;c.migrationSlot=v.slot;c.migrationSignalAt=task.receivedAt;c.wsSeen=Math.max(task.receivedAt,v.eventAt);c.firstPostSeenAt=c.wsSeen;c.preCurve=0;
+   setMg(c,'ok',family,'',{owner:v.dexProgram,pool:v.pool,sig:signature,mT:v.eventAt,ix:v.ix});const decision=SOURCE.afterVerifiedMigration(c);if(decision.admitted){FAST_DISCOVERY.accepted('after',v.eventAt,family,now);c.admissionVerifiedAt=now;}
+  }
+ }
+}
+function offerFastMigration(task){if(!FAST_DISCOVERY)return;FAST_DISCOVERY.offer({...task,receivedAt:Date.now()});}
 function chainWatch(){
+  FAST_DISCOVERY=new (require(DIR+'/migration-fast.js').FastSignals)({process:processFastMigration,onError:e=>err('fast migration '+e.message)});
+  const PUMP_WITHDRAW_AUTH=require(DIR+'/migration-fast.js').PUMP_WITHDRAW_AUTH;
   const connect=async(channel)=>{const key=await heliusKey();if(!key||(channel==='pre'&&(!PRE||!RESOURCE?.streamAllowed('pre')))){setTimeout(()=>connect(channel),10000);return}
     const pre=channel==='pre',subs={},ws=new WebSocket('wss://mainnet.helius-rpc.com/?api-key='+key);let timer;
     ws.onopen=()=>{
@@ -991,7 +1016,8 @@ function chainWatch(){
       const requests=pre?[[150,'pre','logsSubscribe',[{mentions:[PUMP_MINT_AUTH]},{commitment:'confirmed'}]]]:
         [[100,'dbc','programSubscribe',[DBC,{encoding:'base64',commitment:'confirmed',filters:[{dataSize:424},{memcmp:{offset:305,bytes:'2'}}]}]],
          [101,'ll','programSubscribe',[LAUNCH,{encoding:'base64',commitment:'confirmed',filters:[{memcmp:{offset:17,bytes:'3'}}]}]],
-         [102,'pc','programSubscribe',[PUMP,{encoding:'base64',commitment:'confirmed',dataSlice:{offset:0,length:49},filters:[{memcmp:{offset:48,bytes:'2'}}]}]]];
+         [102,'pc','programSubscribe',[PUMP,{encoding:'base64',commitment:'confirmed',dataSlice:{offset:0,length:49},filters:[{memcmp:{offset:48,bytes:'2'}}]}]],
+         [103,'pumpMigrate','logsSubscribe',[{mentions:[PUMP_WITHDRAW_AUTH]},{commitment:'confirmed'}]]];
       for(const [id,name,method,params] of requests){subs[id]=name;ws.send(JSON.stringify({jsonrpc:'2.0',id,method,params}))}
       if(pre)timer=setInterval(()=>{if(!RESOURCE.streamAllowed('pre')){WS.preBudgetPauses++;ws.budgetPause=true;try{ws.close()}catch{}}},10000);
     };
@@ -1006,6 +1032,7 @@ function chainWatch(){
       const slot=m.params?.result?.context?.slot;EVENT_CLOCK?.observe(slot,Date.now());
       WS.msgs[n]=(WS.msgs[n]||0)+1;
       if(pre){PRE?.onLog(v,Date.now(),slot);if(!RESOURCE.streamAllowed('pre')){WS.preBudgetPauses++;ws.budgetPause=true;try{ws.close()}catch{}}return}
+      if(n==='pumpMigrate'){if(v.err===null&&v.logs?.some(l=>/^Program log: Instruction: Migrate(?:V2)?\s*$/.test(l))&&v.logs?.some(l=>/^Program log: Instruction: CreatePool(?:V2)?\s*$/.test(l)))offerFastMigration({signature:v.signature,slot,kind:'pump'});else WS.migrationNoCreateDrop=(WS.migrationNoCreateDrop||0)+1;return;}
       if(n==='pc'){try{pumpCurveComplete(v.pubkey,b64(v.account?.data?.[0]),slot)}catch(x){WS.err++;err('ws pc '+x.message)}return}
       try{wsCandidate(n,v.pubkey,b64(v.account?.data?.[0]),slot,v.account?.owner)}catch(x){WS.err++;err('ws '+x.message)}
     };
@@ -1014,7 +1041,7 @@ function chainWatch(){
       else{WS.on=false;WS.connected={dbc:false,ll:false,pc:false};WS.disconnects=(WS.disconnects||0)+1}
       setTimeout(()=>connect(channel),pre?10000:5000)};
   };
-  connect('migrations');connect('pre');
+  connect('migrations'); // TZ20: birth stream intentionally disabled; migration socket is never budget-paused.
 }
 
 /* ---------- 6. выгрузка ---------- */
@@ -1041,7 +1068,7 @@ function coinMetadata(c){const mg=c.mg||{};
     mk:mg.k||null,mst:mg.st||null,mw:mg.why||'',mT:mg.mT||null,mSig:mg.sig||null,mSeen:mg.seenAt||null,mCr:mg.creator??null,mH:c.mgH||[],mk0:c.mg0?.k||null,
     origs:(c.origs||[]).map(o=>({p:o.p,t:o.t,d:o.d,movedAt:o.movedAt})),
     preObs:c.preCurve?((c.origs||[]).find(o=>o.d==='pump-fun')||null):null,ct:c.ct||null,curveSol:c.preCurve&&c.curveSol?.length?c.curveSol:undefined,soc:c.soc||0,tk:c.tk&&isFinite(c.tk)?c.tk:null,tkAt:c.tkAt||null,
-    creatorAddress:c.creatorAddress||null,creatorObservedAt:c.creatorObservedAt??null,supplyRaw:c.supplyRaw||null,tokenProgram:c.tokenProgram||null,intelligenceSnapshots:c.intelligenceSnapshots||[],earlyWallets:c.earlyWallets||[],earlyWalletsAt:c.earlyWalletsAt??null,discoveryFeatures:c.discoveryFeatures||null,nameObservedAt:c.nameObservedAt??null,socialFeatures:c.socialFeatures||null,lpEvidence:c.lpEvidence||null,
+    openingMetrics:c.openingMetrics||null,admissionVerifiedAt:c.admissionVerifiedAt||null,creatorAddress:c.creatorAddress||null,creatorObservedAt:c.creatorObservedAt??null,supplyRaw:c.supplyRaw||null,tokenProgram:c.tokenProgram||null,intelligenceSnapshots:c.intelligenceSnapshots||[],earlyWallets:c.earlyWallets||[],earlyWalletsAt:c.earlyWalletsAt??null,discoveryFeatures:c.discoveryFeatures||null,nameObservedAt:c.nameObservedAt??null,socialFeatures:c.socialFeatures||null,lpEvidence:c.lpEvidence||null,
     live:c.lastTrade?Date.now()-c.lastTrade<30*60e3:false,lastTrade:c.lastTrade||null,legacy:c.legacy?1:0};
   return r}
 async function token(){const r=await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',{headers:{'Metadata-Flavor':'Google'}});return (await r.json()).access_token}
@@ -1099,12 +1126,13 @@ async function exportAiSummary(now){if(now-AI_LAST<5*60e3||!SOURCE)return;AI_LAS
   await uploadText('ai/summary.md',md,'text/markdown; charset=utf-8');
   await uploadText('ai/summary.json',JSON.stringify(json,null,1),'application/json; charset=utf-8');
 }
+function withPoolReference(row){const mint=row.mint||row.a,admission=SOURCE?.get(mint),pool=admission?.proof?.pool||null;return {...row,p:pool,pair:pool};}
 async function exportSource(now) {
   if(!SOURCE)return;
   const d=dayKey(now);
   const enrich=x=>{
     const c=C.get(x.mint)||COMPLETED?.metadata(x.mint);
-    return {...require(DIR+'/coin-profile.js').cardAt(c,now),a:x.mint,phase:x.phase,eventAt:x.eventAt,acceptedAt:x.acceptedAt,
+    return {...require(DIR+'/coin-profile.js').cardAt(c,now),p:x.proof?.pool||null,pair:x.proof?.pool||null,openingMetrics:x.proof?.openingMetrics||null,a:x.mint,phase:x.phase,eventAt:x.eventAt,acceptedAt:x.acceptedAt,
       n:c?.n||'',s:c?.s||'',i:c?.i||'',family:x.proof?.family||null,curve:x.proof?.curve||null,
       proofSig:x.proof?.signature||null,uri:c?.uri||x.proof?.uri||null,migrationPool:x.proof?.pool||null,proofKind:x.proof?.kind||null,eventSlot:x.proof?.slot||null,eventTimeSource:x.proof?.timeSource||null};
   };
@@ -1115,7 +1143,7 @@ async function exportSource(now) {
   // Нет задним числом добавленных кандидатов из обычной ленты.
   // Предмиграционный адаптер пока не активен: не выдавать пустоту за готовность.
   AI_SNAP.source=summary;
-  await upload('source/status.json',{...summary,solCoverage:PROFILES?.stats.solCoverage||null,solMissingReasons:solReasons,cardUnits:{sol:'SOL',top10:'percent',b5:'transactions',s5:'transactions',createdAt:'unix-ms'},mode:'verified-pre-post',preConnected:preFlowing(),preLive:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:preFlowing()&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
+  await upload('source/status.json',{...summary,phaseModel:'pool-after-transition',birthStreamEnabled:false,fastDiscovery:FAST_DISCOVERY?.summary()||null,solCoverage:PROFILES?.stats.solCoverage||null,solMissingReasons:solReasons,cardUnits:{sol:'SOL',top10:'percent',b5:'transactions',s5:'transactions',createdAt:'unix-ms'},mode:'verified-pre-post',preConnected:preFlowing(),preLive:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:preFlowing()&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
   await upload('source/live.json',{updated:now,count:today.length,coins:live});
   if(now-SOURCE_DAY_PUBLISHED_AT>=5*60e3){await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});SOURCE_DAY_PUBLISHED_AT=now;}
 }
@@ -1129,7 +1157,7 @@ async function exportResearchV2(now) {
   RESEARCH_BANKS?.relabelOne(RESEARCH_V2.config);
   RESEARCH_BANKS?.upsert(RESEARCH_V2.select({limit:20000}));
   AI_SNAP.r1=result;
-  const population=RESEARCH_V2.view().map(r=>({mint:r.mint,phase:r.phase,acceptedAt:r.acceptedAt,label:r.label,why:r.why||null,activePct:r.activePct??null,maxIdleObserved:r.maxIdleObserved??null,features:r.features||{}}));
+  const population=RESEARCH_V2.view().map(r=>withPoolReference({mint:r.mint,phase:r.phase,acceptedAt:r.acceptedAt,label:r.label,why:r.why||null,activePct:r.activePct??null,maxIdleObserved:r.maxIdleObserved??null,features:r.features||{}}));
   await upload('research-v2/status.json',{...result,snapshotId:String(now),population});
   const debug={epochStart:result.cohortStart,selection:'sha256-order-independent-sample',coins:RESEARCH_V2.debugSample(20,{coins:researchCoins(),now})},debugSig=JSON.stringify(debug);if(debugSig!==RESEARCH_DEBUG_SIG){await upload('research-v2/debug-sample.json',{updated:now,...debug});RESEARCH_DEBUG_SIG=debugSig;}
   {
@@ -1156,10 +1184,10 @@ async function exportPathsV2(now){
     serverOnly:true});
   await upload('passed-v2/live.json',{
     updated:now,origin:'server-journal',
-    coins:PASS_V2.latest(1000).filter(x=>x.schema===2?now-x.firstSeenAt<5*60e3:x.zeroAt>now)
+    coins:PASS_V2.latest(1000).filter(x=>x.schema===2?now-x.firstSeenAt<5*60e3:x.zeroAt>now).map(withPoolReference)
   });
   for(const d of [dayKey(now),dayKey(now-864e5)]){
-    const rows=PASS_V2.day(d);
+    const rows=PASS_V2.day(d).map(withPoolReference);
     await upload('passed-v2/day/'+d+'.json',{
       day:d,updated:now,origin:'server-journal',count:rows.length,coins:rows
     });
@@ -1179,7 +1207,7 @@ async function exportPathsV2(now){
     const levelTwoRows=RESEARCH_BANKS?RESEARCH_BANKS.rows({level:'2',curves:true}):RESEARCH_TWO.select({limit:20000});
     await upload('research-v2/polygon-2.json',{
       updated:now,epochStart:result.cohortStart,settings:result.settings,counts:result.counts,
-      coins:require(DIR+'/stream-json.js').rowStream(function*(){for(const {minuteCurve,minuteCurvePacked,...row} of levelTwoRows)yield row}),
+      coins:require(DIR+'/stream-json.js').rowStream(function*(){for(const {minuteCurve,minuteCurvePacked,...row} of levelTwoRows)yield withPoolReference(row)}),
       note:'Only fully observed server Passed stream; no orders'
     });
     await upload('research-v2/curve-two.json',{
@@ -1240,7 +1268,7 @@ async function fastPassedLoop(){
             if(publishAt-FAST_PASS_STATUS_AT>=60000){await upload('passed-v2/status.json',{...PASS_V2.summary(publishAt),controlError:PASS_CFG_ERR||null,serverConfig:PASS_V2.config,serverOnly:true});FAST_PASS_STATUS_AT=publishAt;}
             await upload('passed-v2/live.json',{
               updated:publishAt,origin:'server-journal',
-              coins:PASS_V2.latest(1000).filter(x=>x.schema===2?publishAt-x.firstSeenAt<5*60e3:x.zeroAt>publishAt)
+              coins:PASS_V2.latest(1000).filter(x=>x.schema===2?publishAt-x.firstSeenAt<5*60e3:x.zeroAt>publishAt).map(withPoolReference)
             });
             FAST_PASS_PUBLISH_AT=publishAt;
           }
@@ -1348,7 +1376,7 @@ async function researchExportsCycle(){
 let STATUS_BUSY=false;
 async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const now=Date.now(),today=dayKey(now);
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:FAST_DISCOVERY?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,publishedAt:FAST_PASS_PUBLISH_AT},

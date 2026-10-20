@@ -141,6 +141,19 @@ class SourceRuntime {
     }
   }
 
+  removeLegacyBirths() {
+    const removed=[...this.records.values()].filter(r=>r.phase==='before'&&r.proof?.kind!=='manual-pool-open-v1').map(r=>r.mint);
+    if(!removed.length)return [];
+    const ids=new Set(removed),tmp=this.logPath+'.transition-tmp',fd=fs.openSync(tmp,'w',0o600);
+    try{for(const row of this.records.values())if(!ids.has(row.mint))fs.writeSync(fd,JSON.stringify(row)+'\n');if(this.fsync)fs.fsyncSync(fd);}finally{fs.closeSync(fd)}
+    fs.renameSync(tmp,this.logPath);
+    for(const mint of removed){this.records.delete(mint);this.recent.delete(mint);this.gate.accepted.delete(mint);}
+    for(const [key,row] of this.dailyRows)if(row.phase==='before')this.dailyRows.delete(key);
+    fs.writeFileSync(this.dailyPath,JSON.stringify({schema:1,startedAt:this.dailyStartedAt,overflow:this.dailyOverflow,rows:[...this.dailyRows]}));fs.writeFileSync(this.dailyLogPath,'');this.dailyDirty=false;
+    this.stats.acceptedBefore=[...this.records.values()].filter(r=>r.phase==='before').length;this.stats.tooOldBefore=0;
+    return removed;
+  }
+
   configure(options) {
     const next=validateSettings(options);
     const tmp=this.settingsPath+'.tmp';
@@ -217,7 +230,7 @@ class SourceRuntime {
     if(!seenAt)return {admitted:false,reason:'no-post-observation'};
     return this._admit({
       mint:c.a,phase:'after',migrationAt:c.mg.mT,migrationVerified:true
-    },seenAt,{family:c.mg.k,signature:c.mg.sig,pool:c.mg.pool});
+    },seenAt,{family:c.mg.k,signature:c.mg.sig,pool:c.mg.pool,slot:c.migrationSlot||null,verifiedAt:c.admissionVerifiedAt||null,openingMetrics:c.openingMetrics||null});
   }
 
   day(date) {
