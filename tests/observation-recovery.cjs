@@ -52,3 +52,13 @@ test('overlapping active-gap requests reuse queued work and completed studies do
  const gap=manager.enqueue({mint:'other',pool:'other',start:T,end:T+5*M,kind:'one-gap'});a.equal(manager.enqueue({mint:'other',pool:'other',start:T,end:T+10*M,kind:'one-gap'}).id,gap.id);
  manager.enqueue({mint:'other',pool:'other',start:T,end:T+60*M,kind:'one'});manager.compactQueued();a.equal(gap.state,'superseded');a.equal(manager.summary().byKind.one.jobs,2);
 });
+
+
+test('a silent study bypasses a congested chart queue using verified archival history',async t=>{
+ let gets=0;const manager=new R.ObservationRecovery({dir:temp(t),now:()=>T+61*M,preferChain:()=>true,gt:async()=>{gets++;return response([])},rpc:async()=>[{signature:'created',blockTime:T/1000-1,err:null}],onUpdated:()=>{}}),j=manager.enqueue({mint,pool:'pool',start:T,end:T+60*M});await manager.run(j);a.equal(j.state,'recovered');a.equal(j.recoveredMinutes,60);a.equal(gets,0);a.equal(manager.payload(j).candlesSkipped,'chain-inactivity-complete');
+});
+
+test('eligible original studies take priority over new gaps without starving budget retries',t=>{
+ const manager=new R.ObservationRecovery({dir:temp(t),now:()=>T+60*M,gt:async()=>response([]),rpc:async()=>[],onUpdated:()=>{}}),gap=manager.enqueue({mint:'gap',pool:'g',start:T,end:T+5*M,kind:'one-gap'}),one=manager.enqueue({mint,pool:'p',start:T,end:T+60*M});one.state='waiting-budget';one.at=T;gap.at=T+M;
+ const ids=[];manager.run=async j=>{ids.push(j.id);manager.active++};manager.tick();a.equal(ids[0],one.id);
+});
