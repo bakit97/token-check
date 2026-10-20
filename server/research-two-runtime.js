@@ -152,9 +152,9 @@ class ResearchTwoRuntime {
     this.journalCount=0;this.compactedAt=now;
   }
   pruneRevoked(revoked){for(const r of this.rows)if(r.phase==='before'&&revoked?.has(r.mint)){this.processed.delete(r.mint);this.retry.delete(r.mint);}this.rows=this.rows.filter(r=>r.phase!=='before'||!revoked?.has(r.mint));}
-  reanchor({source,coins,now,limit=8}){
+  reanchor({source,coins,now,limit=32}){
     if(!source?.records)return;
-    const todo=this.rows.filter(r=>{const a=source.records.get(r.mint);return a&&a.phase===r.phase&&Number.isSafeInteger(a.eventAt)&&a.eventAt>0&&a.eventAt<=a.acceptedAt&&(r.featureAnchor!=='eventAt'||r.eventAt!==a.eventAt);});
+    const todo=this.rows.filter(r=>{const a=source.records.get(r.mint);return a&&a.phase===r.phase&&Number.isSafeInteger(a.eventAt)&&a.eventAt>0&&a.eventAt<=a.acceptedAt&&(r.featureAnchor!=='eventAt'||r.eventAt!==a.eventAt||r.marketScopeVersion!==2);});
     this.eventMigration={remaining:todo.length,rawMissing:0,changed:this.eventMigration?.changed||0};let changed=false;
     const cursor=(this.eventMigrationCursor||0)%Math.max(1,todo.length);
     for(let i=0;i<Math.min(todo.length,limit);i++){
@@ -165,11 +165,11 @@ class ResearchTwoRuntime {
       if(!Number.isSafeInteger(zeroAt)||zeroAt<anchor)continue;
       const result=strengthOutcome(coin,zeroAt,cfg,now);if(result.label==='pending')continue;
       const at=anchor+cfg.decisionMinutes*MIN,F=levelTwoFeaturesAt(coin,at,{entryAt:anchor,acceptedAt:anchor,phase:old.phase});
-      const fresh={...old,...result,eventAt:anchor,featureAnchor:'eventAt',zeroAt,decisionAt:at,features:F,
+      const fresh={...old,...result,eventAt:anchor,featureAnchor:'eventAt',marketScopeVersion:2,zeroAt,decisionAt:at,features:F,
         featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,anchor,'2',old.phase),
         earlyWallets:require('./early-intelligence').frozenWallets(coin,at),
         secondLevelMatches:(old.secondLevelRules||[]).filter(f=>evaluation(F,f)==='pass'),
-        firstPassFeatures:featuresAt(coin,zeroAt,{eventAt:anchor,phase:old.phase}),previousZeroAt:old.zeroAt,previousAnchor:eventAnchor(old),eventReanchoredAt:now,
+        firstPassFeatures:featuresAt(coin,zeroAt,{eventAt:anchor,phase:old.phase}),previousZeroAt:old.previousZeroAt??old.zeroAt,previousAnchor:old.previousAnchor??eventAnchor(old),eventReanchoredAt:now,
         windowEnd:zeroAt+300*MIN,p0:result.p0,curve:[[0,0],...result.curve],
         minuteCurve:undefined,minuteCurvePacked:packMinuteCurve(result.minuteCurve),outcomeAt:now,time:zeroAt};
       this.rows[this.rows.indexOf(old)]=fresh;this.processed.set(old.mint,zeroAt);this.eventMigration.remaining--;this.eventMigration.changed++;changed=true;
@@ -221,7 +221,7 @@ class ResearchTwoRuntime {
         .filter(f=>evaluation(F,f)==='pass').map(f=>({...f}));
       newRows.push({
         mint:pass.mint,phase:pass.phase,p:pass.p||coin.p||null,pair:pass.pair||coin.p||null,phaseEpoch:pass.phaseEpoch||null,acceptedAt:pass.acceptedAt,
-        firstSeenAt:pass.firstSeenAt,zeroAt:pass.zeroAt,decisionAt:featureAt,outcomeAt:now,windowEnd:pass.zeroAt+300*MIN,earlyWallets:require('./early-intelligence').frozenWallets(coin,featureAt),featureAnchor:'eventAt',eventAt:eventAnchor(pass),featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,eventAnchor(pass),'2',pass.phase),sourceFilterRules:pass.matches.map(f=>({...f})),
+        firstSeenAt:pass.firstSeenAt,zeroAt:pass.zeroAt,decisionAt:featureAt,outcomeAt:now,windowEnd:pass.zeroAt+300*MIN,earlyWallets:require('./early-intelligence').frozenWallets(coin,featureAt),featureAnchor:'eventAt',marketScopeVersion:2,eventAt:eventAnchor(pass),featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,eventAnchor(pass),'2',pass.phase),sourceFilterRules:pass.matches.map(f=>({...f})),
         configHash:pass.configHash,sourceFilterVersions:pass.matches.map(f=>({
           id:f.id,version:f.version,level:f.level
         })),

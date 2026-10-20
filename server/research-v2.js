@@ -8,8 +8,14 @@ const LEVEL2_KEYS=['chg1m','chg3m','chg5m','fromPeak','drawdown','buyerAccel','v
 const LEVEL1_KEYS=["safeContract", "mintRevoked", "freezeRevoked", "metaImmutable", "token2022", "t22Safe", "lpBurned", "devBuySol", "devHoldPct", "devHold", "devSold", "devLaunches", "devRugShare", "sniperShare", "bundleShare", "bundledWallets", "top1", "top10", "holders", "holderGrowth", "buyers10", "buyers", "uniqBuyersPerMin", "botShare", "smartBuyers", "smartShare", "trades", "tradesPerMin", "buys", "sells", "buySellRatio", "sellShare", "averageTrade", "volume", "quoteSol", "postPoolSol", "poolGrowth", "mc", "hasImage", "hasDescription", "hasTwitter", "hasTelegram", "hasWebsite", "isFirstOfName", "cloneCount", "cloneRank"];
 const RULE_KEYS=[...new Set([...KEYS,...LEVEL1_KEYS,...LEVEL2_KEYS])];
 const inRange=(x,a,b)=>Number.isFinite(x)&&x>=a&&x<=b;
+function marketPools(coin){
+ const pools=[coin?.preObs,...(coin?.origs||[]),coin].filter(Boolean);
+ // A graduated coin is measured on its new pool. Continued trading on its
+ // old launch curve must not make an empty migration pool look alive.
+ return coin?.p&&coin.mg?.st==='ok'&&coin.mg.pool===coin.p?pools.filter(p=>p.p===coin.p):pools;
+}
 function samples(coin) {
-  const src=[coin?.preObs,...(coin?.origs||[]),coin].filter(Boolean);
+  const src=marketPools(coin);
   const obs=new Map();
   for(const c of src)for(const d of c.ds||[]){
     if(!Array.isArray(d))continue;
@@ -24,7 +30,7 @@ function samples(coin) {
   return [...obs.values()].sort((a,b)=>a.at-b.at);
 }
 function candles(coin){
-  const src=[coin?.preObs,...(coin?.origs||[]),coin].filter(Boolean);
+  const src=marketPools(coin);
   const map=new Map();
   for(const c of src)for(const group of [c.k10,c.path])for(const d of group?.c||[]){
     const at=+d[0]*1000,close=+d[4];
@@ -40,10 +46,10 @@ function latestBefore(list,t,maxAge,read) {
 }
 function featuresAt(coin,decisionAt,context={}){
   const d=latestBefore(samples(coin),decisionAt,7*MIN,x=>x.at);
-  const gx=[...(coin?.preObs?.gx||[]),...(coin?.gx||[])]
+  const gx=marketPools(coin).flatMap(p=>p.gx||[])
     .sort((a,b)=>a[0]-b[0]);
   const g=latestBefore(gx,decisionAt,7*MIN,x=>x[0]*1000);
-  const bx=[coin?.preObs?.bx,coin?.bx]
+  const bx=marketPools(coin).map(p=>p.bx)
     .filter(x=>x&&Number.isFinite(x.at)&&x.at<=decisionAt&&decisionAt-x.at<=7*MIN&&x.cov).sort((a,b)=>a.at-b.at).at(-1);
   const buys=d?.buys??null,sells=d?.sells??null;
   const ratio=buys!=null&&sells!=null?sells>0?buys/sells:buys:null;
@@ -139,7 +145,7 @@ function activityOutcome(coin,entryAt,cfg={},now=Date.now()){
  return {...raw,...result,outcomeVersion:2};
 }
 function activityEvidence(coin,start,end,decisionMinutes){
- const history=samples(coin).filter(x=>x.at>=start&&x.at<=end),tail=coin?.outcomeTape?.windowStart===start&&coin?.outcomeTape?.windowEnd===end?coin.outcomeTape:null,pools=[coin,...(coin?.origs||[]),coin?.preObs].filter(Boolean);
+ const history=samples(coin).filter(x=>x.at>=start&&x.at<=end),tail=coin?.outcomeTape?.windowStart===start&&coin?.outcomeTape?.windowEnd===end?coin.outcomeTape:null,pools=marketPools(coin);
  const bins=Math.ceil((end-start)/MIN),minutes=Array.from({length:bins},(_,i)=>[start+(i+1)*MIN,null,null,null]);
  // A rolling m5 snapshot proves the preceding interval was observed. Never
  // multiply its transaction count by five or treat a missing pair as zero.
@@ -213,7 +219,7 @@ function starterFeaturesAt(coin,decisionAt,context={}){
  // Every observation must belong to the mint's original ten-minute window.
  // Early migration may add a new pool inside that window; overlapping pools
  // yield a MAXIMUM lower bound, never a sum of potentially identical buyers.
- const pools=[coin,...(coin.origs||[]),coin.preObs].filter((p,i,all)=>p&&Number.isFinite(p.t)&&p.t<=endAt&&all.findIndex(x=>x&&x.p===p.p&&x.t===p.t)===i);
+ const pools=marketPools(coin).filter((p,i,all)=>p&&Number.isFinite(p.t)&&p.t<=endAt&&all.findIndex(x=>x&&x.p===p.p&&x.t===p.t)===i);
  const pool=pools.find(p=>p.t===eventAt),bx=pool?.bx;
  let lower=false,buyerAt=null,buyerSource=null;
  if(pools.length===1&&bx?.cov===true&&Number.isFinite(bx.at)&&bx.at<=decisionAt&&bx.at>=pool.t+10*MIN+5000&&Number.isFinite(bx.payers)&&decisionAt-bx.at<=7*MIN)buyers10=bx.payers;

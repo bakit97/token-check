@@ -129,8 +129,8 @@ class ResearchRuntime {
   }
   carryFrom(previous){if(!previous)return;for(const row of previous.admitted.values())if(!this.admitted.has(row.mint))this.admitted.set(row.mint,{...row,intakePending:true,transferred:true});}
   pruneRevoked(revoked){let n=0;for(const [mint,row] of this.admitted)if(row.phase==='before'&&revoked?.has(mint)){this.admitted.delete(mint);this.processed.delete(mint);this.lastAttemptAt.delete(mint);n++;}this.rows=this.rows.filter(r=>r.phase!=='before'||!revoked?.has(r.mint));return n;}
-  reanchor({source,coins,now,limit=8}) {
-    const candidates=this.rows.filter(r=>{const admission=source.get?.(r.mint)||source.records.get(r.mint);return admission&&admission.phase===r.phase&&Number.isSafeInteger(admission.eventAt)&&admission.eventAt>0&&admission.eventAt<=admission.acceptedAt&&(r.featureAnchor!=='eventAt'||r.eventAt!==admission.eventAt||r.windowStart!==admission.eventAt);});
+  reanchor({source,coins,now,limit=32}) {
+    const candidates=this.rows.filter(r=>{const admission=source.get?.(r.mint)||source.records.get(r.mint);return admission&&admission.phase===r.phase&&Number.isSafeInteger(admission.eventAt)&&admission.eventAt>0&&admission.eventAt<=admission.acceptedAt&&(r.featureAnchor!=='eventAt'||r.eventAt!==admission.eventAt||r.windowStart!==admission.eventAt||r.marketScopeVersion!==2);});
     this.eventMigration={remaining:candidates.length,rawMissing:0,changed:this.eventMigration?.changed||0};
     if(!candidates.length)return;
     const cursor=(this.eventMigrationCursor||0)%candidates.length;
@@ -141,14 +141,14 @@ class ResearchRuntime {
       const result=activityOutcome(coin,at,cfg,now);if(result.label==='pending')continue;
       // Recompute from original receipt cutoffs. Relabelling old frozen values
       // with an earlier timestamp would leak observations from after the decision.
-      const fresh={...old,...result,eventAt:at,featureAnchor:'eventAt',decisionAt,
+      const fresh={...old,...result,eventAt:at,featureAnchor:'eventAt',marketScopeVersion:2,decisionAt,
         features:featuresAt(coin,decisionAt,{eventAt:at,phase:old.phase}),
         featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,at,'1',old.phase),
         earlyWallets:require('./early-intelligence').frozenWallets(coin,decisionAt),
         curve:observationCurve(coin,at,cfg.hours),minutes:undefined,
         outcomePacked:require('node:zlib').deflateSync(Buffer.from(JSON.stringify(result.minutes||[]))).toString('base64'),
         recoveryPending:false,recoveryJobId:undefined,recoveryVersion:undefined,recoveryWhy:undefined,
-        previousAnchor:old.eventAt??old.acceptedAt,eventReanchoredAt:now,outcomeAt:now};
+        previousAnchor:old.previousAnchor??old.eventAt??old.acceptedAt,eventReanchoredAt:now,outcomeAt:now};
       this.rows[this.rows.indexOf(old)]=fresh;
       const intake=this.admitted.get(old.mint);if(intake)this.admitted.set(old.mint,{...intake,eventAt:at,features:fresh.features});
       this.eventMigration.changed++;this.eventMigration.remaining--;
@@ -209,7 +209,7 @@ class ResearchRuntime {
       const gate={via:admission.via||'all'};
       this.rows=this.rows.filter(x=>x.mint!==row.mint);
       this.rows.push({via:gate.via,
-        mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,featureAnchor:'eventAt',eventAt:eventAnchor(row),featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,eventAnchor(row),'1',row.phase),curve:observationCurve(coin,eventAnchor(row),cfg.hours),curveUnit:'price-usd',
+        mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,featureAnchor:'eventAt',marketScopeVersion:2,eventAt:eventAnchor(row),featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,eventAnchor(row),'1',row.phase),curve:observationCurve(coin,eventAnchor(row),cfg.hours),curveUnit:'price-usd',
         acceptedAt:row.acceptedAt,decisionAt,earlyWallets:require('./early-intelligence').frozenWallets(coin,decisionAt),
         ...result,outcomeAt:now,minutes:undefined,outcomePacked:require('node:zlib').deflateSync(Buffer.from(JSON.stringify(result.minutes||[]))).toString('base64'),
         hours:cfg.hours,label:result.label,
