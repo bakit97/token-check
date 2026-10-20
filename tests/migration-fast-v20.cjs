@@ -98,3 +98,10 @@ test('all official DBC fee and surplus instructions require the exact curve posi
 
 
 test('migration-only WS leaves one real credit of headroom for fresh proofs without raising the 17 cap',t=>{const {ResourceBudget}=require('../server/resource-budget');const b=new ResourceBudget({dir:temp(t),now:()=>T,env:{HELIUS_RESET_AT:new Date(T+86400000).toISOString(),HELIUS_USED_CREDITS:'0'}});b.migrationWSOnly=true;b.freshMigrationPending=2;while(b.allow(1,'migration-fast'))b.reserveRPC('getTransaction','migration-fast');a.equal(b.summary().creditsMinute,16);b.stream(40000,'migrations');a.ok(b.summary().creditsMinute<17);a.equal(b.allow(1,'migration-fast'),false);});
+
+test('DBC opening SOL uses the exact DAMM CPI quote vault even when its authority is not the pool',()=>{
+ const spec=specs.find(s=>s.family==='dbc'),t=tx(spec),SOL='So11111111111111111111111111111111111111112',def=require('../server/manual-pools').definitions.find(s=>s.program===spec.dex&&s.name==='initialize_pool');
+ t.transaction.message.accountKeys[spec.quote]=SOL;const keys=t.transaction.message.accountKeys;keys.push('base-vault','quote-vault');const accounts=Array.from({length:16},()=>0);accounts[def.pool]=spec.pool;accounts[def.mintA]=spec.mint;accounts[def.mintB]=spec.quote;accounts[def.vaultA]=36;accounts[def.vaultB]=37;
+ t.meta.innerInstructions=[{instructions:[{programIdIndex:spec.dexIndex,accounts,data:def.discriminator}]}];t.meta.postTokenBalances=[{accountIndex:37,owner:'shared-damm-authority',mint:SOL,uiTokenAmount:{decimals:9,amount:'17700000000'}},{accountIndex:33,owner:'pool',mint:SOL,uiTokenAmount:{decimals:9,amount:'999000000000'}}];
+ const r=migrationCandidates(t,x=>Buffer.from(x,'hex'))[0];a.equal(r.openingQuoteSol,17.7);a.equal(r.quoteVault,'quote-vault');a.equal(r.baseVault,'base-vault');t.meta.postTokenBalances=t.meta.postTokenBalances.slice(1);a.equal(migrationCandidates(t,x=>Buffer.from(x,'hex'))[0].openingQuoteSol,null);
+});

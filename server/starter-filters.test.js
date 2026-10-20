@@ -6,7 +6,7 @@ function coin(){return {a:'mint',t:T-12*M,ct:{at:T-2*M,prog:'token',safetyVersio
  bx:{at:T-M,cov:true,payers:15},vmint:['mint',WSOL],vaultIdentityAt:T-2*M,lq:[[(T-M)/1000,1,1e9,6e9]]};}
 test('starter filters require contract AND ten-minute unique buyers AND real SOL',()=>{
  const c=coin(),F=starterFeaturesAt(c,T),config=configOf(cfg),basic=config.filters[0],strong=config.filters[1];
- assert.deepEqual(F,{safeContract:1,quoteSol:6,buyers10:15,top1:null,top10:null});assert.equal(evaluation(F,basic),'pass');assert.equal(evaluation(F,strong),'reject');
+ assert.deepEqual(F,{safeContract:1,quoteSol:6,postPoolSol:null,buyers10:15,top1:null,top10:null});assert.equal(evaluation(F,basic),'pass');assert.equal(evaluation(F,strong),'reject');
  for(const key of ['mint','freeze','hook','deleg','nontr','defFrozen','pause','feeAuthority']){const x=coin();x.ct[key]=true;assert.equal(evaluation(starterFeaturesAt(x,T),basic),'reject',key)}
  const fee=coin();fee.ct.fee=.1;assert.equal(evaluation(starterFeaturesAt(fee,T),basic),'reject');
 });

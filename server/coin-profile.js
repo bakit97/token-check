@@ -10,7 +10,7 @@ function cardAt(c,at){
  const opening=c?.openingMetrics;if(measuredAt==null&&c?.mg?.st==='ok'&&c.mg.pool===c.p&&opening?.pool===c.p&&opening.quoteMint===WSOL&&opening.at<=at&&at-opening.at<=35*MIN&&Number.isFinite(opening.liquiditySol)&&opening.liquiditySol>=0){sol=opening.liquiditySol;measuredAt=opening.eventAt||opening.at;}
  const solQuoteMint=c?.q||null,solUnavailableReason=sol!=null?null:solQuoteMint&&solQuoteMint!==WSOL?'non-native-quote':'not-observed';
  const clone=c?.discoveryFeatures&&c.discoveryFeatures.at<=at?c.discoveryFeatures:{};
- return {cloneCount:clone.cloneCount??null,cloneRank:clone.cloneRank??null,isFirstOfName:clone.isFirstOfName??null,cloneCountLowerBound:clone.cloneCountLowerBound===true,sol,solQuoteMint,solUnavailableReason,solMeasuredAt:measuredAt,solAgeMs:measuredAt!=null?at-measuredAt:null,b5:count(d?.[4]),s5:count(d?.[5]),top10:f.top10,safeContract:f.safeContract==null?null:f.safeContract===1,
+ return {cloneCount:clone.cloneCount??null,cloneRank:clone.cloneRank??null,isFirstOfName:clone.isFirstOfName??null,cloneCountLowerBound:clone.cloneCountLowerBound===true,sol,postPoolSol:c?.mg?.st==='ok'?sol:null,solQuoteMint,solUnavailableReason,solMeasuredAt:measuredAt,solAgeMs:measuredAt!=null?at-measuredAt:null,b5:count(d?.[4]),s5:count(d?.[5]),top10:f.top10,safeContract:f.safeContract==null?null:f.safeContract===1,
   createdAt:Number.isSafeInteger(c?.createdAt)&&c.createdAt<=at?c.createdAt:null,createdAtSource:c?.createdAtSource||null,img:imageUrl(c?.i)||null,cardAt:at,marketObservedAt:d?d[0]*1000:null};
 }
 function imageUrl(raw){

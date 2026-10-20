@@ -37,4 +37,14 @@ function poolSnapshot(candidate,values){
  const quoteRaw=BigInt(q.tokenAmount.amount),baseRaw=BigInt(b.tokenAmount.amount);if(quoteRaw>BigInt(Number.MAX_SAFE_INTEGER))return null;
  return {funded:quoteRaw>0n&&baseRaw>0n,quoteRaw:Number(quoteRaw),baseRaw:Number(baseRaw),quoteSol:Number(quoteRaw)/1e9,decimals:m.decimals,supplyRaw:m.supply};
 }
-module.exports={manualPoolCandidates,definitions,poolSnapshot};
+function poolVaultsInTransaction(tx,pool,program,mint,quote,decode58){
+ const keys=keysOf(tx);for(const ix of [...(tx.transaction?.message?.instructions||[]),...(tx.meta?.innerInstructions||[]).flatMap(g=>g.instructions||[])]){
+  if((ix.programId||keys[ix.programIdIndex])!==program||!Array.isArray(ix.accounts)||typeof ix.data!=='string'||ix.data.length>8192)continue;
+  let disc;try{disc=Buffer.from(decode58(ix.data)).subarray(0,8).toString('hex')}catch{continue}
+  const spec=definitions.find(s=>s.program===program&&s.discriminator===disc);if(!spec)continue;
+  const at=i=>typeof ix.accounts[i]==='number'?keys[ix.accounts[i]]:ix.accounts[i],a=at(spec.mintA),b=at(spec.mintB);
+  if(at(spec.pool)!==pool||!((a===mint&&b===quote)||(a===quote&&b===mint)))continue;
+  return {baseVault:at(a===mint?spec.vaultA:spec.vaultB),quoteVault:at(a===quote?spec.vaultA:spec.vaultB)};
+ }return null;
+}
+module.exports={manualPoolCandidates,definitions,poolSnapshot,poolVaultsInTransaction};
