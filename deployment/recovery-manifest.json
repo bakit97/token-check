@@ -1,7 +1,8 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "f3807c33375ddaae2a50341b727e52ab81298f3ff8cf7bb2bdc32146b774f563",
+    "collector.js": "092277f29b08a8dda915562cbabdd77fe4c67fe8e0d576b96f0599b08226f12e",
+    "bounded-cache.js": "71245b543751fc32faaf3e05951200df28fc725585001500853a2f35ef18d13b",
     "pool-trade-observer.js": "f7b3f02ff15cbac724c36a31666ed561ff8a595d424173105f3e00c2913c1f42",
     "opening-evidence.js": "5799be682c2e87afc9c3aba5f018e277a705a6ec6cc91ee80b39fd8cddaf5bee",
     "holder-census.js": "9ec77d8504239901ad4bf5c3fcf5d4cbed7cb3d3a39fc68c20647743254d9672",
@@ -41,6 +42,6 @@
     "pool-logs.js": "44ab75877243a95796b1a59488d4123358fac0372d84f52f6f50d6f3514f21ea",
     "legacy-data-redaction.js": "041cf44f6bc92db632c9cef9c1d19bb39c1d182738a653f2fa42ac7d2cf012cb",
     "side-pools.js": "c4550ee578dfe8e42f52542c6628f074ff81a420e5911ea56c386485a4670d43",
-    "observation-recovery.js": "4d89af160bd76c242bc4d5cb18c264696f6c56c7076369414ea0c9db652d7a90"
+    "observation-recovery.js": "469146011f1e472a333e946f1ca372c48f705c65e216f89d64e561e6da6e4600"
   }
 }

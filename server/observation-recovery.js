@@ -1,6 +1,7 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),zlib=require('node:zlib');
 const MIN=60000;
+const {BoundedCache}=require('./bounded-cache');
 function candlesOf(response,mint,start,end,receivedAt){
  if(response?.meta?.base?.address!==mint)throw Error('history-token-mismatch');const list=response.data?.attributes?.ohlcv_list;if(!Array.isArray(list))throw Error('history-malformed');
  return list.filter(r=>Array.isArray(r)&&r.length>=6&&Number.isSafeInteger(r[0])&&r[0]*1000>=start-MIN&&r[0]*1000+MIN<=Math.min(end,receivedAt)&&r.slice(1,6).every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0)).map(r=>({start:r[0]*1000,end:r[0]*1000+MIN,activity:r[5]>0?1:0,price:r[4]>0?r[4]:null,receivedAt,backfilled:true,source:'gt-ohlcv-1m'}));
@@ -26,7 +27,7 @@ function relabel(row,evidence,cfg){let minutes=[];try{minutes=row.minutes||JSON.
 }
 function atomic(file,value){const temp=file+'.tmp',fd=fs.openSync(temp,'w',0o600);try{fs.writeFileSync(fd,JSON.stringify(value));fs.fsyncSync(fd)}finally{fs.closeSync(fd)}fs.renameSync(temp,file);require('./durable-json').syncDirectory(path.dirname(file));}
 class RecoveryRPC{
- constructor({fallback,fetch:read=globalThis.fetch,now=Date.now}){this.fallback=fallback;this.fetch=read;this.now=now;this.cache=new Map();this.state={publicCalls:0,publicSuccess:0,publicErrors:0,publicRateDeferred:0,lastPublicAt:0,lastError:null};}
+ constructor({fallback,fetch:read=globalThis.fetch,now=Date.now}){this.fallback=fallback;this.fetch=read;this.now=now;this.cache=new BoundedCache({entries:8,bytes:2*1024*1024,itemBytes:1024*1024,ttl:15000,now});this.state={publicCalls:0,publicSuccess:0,publicErrors:0,publicRateDeferred:0,lastPublicAt:0,lastError:null};}
  async call(method,params){let deferred;try{return await this.fallback(method,params);}catch(e){if(e.code!=='BUDGET_DEFERRED')throw e;deferred=e;}
   if(method!=='getSignaturesForAddress')throw deferred;const key=JSON.stringify(params),cached=this.cache.get(key);if(cached&&this.now()-cached.at<15000)return cached.rows;
   if(this.now()-this.state.lastPublicAt<20000){this.state.publicRateDeferred++;throw deferred;}this.state.lastPublicAt=this.now();this.state.publicCalls++;
@@ -36,7 +37,7 @@ class RecoveryRPC{
  summary(){return {...this.state,cache:this.cache.size,minPublicIntervalMs:20000,publicHasHeliusCredits:false};}
 }
 class ObservationRecovery{
- constructor({dir,gt,rpc,resolveCoin,onUpdated,preferChain=()=>false,now=Date.now}){this.dir=path.join(dir,'observation-recovery-v1');fs.mkdirSync(this.dir,{recursive:true});this.file=path.join(this.dir,'jobs.json');this.gt=gt;this.rpc=rpc;this.resolveCoin=resolveCoin;this.onUpdated=onUpdated;this.preferChain=preferChain;this.now=now;this.jobs=new Map(fs.existsSync(this.file)?JSON.parse(fs.readFileSync(this.file,'utf8')).jobs:[]);if(this.jobs.size>1000||[...this.jobs].some(([id,j])=>!/^[a-f0-9]{64}$/.test(id)||j.id!==id))throw Error('Invalid recovery ledger');this.active=0;this.cache=new Map();for(const j of this.jobs.values())if(j.state==='fetching')j.state='queued';}
+ constructor({dir,gt,rpc,resolveCoin,onUpdated,preferChain=()=>false,now=Date.now}){this.dir=path.join(dir,'observation-recovery-v1');fs.mkdirSync(this.dir,{recursive:true});this.file=path.join(this.dir,'jobs.json');this.gt=gt;this.rpc=rpc;this.resolveCoin=resolveCoin;this.onUpdated=onUpdated;this.preferChain=preferChain;this.now=now;this.jobs=new Map(fs.existsSync(this.file)?JSON.parse(fs.readFileSync(this.file,'utf8')).jobs:[]);if(this.jobs.size>1000||[...this.jobs].some(([id,j])=>!/^[a-f0-9]{64}$/.test(id)||j.id!==id))throw Error('Invalid recovery ledger');this.active=0;this.cache=new BoundedCache({entries:8,bytes:8*1024*1024,itemBytes:2*1024*1024,ttl:120000,now});for(const j of this.jobs.values())if(j.state==='fetching')j.state='queued';}
  persist(){atomic(this.file,{schema:1,jobs:[...this.jobs]});}
  payload(j){if(this.cache.has(j.id))return this.cache.get(j.id);const file=path.join(this.dir,j.id+'.json');if(!fs.existsSync(file))return null;if(fs.statSync(file).size>2*1024*1024)throw Error('Recovery payload exceeds bound');const body=JSON.parse(fs.readFileSync(file,'utf8'));this.cache.set(j.id,body);while(this.cache.size>16)this.cache.delete(this.cache.keys().next().value);return body;}
  store(j,payload){atomic(path.join(this.dir,j.id+'.json'),payload);this.cache.delete(j.id);}
