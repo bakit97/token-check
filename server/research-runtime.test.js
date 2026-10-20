@@ -115,3 +115,23 @@ test('continuous research limits CPU work and retries missing data every fifteen
  const later=runtime.update({source,coins,now:T+6*H+16*M});
  assert.equal(later.attempted,0);
 });
+
+
+test('historic event reanchor recomputes receipt cutoffs, keeps cohort and survives restart',t=>{
+ const dir=workingDir(t),r=new ResearchRuntime({dir,config:{hours:1,lastHourWallets:0,minUniqueBuyers:0}});
+ const source={records:new Map([[A,{mint:A,phase:'after',acceptedAt:T+2*M,proof:{pool:'pool'}}]])};
+ const coin={p:'pool',ds:Array.from({length:66},(_,i)=>[(T+i*M)/1000,1,3000,5000,2,1,100]),intelligenceSnapshots:[{at:T+11*M,evidenceVersion:2,features:{devBuySol:99}}]};
+ r.update({source,coins:new Map([[A,coin]]),now:T+70*M});
+ assert.equal(r.rows[0].features.devBuySol,99);
+ source.records.get(A).eventAt=T;
+ const out=r.update({source,coins:new Map([[A,coin]]),now:T+71*M});
+ const row=r.rows[0];assert.equal(row.acceptedAt,T+2*M);assert.equal(row.eventAt,T);assert.equal(row.windowStart,T);assert.equal(row.windowEnd,T+60*M);assert.equal(row.decisionAt,T+10*M);assert.equal(row.features.devBuySol,null);assert.equal(out.eventMigration.changed,1);assert.equal(out.counts.entered,1);
+ const restarted=new ResearchRuntime({dir,config:{hours:1,lastHourWallets:0,minUniqueBuyers:0}});restarted.update({source,coins:new Map([[A,coin]]),now:T+72*M});assert.equal(restarted.rows[0].eventAt,T);assert.equal(restarted.rows[0].features.devBuySol,null);assert.equal(restarted.rows.length,1);assert.equal(restarted.eventMigration.remaining,0);
+});
+
+test('event migration retains original sample when raw observations or pool identity are missing',t=>{
+ const r=new ResearchRuntime({dir:workingDir(t),config:{hours:1}}),source={records:new Map([[A,{mint:A,phase:'after',eventAt:T,acceptedAt:T+M,proof:{pool:'new'}}]])};
+ const old={mint:A,phase:'after',acceptedAt:T+M,featureAnchor:'acceptedAt',features:{buys:2},windowStart:T+M};r.rows=[old];
+ r.reanchor({source,coins:new Map(),now:T+2*H});assert.equal(r.rows[0],old);assert.equal(r.eventMigration.rawMissing,1);
+ r.reanchor({source,coins:new Map([[A,{p:'old',ds:[]}]]),now:T+2*H});assert.equal(r.rows[0],old);assert.equal(r.eventMigration.remaining,1);
+});
