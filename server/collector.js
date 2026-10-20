@@ -470,6 +470,7 @@ async function initSource() {
   if(removed.length){for(const mint of removed)C.delete(mint);fs.writeFileSync(DIR+'/legacy-before-purge-pending.json',JSON.stringify({schema:1,createdAt:Date.now(),mints:removed,reason:'owner-TZ20-delete-legacy-birth-data'}));save();}
   POOL_TRANSITION.completedCleanup=await COMPLETED?.eraseLegacyBirths(POOL_TRANSITION.poolEpoch.startedAt);
   POOL_TRANSITION.localCleanup=require(DIR+'/legacy-birth-cleanup.js').cleanup({dir:DIR});
+  const receipt=require(DIR+'/legacy-data-redaction.js').cleanupReceipt(POOL_TRANSITION.poolEpoch,POOL_TRANSITION.completedCleanup);if(receipt){POOL_TRANSITION.remoteCleanup=receipt;POOL_TRANSITION.legacyDataCleanupPending=false;POOL_TRANSITION.localCleanup={...POOL_TRANSITION.localCleanup,remoteCleanupPending:false,rawCleanupPending:false,remoteReceiptJobId:receipt.jobId};}
   EVENT_CLOCK=new (require(DIR+'/event-clock.js').EventClock)({rpc:(method,params)=>rpc(method,params,{priority:'migration',context:'часы',source:'clock'})});
   await EVENT_CLOCK.refresh();
   setInterval(()=>{EVENT_CLOCK.refresh().catch(()=>{})},10000);

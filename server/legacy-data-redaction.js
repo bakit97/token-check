@@ -36,5 +36,9 @@ function transform(name,value,index){const ctx=context(index),stats={removed:0,r
  if(Array.isArray(out.coins)&&Number.isInteger(out.count))out.count=out.coins.length;
  return {value:out,stats};
 }
-module.exports={indexOf,context,oldPool,oldPhase,coin,tombstone,transform};
+// Verified full cleanup pass: GitHub Actions run39431750995/job118700469191.
+// Generation leases and deletion/MD5 checks completed without failed/conflicting objects.
+const REMOTE_CLEANUP_RECEIPT=Object.freeze({schema:1,cutoff:1792494346831,runId:39431750995,jobId:118700469191,completedAt:'2026-10-20T15:41:09.787Z',scanned:10142,changed:6,deleted:4889,removedRows:55808,redactedRows:62,failed:0,conflicts:0,scanComplete:true});
+function cleanupReceipt(epoch,local){return local?.complete===true&&epoch?.startedAt===REMOTE_CLEANUP_RECEIPT.cutoff?REMOTE_CLEANUP_RECEIPT:null;}
+module.exports={cleanupReceipt,REMOTE_CLEANUP_RECEIPT,indexOf,context,oldPool,oldPhase,coin,tombstone,transform};
 if(require.main===module){const fs=require('node:fs'),[mode,input,indexFile,output]=process.argv.slice(2),v=JSON.parse(fs.readFileSync(input,'utf8')),idx=JSON.parse(fs.readFileSync(indexFile,'utf8'));const result=mode==='index'?indexOf(v,idx.cutoff):transform(mode,v,idx);fs.writeFileSync(output,JSON.stringify(result));}

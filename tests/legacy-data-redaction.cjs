@@ -26,3 +26,11 @@ test('public source/day aliases build the same pool identity index and preserve 
  const doc={coins:[{a:M,phase:'before',curve:'curve',acceptedAt:110,eventAt:100,proofKind:'pump-create-v1'},{a:M,phase:'after',migrationPool:'dex',acceptedAt:210,eventAt:200},{a:'manual',phase:'before',p:'manual-pool',acceptedAt:120,eventAt:100,proofKind:'manual-pool-open-v1'}]},idx=api.indexOf([doc],1000);
  a.deepEqual(idx.before,[M+'|curve']);a.ok(idx.after.includes(M+'|dex'));a.equal(api.transform('source/day/old.json',doc,idx).value.coins.length,2);
 });
+
+
+test('a historical remote cleanup receipt cannot clear pending for a different pool epoch or incomplete local erasure',()=>{
+ const {cleanupReceipt,REMOTE_CLEANUP_RECEIPT:r}=require('../server/legacy-data-redaction');
+ a.equal(cleanupReceipt({startedAt:r.cutoff},{complete:false}),null);
+ a.equal(cleanupReceipt({startedAt:r.cutoff+1},{complete:true}),null);
+ a.equal(cleanupReceipt({startedAt:r.cutoff},{complete:true}).scanComplete,true);
+});

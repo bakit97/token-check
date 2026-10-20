@@ -1,7 +1,7 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "d16f068e0060c6c0d6a56d0eef6df9558ba09f9c6aa61a5f4744478e447fe972",
+    "collector.js": "dcb53c1fcd3470e6370713b176b465965ee71ac2654b7d1bb8e922f32a5f2980",
     "holder-census.js": "a5572adb40d24ade063cf4424e9c03c57251eae6dd6c20b220c09b4c36110bab",
     "venue-identity.js": "41335e3e48009553c4e89754d5ed45111109af97203d423c6538231755a6b378",
     "feature-snapshots.js": "30f7c6b7bf1fd83b8bee6fd0f7263d70c6fc15593fd52a0de0200dba9f002c1a",
@@ -36,7 +36,7 @@
     "legacy-birth-cleanup.js": "4a2d77a67115da171cef1cdeb76c30c9cc9db79c26a3dff522443887b7d77534",
     "manual-pools.js": "a4a7e3e1630ff1882e36c9c299713dfc30b860510446e684df598bb34cdec947",
     "pool-logs.js": "44ab75877243a95796b1a59488d4123358fac0372d84f52f6f50d6f3514f21ea",
-    "legacy-data-redaction.js": "7c9a9906fe3a3a2eee6e0196d37abf603d7a8665f6c52319fcc0367868b1c69e",
+    "legacy-data-redaction.js": "041cf44f6bc92db632c9cef9c1d19bb39c1d182738a653f2fa42ac7d2cf012cb",
     "side-pools.js": "c4550ee578dfe8e42f52542c6628f074ff81a420e5911ea56c386485a4670d43",
     "observation-recovery.js": "4d89af160bd76c242bc4d5cb18c264696f6c56c7076369414ea0c9db652d7a90"
   }
