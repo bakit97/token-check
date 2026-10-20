@@ -985,7 +985,7 @@ function pumpCurveComplete(curve,u,slot){const now=Date.now();if(!u||u.length<49
   c.migrationSlot=slot||c.migrationSlot;c.migrationSignalAt=now;c.discoverySource='pump-complete';c.wsSeen=c.wsSeen||now;
   queueMigrationSignal(c,now);if(c.mg){c.mg.force=1;delete c.mg.final}}
 async function processFastMigration(task){
- const api=require(DIR+'/migration-fast.js'),options={priority:'migration',context:'миграция:быстро',source:'migration-fast',urgent:true,maxBytes:3*1024*1024};
+ const api=require(DIR+'/migration-fast.js'),options={priority:'migration-fast',context:'миграция:быстро',source:'migration-fast',urgent:true,maxBytes:3*1024*1024};
  let signatures=task.signature?[task.signature]:[];
  if(!signatures.length){const rows=await rpc('getSignaturesForAddress',[task.curve,{limit:3,commitment:'confirmed'}],options);signatures=(rows||[]).filter(r=>r.err===null&&(!task.slot||Math.abs(r.slot-task.slot)<=2)).map(r=>r.signature).slice(0,2);}
  if(!signatures.length)throw Object.assign(Error('migration transaction pending'),{code:'TX_PENDING'});
@@ -1006,6 +1006,7 @@ async function processFastMigration(task){
 }
 function offerFastMigration(task){if(!FAST_DISCOVERY)return;FAST_DISCOVERY.offer({...task,receivedAt:Date.now()});}
 function chainWatch(){
+  RESOURCE.freshMigrationReserve=3; // fresh signatures precede legacy migration lookups
   FAST_DISCOVERY=new (require(DIR+'/migration-fast.js').FastSignals)({process:processFastMigration,onError:e=>err('fast migration '+e.message)});
   const PUMP_WITHDRAW_AUTH=require(DIR+'/migration-fast.js').PUMP_WITHDRAW_AUTH;
   const connect=async(channel)=>{const key=await heliusKey();if(!key||(channel==='pre'&&(!PRE||!RESOURCE?.streamAllowed('pre')))){setTimeout(()=>connect(channel),10000);return}
