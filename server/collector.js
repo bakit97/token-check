@@ -1259,9 +1259,9 @@ async function exportPathsV2(now){
       day:d,updated:now,origin:'server-journal',count:rows.length,coins:rows
     });
   }
-  const result=RESEARCH_TWO.update({passes:PASS_V2,coins:researchCoins(),now});
+  const result=RESEARCH_TWO.update({passes:PASS_V2,source:SOURCE,coins:researchCoins(),now});
   for(const item of OLD_RESEARCH_TWO){
-    try{item.runtime.update({passes:PASS_V2,coins:researchCoins(),now});RESEARCH_BANKS?.upsert(item.runtime.select({limit:20000}))}
+    try{item.runtime.update({passes:PASS_V2,source:SOURCE,coins:researchCoins(),now});RESEARCH_BANKS?.upsert(item.runtime.select({limit:20000}))}
     catch(e){err('research old 2 '+item.epoch.hash+' '+e.message)}
   }
   TWO_ERR='';

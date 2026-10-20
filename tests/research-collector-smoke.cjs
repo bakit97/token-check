@@ -12,7 +12,7 @@ test('research labels are computed only from the admitted source ledger',()=>{
   assert.match(src,/RESEARCH_V2\.update\(\{source:SOURCE,coins:researchCoins\(\),passes:PASS_V2,now\}\)/);
 });
 test('server second-level research is computed only from durable Passed stream',()=>{
-  assert.match(src,/RESEARCH_TWO\.update\(\{passes:PASS_V2,coins:researchCoins\(\),now\}\)/);
+  assert.match(src,/RESEARCH_TWO\.update\(\{passes:PASS_V2,source:SOURCE,coins:researchCoins\(\),now\}\)/);
   assert.match(src,/PASS_V2\.update\(\{source:SOURCE,coins:researchCoins\(\),now\}\)/);
   assert.match(src,/research-v2\/status-two\.json/);
   assert.match(src,/research-v2\/polygon-2\.json/);

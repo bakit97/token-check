@@ -119,7 +119,7 @@ class ResearchTwoRuntime {
          !row.features||typeof row.features!=='object')
         throw Error('Malformed committed second-level journal row');
       if(this.processed.has(row.mint)){
-        if(this.processed.get(row.mint)!==row.zeroAt)
+        if(this.processed.get(row.mint)!==row.zeroAt&&!this.rows.some(saved=>saved.mint===row.mint&&saved.previousZeroAt===row.zeroAt))
           throw Error('Conflicting duplicate second-level mint');
         continue;
       }
@@ -146,14 +146,39 @@ class ResearchTwoRuntime {
     });
     // Snapshot contains the entire durable journal. A crash between rename
     // and truncate is safe: replay skips rows already in processed.
-    const fd=fs.openSync(this.journalFile,'a+');
+    const fd=fs.openSync(this.journalFile,fs.existsSync(this.journalFile)?'r+':'w+',0o600);
     try{fs.ftruncateSync(fd,0);fs.fsyncSync(fd)}
     finally{fs.closeSync(fd)}
     this.journalCount=0;this.compactedAt=now;
   }
   pruneRevoked(revoked){for(const r of this.rows)if(r.phase==='before'&&revoked?.has(r.mint)){this.processed.delete(r.mint);this.retry.delete(r.mint);}this.rows=this.rows.filter(r=>r.phase!=='before'||!revoked?.has(r.mint));}
-  update({passes,coins,now=Date.now()}={}){
+  reanchor({source,coins,now,limit=8}){
+    if(!source?.records)return;
+    const todo=this.rows.filter(r=>{const a=source.records.get(r.mint);return a&&a.phase===r.phase&&Number.isSafeInteger(a.eventAt)&&a.eventAt>0&&a.eventAt<=a.acceptedAt&&(r.featureAnchor!=='eventAt'||r.eventAt!==a.eventAt);});
+    this.eventMigration={remaining:todo.length,rawMissing:0,changed:this.eventMigration?.changed||0};let changed=false;
+    const cursor=(this.eventMigrationCursor||0)%Math.max(1,todo.length);
+    for(let i=0;i<Math.min(todo.length,limit);i++){
+      const old=todo[(cursor+i)%todo.length],admission=source.records.get(old.mint),coin=coins.get(old.mint),pool=admission.proof?.pool||old.p;
+      if(!Array.isArray(old.secondLevelRules)&&old.secondLevelMatches?.length){this.eventMigration.rulesMissing=(this.eventMigration.rulesMissing||0)+1;continue;}
+      if(!coin||(pool&&coin.p!==pool)){this.eventMigration.rawMissing++;continue;}
+      const cfg=this.config.phases?.[old.phase]||this.config,anchor=admission.eventAt,zeroAt=anchor+(old.zeroAt-eventAnchor(old));
+      if(!Number.isSafeInteger(zeroAt)||zeroAt<anchor)continue;
+      const result=strengthOutcome(coin,zeroAt,cfg,now);if(result.label==='pending')continue;
+      const at=anchor+cfg.decisionMinutes*MIN,F=levelTwoFeaturesAt(coin,at,{entryAt:anchor,acceptedAt:anchor,phase:old.phase});
+      const fresh={...old,...result,eventAt:anchor,featureAnchor:'eventAt',zeroAt,decisionAt:at,features:F,
+        featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,anchor,'2',old.phase),
+        earlyWallets:require('./early-intelligence').frozenWallets(coin,at),
+        secondLevelMatches:(old.secondLevelRules||[]).filter(f=>evaluation(F,f)==='pass'),
+        firstPassFeatures:featuresAt(coin,zeroAt,{eventAt:anchor,phase:old.phase}),previousZeroAt:old.zeroAt,previousAnchor:eventAnchor(old),eventReanchoredAt:now,
+        windowEnd:zeroAt+300*MIN,p0:result.p0,curve:[[0,0],...result.curve],
+        minuteCurve:undefined,minuteCurvePacked:packMinuteCurve(result.minuteCurve),outcomeAt:now,time:zeroAt};
+      this.rows[this.rows.indexOf(old)]=fresh;this.processed.set(old.mint,zeroAt);this.eventMigration.remaining--;this.eventMigration.changed++;changed=true;
+    }
+    this.eventMigrationCursor=cursor+limit;if(changed)this._compact(now);
+  }
+  update({passes,coins,source=null,now=Date.now()}={}){
     if(!passes?.records||!coins?.get)throw TypeError('Need verified pass journal and candidate map');
+    this.reanchor({source,coins,now});
     let added=0,attempted=0,considered=0;
     const pending={},newRows=[];
     for(const pass of passes.records.values()){
@@ -200,7 +225,7 @@ class ResearchTwoRuntime {
         configHash:pass.configHash,sourceFilterVersions:pass.matches.map(f=>({
           id:f.id,version:f.version,level:f.level
         })),
-        label:result.label,secondLevelMatches,
+        label:result.label,secondLevelMatches,secondLevelRules:(pass.secondLevelRules||[]).map(f=>({...f})),
         pctAbove:result.pctAbove,covered:result.covered,
         p0:result.p0,curve:[[0,0],...result.curve],minuteCurvePacked:packMinuteCurve(result.minuteCurve),features:F,
         firstPassFeatures:{...pass.features},
@@ -234,7 +259,7 @@ class ResearchTwoRuntime {
       const key=(r.phase==='before'?'pre':'post')+(r.label==='strong'?'Strong':'Weak');
       counts[key]++;
     }
-    return {schema:1,updated:this.lastAt,cohortStart:this.cohortStart,status:'observational',
+    return {schema:1,updated:this.lastAt,eventMigration:this.eventMigration||null,cohortStart:this.cohortStart,status:'observational',
       origin:'server-verified-passed-only',
       settings:{...this.config,hours:5},
       counts,pending:{...this.pending},bankCapacityPerClass:MAX_PER_CLASS};

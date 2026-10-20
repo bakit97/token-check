@@ -25,3 +25,16 @@ test('signed momentum thresholds and phase similarity times survive control vali
  const cfg=configOf({phases:{before:{decisionMinutes:1,targetStrong:50},after:{decisionMinutes:15}}});assert.equal(cfg.phases.before.decisionMinutes,1);assert.equal(cfg.phases.after.decisionMinutes,15);
  const p=passConfig({schema:1,enabled:false,activatedAt:0,decisionMinutes:5,passMode:'12',filters:[{id:'mom',name:'Импульс',level:'2',version:1,verdictMinutes:1,conds:[{key:'chg1m',op:'>=',value:-5}]}],modules:[]});assert.equal(p.filters[0].value,-5);
 });
+
+
+test('historical I2 event migration recomputes line and early features while preserving actual Passed receipt',t=>{
+ const dir0=dir(t),accepted=T+2*M,zero=accepted+10*M,pass={mint:'m',phase:'after',acceptedAt:accepted,firstSeenAt:accepted+11*M,zeroAt:zero,matches:[],features:{buys:3}};
+ const coin={p:'p',ds:Array.from({length:320},(_,i)=>[(T+i*M)/1000,100+i,100,100,10,2,100])},r=new ResearchTwoRuntime({dir:dir0,config:{decisionMinutes:5}});
+ r.update({passes:{records:new Map([['m',pass]])},coins:new Map([['m',coin]]),now:T+320*M});assert.equal(r.rows.length,1);
+ const original={...r.rows[0]};
+ const source={records:new Map([['m',{mint:'m',phase:'after',eventAt:T,acceptedAt:accepted,proof:{pool:'p'}}]])};
+ r.update({passes:{records:new Map([['m',pass]])},source,coins:new Map([['m',coin]]),now:T+321*M});const row=r.rows[0];assert.equal(row.eventAt,T);assert.equal(row.zeroAt,T+10*M);assert.equal(row.decisionAt,T+5*M);assert.equal(row.firstSeenAt,pass.firstSeenAt);assert.equal(row.acceptedAt,accepted);assert.equal(row.p0,110);assert.equal(row.previousZeroAt,zero);assert.equal(r.eventMigration.remaining,0);
+ // Crash after snapshot rename but before journal truncate must replay safely.
+ fs.appendFileSync(r.journalFile,JSON.stringify(original)+'\n');
+ const restored=new ResearchTwoRuntime({dir:dir0,config:{decisionMinutes:5}});assert.equal(restored.rows[0].zeroAt,T+10*M);assert.equal(restored.rows.length,1);
+});
