@@ -6,11 +6,19 @@ API='https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o'
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 
 def read(name):
-    with urllib.request.urlopen(BASE+urllib.parse.quote(name,safe='/')+'?generation='+str(META[name]['generation']),timeout=90) as response:
-        raw=response.read(512*1024*1024+1)
-    if len(raw)>512*1024*1024: raise ValueError('Object exceeds cleanup bound')
-    if raw[:2]==b'\x1f\x8b': raw=gzip.decompress(raw)
-    return json.loads(raw)
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(BASE+urllib.parse.quote(name,safe='/')+'?generation='+str(META[name]['generation']),timeout=90) as response:
+                raw=response.read(512*1024*1024+1)
+            if len(raw)>512*1024*1024: raise ValueError('Object exceeds cleanup bound')
+            if raw[:2]==b'\x1f\x8b': raw=gzip.decompress(raw)
+            return json.loads(raw)
+        except urllib.error.HTTPError as e:
+            if e.code!=404 or attempt==2:raise
+            # A live export may replace its generation after the listing. Read
+            # its fresh metadata and lease THAT exact version; never overwrite it blindly.
+            with urllib.request.urlopen(API+'/'+urllib.parse.quote(name,safe='')+'?fields=name,generation,size',timeout=30) as response:META[name]=json.load(response)
+    raise ValueError('Object generation changed repeatedly')
 
 def listing(prefix):
     result=[];cursor=None
