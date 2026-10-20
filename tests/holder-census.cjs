@@ -1,0 +1,9 @@
+const test=require('node:test'),a=require('node:assert/strict'),{measure,T22}=require('../server/holder-census');
+const mint=Buffer.alloc(32,1),owner=Buffer.alloc(32,2);function row(key,amount,who=owner){const b=Buffer.alloc(165);mint.copy(b);who.copy(b,32);b.writeBigUInt64LE(BigInt(amount),64);b[108]=1;return {pubkey:key,account:{owner:T22,data:[b.toString('base64'),'base64']}};}
+const opts={mint:'m',program:T22,supplyRaw:'1000',vaults:['base','quote'],decode58:()=>mint,encode58:b=>b.toString('hex'),at:100};
+test('census counts unique positive owners, groups their accounts and excludes the pool',()=>{const s=measure([row('base',700),row('a',100),row('b',50),row('empty',0),row('c',20,Buffer.alloc(32,3))],opts);a.equal(s.holders,2);a.equal(s.top1,.15);a.equal(s.top10,.17);a.equal(s.holdersComplete,true);});
+test('empty, malformed and wrong-mint account results never invent zero holders',()=>{a.throws(()=>measure([],opts));const r=row('a',1);r.account.data[0]=Buffer.alloc(165).toString('base64');a.throws(()=>measure([r],opts));a.throws(()=>measure([row('a',2000)],opts));});
+
+
+test('complete census proves a known creator balance including real zero',()=>{const encode58=b=>b.toString('hex'),creator=encode58(owner);const s=measure([row('a',100),row('b',50)],{...opts,creator});a.equal(s.creatorHoldPct,15);a.equal(s.creatorBalanceRaw,'150');a.equal(measure([row('a',100)],{...opts,creator:'different'}).creatorHoldPct,0);});
+test('creator comes from launch curve identity, not the DBC migration authority',()=>{const {curveCreator}=require('../server/holder-census'),b=Buffer.alloc(424);Buffer.from([213,224,5,209,98,69,119,92]).copy(b);owner.copy(b,104);mint.copy(b,136);const input={owner:'dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN',data:[b.toString('base64'),'base64']};a.equal(curveCreator(input,opts),owner.toString('hex'));a.equal(curveCreator(input,{...opts,decode58:()=>Buffer.alloc(32,9)}),null);});

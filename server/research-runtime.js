@@ -59,7 +59,7 @@ function settings(cfg={}) {
     ...(cfg.intake!=null?{intake:intakeSettings(cfg.intake)}:{})
   };
   if(!Number.isInteger(result.hours)||result.hours<1||result.hours>12 ||
-     !Number.isInteger(result.decisionMinutes)||result.decisionMinutes<2||result.decisionMinutes>15 ||
+     !Number.isInteger(result.decisionMinutes)||result.decisionMinutes<1||result.decisionMinutes>15 ||
      !Number.isFinite(result.minActive)||result.minActive<0||result.minActive>100 ||
      !Number.isFinite(result.minCoverage)||result.minCoverage<.5||result.minCoverage>1) {
     throw new RangeError('Invalid first-level observation settings');
@@ -127,20 +127,20 @@ class ResearchRuntime {
   carryFrom(previous){if(!previous)return;for(const row of previous.admitted.values())if(!this.admitted.has(row.mint))this.admitted.set(row.mint,{...row,intakePending:true,transferred:true});}
   pruneRevoked(revoked){let n=0;for(const [mint,row] of this.admitted)if(row.phase==='before'&&revoked?.has(mint)){this.admitted.delete(mint);this.processed.delete(mint);this.lastAttemptAt.delete(mint);n++;}this.rows=this.rows.filter(r=>r.phase!=='before'||!revoked?.has(r.mint));return n;}
   reanchor({source,coins,now,limit=32}) {
-    const candidates=this.rows.filter(r=>{const admission=source.get?.(r.mint)||source.records.get(r.mint);return admission&&admission.phase===r.phase&&Number.isSafeInteger(admission.eventAt)&&admission.eventAt>0&&admission.eventAt<=admission.acceptedAt&&(r.featureAnchor!=='eventAt'||r.eventAt!==admission.eventAt||r.windowStart!==admission.eventAt||r.marketScopeVersion!==2);});
+    const candidates=this.rows.filter(r=>{const admission=source.get?.(r.mint)||source.records.get(r.mint);return admission&&admission.phase===r.phase&&Number.isSafeInteger(admission.eventAt)&&admission.eventAt>0&&admission.eventAt<=admission.acceptedAt&&(r.featureSnapshotVersion!==1||r.eventAt!==admission.eventAt||r.windowStart!==admission.eventAt||r.marketScopeVersion!==2);});
     this.eventMigration={remaining:candidates.length,rawMissing:0,changed:this.eventMigration?.changed||0};
     if(!candidates.length)return;
     const cursor=(this.eventMigrationCursor||0)%candidates.length;
     for(let i=0;i<Math.min(limit,candidates.length);i++){
       const old=candidates[(cursor+i)%candidates.length],admission=source.get?.(old.mint)||source.records.get(old.mint),coin=coins.get(old.mint),pool=admission.proof?.pool||old.p;
       if(!coin||(pool&&coin.p!==pool)){this.eventMigration.rawMissing++;continue;}
-      const cfg=phaseSettings(this.config,old.phase),at=admission.eventAt,decisionAt=at+cfg.decisionMinutes*MIN;
+      const cfg=phaseSettings(this.config,old.phase),at=admission.eventAt,decisionAt=admission.acceptedAt+cfg.decisionMinutes*MIN;
       const result=activityOutcome(coin,at,cfg,now);if(result.label==='pending')continue;
       // Recompute from original receipt cutoffs. Relabelling old frozen values
       // with an earlier timestamp would leak observations from after the decision.
-      const fresh={...old,...result,activitySlices:undefined,activitySlicesPacked:require('./activity-slices').pack(result.activitySlices),eventAt:at,featureAnchor:'eventAt',marketScopeVersion:2,decisionAt,
-        features:featuresAt(coin,decisionAt,{eventAt:at,phase:old.phase}),
-        featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,at,'1',old.phase),
+      const fresh={...old,...result,activitySlices:undefined,activitySlicesPacked:require('./activity-slices').pack(result.activitySlices),eventAt:at,featureAnchor:'acceptedAt',featureSnapshotVersion:1,marketScopeVersion:2,decisionAt,
+        features:require('./feature-snapshots').read(coin,admission.acceptedAt,cfg.decisionMinutes,old.phase),
+        featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,admission.acceptedAt,'1',old.phase),
         earlyWallets:require('./early-intelligence').frozenWallets(coin,decisionAt),
         curve:observationCurve(coin,at,cfg.hours),minutes:undefined,
         outcomePacked:require('node:zlib').deflateSync(Buffer.from(JSON.stringify(result.minutes||[]))).toString('base64'),
@@ -171,7 +171,7 @@ class ResearchRuntime {
       const cfg=phaseSettings(this.config,row.phase);
       let admission=this.admitted.get(row.mint);if(admission?.intakePending&&row.acceptedAt<this.admissionUpgradeAt){admission={...admission,intakePending:false,via:'preserved-observed-cohort'};this.admitted.set(row.mint,admission);}
       if(!admission&&(row.acceptedAt<this.admissionUpgradeAt||!cfg.intake)){admission={mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,eventAt:eventAnchor(row),acceptedAt:row.acceptedAt,features:{},via:'preserved-observed-cohort'};this.admitted.set(row.mint,admission);}
-      if((!admission||admission.intakePending)&&age>=cfg.decisionMinutes*MIN&&gateChecks++<MAX_CLASSIFICATION_CHECKS){const c=coins.get(row.mint);if(c){const features=featuresAt(c,eventAnchor(row)+cfg.decisionMinutes*MIN,{eventAt:eventAnchor(row),phase:row.phase}),gate=intakeDecision(cfg.intake,row,features,passes);if(!gate.ok){this.admitted.delete(row.mint);this.processed.set(row.mint,row.acceptedAt);this.intakeRejected[gate.why]=(this.intakeRejected[gate.why]||0)+1;continue}admission={mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,eventAt:eventAnchor(row),acceptedAt:row.acceptedAt,features,via:gate.via};this.admitted.set(row.mint,admission);this.intakeAccepted[gate.via]=(this.intakeAccepted[gate.via]||0)+1;}}
+      if((!admission||admission.intakePending)&&age>=cfg.decisionMinutes*MIN&&gateChecks++<MAX_CLASSIFICATION_CHECKS){const c=coins.get(row.mint);if(c){const features=require('./feature-snapshots').read(c,row.acceptedAt,cfg.decisionMinutes,row.phase),gate=intakeDecision(cfg.intake,row,features,passes);if(!gate.ok){this.admitted.delete(row.mint);this.processed.set(row.mint,row.acceptedAt);this.intakeRejected[gate.why]=(this.intakeRejected[gate.why]||0)+1;continue}admission={mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,eventAt:eventAnchor(row),acceptedAt:row.acceptedAt,features,via:gate.via};this.admitted.set(row.mint,admission);this.intakeAccepted[gate.via]=(this.intakeAccepted[gate.via]||0)+1;}}
       if(!admission){admission={mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,eventAt:eventAnchor(row),acceptedAt:row.acceptedAt,features:{},intakePending:true};this.admitted.set(row.mint,admission);}
 
       if(admission.intakePending||age<cfg.hours*HOURS+3*MIN){
@@ -194,7 +194,7 @@ class ResearchRuntime {
         pending['candidate-missing']=(pending['candidate-missing']||0)+1;
         continue;
       }
-      const decisionAt=eventAnchor(row)+cfg.decisionMinutes*MIN;
+      const decisionAt=row.acceptedAt+cfg.decisionMinutes*MIN;
       const result=activityOutcome(coin,eventAnchor(row),cfg,now);
       if(result.label==='pending'){
         this.lastAttemptAt.set(row.mint,{at:now,acceptedAt:row.acceptedAt,why:result.why});
@@ -202,11 +202,11 @@ class ResearchRuntime {
         continue;
       }
       this.lastAttemptAt.delete(row.mint);
-      const features=featuresAt(coin,decisionAt,{eventAt:eventAnchor(row),phase:row.phase});
+      const features=require('./feature-snapshots').read(coin,row.acceptedAt,cfg.decisionMinutes,row.phase);
       const gate={via:admission.via||'all'};
       this.rows=this.rows.filter(x=>x.mint!==row.mint);
       this.rows.push({via:gate.via,
-        mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,featureAnchor:'eventAt',marketScopeVersion:2,eventAt:eventAnchor(row),featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,eventAnchor(row),'1',row.phase),curve:observationCurve(coin,eventAnchor(row),cfg.hours),curveUnit:'price-usd',
+        mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,featureAnchor:'acceptedAt',featureSnapshotVersion:1,marketScopeVersion:2,eventAt:eventAnchor(row),featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,row.acceptedAt,'1',row.phase),curve:observationCurve(coin,eventAnchor(row),cfg.hours),curveUnit:'price-usd',
         acceptedAt:row.acceptedAt,decisionAt,earlyWallets:require('./early-intelligence').frozenWallets(coin,decisionAt),
         ...result,activitySlices:undefined,activitySlicesPacked:require('./activity-slices').pack(result.activitySlices),outcomeAt:now,minutes:undefined,outcomePacked:require('node:zlib').deflateSync(Buffer.from(JSON.stringify(result.minutes||[]))).toString('base64'),
         hours:cfg.hours,label:result.label,

@@ -21,7 +21,7 @@ test('manual test uses the module minute, reports unknown separately, and ranks 
  rows[1].decisionAt=T+10*M;const unknown=lib.manualTest(modules,rows,{ids:['own'],phase:'before',level:'1',positiveCount:1,negativeCount:1});assert.equal(unknown[0].unknownNegative,1);
 });
 test('live excludes old admissions and definition validation rejects empty or unsupported conditions',async()=>{
- assert.throws(()=>lib.definition({...moduleDef,conds:[]}));assert.throws(()=>lib.definition({...moduleDef,conds:[{key:'inventedMetric',op:'>=',value:1}]}));assert.throws(()=>lib.definition({...moduleDef,verdictMinutes:1}));
+ assert.throws(()=>lib.definition({...moduleDef,conds:[]}));assert.throws(()=>lib.definition({...moduleDef,conds:[{key:'inventedMetric',op:'>=',value:1}]}));assert.equal(lib.definition({...moduleDef,verdictMinutes:1}).verdictMinutes,1);assert.throws(()=>lib.definition({...moduleDef,verdictMinutes:0}));
  const m={...moduleDef,liveFrom:T},rows=[{phase:'before',label:'live',acceptedAt:T-M,decisionAt:T+M,features:{buys:100}},{phase:'before',label:'dead',acceptedAt:T,decisionAt:T+2*M,features:{buys:null}}];
  const stats=(await lib.liveStats([m],rows)).get(m.id);assert.equal(stats.totalPositive,0);assert.equal(stats.totalNegative,1);assert.equal(stats.rejectedNegative,0);assert.equal(stats.missingNegative,1);
 });

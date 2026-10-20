@@ -126,8 +126,8 @@ test('historic event reanchor recomputes receipt cutoffs, keeps cohort and survi
  assert.equal(r.rows[0].features.devBuySol,99);
  source.records.get(A).eventAt=T;
  const out=r.update({source,coins:new Map([[A,coin]]),now:T+71*M});
- const row=r.rows[0];assert.equal(row.acceptedAt,T+2*M);assert.equal(row.eventAt,T);assert.equal(row.windowStart,T);assert.equal(row.windowEnd,T+60*M);assert.equal(row.decisionAt,T+10*M);assert.equal(row.features.devBuySol,null);assert.equal(out.eventMigration.changed,1);assert.equal(out.counts.entered,1);
- const restarted=new ResearchRuntime({dir,config:{hours:1,lastHourWallets:0,minUniqueBuyers:0}});restarted.update({source,coins:new Map([[A,coin]]),now:T+72*M});assert.equal(restarted.rows[0].eventAt,T);assert.equal(restarted.rows[0].features.devBuySol,null);assert.equal(restarted.rows.length,1);assert.equal(restarted.eventMigration.remaining,0);
+ const row=r.rows[0];assert.equal(row.acceptedAt,T+2*M);assert.equal(row.eventAt,T);assert.equal(row.windowStart,T);assert.equal(row.windowEnd,T+60*M);assert.equal(row.decisionAt,T+12*M);assert.equal(row.features.devBuySol,99);assert.equal(out.eventMigration.changed,1);assert.equal(out.counts.entered,1);
+ const restarted=new ResearchRuntime({dir,config:{hours:1,lastHourWallets:0,minUniqueBuyers:0}});restarted.update({source,coins:new Map([[A,coin]]),now:T+72*M});assert.equal(restarted.rows[0].eventAt,T);assert.equal(restarted.rows[0].features.devBuySol,99);assert.equal(restarted.rows.length,1);assert.equal(restarted.eventMigration.remaining,0);
 });
 
 test('event migration retains original sample when raw observations or pool identity are missing',t=>{

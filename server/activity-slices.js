@@ -6,7 +6,7 @@ function tradeRows(data,mint,receivedAt){
  return data.flatMap(d=>{const x=d?.attributes||{},at=Date.parse(x.block_timestamp),buy=x.from_token_address===WSOL&&x.to_token_address===mint,sell=x.to_token_address===WSOL&&x.from_token_address===mint;
   if(!Number.isFinite(at)||!['buy','sell'].includes(x.kind)||!buy&&!sell)return [];
   const raw=buy?x.from_token_amount:x.to_token_amount,n=typeof raw==='string'&&raw.trim()!==''||typeof raw==='number'?Number(raw):NaN;
-  const sol=Number.isFinite(n)&&n>=0?n:null,price=Number(buy?x.price_to_in_usd:x.price_from_in_usd),usd=Number(x.volume_in_usd);
+  const sol=Number.isFinite(n)&&n>=0?n:null,price=Number(buy?x.price_to_in_usd:x.price_from_in_usd),usd=x.volume_in_usd==null?NaN:Number(x.volume_in_usd);
   return [[at/1000,buy?1:0,Number.isFinite(usd)?usd:null,wallet(x.tx_from_address)?x.tx_from_address:null,Number.isFinite(price)&&price>0?price:null,sol,receivedAt,d.id||x.tx_hash||null]];
  });
 }

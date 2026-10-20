@@ -6,7 +6,7 @@ if(typeof WebSocket==='undefined'&&!process.env.WSX){const ch=require('child_pro
    активность каждые 5 минут в течение 5 часов, свечи первых 10 минут и итог за 5 часов.
    Каждые 2 минуты выгружает перепись дня (по Алматы, с 00:00) в Cloud Storage. */
 const fs=require('fs'),zlib=require('zlib');
-let HEALTH=null,PROFILES=null;
+let HEALTH=null,PROFILES=null,HOLDER_CENSUS=null;
 let COMPLETED=null,ACTIVE_HISTORY=null,OBS_RECOVERY=null,RECOVERY_RPC=null;
 const fullCoin=c=>ACTIVE_HISTORY?ACTIVE_HISTORY.hydrate(c):c;
 const PUBLIC_FEEDS={busy:false,sourceAt:0,libraryAt:0,storageAt:0,error:''},RESEARCH_EXPORTS={busy:false,oneAt:0,twoAt:0,error:''};let SOURCE_DAY_PUBLISHED_AT=0;
@@ -118,7 +118,7 @@ async function ctCheck(c){
   const rpc=rpcFor(c,'контракт');
   const mi=await rpc('getAccountInfo',[c.a,{encoding:'jsonParsed'}]);const v=mi?.value;if(!v)throw new Error('токен не найден');
   const ct=ctFromMint(v);
-  ct.at=Date.now();c.ct=ct;require(DIR+'/coin-profile.js').applyMintIdentity(c,v,ct.at); // A deferred optional metadata read must not discard verified mint rights.
+  ct.at=Date.now();c.ct=ct;c.supplyRaw=v.data?.parsed?.info?.supply||c.supplyRaw;c.tokenProgram=v.owner;require(DIR+'/coin-profile.js').applyMintIdentity(c,v,ct.at); // A deferred optional metadata read must not discard verified mint rights.
   if(ct.metaMut==null)try{const mv=(await rpc('getAccountInfo',[await metadataOf(c.a),{encoding:'base64'}]))?.value;if(mv?.owner===META){const bytes=b64(mv.data?.[0]);ct.metaMut=metaMutable(bytes);ct.metaMutAt=Date.now();const meta=require(DIR+'/coin-profile.js').parseMetadata(bytes);require(DIR+'/coin-profile.js').applyIdentity(c,meta,ct.metaMutAt)}}catch(e){c.metadataReason=e.code==='BUDGET_DEFERRED'?'budget-deferred':'metadata-unavailable'}
 }
 // разбор mint-аккаунта (jsonParsed) без запросов — общий для одиночной и пакетной проверки
@@ -151,8 +151,10 @@ async function preChainSweepBody(){const now=Date.now(),dec=(PASS_V2?.config?.de
       part.forEach((c,j)=>{const a=v[j];if(c.p!==pools[j]||!a||a.owner!==PUMP)return;const u=b64(a.data?.[0]);if(u.length<49)return;
         const bytes=Buffer.from(u);if(bytes.length>=81&&bytes.subarray(49,81).some(x=>x!==0)&&!c.creatorAddress){c.creatorAddress=pk(bytes,49);c.creatorObservedAt=at;}const lam=Number(bytes.readBigUInt64LE(32));(c.curveSol=c.curveSol||[]).push([at,lam,u[48]?1:0]);PRE_STATS.curve++})}
   }catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else{PRE_STATS.errors++;err('pre sweep '+e.message)}}  try{
-    if(needCt.length){const v=await call(needCt.map(c=>c.a),{encoding:'jsonParsed'});const at=Date.now();needCt.forEach((c,j)=>{if(!v[j])return;try{const ct=ctFromMint(v[j]);ct.at=at;ct.batch=1;c.ct=ct;require(DIR+'/coin-profile.js').applyMintIdentity(c,v[j],at);PRE_STATS.ct++}catch{PRE_STATS.errors++}})}
+    if(needCt.length){const v=await call(needCt.map(c=>c.a),{encoding:'jsonParsed'});const at=Date.now();needCt.forEach((c,j)=>{if(!v[j])return;try{const ct=ctFromMint(v[j]);ct.at=at;ct.batch=1;c.ct=ct;c.supplyRaw=v[j].data?.parsed?.info?.supply||c.supplyRaw;c.tokenProgram=v[j].owner;require(DIR+'/coin-profile.js').applyMintIdentity(c,v[j],at);PRE_STATS.ct++}catch{PRE_STATS.errors++}})}
   }catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else{PRE_STATS.errors++;err('pre contracts '+e.message)}}
+  const needCreator=admitted.filter(c=>!c.creatorAddress&&(SOURCE.get(c.a)?.proof?.curve||c.mg?.watch||c.creatorCurveCandidate||c.mg?.k==='pump')&&now-(c.creatorAttemptAt||0)>5*60000).slice(0,100);
+  if(needCreator.length)try{const values=await call(await Promise.all(needCreator.map(c=>SOURCE.get(c.a)?.proof?.curve||c.mg?.watch||c.creatorCurveCandidate||bondingCurveOf(c.a))),{encoding:'base64'}),at=Date.now();needCreator.forEach((c,i)=>{c.creatorAttemptAt=at;const creator=require(DIR+'/holder-census.js').curveCreator(values[i],{mint:c.a,decode58:b58dec,encode58:b58enc});if(creator){c.creatorAddress=creator;c.creatorObservedAt=at;c.creatorIdentitySource='verified-launch-curve-state';}});}catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else PRE_STATS.errors++;}
   const needMeta=admitted.filter(c=>(!c.n||!c.s||(!c.i&&!c.uri))&&now-(c.metadataAttemptAt||0)>5*60e3).sort((a,b)=>b.t-a.t).slice(0,20);
   if(needMeta.length)try{const addresses=await Promise.all(needMeta.map(c=>metadataOf(c.a))),values=await call(addresses,{encoding:'base64'}),at=Date.now();needMeta.forEach((c,i)=>{c.metadataAttemptAt=at;const value=values[i];if(value?.owner!==META)return;try{const bytes=b64(value.data?.[0]);if(pk(bytes,33)!==c.a)return;const api=require(DIR+'/coin-profile.js'),meta=api.parseMetadata(bytes);api.applyIdentity(c,meta,at);if(c.ct){c.ct.metaMut=metaMutable(bytes);c.ct.metaMutAt=at;}c.metadataReason=null;}catch{c.metadataReason='metadata-invalid';}});}catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else PRE_STATS.errors++;}
 }
@@ -445,7 +447,7 @@ async function collectIntelligence(){const now=Date.now();if(INTEL_BUSY||now-INT
  }catch(e){if(e.code==='BUDGET_DEFERRED')INTEL_STATS.deferred++;else INTEL_STATS.errors++;}finally{INTEL_BUSY=false;}}
 // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
 // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
-const MODULES=['activity-slices.js','event-clock.js','admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
+const MODULES=['holder-census.js','feature-snapshots.js','activity-slices.js','event-clock.js','admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
   'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js','module-library.js','active-history.js','launch-history.js','early-intelligence.js','migration-fast.js','legacy-birth-cleanup.js','manual-pools.js','pool-logs.js','legacy-data-redaction.js','side-pools.js','observation-recovery.js'];
 let MODULES_OK=null;
 function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
@@ -738,7 +740,7 @@ function dsApply(c,p,at){const e=dsEntry(p,at);
   if(observedEligible(c))schedulePassOnObservation();
 }
 // сведения о монете (имя, соцсети, когда родилась на кривой) — по адресу монеты
-function dsTokenInfo(c,arr,at){if(!arr.length)return;
+function dsTokenInfo(c,arr,at){if(!arr.length)return;const curve=arr.find(p=>(isCurve(p.dexId)||/dbc|launch/i.test(p.dexId||''))&&p.baseToken?.address===c.a&&p.pairAddress);if(curve){c.creatorCurveCandidate=curve.pairAddress;c.creatorCurveCandidateAt=at;}
   if(!c.n&&arr[0].baseToken){c.nameObservedAt=at;c.n=(arr[0].baseToken.name||'').slice(0,40);c.s=(arr[0].baseToken.symbol||'').slice(0,16)}
   const cv=arr.filter(p=>isCurve(p.dexId)||/dbc|launch/i.test(p.dexId||'')).map(p=>p.pairCreatedAt).filter(Boolean);
   const all=arr.map(p=>p.pairCreatedAt).filter(Boolean);const born=Math.min(...(cv.length?cv:all));if(isFinite(born)&&born<c.t-60e3){const nt=Math.min(c.tk||Infinity,born);if(nt!==c.tk){c.tk=nt;c.tkAt=at}}
@@ -784,11 +786,22 @@ function candleTasks(){const now=Date.now(),pins=collectionPins(now);
           if(c.p===pool)c.path={at:Date.now(),upto:24,c:mergeK(mergeK(c.path?.c,k2),k1)}})
         .catch(e=>{if(e.code!=='OBSERVATION_COMPLETE')err('path24 '+e.message)}).finally(()=>{c.pTry=0})}}
   researchActivityTape(now);researchTradeTail(now);tradeTasks(now,pins)}
+async function censusTick(now=Date.now()){
+ if(!HOLDER_CENSUS||!SOURCE||resourcePressure())return;const choices=[];
+ for(const c of C.values()){const row=SOURCE.get(c.a);if(!row||now-row.acceptedAt>21*60000||!c.vaults||!c.supplyRaw||!c.ct)continue;const age=(now-row.acceptedAt)/60000;
+  const target=[1,5,15].find(m=>!c.hold?.[m]?.holdersComplete&&age>=m-1&&age<(m===15?21:m+2));if(!target||now-(c.censusAttemptAt||0)<30000)continue;choices.push({c,row,target});}
+ choices.sort((a,b)=>(a.c.censusAttemptAt||0)-(b.c.censusAttemptAt||0)||b.row.acceptedAt-a.row.acceptedAt);const pick=choices[0];if(!pick)return;const {c,target}=pick;c.censusAttemptAt=now;
+ const sample=await HOLDER_CENSUS.query({mint:c.a,program:c.tokenProgram||(c.ct.prog==='token2022'?T22:'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),supplyRaw:c.supplyRaw,vaults:c.vaults,creator:c.creatorAddress,decode58:b58dec,encode58:b58enc});if(sample){c.hold=c.hold||{};c.hold[target]=sample;if(sample.creatorBalanceRaw!=null){appendIntelligence(c,{at:sample.at,features:{devHold:Number(sample.creatorBalanceRaw)/10**c.ct.dec,devHoldPct:sample.creatorHoldPct},lowerBoundKeys:[],creatorHoldingScope:sample.scope});c.creatorBalanceAt=sample.at;}}
+}
+function captureFeatureSnapshots(now=Date.now()){
+ if(!SOURCE||resourcePressure())return;const api=require(DIR+'/feature-snapshots.js');
+ for(const c of C.values()){const row=SOURCE.get(c.a);if(!row||now-row.acceptedAt>21*60000||now<row.acceptedAt+60000)continue;const complete=fullCoin(c);api.capture(complete,row,now);if(complete.featureSnapshotsPacked)c.featureSnapshotsPacked=complete.featureSnapshotsPacked;}
+}
 function researchActivityTape(now){
  if(!RESEARCH_V2||gtPending('r1-activity'))return;
  const candidates=[...RESEARCH_V2.admitted.values()].map(row=>({row,c:C.get(row.mint)})).filter(({row,c})=>c?.p&&now-(c.activityAttemptAt||0)>10*60000&&now<require(DIR+'/event-clock.js').eventAnchor(row)+(require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase).hours*60+30)*60000).sort((a,b)=>(a.c.activityAttemptAt||0)-(b.c.activityAttemptAt||0));
  const item=candidates[0];if(!item)return;const {row,c}=item,pool=c.p,start=require(DIR+'/event-clock.js').eventAnchor(row),end=start+require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase).hours*3600000;c.activityAttemptAt=now;
- gt('/pools/'+pool+'/trades',1,'r1-activity').then(response=>{if(c.p!==pool)return;const api=require(DIR+'/activity-slices.js');c.activityTapePacked=api.pack(api.observe(api.unpack(c.activityTapePacked),response.data,c.a,start,end,Date.now()));const old=RESEARCH_V2.rows.find(r=>r.mint===row.mint);if(old){const coin=researchCoins().get(row.mint);if(coin){const raw=require(DIR+'/research-v2.js').activityEvidence(coin,start,end,RESEARCH_V2.config.decisionMinutes);old.activitySlicesPacked=api.pack(raw.activitySlices);delete old.activitySlices;RESEARCH_BANKS?.upsert([{...old,...require(DIR+'/research-v2.js').classifyActivity(old,require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase))}]);}}}).catch(e=>err('activity history '+e.message));
+ gt('/pools/'+pool+'/trades',1,'r1-activity').then(response=>{if(c.p!==pool)return;const api=require(DIR+'/activity-slices.js');const at=Date.now();c.activityTapePacked=api.pack(api.observe(api.unpack(c.activityTapePacked),response.data,c.a,start,end,at));const dev=require(DIR+'/early-intelligence.js').poolCreatorTrades(response.data,{mint:c.a,creator:c.creatorAddress,start,at});if(dev)appendIntelligence(c,dev);const old=RESEARCH_V2.rows.find(r=>r.mint===row.mint);if(old){const coin=researchCoins().get(row.mint);if(coin){const raw=require(DIR+'/research-v2.js').activityEvidence(coin,start,end,RESEARCH_V2.config.decisionMinutes);old.activitySlicesPacked=api.pack(raw.activitySlices);delete old.activitySlices;RESEARCH_BANKS?.upsert([{...old,...require(DIR+'/research-v2.js').classifyActivity(old,require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase))}]);}}}).catch(e=>err('activity history '+e.message));
 }
 // One bounded public GT request per tick; this uses no Helius credits.
 function researchTradeTail(now){if(!RESEARCH_V2||gtBackgroundBusy()||gtPending('r1-tail'))return;
@@ -912,7 +925,7 @@ async function chainObsLoop(){for(;;){const now=Date.now();
           for(const [c] of jobs.slice(i))c.poolBudgetDeferredAt=c.poolBudgetDeferredAt||Date.now();break}}
     }
     // Держатели — только у монет, допущенных в «Все» после миграции: опоздавшие нам не нужны, а бюджет ограничен.
-    for(const c of C.values()){if(!isOk(c)||!c.ct||SOURCE?.get(c.a)?.phase!=='after')continue;c.hold=c.hold||{};const a=ageMin(c,now);
+    for(const c of C.values()){if(!isOk(c)||!c.ct||Object.values(c.hold||{}).some(h=>h.holdersComplete===true)||SOURCE?.get(c.a)?.phase!=='after')continue;c.hold=c.hold||{};const a=ageMin(c,now);
       for(const m of HOLD_M){if(c.hold[m])continue;if(a>=m+2){c.hold[m]={at:now,miss:c.holderBudgetDeferredAt?'бюджет':'опоздали'};continue}
         if(a>=m)try{await holdersSnap(c,m);delete c.holderBudgetDeferredAt}catch(e){if(e.code==='BUDGET_DEFERRED'){c.holderBudgetDeferredAt=c.holderBudgetDeferredAt||Date.now();continue}
           c.hold[m]={at:Date.now(),miss:'ошибка'};err('hold '+e.message)}}}
@@ -1018,7 +1031,7 @@ async function processFastMigration(task){
    const now=Date.now(),limit=SOURCE.settings().afterMinutes*60000;if(v.eventAt>now)throw Object.assign(Error('migration block clock pending'),{code:'TX_PENDING'});if(now-v.eventAt>limit){SOURCE.observe({mint:v.mint,phase:'after',outcome:'tooOld',lateMs:now-v.eventAt-limit});outcome='too-old';if(task.curve)return {outcome};continue;}
    const family=v.family==='dbc-v1'?'dbc':v.family;let c=C.get(v.mint);if(!c){c={a:v.mint,n:'',s:'',i:'',p:v.pool,d:DEXOF[family],q:v.quote,t:v.eventAt,seen:task.receivedAt,firstPostSeenAt:Math.max(task.receivedAt,v.eventAt),disc:'migration-signature',discoverySource:'migration-fast',pools:[v.pool],fv:FV};C.set(v.mint,c)}else moveTo(c,v.pool,family,{t:v.eventAt});
    c.openingMetrics={pool:v.pool,quoteMint:v.quote,at:now,eventAt:v.eventAt,scope:'creation-transaction-end',liquiditySol:v.openingQuoteSol,liquidityUsd:null,marketCapUsd:null,liquidityToMarketCap:null,creatorAddress:null,creatorDepositSol:null,lpEvidence:null};c.q=v.quote;if(v.baseVault&&v.quoteVault&&Number.isFinite(v.openingQuoteSol)){c.vaults=[v.baseVault,v.quoteVault];c.vmint=[v.mint,v.quote];c.vaultIdentityAt=now;c.lq=c.lq||[];c.lq.push([Math.floor(now/1000),v.slot,null,Math.round(v.openingQuoteSol*1e9)]);c.lqAt=now;}c.admissionVerifiedAt=now;c.t=v.eventAt;c.migrationSlot=v.slot;c.migrationSignalAt=task.receivedAt;c.wsSeen=Math.max(task.receivedAt,v.eventAt);c.firstPostSeenAt=c.wsSeen;c.preCurve=0;
-   setMg(c,'ok',family,'',{owner:v.dexProgram,pool:v.pool,sig:signature,mT:v.eventAt,ix:v.ix});const decision=SOURCE.afterVerifiedMigration(c);if(decision.admitted){FAST_DISCOVERY.accepted('after',v.eventAt,family,now);c.admissionVerifiedAt=now;outcome='accepted';}else outcome=decision.reason||'unverified';
+   setMg(c,'ok',family,'',{owner:v.dexProgram,pool:v.pool,watch:v.curve,sig:signature,mT:v.eventAt,ix:v.ix});const decision=SOURCE.afterVerifiedMigration(c);if(decision.admitted){FAST_DISCOVERY.accepted('after',v.eventAt,family,now);c.admissionVerifiedAt=now;outcome='accepted';}else outcome=decision.reason||'unverified';
    if(task.curve)return {outcome};
   }
  }
@@ -1120,7 +1133,7 @@ function coinMetadata(c){const mg=c.mg||{};
     mk:mg.k||null,mst:mg.st||null,mw:mg.why||'',mT:mg.mT||null,mSig:mg.sig||null,mSeen:mg.seenAt||null,mCr:mg.creator??null,mH:c.mgH||[],mk0:c.mg0?.k||null,
     origs:(c.origs||[]).map(o=>({p:o.p,t:o.t,d:o.d,movedAt:o.movedAt})),
     preObs:c.preCurve?((c.origs||[]).find(o=>o.d==='pump-fun')||null):null,ct:c.ct||null,curveSol:c.preCurve&&c.curveSol?.length?c.curveSol:undefined,soc:c.soc||0,tk:c.tk&&isFinite(c.tk)?c.tk:null,tkAt:c.tkAt||null,
-    openingMetrics:c.openingMetrics||null,admissionVerifiedAt:c.admissionVerifiedAt||null,creatorAddress:c.creatorAddress||null,creatorObservedAt:c.creatorObservedAt??null,supplyRaw:c.supplyRaw||null,tokenProgram:c.tokenProgram||null,intelligenceSnapshots:c.intelligenceSnapshots||[],earlyWallets:c.earlyWallets||[],earlyWalletsAt:c.earlyWalletsAt??null,discoveryFeatures:c.discoveryFeatures||null,nameObservedAt:c.nameObservedAt??null,socialFeatures:c.socialFeatures||null,lpEvidence:c.lpEvidence||null,
+    featureSnapshotsPacked:c.featureSnapshotsPacked||null,activityTapePacked:c.activityTapePacked||null,openingMetrics:c.openingMetrics||null,admissionVerifiedAt:c.admissionVerifiedAt||null,creatorAddress:c.creatorAddress||null,creatorObservedAt:c.creatorObservedAt??null,supplyRaw:c.supplyRaw||null,tokenProgram:c.tokenProgram||null,intelligenceSnapshots:c.intelligenceSnapshots||[],earlyWallets:c.earlyWallets||[],earlyWalletsAt:c.earlyWalletsAt??null,discoveryFeatures:c.discoveryFeatures||null,nameObservedAt:c.nameObservedAt??null,socialFeatures:c.socialFeatures||null,lpEvidence:c.lpEvidence||null,
     live:c.lastTrade?Date.now()-c.lastTrade<30*60e3:false,lastTrade:c.lastTrade||null,legacy:c.legacy?1:0};
   return r}
 async function token(){const r=await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',{headers:{'Metadata-Flavor':'Google'}});return (await r.json()).access_token}
@@ -1185,7 +1198,7 @@ async function exportSource(now) {
   const enrich=x=>{
     const c=C.get(x.mint)||COMPLETED?.metadata(x.mint);
     return {...require(DIR+'/coin-profile.js').cardAt(c,now),p:x.proof?.pool||null,pair:x.proof?.pool||null,openingMetrics:x.proof?.openingMetrics||null,a:x.mint,phase:x.phase,phaseKey:x.phase==='before'?'pool':x.phase,launchpad:x.proof?.launchpad??null,dex:x.proof?.dex??null,venue:x.proof?.venue??null,eventAt:x.eventAt,acceptedAt:x.acceptedAt,
-      n:c?.n||'',s:c?.s||'',i:c?.i||'',family:x.proof?.family||null,curve:x.proof?.curve||null,
+      n:c?.n||'',s:c?.s||'',i:c?.i||'',family:x.proof?.family||null,curve:x.proof?.curve||c?.mg?.watch||null,
       proofSig:x.proof?.signature||null,uri:c?.uri||x.proof?.uri||null,migrationPool:x.proof?.pool||null,proofKind:x.proof?.kind||null,eventSlot:x.proof?.slot||null,eventTimeSource:x.proof?.timeSource||null};
   };
   const summary=SOURCE.summary(now);
@@ -1448,8 +1461,9 @@ async function researchExportsCycle(){
 }
 let STATUS_BUSY=false;
 async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const now=Date.now(),today=dayKey(now);
+  const featureSnapshots=require(DIR+'/feature-snapshots.js').coverage(C.values());
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,observationRecovery:OBS_RECOVERY?{...OBS_RECOVERY.summary(),rpc:RECOVERY_RPC?.summary()||null,r1Unknown:RESEARCH_V2?.summary().counts.unknown??null}:null,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:discoveryStatus(),poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,featureSnapshots,holderCensus:HOLDER_CENSUS?.stats||null,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,observationRecovery:OBS_RECOVERY?{...OBS_RECOVERY.summary(),rpc:RECOVERY_RPC?.summary()||null,r1Unknown:RESEARCH_V2?.summary().counts.unknown??null}:null,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:discoveryStatus(),poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,publishedAt:FAST_PASS_PUBLISH_AT},
@@ -1489,12 +1503,13 @@ const STARTED=Date.now();
   try{await initSource();await reloadSourceAgeConfig()}catch(e){SOURCE_ERR=e.message;err('главный источник не запустился: '+e.message)}
   try{await initResearchV2()}catch(e){RESEARCH_V2_ERR=e.message;err('исследование v2 не запустилось: '+e.message)}
   try{await initPathsV2()}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('серверные пути не запустились: '+e.message)}
+  captureFeatureSnapshots();setInterval(()=>{try{captureFeatureSnapshots()}catch(e){err('feature snapshots '+e.message)}},30000);
   initObservationRecovery();setTimeout(()=>recoveryTick(),20000);setInterval(()=>{try{recoveryTick()}catch(e){err('recovery '+e.message)}},15000);
-  PROFILES=new (require(DIR+'/coin-profile.js').CoinProfiles)();
+  PROFILES=new (require(DIR+'/coin-profile.js').CoinProfiles)();HOLDER_CENSUS=new (require(DIR+'/holder-census.js').HolderCensus)({});setInterval(()=>censusTick().catch(e=>err('holder census '+e.message)),10000);
   const LAUNCH_HISTORY=new (require(DIR+'/launch-history.js').LaunchHistory)();
   const updateLaunchHistory=()=>{try{LAUNCH_HISTORY.update({source:SOURCE,coins:C,metadata:mint=>COMPLETED?.metadata(mint),now:Date.now()})}catch(e){err('launch history '+e.message)}};updateLaunchHistory();setInterval(updateLaunchHistory,60000);
   const updateProfiles=()=>PROFILES.update({coins:C,source:SOURCE,rpc:(m,p)=>rpc(m,p,{priority:'identity',context:'карточка',source:'coin-profile'})}).catch(e=>err('profiles '+e.message));
-  setInterval(updateProfiles,60000);updateProfiles();setTimeout(()=>collectIntelligence(),30000);setInterval(()=>collectIntelligence(),60000);
+  setInterval(updateProfiles,30000);updateProfiles();setTimeout(()=>collectIntelligence(),30000);setInterval(()=>collectIntelligence(),60000);
   setTimeout(()=>auditManualPools(),20000);setInterval(()=>auditManualPools(),30000);
   chainWatch();setInterval(()=>exportStatus().catch(e=>err('status '+e.message)),60000);exportStatus().catch(e=>err('status '+e.message));
   publicFeedsCycle().catch(e=>err('public feeds '+e.message));setInterval(()=>publicFeedsCycle().catch(e=>err('public feeds '+e.message)),60000);

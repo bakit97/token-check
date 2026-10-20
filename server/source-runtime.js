@@ -240,7 +240,7 @@ class SourceRuntime {
     if(!seenAt)return {admitted:false,reason:'no-post-observation'};
     return this._admit({
       mint:c.a,phase:'after',migrationAt:c.mg.mT,migrationVerified:true
-    },seenAt,{family:c.mg.k,signature:c.mg.sig,pool:c.mg.pool,slot:c.migrationSlot||null,verifiedAt:c.admissionVerifiedAt||null,openingMetrics:c.openingMetrics||null});
+    },seenAt,{family:c.mg.k,signature:c.mg.sig,pool:c.mg.pool,curve:c.mg.watch||null,slot:c.migrationSlot||null,verifiedAt:c.admissionVerifiedAt||null,openingMetrics:c.openingMetrics||null});
   }
 
   day(date) {

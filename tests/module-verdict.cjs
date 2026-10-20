@@ -41,9 +41,9 @@ test('phone shows only completed server verdicts and never falls back to browser
  const fs=require('node:fs'),vm=require('node:vm'),code=fs.readFileSync(require('node:path').join(__dirname,'../v2.js'),'utf8');const body=code.slice(code.indexOf('function passedCoins('),code.indexOf('function storeBank('));const scope={serverPassActive:false,serverPassRows:[],now:()=>100,mint:c=>c.a};vm.runInNewContext(body,scope);assert.equal(scope.passedCoins([{a:M,_entry:{acceptedAt:1}}]).length,0);scope.serverPassActive=true;scope.serverPassRows=[{mint:M,phase:'before',acceptedAt:1,firstSeenAt:90,zeroAt:110,matches:[]}];assert.equal(scope.passedCoins([]).length,0);scope.serverPassRows[0].zeroAt=90;assert.equal(scope.passedCoins([]).length,1);
 });
 
-test('proof delay does not move the pool verdict clock or admit observations after the event cutoff',t=>{
+test('feature minute follows detection under TZ27 while the pool event timestamp remains unchanged',t=>{
  const x=setup(t,'1'),r=x.source.records.get(M);r.eventAt=x.at;r.acceptedAt=x.at+MIN;
- assert.equal(x.runtime.update({...x,now:x.at+2*MIN}).added,1);
- const pass=x.runtime.records.get(M);assert.equal(pass.zeroAt,x.at+2*MIN);assert.equal(pass.acceptedAt,x.at+MIN);assert.equal(pass.eventAt,x.at);
+ assert.equal(x.runtime.update({...x,now:x.at+2*MIN}).added,0);assert.equal(x.runtime.update({...x,now:x.at+3*MIN}).added,1);
+ const pass=x.runtime.records.get(M);assert.equal(pass.zeroAt,x.at+3*MIN);assert.equal(pass.acceptedAt,x.at+MIN);assert.equal(pass.eventAt,x.at);
  assert.equal(new PassRuntime({dir:x.dir,config:x.cfg}).records.get(M).zeroAt,pass.zeroAt);
 });
