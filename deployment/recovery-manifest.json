@@ -1,8 +1,9 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "fae8e2c29eb564ad3ae1594b9b09a9023a279a135026c1df9f3d9aa5f74d51ec",
-    "opening-evidence.js": "3209e5a67368a09c1ab98030a931b5e6d2954e7ceee089b99b54f3d2c7bf837e",
+    "collector.js": "ff70f844048b06d32bd0345d3d50b039f69e880a1df8fe9845adf387712ee78f",
+    "pool-trade-observer.js": "f7b3f02ff15cbac724c36a31666ed561ff8a595d424173105f3e00c2913c1f42",
+    "opening-evidence.js": "8a06cb94da8c1e8a6db0591d9cfce4e5f11fa2905f8f68ffedb0830b33493961",
     "holder-census.js": "9ec77d8504239901ad4bf5c3fcf5d4cbed7cb3d3a39fc68c20647743254d9672",
     "liquidity-proof.js": "80aec08bcd3dbbc3daf304e33555c1d977e738ac7c5243699ba831b6cbaec6ad",
     "venue-identity.js": "41335e3e48009553c4e89754d5ed45111109af97203d423c6538231755a6b378",

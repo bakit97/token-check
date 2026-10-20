@@ -1,0 +1,5 @@
+'use strict';
+const MIN=60000;
+function due(coin,now){const age=(now-coin.t)/MIN,last=coin.tr?.f?.at(-1);if(age<.5||age>40)return false;if(!last)return true;const previousAge=(last[0]-coin.t)/MIN,next=[.5,4,9,10.25].find(m=>m>previousAge+.01);return next!=null&&(age>=next||last[1]>=250&&now-last[0]>=MIN);}
+function observe(coin,record,data,at,{hours=5,append=()=>{}}={}){if(!Array.isArray(data))throw Error('pool-trades-malformed');const api=require('./activity-slices'),intel=require('./early-intelligence'),start=require('./event-clock').eventAnchor(record),end=start+hours*60*MIN,rows=api.tradeRows(data,coin.a,at);coin.activityTapePacked=api.pack(api.observe(api.unpack(coin.activityTapePacked),data,coin.a,start,end,at));const dev=intel.poolCreatorTrades(data,{mint:coin.a,creator:coin.creatorAddress,start,at});if(dev)append(coin,dev);if(at<=record.acceptedAt+20*MIN){const snapshot=intel.poolWallets(data,{mint:coin.a,start,at});append(coin,snapshot);coin.earlyWallets=snapshot.earlyWallets;coin.earlyWalletsAt=at;coin.earlyWalletsComplete=snapshot.earlyWalletsComplete;}return {rows,valid:rows.length,unusable:data.length-rows.length};}
+module.exports={due,observe};
