@@ -2,7 +2,7 @@
   "sourceDirectory": "server",
   "files": {
     "collector.js": "5c97b1796e69ce3dacf7289ad5b05e0649f25ba4439c5cdd095286ccf514bc58",
-    "opening-evidence.js": "9d4fd9028f9af149bafb7e6b8bd3a80e8b96692fcb4b94d2cb26bc797ecea653",
+    "opening-evidence.js": "d22a33a34af06e7c6546cef0bbd76024f17d0bdd42fc0ecac16342a1fb4ea91b",
     "holder-census.js": "a5572adb40d24ade063cf4424e9c03c57251eae6dd6c20b220c09b4c36110bab",
     "liquidity-proof.js": "80aec08bcd3dbbc3daf304e33555c1d977e738ac7c5243699ba831b6cbaec6ad",
     "venue-identity.js": "41335e3e48009553c4e89754d5ed45111109af97203d423c6538231755a6b378",
