@@ -1,0 +1,45 @@
+name: cleanup-legacy-births
+on:
+  push:
+    branches: [main]
+    paths: ['deployment/cleanup-legacy-births.py', '.github/workflows/cleanup-legacy-births.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: legacy-birth-cleanup
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Verify phase isolation and offset preservation
+        run: node --test tests/legacy-data-redaction.cjs
+      - name: Wait for local archive redaction before remote erasure
+        run: |
+          python3 - <<'PY'
+          import json,time,urllib.request
+          for attempt in range(40):
+              with urllib.request.urlopen('https://storage.googleapis.com/sol-scan-511718-data/status.json?cleanup='+str(time.time_ns()),timeout=30) as r: s=json.load(r)
+              if s.get('poolTransition',{}).get('completedCleanup',{}).get('complete') and time.time()-s['updated']/1000<120: break
+              time.sleep(15)
+          else: raise SystemExit('Runtime redaction not ready; remote deletion was not started')
+          PY
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/421351476653/locations/global/workloadIdentityPools/github/providers/github
+          service_account: helper-ai@sol-scan-511718.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Erase only proven legacy birth records with generation leases
+        run: python3 deployment/cleanup-legacy-births.py --apply
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: legacy-cleanup-counts
+          path: legacy-cleanup-result.json

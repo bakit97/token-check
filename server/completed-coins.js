@@ -12,7 +12,7 @@ function researchPins({source,passes,one=[],two=[],now=Date.now()}={}){
  const first=one.filter(Boolean),second=two.filter(Boolean);
  for(const rt of first.length?first:[{}])for(const r of source?.records?.values()||[]){
   if(r.acceptedAt<(rt.cohortStart||0)||r.acceptedAt>=(rt.cohortEnd??Infinity)||rt.processed?.has(r.mint))continue;
-  pin(r.mint,r.acceptedAt+(rt.config?.phases?.[r.phase]?.hours??rt.config?.hours??5)*HOUR+3*60000);
+  pin(r.mint,require('./event-clock').eventAnchor(r)+(rt.config?.phases?.[r.phase]?.hours??rt.config?.hours??5)*HOUR+3*60000);
  }
  for(const rt of second.length?second:[{}])for(const r of passes?.records?.values()||[]){
   if(r.firstSeenAt<(rt.cohortStart||0)||r.firstSeenAt>=(rt.cohortEnd??Infinity)||rt.processed?.has(r.mint))continue;
@@ -75,6 +75,22 @@ class CompletedCoins{
    for(const mint of ack.keys())if(!seenConfirmed.has(mint))throw Error('Confirmed archive is incomplete');
    if(carry.length){fs.ftruncateSync(fd,offset);fs.fsyncSync(fd)}
   }finally{fs.closeSync(fd)}this.index.set(day,records);
+ }
+ async eraseLegacyBirths(cutoff){
+  const marker=path.join(this.dir,'legacy-birth-redaction-v1.json');this.legacyCutoff=cutoff;
+  if(fs.existsSync(marker))return JSON.parse(fs.readFileSync(marker,'utf8'));
+  const {coin,context}=require('./legacy-data-redaction'),ctx=context({cutoff}),stats={removed:0,redacted:0,complete:false};
+  for(const day of this.days()){
+   const entries=[...(this.index.get(day)||new Map()).values()],tmp=this.file(day)+'.redact',fd=fs.openSync(tmp,'w',0o600),ack=new Map(this.confirmed.get(day)||[]);let touched=false;
+   try{let n=0;for(const e of entries){const old=this.readCoin(e.mint),next=coin(old,ctx);if(!next){ack.delete(e.mint);stats.removed++;touched=true;}else{const body=JSON.stringify(next),h=hash(body);if(h!==e.hash){ack.delete(e.mint);stats.redacted++;touched=true;}writeAll(fd,Buffer.from(JSON.stringify({hash:h,c:next})+'\n'));}if(++n%32===0)await new Promise(r=>setImmediate(r));}fs.fsyncSync(fd);}finally{fs.closeSync(fd)}
+   if(touched){
+    // Remove affected acknowledgements first. A crash before data rename only
+    // requires re-confirmation; it never acknowledges missing/changed data.
+    atomic(path.join(this.dir,day+'.confirmed.json'),{schema:1,entries:[...ack]});this.confirmed.set(day,ack);
+    fs.renameSync(tmp,this.file(day));syncDir(this.dir);this.replay(day);
+   }else fs.unlinkSync(tmp);
+  }
+  stats.complete=true;atomic(marker,stats);return stats;
  }
  async stage(coins){const handles=new Map(),pending=[];let count=0;
   try{for await(const c of coins){const day=dayOf(c.t);if(this.sealed.has(day))continue;const json=JSON.stringify(c),digest=hash(json),old=this.index.get(day)?.get(c.a);if(old?.hash===digest)continue;

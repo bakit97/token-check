@@ -9,7 +9,7 @@ function setup(t,mode='12'){
  {id:'late',name:'Продолжение',level:'2',version:1,phase:'before',verdictMinutes:5,conds:[{key:'volume',op:'>=',value:100}]}],
  modules:[{filterId:'early',phase:'before',level:'1',enabled:true},{filterId:'late',phase:'before',level:'2',enabled:true}]};
  const runtime=new PassRuntime({dir,config:cfg}),at=Math.ceil((runtime.config.activatedAt+1000)/1000)*1000;
- const source={records:new Map([[M,{mint:M,phase:'before',acceptedAt:at,eventAt:at-3600000}]])};
+ const source={records:new Map([[M,{mint:M,phase:'before',acceptedAt:at,eventAt:at}]])};
  const row=(m,b=7,s=2,v=200)=>[(at+m*MIN)/1000,1,100,200,b,s,v];
  const coin={a:M,ds:[row(1),row(4),row(6,99,99,0)]},coins=new Map([[M,coin]]);
  return {runtime,source,coin,coins,at,cfg,dir,row};
@@ -39,4 +39,11 @@ test('configuration preserves compound conditions and separate modes; rejects in
 
 test('phone shows only completed server verdicts and never falls back to browser rules',()=>{
  const fs=require('node:fs'),vm=require('node:vm'),code=fs.readFileSync(require('node:path').join(__dirname,'../v2.js'),'utf8');const body=code.slice(code.indexOf('function passedCoins('),code.indexOf('function storeBank('));const scope={serverPassActive:false,serverPassRows:[],now:()=>100,mint:c=>c.a};vm.runInNewContext(body,scope);assert.equal(scope.passedCoins([{a:M,_entry:{acceptedAt:1}}]).length,0);scope.serverPassActive=true;scope.serverPassRows=[{mint:M,phase:'before',acceptedAt:1,firstSeenAt:90,zeroAt:110,matches:[]}];assert.equal(scope.passedCoins([]).length,0);scope.serverPassRows[0].zeroAt=90;assert.equal(scope.passedCoins([]).length,1);
+});
+
+test('proof delay does not move the pool verdict clock or admit observations after the event cutoff',t=>{
+ const x=setup(t,'1'),r=x.source.records.get(M);r.eventAt=x.at;r.acceptedAt=x.at+MIN;
+ assert.equal(x.runtime.update({...x,now:x.at+2*MIN}).added,1);
+ const pass=x.runtime.records.get(M);assert.equal(pass.zeroAt,x.at+2*MIN);assert.equal(pass.acceptedAt,x.at+MIN);assert.equal(pass.eventAt,x.at);
+ assert.equal(new PassRuntime({dir:x.dir,config:x.cfg}).records.get(M).zeroAt,pass.zeroAt);
 });

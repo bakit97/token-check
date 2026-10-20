@@ -57,7 +57,7 @@ class CoinProfiles{
  constructor(){this.busy=false;this.lastRun=0;this.stats={images:0,created:0,deferred:0,unknown:0,errors:0}}
  async update({coins,source,rpc,now=Date.now(),fetch}={}){
   if(this.busy||now-this.lastRun<MIN)return;this.busy=true;this.lastRun=now;
-  try{const rows=[...coins.values()].filter(c=>{const a=source?.get(c.a);return a&&now-a.acceptedAt<2*3600000});
+  try{const rows=[...coins.values()].filter(c=>{const a=source?.get(c.a);return a&&now-require('./event-clock').eventAnchor(a)<2*3600000});
    for(const c of rows)if(!c.createdAt&&Number.isSafeInteger(c.preTradingAt)){c.createdAt=c.preTradingAt;c.createdAtObservedAt=source.get(c.a)?.acceptedAt||now;c.createdAtSource='verified-create-log-slot-time'}
    const needs=rows.filter(c=>!c.i&&now-(c.profileAttemptAt||0)>10*MIN&& (c.uri||c.ct?.uri||source.get(c.a)?.proof?.uri)).sort((a,b)=>source.get(b.a).acceptedAt-source.get(a.a).acceptedAt).slice(0,4);
    for(const c of needs){c.profileAttemptAt=now;try{const m=await metadataImage(c.uri||c.ct?.uri||source.get(c.a).proof.uri,{fetch});if(!m.reason){c.metadataAt=Date.now();c.socialFeatures=m.social;}if(m.image){c.i=m.image;c.profileAt=Date.now();this.stats.images++}if(m.description!=null)c.description=m.description;c.profileReason=m.reason||null}catch{c.profileReason='metadata-unavailable';this.stats.errors++}}

@@ -24,4 +24,5 @@ class EventClock {
   }
   summary(){return {...this.stats,anchor:this.anchor,slotDurationMs:400,cacheMs:10000,estimateOnly:true};}
 }
-module.exports={EventClock};
+function eventAnchor(row){const at=row?.eventAt;return Number.isSafeInteger(at)&&at>0&&(!Number.isSafeInteger(row?.acceptedAt)||at<=row.acceptedAt)?at:row?.acceptedAt;}
+module.exports={EventClock,eventAnchor};

@@ -7,7 +7,7 @@ const M=60000,H=60*M,T=Date.UTC(2026,9,19),mint='So11111111111111111111111111111
 function dir(t){const d=fs.mkdtempSync(path.join(os.tmpdir(),'phase-study-'));t.after(()=>fs.rmSync(d,{recursive:true,force:true}));return d}
 test('research phases observe their own hours and thresholds from detection',t=>{
  const runtime=new ResearchRuntime({dir:dir(t),config:{lastHourWallets:0,minUniqueBuyers:0,phases:{before:{hours:1,minActive:70},after:{hours:2,minActive:90}}}});
- const source={records:new Map([['a',{mint:'a',phase:'before',acceptedAt:T,eventAt:T-H}],['b',{mint:'b',phase:'after',acceptedAt:T,eventAt:T-H}]])};
+ const source={records:new Map([['a',{mint:'a',phase:'before',acceptedAt:T,eventAt:T}],['b',{mint:'b',phase:'after',acceptedAt:T,eventAt:T}]])};
  const ds=Array.from({length:121},(_,i)=>[(T+i*M)/1000,1,100,100,3,1,20]);
  const coins=new Map([['a',{ds}],['b',{ds}]]);let r=runtime.update({source,coins,now:T+H+5*M});assert.equal(r.added,1);assert.equal(r.counts.preLive,1);assert.equal(r.pending['not-yet-finished'],1);
  r=runtime.update({source,coins,now:T+2*H+5*M});assert.equal(r.added,1);assert.equal(r.counts.postLive,1);assert.equal(runtime.select({phase:'before'})[0].decisionAt,T+10*M);

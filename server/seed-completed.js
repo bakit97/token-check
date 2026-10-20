@@ -61,7 +61,7 @@ async function seedObservationDay({store,day,hot,download}){
   current.origs=current.origs||[];for(const prior of old.origs||[]){const found=current.origs.find(o=>o.p===prior.p&&o.t===prior.t);if(found)preserve(found,prior);else current.origs.push(prior);}
  }
  async function* rows(){let count=0;for(const row of readRows(file,null,{field:'coins'})){
-  stats.contractRows++;const c=toLegacy(row),current=hot.get(c.a);for(const p of row.observations.pools)for(const kind of ['rawStates','trades'])if(p.archives?.[kind])stats.archiveReferences++;
+  stats.contractRows++;const c=require('./legacy-data-redaction').coin(toLegacy(row));if(!c)continue;const current=hot.get(c.a);for(const p of row.observations.pools)for(const kind of ['rawStates','trades'])if(p.archives?.[kind])stats.archiveReferences++;
   if(current&&current.p===c.p&&current.t===c.t)preserve(current,c);else{stats.coldRows++;yield c;}
   if(++count%32===0)await new Promise(r=>setImmediate(r));
  }}

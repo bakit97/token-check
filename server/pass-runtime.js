@@ -1,4 +1,5 @@
 'use strict';
+const {eventAnchor}=require('./event-clock');
 // Server-only, read-only token analytics. One mint can enter "Passed" once.
 // An append-only, fsynced journal freezes filter versions and observation time.
 // Missing evidence never qualifies; source admissions are never synthesized here.
@@ -65,7 +66,7 @@ function isEvent(x){
   return x&&[1,2].includes(x.schema)&&typeof x.mint==='string'&&x.mint.length>=32&&
     PHASES.has(x.phase)&&Number.isSafeInteger(x.acceptedAt)&&
     Number.isSafeInteger(x.firstSeenAt)&&Number.isSafeInteger(x.zeroAt)&&
-    x.zeroAt>x.acceptedAt&&x.firstSeenAt>=x.acceptedAt&&(x.schema===2?x.firstSeenAt>=x.zeroAt&&x.firstSeenAt<=x.zeroAt+2*MIN:x.firstSeenAt<=x.zeroAt)&&
+    x.zeroAt>eventAnchor(x)&&x.firstSeenAt>=x.acceptedAt&&(x.schema===2?x.firstSeenAt>=x.zeroAt&&x.firstSeenAt<=x.zeroAt+2*MIN:x.firstSeenAt<=x.zeroAt)&&
     typeof x.configHash==='string'&&Array.isArray(x.matches)&&x.matches.length>0&&
     x.features&&typeof x.features==='object';
 }
@@ -189,7 +190,7 @@ class PassRuntime {
         source.records.values();
       for(const row of recent){
         if(!PHASES.has(row.phase)||this.records.has(row.mint)||row.acceptedAt<cfg.activatedAt||
-           row.acceptedAt>now||now-row.acceptedAt>cfg.decisionMinutes*MIN)continue;
+           row.acceptedAt>now||now-eventAnchor(row)>cfg.decisionMinutes*MIN)continue;
         considered++;
         const coin=coins.get(row.mint);
         if(!coin)continue;
@@ -212,7 +213,7 @@ class PassRuntime {
         const item={
           schema:1,mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,
           acceptedAt:row.acceptedAt,eventAt:row.eventAt,firstSeenAt:now,
-          zeroAt:row.acceptedAt+cfg.decisionMinutes*MIN,
+          zeroAt:eventAnchor(row)+cfg.decisionMinutes*MIN,
           configHash:this.configHash,features:F,matches,secondLevelRules,
           name:String(coin.n||coin.s||'').slice(0,64),
           kind:'observed-filter-match'
@@ -238,19 +239,19 @@ class PassRuntime {
         if(!PHASES.has(row.phase)||this.records.has(row.mint)||row.acceptedAt<cfg.activatedAt||row.acceptedAt>now)continue;
         const rules=selected.filter(x=>x.module.phase===row.phase);
         if(!rules.some(x=>x.module.level==='1')||(cfg.passMode[row.phase]==='12'&&!rules.some(x=>x.module.level==='2')))continue;
-        const minutes=Math.max(...rules.map(x=>x.filter.verdictMinutes||cfg.decisionMinutes)),zeroAt=row.acceptedAt+minutes*MIN;
+        const minutes=Math.max(...rules.map(x=>x.filter.verdictMinutes||cfg.decisionMinutes)),zeroAt=eventAnchor(row)+minutes*MIN;
         if(now<zeroAt){waiting++;continue}if(now>zeroAt+2*MIN)continue;
         considered++;const coin=coins.get(row.mint);if(!coin){missingFeatures++;continue}
         const verdicts=rules.map(({filter:f})=>{
-          const at=row.acceptedAt+(f.verdictMinutes||cfg.decisionMinutes)*MIN;
-          const features=f.level==='2'?require('./research-v2').levelTwoFeaturesAt(coin,at,{entryAt:row.acceptedAt,acceptedAt:row.acceptedAt,phase:row.phase}):featuresAt(coin,at,{eventAt:row.acceptedAt,phase:row.phase});
+          const at=eventAnchor(row)+(f.verdictMinutes||cfg.decisionMinutes)*MIN;
+          const features=f.level==='2'?require('./research-v2').levelTwoFeaturesAt(coin,at,{entryAt:eventAnchor(row),acceptedAt:eventAnchor(row),phase:row.phase}):featuresAt(coin,at,{eventAt:eventAnchor(row),phase:row.phase});
           return {filter:f,at,features,result:evaluation(features,f)};
         });
         if(verdicts.some(x=>x.result==='unknown')){missingFeatures++;continue}
         if(verdicts.some(x=>x.result!=='pass')){rejected++;continue}
         this._append({schema:2,mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,acceptedAt:row.acceptedAt,eventAt:row.eventAt,
           firstSeenAt:now,zeroAt,passMode:cfg.passMode[row.phase],verdictMinutes:minutes,configHash:this.configHash,
-          features:featuresAt(coin,zeroAt,{eventAt:row.acceptedAt,phase:row.phase}),
+          features:featuresAt(coin,zeroAt,{eventAt:eventAnchor(row),phase:row.phase}),
           matches:verdicts.filter(x=>x.filter.level==='1').map(x=>({...x.filter})),
           moduleVerdicts:verdicts.map(x=>({id:x.filter.id,level:x.filter.level,version:x.filter.version,at:x.at,features:x.features,result:x.result})),
           secondLevelRules:cfg.modules.filter(m=>m.enabled&&m.level==='2'&&m.phase===row.phase).map(m=>byId.get(m.filterId)).filter(Boolean).map(f=>({...f})),

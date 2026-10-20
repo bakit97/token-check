@@ -1,4 +1,5 @@
 'use strict';
+const {eventAnchor}=require('./event-clock');
 // Level 2 starts ONLY from durable server Passed events after their zeroAt.
 // Price is observational; incomplete periods have no strong/weak label.
 const fs=require('node:fs');
@@ -188,13 +189,13 @@ class ResearchTwoRuntime {
       this.retry.delete(pass.mint);
       // Level-two conditions and versions were frozen at first Passed.
       // Their metrics use only observations up to the fixed zeroAt.
-      const featureAt=pass.acceptedAt+cfg.decisionMinutes*MIN;
-      const F=levelTwoFeaturesAt(coin,featureAt,{entryAt:pass.acceptedAt,acceptedAt:pass.acceptedAt,phase:pass.phase});
+      const featureAt=eventAnchor(pass)+cfg.decisionMinutes*MIN;
+      const F=levelTwoFeaturesAt(coin,featureAt,{entryAt:eventAnchor(pass),acceptedAt:eventAnchor(pass),phase:pass.phase});
       const secondLevelMatches=(pass.secondLevelRules||[])
         .filter(f=>evaluation(F,f)==='pass').map(f=>({...f}));
       newRows.push({
         mint:pass.mint,phase:pass.phase,p:pass.p||coin.p||null,pair:pass.pair||coin.p||null,phaseEpoch:pass.phaseEpoch||null,acceptedAt:pass.acceptedAt,
-        firstSeenAt:pass.firstSeenAt,zeroAt:pass.zeroAt,decisionAt:featureAt,outcomeAt:now,windowEnd:pass.zeroAt+300*MIN,earlyWallets:require('./early-intelligence').frozenWallets(coin,featureAt),featureAnchor:'acceptedAt',featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,pass.acceptedAt,'2',pass.phase),sourceFilterRules:pass.matches.map(f=>({...f})),
+        firstSeenAt:pass.firstSeenAt,zeroAt:pass.zeroAt,decisionAt:featureAt,outcomeAt:now,windowEnd:pass.zeroAt+300*MIN,earlyWallets:require('./early-intelligence').frozenWallets(coin,featureAt),featureAnchor:'eventAt',eventAt:eventAnchor(pass),featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,eventAnchor(pass),'2',pass.phase),sourceFilterRules:pass.matches.map(f=>({...f})),
         configHash:pass.configHash,sourceFilterVersions:pass.matches.map(f=>({
           id:f.id,version:f.version,level:f.level
         })),

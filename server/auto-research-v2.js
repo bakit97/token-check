@@ -20,7 +20,7 @@ class AutoStudies{
   const phases={},rules=[];let changed=false;
   for(const phase of ['before','after']){
    const cfg=settings.phases?.[phase]||settings,dm=cfg.decisionMinutes||10;
-   const compatible=(r,minutes)=>!r.decisionAt||Math.abs((r.decisionAt-r.acceptedAt)/60000-minutes)<.01;
+   const compatible=(r,minutes)=>!r.decisionAt||Math.abs((r.decisionAt-require('./event-clock').eventAnchor(r))/60000-minutes)<.01;
    const bank=rows.filter(r=>r.phase===phase&&compatible(r,dm)&&r.acceptedAt<=now&&(r.outcomeAt==null||r.outcomeAt<=now)).map(r=>({...r,features:verifiedFeatures(r.features)}));
    const report=discover(bank,{level,minTrainPositive:cfg.targetLive??cfg.targetStrong??(level==='1'?100:40),minTrainNegative:cfg.targetDead??cfg.targetWeak??40,missPenalty:cfg.missPenalty??3});phases[phase]=report;
    for(const proposal of report.rules){
