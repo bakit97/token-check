@@ -571,6 +571,7 @@ async function initPathsV2(){
     dir:DIR,config:two.config,cohortStart:two.activeAt,
     bankName:twoResearchBankName(two)
   });
+  PASS_V2.displayWindows=RESEARCH_TWO.config;
   recoverSupersededStudies();
   AUTO_V2=require(DIR+'/auto-research-v2.js');
   AUTO_STUDIES=new AUTO_V2.AutoStudies({dir:DIR});
@@ -609,6 +610,7 @@ async function reloadResearchConfig(){
         TWO_BANK_UPLOADED=0;AUTO_UPLOADED=0;
         log('второй исследовательский полигон переключён на новую эпоху',x.hash);
       }else RESEARCH_TWO.config=RESEARCH_TWO_EPOCH.current.config;
+      if(PASS_V2)PASS_V2.displayWindows=RESEARCH_TWO.config;
     }
     if(RESEARCH_BANKS){RESEARCH_BANKS.applyConfig(await getObj('config/research-storage.json')||{},RESEARCH_V2?.config||{},RESEARCH_TWO?.config||{});RESEARCH_BANKS.upsert([])}
     RESEARCH_CONFIG_ERR='';
@@ -1192,7 +1194,7 @@ async function exportAiSummary(now){if(now-AI_LAST<5*60e3||!SOURCE)return;AI_LAS
   await uploadText('ai/summary.md',md,'text/markdown; charset=utf-8');
   await uploadText('ai/summary.json',JSON.stringify(json,null,1),'application/json; charset=utf-8');
 }
-function withPoolReference(row){const mint=row.mint||row.a,admission=SOURCE?.get(mint),pool=admission?.proof?.pool||row.p||row.pair||null,c=C.get(mint)||COMPLETED?.metadata(mint),event=admission?.eventAt??row.eventAt,createdAt=c?.createdAt??row.createdAt??null;return {...row,p:pool,pair:pool,createdAt,createdAtSource:c?.createdAtSource??row.createdAtSource??null,createdAtObservedAt:c?.createdAtObservedAt??row.createdAtObservedAt??null,ageAtMigrationMin:Number.isSafeInteger(event)&&Number.isSafeInteger(createdAt)&&createdAt<=event?(event-createdAt)/60000:null,phaseKey:row.phase==='before'?'pool':row.phase};}
+function withPoolReference(row){const mint=row.mint||row.a,admission=SOURCE?.get(mint),pool=admission?.proof?.pool||row.p||row.pair||null,c=C.get(mint)||COMPLETED?.metadata(mint),event=admission?.eventAt??row.eventAt,createdAt=c?.createdAt??row.createdAt??null;return {...row,...(row.firstSeenAt&&row.matches&&RESEARCH_TWO?require(DIR+'/research-two-runtime.js').lineClock(row,RESEARCH_TWO.config.phases?.[row.phase]||RESEARCH_TWO.config):{}),p:pool,pair:pool,createdAt,createdAtSource:c?.createdAtSource??row.createdAtSource??null,createdAtObservedAt:c?.createdAtObservedAt??row.createdAtObservedAt??null,ageAtMigrationMin:Number.isSafeInteger(event)&&Number.isSafeInteger(createdAt)&&createdAt<=event?(event-createdAt)/60000:null,phaseKey:row.phase==='before'?'pool':row.phase};}
 async function exportSource(now) {
   if(!SOURCE)return;
   const d=dayKey(now);
@@ -1230,7 +1232,7 @@ function recoveryTick(){if(resourcePressure())return;if(!OBS_RECOVERY||!RESEARCH
  for(const row of one.view())if(row.label==='unknown'||row.recoveryPending||(row.recoveryJobId&&row.recoveryVersion!==2)){const cfg=require(DIR+'/research-runtime.js').phaseSettings(one.config,row.phase),start=row.windowStart??row.eventAt??row.acceptedAt,end=row.windowEnd??start+cfg.hours*3600e3;if(end<now)enqueue(row,start,end,'one');}
  if(now-RECOVERY_SCAN_AT>=120000){RECOVERY_SCAN_AT=now;const active=[...one.admitted.values()].filter(r=>!r.intakePending&&now<(r.eventAt??r.acceptedAt)+require(DIR+'/research-runtime.js').phaseSettings(one.config,r.phase).hours*3600e3),window=active.slice(RECOVERY_CURSOR,RECOVERY_CURSOR+8);RECOVERY_CURSOR=RECOVERY_CURSOR+8>=active.length?0:RECOVERY_CURSOR+8;
   for(const row of window){const c=C.get(row.mint),cfg=require(DIR+'/research-runtime.js').phaseSettings(one.config,row.phase),start=row.eventAt??row.acceptedAt,end=Math.min(Math.floor((now-3*60000)/60000)*60000,start+cfg.hours*3600e3);if(!c||end-start<10*60000)continue;const raw=api.activityEvidence(OBS_RECOVERY.attach(fullCoin(c)),start,end,cfg.decisionMinutes);let from=null,to=null;for(const minute of raw.minutes){if(minute[1]!==1){from??=minute[0]-60000;to=minute[0];}else if(from!=null)break;}if(from!=null&&to-from>=2*60000)enqueue(row,from,to,'one-gap');}
-  for(const pass of PASS_V2?.records.values()||[]){if(RESEARCH_TWO?.processed.has(pass.mint)||now-pass.zeroAt<5*3600e3)continue;enqueue(pass,pass.zeroAt-7*60000,pass.zeroAt+5*3600e3,'two');}
+  for(const pass of PASS_V2?.records.values()||[]){const cfg=RESEARCH_TWO?.config.phases?.[pass.phase]||RESEARCH_TWO?.config||{},clock=require(DIR+'/research-two-runtime.js').lineClock(pass,cfg);if(RESEARCH_TWO?.processed.has(pass.mint)||now<clock.windowEnd)continue;enqueue(pass,clock.lineAt-7*60000,clock.windowEnd,'two');}
  }
  OBS_RECOVERY.tick();
 }
@@ -1271,7 +1273,7 @@ async function exportPathsV2(now){
     serverOnly:true});
   await upload('passed-v2/live.json',{
     updated:now,origin:'server-journal',
-    coins:PASS_V2.latest(1000).filter(x=>x.schema===2?now-x.firstSeenAt<5*60e3:x.zeroAt>now).map(withPoolReference)
+    coins:PASS_V2.latest(1000).filter(x=>x.schema===2?now-x.firstSeenAt<(RESEARCH_TWO?.config.phases?.[x.phase]?.passWindowMinutes??RESEARCH_TWO?.config.passWindowMinutes??5)*60e3:x.zeroAt>now).map(withPoolReference)
   });
   for(const d of [dayKey(now),dayKey(now-864e5)]){
     const rows=PASS_V2.day(d).map(withPoolReference);
@@ -1285,6 +1287,7 @@ async function exportPathsV2(now){
     catch(e){err('research old 2 '+item.epoch.hash+' '+e.message)}
   }
   TWO_ERR='';
+  RESEARCH_BANKS?.relabelTwo(RESEARCH_TWO.config);
   RESEARCH_BANKS?.upsert(RESEARCH_TWO.select({limit:20000}));
   AI_SNAP.r2=result;
   await upload('research-v2/status-two.json',result);
@@ -1307,7 +1310,7 @@ async function exportPathsV2(now){
     const levelOne=(RESEARCH_BANKS?RESEARCH_BANKS.select({level:'1'}):RESEARCH_V2.select({limit:20000})).filter(x=>x.outcomeVersion===2&&['live','dead'].includes(x.label)).map(x=>({
       ...x,time:x.acceptedAt
     }));
-    const levelTwo=RESEARCH_BANKS?RESEARCH_BANKS.select({level:'2'}):RESEARCH_TWO.select({limit:20000});
+    const levelTwo=(RESEARCH_BANKS?RESEARCH_BANKS.select({level:'2'}):RESEARCH_TWO.select({limit:20000})).filter(r=>{const c=RESEARCH_TWO.config.phases?.[r.phase]||RESEARCH_TWO.config;return r.lineVersion===2&&r.hours===c.hours&&r.passWindowMinutes===c.passWindowMinutes;});
     const one=AUTO_STUDIES.report(levelOne,{level:'1',settings:RESEARCH_V2.config,now});
     const two=AUTO_STUDIES.reportParents(levelTwo,{settings:RESEARCH_TWO.config,now});
     await refreshLibrary(PASS_V2.config);
@@ -1355,7 +1358,7 @@ async function fastPassedLoop(){
             if(publishAt-FAST_PASS_STATUS_AT>=60000){await upload('passed-v2/status.json',{...PASS_V2.summary(publishAt),controlError:PASS_CFG_ERR||null,serverConfig:PASS_V2.config,serverOnly:true});FAST_PASS_STATUS_AT=publishAt;}
             await upload('passed-v2/live.json',{
               updated:publishAt,origin:'server-journal',
-              coins:PASS_V2.latest(1000).filter(x=>x.schema===2?publishAt-x.firstSeenAt<5*60e3:x.zeroAt>publishAt).map(withPoolReference)
+              coins:PASS_V2.latest(1000).filter(x=>x.schema===2?publishAt-x.firstSeenAt<(RESEARCH_TWO?.config.phases?.[x.phase]?.passWindowMinutes??RESEARCH_TWO?.config.passWindowMinutes??5)*60e3:x.zeroAt>publishAt).map(withPoolReference)
             });
             FAST_PASS_PUBLISH_AT=publishAt;
           }

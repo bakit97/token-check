@@ -182,34 +182,34 @@ function tradeOutcomeEvidence(rows,start,end,at){
  const identities=clean.every(r=>typeof r[3]==='string'&&r[3].length>=32);
  return {at,windowStart:start,windowEnd:end,complete,trades:clean,minutes:[...minute.values()].sort((a,b)=>a[0]-b[0]),lastHourTrades:trades,lastHourWallets:identities?wallets.size:null,uniqueBuyers:identities?buyers.size:null,lowerBounds:[...(!tailComplete?['last-hour-trades','last-hour-wallets']:[]),...(!complete?['unique-buyers']:[])]};
 }
-function strengthOutcome(coin,zeroAt,{minAbove=70,minCoverage=.9}={},now=Date.now()){
-  if(!inRange(minAbove,0,100))throw RangeError('Invalid level-two settings');
-  const end=zeroAt+300*MIN;
-  if(now<end+MIN)return {label:'pending',why:'five-hours-not-finished'};
+function strengthOutcome(coin,zeroAt,{minAbove=70,minCoverage=.9,minAboveMarginPct=10,hours=5}={},now=Date.now()){
+  if(!inRange(minAbove,0,100)||!inRange(minAboveMarginPct,0,100)||!Number.isInteger(hours)||hours<1||hours>12)throw RangeError('Invalid level-two settings');
+  const total=hours*60,end=zeroAt+total*MIN;
+  if(now<end+MIN)return {label:'pending',why:'observation-window-not-finished'};
   const recovered=(coin?.recoveryEvidence||[]).flatMap(e=>(e.candles||[]).filter(b=>b.price>0).map(b=>[b.end,b.price]));const path=[...new Map([...recovered,...candles(coin)].map(p=>[p[0],p])).values()].sort((a,b)=>a[0]-b[0]);
   const p0=latestBefore(path,zeroAt,7*MIN,x=>x[0])?.[1];
   if(!(p0>0))return {label:'pending',why:'no-price-at-zero'};
   let covered=0,above=0,maxGap=0,gap=0;
   const curve=[],minuteCurve=[];
-  for(let m=1;m<=300;m++){
+  for(let m=1;m<=total;m++){
     const x=latestBefore(path,zeroAt+m*MIN,7*MIN,y=>y[0]);
     if(!x){
       gap++;maxGap=Math.max(maxGap,gap);
       minuteCurve.push(null);continue;
     }
     gap=0;covered++;
-    if(x[1]>p0)above++;
+    const rawPct=100*(x[1]/p0-1);if(rawPct+1e-9>=minAboveMarginPct)above++;
     // Minute rows use the latest observed price at or before that minute;
     // stale observations older than seven minutes are always missing.
     const pct=Math.round(100000*(x[1]/p0-1))/1000;
-    minuteCurve.push(pct);
+    minuteCurve.push(rawPct);
     if(m%5===0)curve.push([m,pct]);
   }
   // 70% is 210 minutes OF ALL 300, not of the observed subset.
-  if(covered<300*minCoverage||maxGap>10)
+  if(covered<total*minCoverage||maxGap>10)
     return {label:'pending',why:'insufficient-price-coverage',covered,maxGap};
-  return {label:above/300*100>=minAbove?'strong':'weak',
-    above,covered,pctAbove:above/300*100,p0,curve,minuteCurve};
+  return {label:above/total*100>=minAbove?'strong':'weak',
+    above,covered,pctAbove:above/total*100,p0,curve,minuteCurve};
 }
 // Starter rules use confirmed account rights and native on-chain balances, never USD proxies.
 function starterFeaturesAt(coin,decisionAt,context={}){

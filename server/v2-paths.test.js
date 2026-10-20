@@ -93,11 +93,11 @@ test('Level two: only verified Passed cohort after fixed zero and full five-hour
   const result=runtime.update({passes,coins:new Map([[MINT,chart(zeroAt)]]),
     now:zeroAt+6*HOUR+16*MIN});
   assert.equal(result.added,1);
-  assert.equal(runtime.select()[0].label,'strong');
+  assert.equal(runtime.select()[0].label,'weak','a flat price after the timer does not clear the default 10% margin');
   assert.equal(runtime.select()[0].secondLevelMatches.length,0,'snapshot at minute 9 is later than acceptedAt + 5 min');
   assert.equal(runtime.select()[0].features.volume,null);
   assert.equal(runtime.select()[0].decisionAt,passed.acceptedAt+5*MIN);
-  assert.equal(runtime.select()[0].minuteCurvePacked.length,1600);
+  assert.equal(runtime.select()[0].minuteCurvePacked.length,3200);
   assert.equal(runtime.aggregateCurves().after.length,300);
   assert.equal(runtime.aggregateCurves().after[120].n,1);
   const restarted=new ResearchTwoRuntime({dir:d});

@@ -16,7 +16,7 @@ function researchPins({source,passes,one=[],two=[],now=Date.now()}={}){
  }
  for(const rt of second.length?second:[{}])for(const r of passes?.records?.values()||[]){
   if(r.firstSeenAt<(rt.cohortStart||0)||r.firstSeenAt>=(rt.cohortEnd??Infinity)||rt.processed?.has(r.mint))continue;
-  pin(r.mint,r.zeroAt+5*HOUR+60000);
+  const cfg=rt.config?.phases?.[r.phase]||rt.config||{};pin(r.mint,require('./research-two-runtime').lineClock(r,cfg).windowEnd+60000);
  }return pins;
 }
 function retirementDue(c,{now=Date.now(),pins=new Map()}={}){

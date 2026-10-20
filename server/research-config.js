@@ -7,6 +7,7 @@ function semantic(cfg){if(Array.isArray(cfg))return cfg.map(semantic);if(!cfg||t
  const out=Object.fromEntries(Object.entries(cfg).filter(([k])=>!['targetLive','targetDead','targetStrong','targetWeak','missPenalty'].includes(k)).map(([k,v])=>[k,semantic(v)]));
  if(out.phases){const base={...out};delete base.phases;if(Object.values(out.phases).every(v=>JSON.stringify(v)===JSON.stringify(base)))delete out.phases}return out;
 }
+function twoIdentity(c){return {lineVersion:c.lineVersion??2,hours:c.hours??5,passWindowMinutes:c.passWindowMinutes??5,minCoverage:c.minCoverage??.9,decisionMinutes:c.decisionMinutes??5,phases:c.phases?Object.fromEntries(Object.entries(c.phases).map(([p,v])=>[p,{lineVersion:v.lineVersion??2,hours:v.hours??5,passWindowMinutes:v.passWindowMinutes??5,minCoverage:v.minCoverage??.9,decisionMinutes:v.decisionMinutes??5}])):undefined};}
 const hashOf=cfg=>crypto.createHash('sha256').update(JSON.stringify(semantic(cfg))).digest('hex').slice(0,20);
 function atomic(file,value){
   const tmp=file+'.tmp',data=Buffer.from(JSON.stringify(value));
@@ -46,7 +47,7 @@ class ResearchEpoch{
     this.apply(config);
   }
   apply(raw){
-    const config=this.validate(raw),hash=hashOf(this.key==='one'?{hours:config.hours,intake:config.intake,phases:config.phases?Object.fromEntries(Object.entries(config.phases).map(([p,v])=>[p,{hours:v.hours,intake:v.intake}])):undefined}:config);
+    const config=this.validate(raw),hash=hashOf(this.key==='one'?{hours:config.hours,intake:config.intake,phases:config.phases?Object.fromEntries(Object.entries(config.phases).map(([p,v])=>[p,{hours:v.hours,intake:v.intake}])):undefined}:twoIdentity(config));
     if(this.key==='one'&&this.current){const old=this.current.config,identity=c=>hashOf({hours:c.hours,intake:c.intake,phases:c.phases?Object.fromEntries(Object.entries(c.phases).map(([p,v])=>[p,{hours:v.hours,intake:v.intake}])):undefined});if(identity(old)===identity(config)){if(JSON.stringify(old)!==JSON.stringify(config)){const next={...this.current,config};atomic(this.file,{schema:2,current:next,history:this.history,updated:Date.now()});this.current=next;}return false;}}
     if(this.current?.hash===hash){if(JSON.stringify(config)!==JSON.stringify(this.current.config)){const next={...this.current,config};atomic(this.file,{schema:2,current:next,history:this.history,updated:Date.now()});this.current=next}return false;}
     const now=Date.now();

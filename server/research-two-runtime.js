@@ -9,9 +9,10 @@ const {strengthOutcome,capBank,evaluation,featuresAt,levelTwoFeaturesAt}=require
 const MIN=60000,HOUR=60*MIN,FRESH=48*HOUR,RETRY=15*MIN;
 const MAX_PER_CLASS=5000,MAX_CHECKS=200;
 function configOf(raw={}){
-  const cfg={missPenalty:raw.missPenalty??3,minAbove:raw.minAbove??70,minCoverage:raw.minCoverage??.9,decisionMinutes:raw.decisionMinutes??5,targetStrong:raw.targetStrong??40,targetWeak:raw.targetWeak??40};
-  if(typeof cfg.minAbove!=='number'||cfg.minAbove<0||cfg.minAbove>100||
-     typeof cfg.minCoverage!=='number'||cfg.minCoverage<.5||cfg.minCoverage>1)
+  const cfg={lineVersion:2,passWindowMinutes:raw.passWindowMinutes??5,minAboveMarginPct:raw.minAboveMarginPct??10,hours:raw.hours??5,missPenalty:raw.missPenalty??3,minAbove:raw.minAbove??70,minCoverage:raw.minCoverage??.9,decisionMinutes:raw.decisionMinutes??5,targetStrong:raw.targetStrong??40,targetWeak:raw.targetWeak??40};
+  if(!Number.isInteger(cfg.passWindowMinutes)||cfg.passWindowMinutes<1||cfg.passWindowMinutes>30||!Number.isFinite(cfg.minAboveMarginPct)||cfg.minAboveMarginPct<0||cfg.minAboveMarginPct>100||!Number.isInteger(cfg.hours)||cfg.hours<1||cfg.hours>12)throw RangeError('Invalid level-two line settings');
+  if(!Number.isFinite(cfg.minAbove)||cfg.minAbove<0||cfg.minAbove>100||
+     !Number.isFinite(cfg.minCoverage)||cfg.minCoverage<.5||cfg.minCoverage>1)
     throw RangeError('Invalid level-two research config');
   if(!Number.isFinite(cfg.missPenalty)||cfg.missPenalty<1||cfg.missPenalty>5)throw RangeError('Invalid miss penalty');
   if(!Number.isInteger(cfg.decisionMinutes)||cfg.decisionMinutes<1||cfg.decisionMinutes>15)throw RangeError('Invalid similarity time');
@@ -28,28 +29,29 @@ function durableJSON(file,value){
   require('./durable-json').syncDirectory(path.dirname(file));
 }
 function packMinuteCurve(values){
-  if(!Array.isArray(values)||values.length!==300)return null;
+  if(!Array.isArray(values)||values.length<60||values.length>720)return null;
   // 300 * float32 = 1200 bytes, compared with thousands of JSON numbers.
   // NaN is only an internal missing-value marker and never exported as a price.
-  const bytes=Buffer.allocUnsafe(1200);
-  for(let i=0;i<300;i++){
+  const bytes=Buffer.allocUnsafe(values.length*8);
+  for(let i=0;i<values.length;i++){
     const value=values[i];
-    bytes.writeFloatLE(Number.isFinite(value)?value:NaN,i*4);
+    bytes.writeDoubleLE(Number.isFinite(value)?value:NaN,i*8);
   }
   return bytes.toString('base64');
 }
 function eachMinutePoint(row,visit){
   if(typeof row.minuteCurvePacked==='string'){
     const bytes=Buffer.from(row.minuteCurvePacked,'base64');
-    if(bytes.length!==1200)throw Error('Corrupted compact minute curve');
-    for(let i=0;i<300;i++){
-      const v=bytes.readFloatLE(i*4);
+    const size=row.minuteCurveEncoding==='float64'?8:4;
+    if(bytes.length<60*size||bytes.length>720*size||bytes.length%size)throw Error('Corrupted compact minute curve');
+    for(let i=0;i<bytes.length/size;i++){
+      const v=size===8?bytes.readDoubleLE(i*size):bytes.readFloatLE(i*size);
       if(Number.isFinite(v))visit(i+1,v);
     }
     return;
   }
-  if(Array.isArray(row.minuteCurve)&&row.minuteCurve.length===300){
-    for(let i=0;i<300;i++){
+  if(Array.isArray(row.minuteCurve)&&row.minuteCurve.length>=60&&row.minuteCurve.length<=720){
+    for(let i=0;i<row.minuteCurve.length;i++){
       const v=row.minuteCurve[i];
       if(Number.isFinite(v))visit(i+1,v);
     }
@@ -58,6 +60,21 @@ function eachMinutePoint(row,visit){
   for(const point of row.curve||[])
     if(Array.isArray(point)&&Number.isInteger(point[0])&&Number.isFinite(point[1]))
       visit(point[0],point[1]);
+}
+function lineClock(pass,cfg={}){
+ const verdictAt=Math.max(pass.verdictAt||0,pass.firstSeenAt||0,pass.zeroAt||0);
+ const lineAt=verdictAt+(cfg.passWindowMinutes??5)*MIN;
+ return {verdictAt,lineAt,windowEnd:lineAt+(cfg.hours??5)*HOUR};
+}
+function relabelStrength(row,cfg={}){
+ if(row.lineVersion!==2||row.hours!==(cfg.hours??5)||row.passWindowMinutes!==(cfg.passWindowMinutes??5))return null;
+ const total=row.hours*60,margin=cfg.minAboveMarginPct??10;
+ if(!row.minuteCurvePacked&&!Array.isArray(row.minuteCurve))return null;
+ let above=0,covered=0,gap=0,maxGap=0,previous=0;
+ eachMinutePoint(row,(m,v)=>{if(m<1||m>total)return;gap+=m-previous-1;maxGap=Math.max(maxGap,gap);gap=0;previous=m;covered++;if(v+1e-9>=margin)above++;});
+ maxGap=Math.max(maxGap,total-previous);
+ if(covered<total*(cfg.minCoverage??.9)||maxGap>10)return null;
+ return {...row,label:above/total*100>=(cfg.minAbove??70)?'strong':'weak',above,covered,pctAbove:above/total*100,threshold:cfg.minAbove??70,minAboveMarginPct:margin,coverageThreshold:cfg.minCoverage??.9};
 }
 class ResearchTwoRuntime {
   constructor({dir,config,bankName='research-v2-bank-two.json',cohortStart=0,cohortEnd=Infinity}={}){
@@ -82,7 +99,7 @@ class ResearchTwoRuntime {
            !['strong','weak'].includes(row.label)||!Number.isFinite(row.pctAbove)||
            !Number.isFinite(row.covered)||!row.features||typeof row.features!=='object'||
            (row.minuteCurvePacked!=null&&
-             (typeof row.minuteCurvePacked!=='string'||Buffer.from(row.minuteCurvePacked,'base64').length!==1200)))
+             (typeof row.minuteCurvePacked!=='string'||![...Array(12)].some((_,i)=>Buffer.from(row.minuteCurvePacked,'base64').length===(i+1)*60*(row.minuteCurveEncoding==='float64'?8:4)))))
           throw Error('Corrupted second-level research row');
       }
       this.rows=capPhases(data.rows);
@@ -161,7 +178,7 @@ class ResearchTwoRuntime {
       const old=todo[(cursor+i)%todo.length],admission=source.records.get(old.mint),coin=coins.get(old.mint),pool=admission.proof?.pool||old.p;
       if(!Array.isArray(old.secondLevelRules)&&old.secondLevelMatches?.length){this.eventMigration.rulesMissing=(this.eventMigration.rulesMissing||0)+1;continue;}
       if(!coin||(pool&&coin.p!==pool)){this.eventMigration.rawMissing++;continue;}
-      const cfg=this.config.phases?.[old.phase]||this.config,anchor=admission.eventAt,zeroAt=anchor+(old.zeroAt-eventAnchor(old));
+      const cfg=this.config.phases?.[old.phase]||this.config,anchor=admission.eventAt,zeroAt=old.lineVersion===2?old.lineAt:anchor+(old.zeroAt-eventAnchor(old));
       if(!Number.isSafeInteger(zeroAt)||zeroAt<anchor)continue;
       const result=strengthOutcome(coin,zeroAt,cfg,now);if(result.label==='pending')continue;
       const at=admission.acceptedAt+cfg.decisionMinutes*MIN,F=require('./feature-snapshots').read(coin,admission.acceptedAt,cfg.decisionMinutes,old.phase,'2');
@@ -170,8 +187,8 @@ class ResearchTwoRuntime {
         earlyWallets:require('./early-intelligence').frozenWallets(coin,at),
         secondLevelMatches:(old.secondLevelRules||[]).filter(f=>evaluation(F,f)==='pass'),
         firstPassFeatures:featuresAt(coin,zeroAt,{eventAt:anchor,phase:old.phase}),previousZeroAt:old.previousZeroAt??old.zeroAt,previousAnchor:old.previousAnchor??eventAnchor(old),eventReanchoredAt:now,
-        windowEnd:zeroAt+300*MIN,p0:result.p0,curve:[[0,0],...result.curve],
-        minuteCurve:undefined,minuteCurvePacked:packMinuteCurve(result.minuteCurve),outcomeAt:now,time:zeroAt};
+        windowEnd:zeroAt+cfg.hours*HOUR,p0:result.p0,curve:[[0,0],...result.curve],
+        minuteCurve:undefined,minuteCurveEncoding:'float64',minuteCurvePacked:packMinuteCurve(result.minuteCurve),outcomeAt:now,time:zeroAt};
       this.rows[this.rows.indexOf(old)]=fresh;this.processed.set(old.mint,zeroAt);this.eventMigration.remaining--;this.eventMigration.changed++;changed=true;
     }
     this.eventMigrationCursor=cursor+limit;if(changed)this._compact(now);
@@ -179,13 +196,15 @@ class ResearchTwoRuntime {
   update({passes,coins,source=null,now=Date.now()}={}){
     if(!passes?.records||!coins?.get)throw TypeError('Need verified pass journal and candidate map');
     this.reanchor({source,coins,now});
+    this.relabel();
     let added=0,attempted=0,considered=0;
     const pending={},newRows=[];
     for(const pass of passes.records.values()){
       if(!pass||pass.firstSeenAt<this.cohortStart||pass.firstSeenAt>=this.cohortEnd||this.processed.has(pass.mint)||now-pass.zeroAt>FRESH||
          now<pass.zeroAt)continue;
+      const cfg=this.config.phases?.[pass.phase]||this.config,{verdictAt,lineAt,windowEnd}=lineClock(pass,cfg);
       considered++;
-      if(now<pass.zeroAt+5*HOUR+MIN){
+      if(now<windowEnd+MIN){
         pending['not-yet-finished']=(pending['not-yet-finished']||0)+1;
         continue;
       }
@@ -205,8 +224,7 @@ class ResearchTwoRuntime {
         pending['candidate-missing']=(pending['candidate-missing']||0)+1;
         continue;
       }
-      const cfg=this.config.phases?.[pass.phase]||this.config;
-      const result=strengthOutcome(coin,pass.zeroAt,cfg,now);
+      const result=strengthOutcome(coin,lineAt,cfg,now);
       if(result.label==='pending'){
         this.retry.set(pass.mint,{at:now,zeroAt:pass.zeroAt,reason:result.why});
         pending[result.why]=(pending[result.why]||0)+1;
@@ -221,16 +239,16 @@ class ResearchTwoRuntime {
         .filter(f=>evaluation(F,f)==='pass').map(f=>({...f}));
       newRows.push({
         mint:pass.mint,phase:pass.phase,p:pass.p||coin.p||null,pair:pass.pair||coin.p||null,phaseEpoch:pass.phaseEpoch||null,acceptedAt:pass.acceptedAt,
-        firstSeenAt:pass.firstSeenAt,zeroAt:pass.zeroAt,decisionAt:featureAt,outcomeAt:now,windowEnd:pass.zeroAt+300*MIN,earlyWallets:require('./early-intelligence').frozenWallets(coin,featureAt),featureAnchor:'acceptedAt',featureSnapshotVersion:1,marketScopeVersion:2,eventAt:eventAnchor(pass),featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,pass.acceptedAt,'2',pass.phase),sourceFilterRules:pass.matches.map(f=>({...f})),
+        firstSeenAt:pass.firstSeenAt,passZeroAt:pass.zeroAt,verdictAt,lineAt,linePrice:result.p0,lineVersion:2,hours:cfg.hours,passWindowMinutes:cfg.passWindowMinutes,minAboveMarginPct:cfg.minAboveMarginPct,zeroAt:lineAt,decisionAt:featureAt,outcomeAt:now,windowEnd,earlyWallets:require('./early-intelligence').frozenWallets(coin,featureAt),featureAnchor:'acceptedAt',featureSnapshotVersion:1,marketScopeVersion:2,eventAt:eventAnchor(pass),featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,pass.acceptedAt,'2',pass.phase),sourceFilterRules:pass.matches.map(f=>({...f})),
         configHash:pass.configHash,sourceFilterVersions:pass.matches.map(f=>({
           id:f.id,version:f.version,level:f.level
         })),
         label:result.label,secondLevelMatches,secondLevelRules:(pass.secondLevelRules||[]).map(f=>({...f})),
         pctAbove:result.pctAbove,covered:result.covered,
-        p0:result.p0,curve:[[0,0],...result.curve],minuteCurvePacked:packMinuteCurve(result.minuteCurve),features:F,
+        p0:result.p0,curve:[[0,0],...result.curve],minuteCurveEncoding:'float64',minuteCurvePacked:packMinuteCurve(result.minuteCurve),features:F,
         firstPassFeatures:{...pass.features},
         threshold:cfg.minAbove,coverageThreshold:cfg.minCoverage,
-        time:pass.zeroAt
+        time:lineAt
       });
       // Processed is updated only after the complete batch is fsynced.
       added++;
@@ -252,6 +270,12 @@ class ResearchTwoRuntime {
     this.pending=pending;this.lastAt=now;
     return {added,considered,attempted,maxChecksPerRun:MAX_CHECKS,...this.summary()};
   }
+  relabel(){
+    const sig=JSON.stringify(this.config);if(this.labelSig===sig)return;
+    let changed=false;
+    this.rows=this.rows.map(row=>{const next=relabelStrength(row,this.config.phases?.[row.phase]||this.config);if(next&&JSON.stringify(next)!==JSON.stringify(row)){changed=true;return next;}return row;});
+    if(changed)this._compact(Date.now());this.labelSig=sig;
+  }
   summary(){
     const counts={strong:0,weak:0,preStrong:0,preWeak:0,postStrong:0,postWeak:0};
     for(const r of this.rows){
@@ -261,7 +285,7 @@ class ResearchTwoRuntime {
     }
     return {schema:1,updated:this.lastAt,eventMigration:this.eventMigration||null,cohortStart:this.cohortStart,status:'observational',
       origin:'server-verified-passed-only',
-      settings:{...this.config,hours:5},
+      settings:{...this.config},
       counts,pending:{...this.pending},bankCapacityPerClass:MAX_PER_CLASS};
   }
   aggregateCurves(){
@@ -270,7 +294,7 @@ class ResearchTwoRuntime {
       const grid=buckets[row.phase];
       if(!grid)continue;
       eachMinutePoint(row,(m,value)=>{
-        if(m<1||m>300)return;
+        if(m<1||m>(row.hours??5)*60)return;
         let x=grid.get(m);
         if(!x){x={sum:0,n:0};grid.set(m,x)}
         x.sum+=value;x.n++;
@@ -291,4 +315,4 @@ class ResearchTwoRuntime {
   }
 }
 function capPhases(rows){return ['before','after'].flatMap(phase=>capBank(rows.filter(r=>r.phase===phase),r=>r.label,'strong','weak',MAX_PER_CLASS))}
-module.exports={ResearchTwoRuntime,configOf};
+module.exports={ResearchTwoRuntime,configOf,lineClock,relabelStrength};

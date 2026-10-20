@@ -266,11 +266,11 @@ class PassRuntime {
   }
   summary(now=Date.now()){
     const arr=[...this.records.values()];
-    const current=arr.filter(x=>x.schema===2?now-x.firstSeenAt<5*MIN:x.zeroAt>now);
+    const current=arr.filter(x=>x.schema===2?now-x.firstSeenAt<(this.displayWindows?.phases?.[x.phase]?.passWindowMinutes??this.displayWindows?.passWindowMinutes??5)*MIN:x.zeroAt>now);
     const todayRows=arr.filter(x=>kzDay(x.firstSeenAt)===kzDay(now));
     return {schema:1,updated:this.updated,enabled:this.config.enabled,
       activatedAt:this.config.activatedAt,
-      decisionMinutes:this.config.decisionMinutes,...(this.config.passMode?{passMode:this.config.passMode,verdictStats:this.verdictStats||{}}:{}),
+      passWindowMinutes:this.displayWindows?.passWindowMinutes??5,passWindowsByPhase:Object.fromEntries(['before','after'].map(p=>[p,this.displayWindows?.phases?.[p]?.passWindowMinutes??this.displayWindows?.passWindowMinutes??5])),decisionMinutes:this.config.decisionMinutes,...(this.config.passMode?{passMode:this.config.passMode,verdictStats:this.verdictStats||{}}:{}),
       today:{day:kzDay(now),before:todayRows.filter(x=>x.phase==='before').length,after:todayRows.filter(x=>x.phase==='after').length},
       configHash:this.configHash,
       registeredModules:this.config.modules.filter(m=>m.enabled&&m.level==='1').length,

@@ -13,8 +13,8 @@ test('level 2 early metrics respect receipt cutoff and leave unsupported flow an
 });
 test('second research saves feature time from detection despite later Passed and publishes full 0..300 curves',t=>{
  const at=T,zero=T+10*M,seen=T+2*M,pass={mint:'m',phase:'after',acceptedAt:at,firstSeenAt:seen,zeroAt:zero,matches:[{id:'p',version:1,level:'1',key:'buys',op:'>=',value:3}],features:{buys:3}};
- const ds=Array.from({length:312},(_,m)=>[(T+m*M)/1000,100+m,100,100,10,2,100]);
- const r=new ResearchTwoRuntime({dir:dir(t),config:{decisionMinutes:5,phases:{after:{minAbove:80,decisionMinutes:3}}}});assert.equal(r.update({passes:{records:new Map([['m',pass]])},coins:new Map([['m',{ds}]]),now:zero+301*M}).added,1);
+ const ds=Array.from({length:318},(_,m)=>[(T+m*M)/1000,100+m,100,100,10,2,100]);
+ const r=new ResearchTwoRuntime({dir:dir(t),config:{decisionMinutes:5,phases:{after:{minAbove:80,decisionMinutes:3}}}});assert.equal(r.update({passes:{records:new Map([['m',pass]])},coins:new Map([['m',{ds}]]),now:zero+306*M}).added,1);
  assert.equal(r.rows[0].decisionAt,at+3*M);assert.equal(r.rows[0].featureAnchor,'acceptedAt');assert.equal(r.rows[0].features.chg1m,(103/102-1)*100);assert.equal(r.rows[0].threshold,80);assert.deepEqual(r.rows[0].curve[0],[0,0]);assert.equal(r.rows[0].curve.at(-1)[0],300);assert.equal(r.rows[0].curve.length,61);assert.equal(r.rows[0].sourceFilterRules[0].id,'p');
 });
 test('second-level discovery separates parent versions and never repeats a weaker inherited bound',t=>{
@@ -33,8 +33,8 @@ test('historical I2 event migration recomputes line and early features while pre
  r.update({passes:{records:new Map([['m',pass]])},coins:new Map([['m',coin]]),now:T+320*M});assert.equal(r.rows.length,1);
  const original={...r.rows[0]};
  const source={records:new Map([['m',{mint:'m',phase:'after',eventAt:T,acceptedAt:accepted,proof:{pool:'p'}}]])};
- r.update({passes:{records:new Map([['m',pass]])},source,coins:new Map([['m',coin]]),now:T+321*M});const row=r.rows[0];assert.equal(row.eventAt,T);assert.equal(row.zeroAt,T+10*M);assert.equal(row.decisionAt,T+7*M);assert.equal(row.firstSeenAt,pass.firstSeenAt);assert.equal(row.acceptedAt,accepted);assert.equal(row.p0,110);assert.equal(row.previousZeroAt,zero);assert.equal(r.eventMigration.remaining,0);
+ r.update({passes:{records:new Map([['m',pass]])},source,coins:new Map([['m',coin]]),now:T+321*M});const row=r.rows[0];assert.equal(row.eventAt,T);assert.equal(row.zeroAt,T+18*M);assert.equal(row.lineAt,pass.firstSeenAt+5*M);assert.equal(row.decisionAt,T+7*M);assert.equal(row.firstSeenAt,pass.firstSeenAt);assert.equal(row.acceptedAt,accepted);assert.equal(row.p0,118);assert.equal(row.previousZeroAt,original.zeroAt);assert.equal(r.eventMigration.remaining,0);
  // Crash after snapshot rename but before journal truncate must replay safely.
  fs.appendFileSync(r.journalFile,JSON.stringify(original)+'\n');
- const restored=new ResearchTwoRuntime({dir:dir0,config:{decisionMinutes:5}});assert.equal(restored.rows[0].zeroAt,T+10*M);assert.equal(restored.rows.length,1);
+ const restored=new ResearchTwoRuntime({dir:dir0,config:{decisionMinutes:5}});assert.equal(restored.rows[0].zeroAt,T+18*M);assert.equal(restored.rows.length,1);
 });

@@ -104,15 +104,15 @@ test('second level uses immutable Passed cohort and real five-hour price coverag
   const event=x.runtime.records.get(mint);
   const r2=new ResearchTwoRuntime({dir:x.dir,config:{minAbove:70,minCoverage:.9}});
   assert.equal(r2.update({passes:x.runtime,coins:x.coins,now:event.zeroAt+4*60*MIN}).added,0);
-  const results=r2.update({passes:x.runtime,coins:x.coins,now:event.zeroAt+301*MIN});
+  const results=r2.update({passes:x.runtime,coins:x.coins,now:event.zeroAt+306*MIN});
   assert.equal(results.added,1);
   const row=r2.rows[0];
-  assert.equal(row.label,'strong');
-  assert.equal(row.zeroAt,event.zeroAt);
+  assert.equal(row.label,'weak','doubling before the purchase line is not post-entry growth');
+  assert.equal(row.zeroAt,event.zeroAt+5*MIN);
   assert.equal(row.secondLevelMatches[0].version,3);
-  assert.ok(row.pctAbove>=99);
+  assert.equal(row.pctAbove,0);
   assert.equal(r2.aggregateCurves().before.find(v=>v.min===1).n,1);
-  assert.equal(r2.aggregateCurves().before.find(v=>v.min===1).pct,100);
+  assert.equal(r2.aggregateCurves().before.find(v=>v.min===1).pct,0);
   const restored=new ResearchTwoRuntime({dir:x.dir});
   assert.equal(restored.rows.length,1);
   assert.equal(restored.update({passes:x.runtime,coins:x.coins,now:event.zeroAt+302*MIN}).added,0);
@@ -125,11 +125,11 @@ test('research epochs preserve earlier version when an observation threshold cha
   const v=c=>({minAbove:c.minAbove??70,minCoverage:c.minCoverage??.9});
   const manager=new ResearchEpoch({dir,key:'two',validate:v,config:{minAbove:70}});
   const old=manager.current;
-  assert.equal(manager.apply({minAbove:75}),true);
-  assert.equal(manager.history.length,1);
-  assert.equal(manager.history[0].hash,old.hash);
+  assert.equal(manager.apply({minAbove:75}),false);
+  assert.equal(manager.history.length,0);
+  assert.equal(manager.current.hash,old.hash);
   const restored=new ResearchEpoch({dir,key:'two',validate:v,config:{minAbove:75}});
-  assert.equal(restored.history.length,1);
+  assert.equal(restored.history.length,0);
   assert.equal(restored.current.hash,manager.current.hash);
 });
 
