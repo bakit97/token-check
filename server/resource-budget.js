@@ -62,7 +62,7 @@ class ResourceBudget{
     const proofReserve=this.migrationPending?Math.max(0,proofFloor-this.laneTotal('migration',MIN)-this.laneTotal('migration-fast',MIN)):0;
     const poolReserve=this.poolsPending?Math.max(0,poolFloor-this.laneTotal('pools',MIN)):0;
     const freshReserve=Math.max(0,Math.min(3,this.freshMigrationReserve||0)-this.laneTotal('migration-fast',MIN));
-    const cap=Math.max(0,ceiling-(lane==='migration-fast'?poolReserve:lane==='migration'||lane==='reconcile'?poolReserve+freshReserve:lane==='pools'?proofReserve:Math.max(proofReserve,freshReserve)+poolReserve));
+    const cap=Math.max(0,ceiling-(lane==='migration-fast'?poolReserve:lane==='migration'||lane==='reconcile'?poolReserve+freshReserve:lane==='pools'?Math.max(proofReserve,freshReserve):Math.max(proofReserve,freshReserve)+poolReserve));
     const hourly={metadata:60,holders:60,pre:0,background:30,reconcile:65}[lane]??Infinity;
     if(lane==='reconcile'&&this.migrationPending)return false;
     return this.state.used+cost<=this.limit&&rate>0&&total+cost<=cap&&h.rpc+h.ws+cost<=rate*60&&this.laneTotal(lane)+cost<=hourly;

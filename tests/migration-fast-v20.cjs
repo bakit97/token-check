@@ -26,3 +26,13 @@ test('fresh migration reserve survives legacy proof traffic within the shared ca
  a.ok(b.summary().creditsMinute<=17);
  a.equal(b.allow(1,'migration-fast'),false);
 });
+
+
+test('fresh proof capacity remains reserved when old migration queue is empty and pool polls are busy',t=>{
+ const {ResourceBudget}=require('../server/resource-budget');
+ const b=new ResourceBudget({dir:temp(t),now:()=>T,env:{HELIUS_RESET_AT:new Date(T+86400000).toISOString(),HELIUS_USED_CREDITS:'0'}});
+ b.freshMigrationReserve=3;b.migrationPending=false;b.poolsPending=false;
+ while(b.allow(1,'pools'))b.reserveRPC('getMultipleAccounts','pools');
+ for(let i=0;i<3;i++)b.reserveRPC('getTransaction','migration-fast');
+ a.ok(b.summary().creditsMinute<=17);a.equal(b.laneTotal('migration-fast',60000),3);
+});
