@@ -1,0 +1,2958 @@
+{
+  "source": "https://storage.googleapis.com/sol-scan-511718-data/research-v2/debug-sample.json",
+  "observedAt": 1792525177881,
+  "selection": "named-mints-then-sha256",
+  "coins": [
+    {
+      "mint": "fpam8wyNiDSHtwx1znYeipGgRNnBcBTcN1iechcpump",
+      "name": "Darkinator Cat",
+      "label": "pending",
+      "why": "backfill-pending",
+      "collectorMinutes": 298,
+      "activityMinutes": 298,
+      "thresholds": {
+        "minActive": 70,
+        "minWallets": 2,
+        "minTradeSol": 0.05,
+        "minCoverage": 0.8
+      },
+      "classification": {
+        "label": "pending",
+        "why": "backfill-pending"
+      },
+      "qualifiedSlices": 0,
+      "completeSlices": 0,
+      "totalSlices": 30,
+      "slices": [
+        {
+          "at": 1792490568000,
+          "end": 1792491168000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792491168000,
+          "end": 1792491768000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792491768000,
+          "end": 1792492368000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792492368000,
+          "end": 1792492968000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792492968000,
+          "end": 1792493568000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792493568000,
+          "end": 1792494168000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792494168000,
+          "end": 1792494768000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792494768000,
+          "end": 1792495368000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792495368000,
+          "end": 1792495968000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792495968000,
+          "end": 1792496568000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792496568000,
+          "end": 1792497168000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792497168000,
+          "end": 1792497768000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792497768000,
+          "end": 1792498368000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792498368000,
+          "end": 1792498968000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792498968000,
+          "end": 1792499568000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792499568000,
+          "end": 1792500168000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792500168000,
+          "end": 1792500768000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792500768000,
+          "end": 1792501368000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792501368000,
+          "end": 1792501968000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792501968000,
+          "end": 1792502568000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792502568000,
+          "end": 1792503168000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792503168000,
+          "end": 1792503768000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792503768000,
+          "end": 1792504368000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792504368000,
+          "end": 1792504968000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792504968000,
+          "end": 1792505568000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792505568000,
+          "end": 1792506168000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792506168000,
+          "end": 1792506768000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792506768000,
+          "end": 1792507368000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792507368000,
+          "end": 1792507968000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792507968000,
+          "end": 1792508568000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        }
+      ]
+    },
+    {
+      "mint": "8ikdGCtt5gcc3Lf9eQrwMgQqRmg24Py5abrzDovopump",
+      "name": "AOP",
+      "label": "pending",
+      "why": "backfill-pending",
+      "collectorMinutes": 297,
+      "activityMinutes": 297,
+      "thresholds": {
+        "minActive": 70,
+        "minWallets": 2,
+        "minTradeSol": 0.05,
+        "minCoverage": 0.8
+      },
+      "classification": {
+        "label": "pending",
+        "why": "backfill-pending"
+      },
+      "qualifiedSlices": 0,
+      "completeSlices": 0,
+      "totalSlices": 30,
+      "slices": [
+        {
+          "at": 1792493294000,
+          "end": 1792493894000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792493894000,
+          "end": 1792494494000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792494494000,
+          "end": 1792495094000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792495094000,
+          "end": 1792495694000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792495694000,
+          "end": 1792496294000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792496294000,
+          "end": 1792496894000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792496894000,
+          "end": 1792497494000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792497494000,
+          "end": 1792498094000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792498094000,
+          "end": 1792498694000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792498694000,
+          "end": 1792499294000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792499294000,
+          "end": 1792499894000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792499894000,
+          "end": 1792500494000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792500494000,
+          "end": 1792501094000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792501094000,
+          "end": 1792501694000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792501694000,
+          "end": 1792502294000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792502294000,
+          "end": 1792502894000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792502894000,
+          "end": 1792503494000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792503494000,
+          "end": 1792504094000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792504094000,
+          "end": 1792504694000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792504694000,
+          "end": 1792505294000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792505294000,
+          "end": 1792505894000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792505894000,
+          "end": 1792506494000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792506494000,
+          "end": 1792507094000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792507094000,
+          "end": 1792507694000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792507694000,
+          "end": 1792508294000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792508294000,
+          "end": 1792508894000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792508894000,
+          "end": 1792509494000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792509494000,
+          "end": 1792510094000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792510094000,
+          "end": 1792510694000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792510694000,
+          "end": 1792511294000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        }
+      ]
+    },
+    {
+      "mint": "3LTox4ciobeuUivZRueYbyuXjeTga4CA1w8JjqhQpump",
+      "name": "American Overwatch Protocol",
+      "label": "unknown",
+      "why": "trade-coverage-gap",
+      "collectorMinutes": 300,
+      "activityMinutes": 300,
+      "thresholds": {
+        "minActive": 70,
+        "minWallets": 2,
+        "minTradeSol": 0.05,
+        "minCoverage": 0.8
+      },
+      "classification": {
+        "activeSlices": 0,
+        "totalSlices": 30,
+        "activityCoverage": 0,
+        "activePct": 0,
+        "label": "unknown",
+        "why": "trade-coverage-gap"
+      },
+      "qualifiedSlices": 0,
+      "completeSlices": 0,
+      "totalSlices": 30,
+      "slices": [
+        {
+          "at": 1792496486000,
+          "end": 1792497086000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792497086000,
+          "end": 1792497686000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792497686000,
+          "end": 1792498286000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792498286000,
+          "end": 1792498886000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792498886000,
+          "end": 1792499486000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792499486000,
+          "end": 1792500086000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792500086000,
+          "end": 1792500686000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792500686000,
+          "end": 1792501286000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792501286000,
+          "end": 1792501886000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792501886000,
+          "end": 1792502486000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792502486000,
+          "end": 1792503086000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792503086000,
+          "end": 1792503686000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792503686000,
+          "end": 1792504286000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792504286000,
+          "end": 1792504886000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792504886000,
+          "end": 1792505486000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792505486000,
+          "end": 1792506086000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792506086000,
+          "end": 1792506686000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792506686000,
+          "end": 1792507286000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792507286000,
+          "end": 1792507886000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792507886000,
+          "end": 1792508486000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792508486000,
+          "end": 1792509086000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792509086000,
+          "end": 1792509686000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792509686000,
+          "end": 1792510286000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792510286000,
+          "end": 1792510886000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792510886000,
+          "end": 1792511486000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792511486000,
+          "end": 1792512086000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792512086000,
+          "end": 1792512686000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792512686000,
+          "end": 1792513286000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792513286000,
+          "end": 1792513886000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792513886000,
+          "end": 1792514486000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        }
+      ]
+    },
+    {
+      "mint": "4o9tQjy3bWKM3qjDTTnQCYhHb64ie9VcDFCjGqDTpump",
+      "name": "The Last Hope",
+      "label": "pending",
+      "why": "backfill-pending",
+      "collectorMinutes": 298,
+      "activityMinutes": 298,
+      "thresholds": {
+        "minActive": 70,
+        "minWallets": 2,
+        "minTradeSol": 0.05,
+        "minCoverage": 0.8
+      },
+      "classification": {
+        "label": "pending",
+        "why": "backfill-pending"
+      },
+      "qualifiedSlices": 0,
+      "completeSlices": 0,
+      "totalSlices": 30,
+      "slices": [
+        {
+          "at": 1792493362000,
+          "end": 1792493962000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792493962000,
+          "end": 1792494562000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792494562000,
+          "end": 1792495162000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792495162000,
+          "end": 1792495762000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792495762000,
+          "end": 1792496362000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792496362000,
+          "end": 1792496962000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792496962000,
+          "end": 1792497562000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792497562000,
+          "end": 1792498162000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792498162000,
+          "end": 1792498762000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792498762000,
+          "end": 1792499362000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792499362000,
+          "end": 1792499962000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792499962000,
+          "end": 1792500562000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792500562000,
+          "end": 1792501162000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792501162000,
+          "end": 1792501762000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792501762000,
+          "end": 1792502362000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792502362000,
+          "end": 1792502962000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792502962000,
+          "end": 1792503562000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792503562000,
+          "end": 1792504162000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792504162000,
+          "end": 1792504762000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792504762000,
+          "end": 1792505362000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792505362000,
+          "end": 1792505962000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792505962000,
+          "end": 1792506562000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792506562000,
+          "end": 1792507162000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792507162000,
+          "end": 1792507762000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792507762000,
+          "end": 1792508362000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792508362000,
+          "end": 1792508962000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792508962000,
+          "end": 1792509562000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792509562000,
+          "end": 1792510162000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792510162000,
+          "end": 1792510762000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792510762000,
+          "end": 1792511362000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        }
+      ]
+    },
+    {
+      "mint": "8F24cA26PdETzEQFd3Ru6ygAKsB4ijGZfnGbo6oxtHwt",
+      "name": "4bew",
+      "label": "dead",
+      "why": "inactive-slices",
+      "collectorMinutes": 300,
+      "activityMinutes": 5,
+      "thresholds": {
+        "minActive": 70,
+        "minWallets": 2,
+        "minTradeSol": 0.05,
+        "minCoverage": 0.8
+      },
+      "classification": {
+        "activeSlices": 0,
+        "totalSlices": 30,
+        "activityCoverage": 0.9666666666666667,
+        "activePct": 0,
+        "label": "dead",
+        "why": "inactive-slices"
+      },
+      "qualifiedSlices": 0,
+      "completeSlices": 29,
+      "totalSlices": 30,
+      "slices": [
+        {
+          "at": 1792421764000,
+          "end": 1792422364000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792422364000,
+          "end": 1792422964000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792422964000,
+          "end": 1792423564000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792423564000,
+          "end": 1792424164000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792424164000,
+          "end": 1792424764000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792424764000,
+          "end": 1792425364000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792425364000,
+          "end": 1792425964000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792425964000,
+          "end": 1792426564000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792426564000,
+          "end": 1792427164000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792427164000,
+          "end": 1792427764000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792427764000,
+          "end": 1792428364000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792428364000,
+          "end": 1792428964000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792428964000,
+          "end": 1792429564000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792429564000,
+          "end": 1792430164000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792430164000,
+          "end": 1792430764000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792430764000,
+          "end": 1792431364000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792431364000,
+          "end": 1792431964000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792431964000,
+          "end": 1792432564000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792432564000,
+          "end": 1792433164000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792433164000,
+          "end": 1792433764000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792433764000,
+          "end": 1792434364000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792434364000,
+          "end": 1792434964000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792434964000,
+          "end": 1792435564000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792435564000,
+          "end": 1792436164000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792436164000,
+          "end": 1792436764000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792436764000,
+          "end": 1792437364000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792437364000,
+          "end": 1792437964000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792437964000,
+          "end": 1792438564000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792438564000,
+          "end": 1792439164000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792439164000,
+          "end": 1792439764000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        }
+      ]
+    },
+    {
+      "mint": "4pvnbgFEj4iSn1QZ3rm94B13JqV4QMgP8PCz9T8Cpump",
+      "name": "XTO",
+      "label": "pending",
+      "why": "backfill-pending",
+      "collectorMinutes": 296,
+      "activityMinutes": 296,
+      "thresholds": {
+        "minActive": 70,
+        "minWallets": 2,
+        "minTradeSol": 0.05,
+        "minCoverage": 0.8
+      },
+      "classification": {
+        "label": "pending",
+        "why": "backfill-pending"
+      },
+      "qualifiedSlices": 0,
+      "completeSlices": 0,
+      "totalSlices": 30,
+      "slices": [
+        {
+          "at": 1792501858000,
+          "end": 1792502458000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792502458000,
+          "end": 1792503058000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792503058000,
+          "end": 1792503658000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792503658000,
+          "end": 1792504258000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792504258000,
+          "end": 1792504858000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792504858000,
+          "end": 1792505458000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792505458000,
+          "end": 1792506058000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792506058000,
+          "end": 1792506658000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792506658000,
+          "end": 1792507258000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792507258000,
+          "end": 1792507858000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792507858000,
+          "end": 1792508458000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792508458000,
+          "end": 1792509058000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792509058000,
+          "end": 1792509658000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792509658000,
+          "end": 1792510258000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792510258000,
+          "end": 1792510858000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792510858000,
+          "end": 1792511458000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792511458000,
+          "end": 1792512058000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792512058000,
+          "end": 1792512658000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792512658000,
+          "end": 1792513258000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792513258000,
+          "end": 1792513858000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792513858000,
+          "end": 1792514458000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792514458000,
+          "end": 1792515058000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792515058000,
+          "end": 1792515658000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792515658000,
+          "end": 1792516258000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792516258000,
+          "end": 1792516858000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792516858000,
+          "end": 1792517458000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792517458000,
+          "end": 1792518058000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792518058000,
+          "end": 1792518658000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792518658000,
+          "end": 1792519258000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792519258000,
+          "end": 1792519858000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        }
+      ]
+    },
+    {
+      "mint": "G7SnrQNdZkqSUYAxVHkxNA2JSwuro1HegApDkrp8pump",
+      "name": "Official MrBeast Coin",
+      "label": "pending",
+      "why": "backfill-pending",
+      "collectorMinutes": 297,
+      "activityMinutes": 146,
+      "thresholds": {
+        "minActive": 70,
+        "minWallets": 2,
+        "minTradeSol": 0.05,
+        "minCoverage": 0.8
+      },
+      "classification": {
+        "label": "pending",
+        "why": "backfill-pending"
+      },
+      "qualifiedSlices": 6,
+      "completeSlices": 28,
+      "totalSlices": 30,
+      "slices": [
+        {
+          "at": 1792502101000,
+          "end": 1792502701000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792502701000,
+          "end": 1792503301000,
+          "wallets": 69,
+          "qualifyingWallets": 18,
+          "complete": false,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792503301000,
+          "end": 1792503901000,
+          "wallets": 15,
+          "qualifyingWallets": 2,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792503901000,
+          "end": 1792504501000,
+          "wallets": 7,
+          "qualifyingWallets": 2,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792504501000,
+          "end": 1792505101000,
+          "wallets": 8,
+          "qualifyingWallets": 1,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792505101000,
+          "end": 1792505701000,
+          "wallets": 1,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792505701000,
+          "end": 1792506301000,
+          "wallets": 3,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792506301000,
+          "end": 1792506901000,
+          "wallets": 1,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792506901000,
+          "end": 1792507501000,
+          "wallets": 1,
+          "qualifyingWallets": 1,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792507501000,
+          "end": 1792508101000,
+          "wallets": 2,
+          "qualifyingWallets": 1,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792508101000,
+          "end": 1792508701000,
+          "wallets": 1,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792508701000,
+          "end": 1792509301000,
+          "wallets": 3,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792509301000,
+          "end": 1792509901000,
+          "wallets": 1,
+          "qualifyingWallets": 1,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792509901000,
+          "end": 1792510501000,
+          "wallets": 3,
+          "qualifyingWallets": 2,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792510501000,
+          "end": 1792511101000,
+          "wallets": 1,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792511101000,
+          "end": 1792511701000,
+          "wallets": 1,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792511701000,
+          "end": 1792512301000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792512301000,
+          "end": 1792512901000,
+          "wallets": 26,
+          "qualifyingWallets": 25,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792512901000,
+          "end": 1792513501000,
+          "wallets": 4,
+          "qualifyingWallets": 1,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792513501000,
+          "end": 1792514101000,
+          "wallets": 3,
+          "qualifyingWallets": 2,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792514101000,
+          "end": 1792514701000,
+          "wallets": 1,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792514701000,
+          "end": 1792515301000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792515301000,
+          "end": 1792515901000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792515901000,
+          "end": 1792516501000,
+          "wallets": 3,
+          "qualifyingWallets": 1,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792516501000,
+          "end": 1792517101000,
+          "wallets": 1,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792517101000,
+          "end": 1792517701000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792517701000,
+          "end": 1792518301000,
+          "wallets": 1,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792518301000,
+          "end": 1792518901000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792518901000,
+          "end": 1792519501000,
+          "wallets": 1,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        },
+        {
+          "at": 1792519501000,
+          "end": 1792520101000,
+          "wallets": 2,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": false,
+          "hasTrades": true
+        }
+      ]
+    },
+    {
+      "mint": "F9o1WyJ3bd6g9U9M5mnGycX7sTFCWE9CDGh75i8uPFy9",
+      "name": "拉菲",
+      "label": "dead",
+      "why": "inactive-slices",
+      "collectorMinutes": 300,
+      "activityMinutes": 9,
+      "thresholds": {
+        "minActive": 70,
+        "minWallets": 2,
+        "minTradeSol": 0.05,
+        "minCoverage": 0.8
+      },
+      "classification": {
+        "activeSlices": 0,
+        "totalSlices": 30,
+        "activityCoverage": 0.9333333333333333,
+        "activePct": 0,
+        "label": "dead",
+        "why": "inactive-slices"
+      },
+      "qualifiedSlices": 0,
+      "completeSlices": 28,
+      "totalSlices": 30,
+      "slices": [
+        {
+          "at": 1792428972000,
+          "end": 1792429572000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792429572000,
+          "end": 1792430172000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792430172000,
+          "end": 1792430772000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792430772000,
+          "end": 1792431372000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792431372000,
+          "end": 1792431972000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792431972000,
+          "end": 1792432572000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792432572000,
+          "end": 1792433172000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792433172000,
+          "end": 1792433772000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792433772000,
+          "end": 1792434372000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792434372000,
+          "end": 1792434972000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792434972000,
+          "end": 1792435572000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792435572000,
+          "end": 1792436172000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792436172000,
+          "end": 1792436772000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792436772000,
+          "end": 1792437372000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792437372000,
+          "end": 1792437972000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792437972000,
+          "end": 1792438572000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792438572000,
+          "end": 1792439172000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792439172000,
+          "end": 1792439772000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792439772000,
+          "end": 1792440372000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792440372000,
+          "end": 1792440972000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792440972000,
+          "end": 1792441572000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792441572000,
+          "end": 1792442172000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792442172000,
+          "end": 1792442772000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792442772000,
+          "end": 1792443372000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792443372000,
+          "end": 1792443972000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792443972000,
+          "end": 1792444572000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792444572000,
+          "end": 1792445172000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792445172000,
+          "end": 1792445772000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792445772000,
+          "end": 1792446372000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792446372000,
+          "end": 1792446972000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        }
+      ]
+    },
+    {
+      "mint": "CoKjhq9i74KWQrTXsXhuZFWMZiLaehBjsbMfjiH6TYVb",
+      "name": "fomo",
+      "label": "dead",
+      "why": "inactive-slices",
+      "collectorMinutes": 298,
+      "activityMinutes": 5,
+      "thresholds": {
+        "minActive": 70,
+        "minWallets": 2,
+        "minTradeSol": 0.05,
+        "minCoverage": 0.8
+      },
+      "classification": {
+        "activeSlices": 0,
+        "totalSlices": 30,
+        "activityCoverage": 0.9,
+        "activePct": 0,
+        "label": "dead",
+        "why": "inactive-slices"
+      },
+      "qualifiedSlices": 0,
+      "completeSlices": 27,
+      "totalSlices": 30,
+      "slices": [
+        {
+          "at": 1792487449000,
+          "end": 1792488049000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792488049000,
+          "end": 1792488649000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792488649000,
+          "end": 1792489249000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792489249000,
+          "end": 1792489849000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792489849000,
+          "end": 1792490449000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792490449000,
+          "end": 1792491049000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792491049000,
+          "end": 1792491649000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792491649000,
+          "end": 1792492249000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792492249000,
+          "end": 1792492849000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792492849000,
+          "end": 1792493449000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792493449000,
+          "end": 1792494049000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792494049000,
+          "end": 1792494649000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792494649000,
+          "end": 1792495249000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792495249000,
+          "end": 1792495849000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792495849000,
+          "end": 1792496449000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792496449000,
+          "end": 1792497049000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792497049000,
+          "end": 1792497649000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792497649000,
+          "end": 1792498249000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792498249000,
+          "end": 1792498849000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792498849000,
+          "end": 1792499449000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792499449000,
+          "end": 1792500049000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792500049000,
+          "end": 1792500649000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792500649000,
+          "end": 1792501249000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792501249000,
+          "end": 1792501849000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792501849000,
+          "end": 1792502449000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792502449000,
+          "end": 1792503049000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792503049000,
+          "end": 1792503649000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792503649000,
+          "end": 1792504249000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792504249000,
+          "end": 1792504849000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792504849000,
+          "end": 1792505449000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        }
+      ]
+    },
+    {
+      "mint": "4V4owdC2VvM7F9guD1Yyrw3EfCpR2bMerrdEpWL8WLjo",
+      "name": "Physical Inu",
+      "label": "dead",
+      "why": "inactive-slices",
+      "collectorMinutes": 297,
+      "activityMinutes": 49,
+      "thresholds": {
+        "minActive": 70,
+        "minWallets": 2,
+        "minTradeSol": 0.05,
+        "minCoverage": 0.8
+      },
+      "classification": {
+        "activeSlices": 0,
+        "totalSlices": 30,
+        "activityCoverage": 0.8,
+        "activePct": 0,
+        "label": "dead",
+        "why": "inactive-slices"
+      },
+      "qualifiedSlices": 0,
+      "completeSlices": 24,
+      "totalSlices": 30,
+      "slices": [
+        {
+          "at": 1792499934000,
+          "end": 1792500534000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792500534000,
+          "end": 1792501134000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792501134000,
+          "end": 1792501734000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792501734000,
+          "end": 1792502334000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792502334000,
+          "end": 1792502934000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        },
+        {
+          "at": 1792502934000,
+          "end": 1792503534000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792503534000,
+          "end": 1792504134000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792504134000,
+          "end": 1792504734000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792504734000,
+          "end": 1792505334000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792505334000,
+          "end": 1792505934000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792505934000,
+          "end": 1792506534000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792506534000,
+          "end": 1792507134000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792507134000,
+          "end": 1792507734000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792507734000,
+          "end": 1792508334000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792508334000,
+          "end": 1792508934000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792508934000,
+          "end": 1792509534000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792509534000,
+          "end": 1792510134000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792510134000,
+          "end": 1792510734000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792510734000,
+          "end": 1792511334000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792511334000,
+          "end": 1792511934000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792511934000,
+          "end": 1792512534000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792512534000,
+          "end": 1792513134000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792513134000,
+          "end": 1792513734000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792513734000,
+          "end": 1792514334000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792514334000,
+          "end": 1792514934000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792514934000,
+          "end": 1792515534000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792515534000,
+          "end": 1792516134000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792516134000,
+          "end": 1792516734000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792516734000,
+          "end": 1792517334000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": true,
+          "silent": true,
+          "hasTrades": false
+        },
+        {
+          "at": 1792517334000,
+          "end": 1792517934000,
+          "wallets": 0,
+          "qualifyingWallets": 0,
+          "complete": false,
+          "silent": false,
+          "hasTrades": false
+        }
+      ]
+    }
+  ],
+  "conclusion": "Named AOP/Darkinator are pending or unknown, not dead. No threshold change. Four sampled dead rows have zero qualifying slices. This sample does not prove completeness of all historical trade collection."
+}

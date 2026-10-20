@@ -21,7 +21,7 @@ function imageUrl(raw){
  try{const u=new URL(raw),h=u.hostname.toLowerCase();if(u.protocol!=='https:'||u.username||u.password||u.port&&u.port!=='443'||h==='localhost'||/\.(?:internal|local|localhost)$/.test(h)||require('node:net').isIP(h.replace(/^\[|\]$/g,'')))return null;return u.href}catch{return null}
 }
 function metadataUrl(raw){const value=imageUrl(raw);if(!value)return null;const u=new URL(value);
- return ['ipfs.io','arweave.net','gateway.pinata.cloud','pump.mypinata.cloud','nftstorage.link','cloudflare-ipfs.com'].includes(u.hostname)?u.href:null;
+ if(['ipfs.io','arweave.net','gateway.irys.xyz','dweb.link','gateway.pinata.cloud','pump.mypinata.cloud','nftstorage.link','cloudflare-ipfs.com'].includes(u.hostname))return u.href;const cid=/^\/ipfs\/([A-Za-z0-9]{32,120})(?:\/|$)/.exec(u.pathname),sub=/^([A-Za-z0-9]{32,120})\.ipfs\./.exec(u.hostname);if(cid)return 'https://ipfs.io'+u.pathname;if(sub)return 'https://ipfs.io/ipfs/'+sub[1]+u.pathname;return ['ipfs.io','arweave.net','gateway.irys.xyz','dweb.link','gateway.pinata.cloud','pump.mypinata.cloud','nftstorage.link','cloudflare-ipfs.com'].includes(u.hostname)?u.href:null;
 }
 async function readMetadata(uri,{fetch:read=globalThis.fetch}={}){
  const url=metadataUrl(uri);if(!url)return {image:null,reason:'unsupported-metadata-host'};

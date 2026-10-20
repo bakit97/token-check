@@ -6,7 +6,7 @@ test('one mixed identity request plans raw mint, curve and metadata across both 
  const p=await identityPlan(coins,{getRecord:a=>records.get(a),now:T+M,curveOf:async a=>'curve-'+a,metadataOf:async a=>'meta-'+a});assert.ok(p.addresses.length<=100);assert.equal(p.tasks.length,33);assert.equal(p.addresses.length,99);assert.equal(p.tasks[0].coin.a,'m0');for(const x of p.tasks){assert.equal(p.addresses[x.mint],x.coin.a);assert.equal(p.addresses[x.metadata],'meta-'+x.coin.a);assert.ok(p.addresses[x.curve]);}
 });
 test('identity plan repairs missing exact supply on old ct, keeps known creator, and prevents repeated calls within minute',async()=>{
- const c={a:'mint',ct:{prog:'token'},n:'Name',s:'N',i:'https://example.com/a',creatorAddress:'Creator'},row={acceptedAt:T,phase:'after'};
+ const c={a:'mint',ct:{prog:'token'},n:'Name',s:'N',i:'https://example.com/a',uri:'https://ipfs.io/ipfs/known',creatorAddress:'Creator'},row={acceptedAt:T,phase:'after'};
  const opts={getRecord:()=>row,now:T+M,curveOf:async()=>{throw Error('known creator must not query curve')},metadataOf:async()=>{throw Error('complete identity needs no metadata account')}};
  let p=await identityPlan([c],opts);assert.deepEqual(p.addresses,['mint']);c.identityAttemptAt=T+M;assert.equal((await identityPlan([c],{...opts,now:T+M+1})).tasks.length,0);
  c.supplyRaw='100';c.tokenProgram='Token';assert.equal((await identityPlan([c],{...opts,now:T+3*M})).tasks.length,0);
@@ -20,3 +20,5 @@ test('metadata socials are fetched even when DexScreener already supplied an ima
  await new CoinProfiles().update({coins:new Map([['mint',c]]),source,now:T+M,fetch:async()=>{calls++;return {ok:true,headers:{get:()=>null},body:[Buffer.from(JSON.stringify({image:'https://example.com/new.png',description:'About',twitter:'https://x.com/example'}))]};}});
  assert.equal(calls,1);assert.equal(c.i,'https://example.com/existing.png');assert.equal(c.description,'About');assert.equal(c.socialFeatures.hasTwitter,true);assert.ok(c.metadataAt);
 });
+
+test('an existing DS name and image cannot suppress the metadata URI request',async()=>{const c={a:'mint',n:'Coin',s:'C',i:'https://example.com/image.png',creatorAddress:'Creator',ct:{},supplyRaw:'100',tokenProgram:'Token'},p=await identityPlan([c],{getRecord:()=>({acceptedAt:T}),now:T+M,curveOf:async()=>null,metadataOf:async()=> 'metadata-pda'});assert.deepEqual(p.addresses,['metadata-pda']);assert.equal(p.tasks[0].metadata,0);});

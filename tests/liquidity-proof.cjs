@@ -23,7 +23,7 @@ test('fungible LP mint zero is burn proof only for the verified issued and initi
 });
 test('LP evidence cannot leak from another pool or a receipt after the feature deadline',()=>{
  const f=require('../server/research-v2').featuresAt,c={p:'p',mg:{st:'ok',k:'dbc'},lpEvidence:{pool:'p',verified:true,state:'locked',at,lockUntil:at+3600000}};
- a.equal(f(c,at,{phase:'after'}).lpBurned,1);a.equal(f({...c,p:'other'},at,{phase:'after'}).lpBurned,null);a.equal(f(c,at-1,{phase:'after'}).lpBurned,null);
+ a.equal(f(c,at,{phase:'after'}).lpBurned,1);a.equal(f(c,at+3600001,{phase:'after'}).lpBurned,null);a.equal(f({...c,p:'other'},at,{phase:'after'}).lpBurned,null);a.equal(f(c,at-1,{phase:'after'}).lpBurned,null);
 });
 
 
