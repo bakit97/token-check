@@ -100,7 +100,8 @@ function legacyActivityOutcome(coin,entryAt,{hours=5,minActive=70,maxIdle=60,min
   return {label,coverage,activePct,maxIdleObserved:longest,seen,blocks};
 }
 function classifyActivity(m,cfg={}){
- if(!m||m.coverage<(cfg.minCoverage??.8)||m.maxGap>10)return {label:'unknown',why:'collector-gap'};
+ if(m?.recoveryPending)return {label:'pending',why:'backfill-pending'};
+ if(!m||m.coverage<(cfg.minCoverage??.8)||m.maxGap>10)return {label:'unknown',why:m?.recoveryWhy||'collector-gap'};
  // Reclassify old completed rows from their original minute observations too.
  let minutes=m.minutes;try{if(!minutes&&m.outcomePacked)minutes=JSON.parse(require('node:zlib').inflateSync(Buffer.from(m.outcomePacked,'base64'),{maxOutputLength:2000000}).toString())}catch{return {label:'unknown',why:'collector-gap'}}
  const end=m.windowEnd??minutes?.at(-1)?.[0],hour=(minutes||[]).filter(r=>r.length>=4&&r[0]>end-60*MIN&&r[0]<=end),observed=hour.filter(r=>r[1]===1),active=observed.filter(r=>r[2]===1).length;
@@ -155,6 +156,7 @@ function activityEvidence(coin,start,end,decisionMinutes){
  for(const row of tail?.minutes||[]){const i=Math.floor((row[0]-start)/MIN);if(minutes[i]){minutes[i][2]=row[1]>0?1:0;if(row[2]>0)minutes[i][3]=row[2];}}
  let seen=0,active=0,gap=0,maxGap=0,idle=0,maxIdleObserved=0;
  for(const r of minutes){if(r[1]){seen++;gap=0;if(r[2]===1){active++;idle=0}else if(r[2]===0){idle++;maxIdleObserved=Math.max(maxIdleObserved,idle)}else idle=0}else{maxGap=Math.max(maxGap,++gap);idle=0}}
+ const recovered=require('./observation-recovery').applyMinutes(minutes,coin?.recoveryEvidence||[]);for(let i=0;i<minutes.length;i++)minutes[i]=recovered[i];({seen,active,maxGap,maxIdleObserved}=(()=>{const x=require('./observation-recovery').minuteStats(minutes);return {...x,seen:Math.round(x.coverage*bins),active:Math.round((x.activePct||0)*bins/100)};})());
  const priceAt=t=>latestBefore(history,t,7*MIN,x=>x.at)?.price??latestBefore(candles(coin),t,7*MIN,x=>x[0])?.[1]??null;
  for(const r of minutes)r[3]=r[3]??priceAt(r[0]);
  const p0=priceAt(start+decisionMinutes*MIN),pe=priceAt(end);
@@ -164,7 +166,7 @@ function activityEvidence(coin,start,end,decisionMinutes){
  return {coverage:seen/bins,maxGap,activePct:seen?active/bins*100:null,maxIdleObserved:seen?maxIdleObserved:null,lastHourTrades:tail?.lastHourTrades??hourTrades,lastHourWallets:tail?.lastHourWallets??(tapeCovered?lastWallets.size:hourTrades===0?0:null),uniqueBuyers:tail?.uniqueBuyers??(tapeCovered?buyers.size:null),lowerBounds:tail?.lowerBounds||[],priceKeep:p0>0&&pe!=null?pe/p0*100:null,priceAtDecision:p0,priceAtEnd:pe,minutes,windowStart:start,windowEnd:end,tradeCoverage:tapeCovered};
 }
 function tradeOutcomeEvidence(rows,start,end,at){
- const clean=rows.filter(r=>Array.isArray(r)&&Number.isFinite(r[0])),oldest=Math.min(...clean.map(r=>r[0]*1000)),complete=rows.length<300||oldest<=start,tailComplete=rows.length<300||oldest<=end-60*MIN;
+ const clean=rows.filter(r=>Array.isArray(r)&&Number.isFinite(r[0])),oldest=Math.min(...clean.map(r=>r[0]*1000)),complete=(at-start<=24*60*MIN&&rows.length<300)||oldest<=start,tailComplete=(at-(end-60*MIN)<=24*60*MIN&&rows.length<300)||oldest<=end-60*MIN;
  const buyers=new Set(),wallets=new Set(),minute=new Map();let trades=0;
  for(const r of clean){const t=r[0]*1000;if(t<start||t>end)continue;const wallet=typeof r[3]==='string'&&r[3].length>=32?r[3]:null;if(r[1]&&wallet)buyers.add(wallet);if(t>=end-60*MIN){trades++;if(wallet)wallets.add(wallet);}const m=Math.floor(t/MIN)*MIN,old=minute.get(m)||[m,0,null];old[1]++;if(r[4]>0)old[2]=r[4];minute.set(m,old);}
  const identities=clean.every(r=>typeof r[3]==='string'&&r[3].length>=32);
@@ -174,7 +176,7 @@ function strengthOutcome(coin,zeroAt,{minAbove=70,minCoverage=.9}={},now=Date.no
   if(!inRange(minAbove,0,100))throw RangeError('Invalid level-two settings');
   const end=zeroAt+300*MIN;
   if(now<end+MIN)return {label:'pending',why:'five-hours-not-finished'};
-  const path=candles(coin);
+  const recovered=(coin?.recoveryEvidence||[]).flatMap(e=>(e.candles||[]).filter(b=>b.price>0).map(b=>[b.end,b.price]));const path=[...new Map([...recovered,...candles(coin)].map(p=>[p[0],p])).values()].sort((a,b)=>a[0]-b[0]);
   const p0=latestBefore(path,zeroAt,7*MIN,x=>x[0])?.[1];
   if(!(p0>0))return {label:'pending',why:'no-price-at-zero'};
   let covered=0,above=0,maxGap=0,gap=0;

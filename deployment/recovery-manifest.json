@@ -1,23 +1,23 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "ee56718644a653ebb0e151a70bf771ff021e9436d79b770cfd349481d0ee223e",
+    "collector.js": "c3dee88ad5ea047c21d9ef99b26ddb3078874741a7da1ad87110607897614d54",
     "event-clock.js": "9ee43c0e943da1147a3ec0e1274a577bdd4d8870603285fdf04c2c6253713c2c",
     "admission.js": "99feba0f235ce8e262f01b1e517a9373c906fb6c51353a2951a184ef5bfacde8",
     "source-runtime.js": "409e7ba6fade6d9a379b4f9a2ff4b669e9fbe8f83c10264bc021923f06c1165e",
     "pump-pre.js": "8f01365922819d7900219eb316213f044e331c146f4cb71db9f1f398bbddac06",
     "pre-watcher.js": "72879fa8a144c40ec5c3bca90c64a0276ffb1582b39c1960fdc5ad7721e41dd3",
-    "research-v2.js": "274b166c508e3df44d4057db2922ed903b7a3b0c8fdd2057e5283dbc3d5d7bf9",
-    "research-runtime.js": "a77bc14473864fb24c7dd73840d27e511558edca50d58803b91acb83cc255fae",
+    "research-v2.js": "7d32c46c016a12c46e613c7e740e098fe3baef7d84d7f2ab6509229f67a27c25",
+    "research-runtime.js": "ca7e7f5938784053a7475e14901429002aa27c251abf6efb257b90bf34fb26c2",
     "research-config.js": "a1420977fffa5cca0207845a0ce8bdaf82de81d94316572975466c8ebb403c15",
     "pass-runtime.js": "b9f61723eb39e57e2abd93306c5635ad461a7aae1b52fea014dbc3cccde529ab",
     "research-two-runtime.js": "15fad9da88c5aeb8354720e6e827174676677620066027523bc86ff4964b24dd",
     "auto-research-v2.js": "da80e47cf4ee43156651c2d61ba0c27ddf5e9bc3289ac70a434623b34f714ec7",
     "filter-audit.js": "75b842d42f9c98dfedfee7e93a4f59de2b14fc7fd7fda5c7f9f31b1080f978e1",
-    "resource-budget.js": "899b0a507c4bf968218a91fd4b47a37d4035daa28e9c4f7d5bc8ac528505c156",
+    "resource-budget.js": "45bfbb7c320b462d36eea942e0a7309a6e0421d2eb17cdf9aed5cf7dd7c50f3b",
     "runtime-health.js": "001b44ef3198e679008fd58aa3e9f90f7843303775cbc74b3a21eda745a9ba84",
     "stream-json.js": "b212a8cabdb25f9f8ef5fe7e7c081d04dbda3e4218e6c3df6adfb453d6a48461",
-    "observation-contract.js": "04d3ec648c98a93aa9f8f2286edc3cdf8c72ea82d93a9d160befce3ec0c32ac0",
+    "observation-contract.js": "bb307c9c6932fd2af3f4481e633ea20cd5d12b8fd46006b35d9cd4d3b42bbfdd",
     "packed-observations.js": "6e2622a57f6d8939411b9884ec1f9c80bd8e091b8d734c8276465789128204e4",
     "completed-coins.js": "700be950b16b97301b5b398b10f5f304e3244c8d16882c12c1ee4382e47df462",
     "seed-completed.js": "d1bfe44875a6e52062f6e2daceeff4ea4530889bb0a4dcd33c98f49c1dbf4a4b",
@@ -31,8 +31,9 @@
     "migration-fast.js": "3c83041827d3694a818b4435d968a151a0e59d6f638db65fd1bee5c27668cfaa",
     "legacy-birth-cleanup.js": "4a2d77a67115da171cef1cdeb76c30c9cc9db79c26a3dff522443887b7d77534",
     "manual-pools.js": "a4a7e3e1630ff1882e36c9c299713dfc30b860510446e684df598bb34cdec947",
-    "pool-logs.js": "e6f6da7aefbf3a404b4347e1fba0cf0be1c5509ad9d48d1ab28655268b95f666",
+    "pool-logs.js": "44ab75877243a95796b1a59488d4123358fac0372d84f52f6f50d6f3514f21ea",
     "legacy-data-redaction.js": "7c9a9906fe3a3a2eee6e0196d37abf603d7a8665f6c52319fcc0367868b1c69e",
-    "side-pools.js": "c4550ee578dfe8e42f52542c6628f074ff81a420e5911ea56c386485a4670d43"
+    "side-pools.js": "c4550ee578dfe8e42f52542c6628f074ff81a420e5911ea56c386485a4670d43",
+    "observation-recovery.js": "51af75c5ec9ef9671b578f48413cd7785a5cb17b5a10db10a7693f81ad0f5358"
   }
 }

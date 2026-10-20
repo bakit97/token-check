@@ -7,7 +7,7 @@ if(typeof WebSocket==='undefined'&&!process.env.WSX){const ch=require('child_pro
    Каждые 2 минуты выгружает перепись дня (по Алматы, с 00:00) в Cloud Storage. */
 const fs=require('fs'),zlib=require('zlib');
 let HEALTH=null,PROFILES=null;
-let COMPLETED=null,ACTIVE_HISTORY=null;
+let COMPLETED=null,ACTIVE_HISTORY=null,OBS_RECOVERY=null;
 const fullCoin=c=>ACTIVE_HISTORY?ACTIVE_HISTORY.hydrate(c):c;
 const PUBLIC_FEEDS={busy:false,sourceAt:0,libraryAt:0,storageAt:0,error:''},RESEARCH_EXPORTS={busy:false,oneAt:0,twoAt:0,error:''};let SOURCE_DAY_PUBLISHED_AT=0;
 const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:30000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0,pendingWork:0,cancelledGT:0};
@@ -146,7 +146,7 @@ async function preChainSweepBody(){const now=Date.now(),dec=(PASS_V2?.config?.de
   const admitted=[...C.values()].filter(c=>SOURCE?.has(c.a)&&now-c.t<2*3600e3);
   const needCt=admitted.filter(c=>!c.ct).sort((a,b)=>(SOURCE.get(b.a)?.acceptedAt||0)-(SOURCE.get(a.a)?.acceptedAt||0)).slice(0,100);
   const needCurve=pre.filter(c=>c.p&&(!c.q||c.q===WSOL)&&now-(c.curveSol?.at(-1)?.[0]||0)>=(now-(SOURCE.get(c.a)?.acceptedAt||now)<dec+5*60e3?120e3:now-(SOURCE.get(c.a)?.acceptedAt||now)<2*3600e3?5*60e3:30*60e3)).sort((a,b)=>Number(visible.has(b.a))-Number(visible.has(a.a))||(a.curveSol?.at(-1)?.[0]||0)-(b.curveSol?.at(-1)?.[0]||0)||(SOURCE.get(b.a)?.acceptedAt||0)-(SOURCE.get(a.a)?.acceptedAt||0)).slice(0,200);
-  const call=async(list,enc)=>{PRE_STATS.calls++;return (await rpc('getMultipleAccounts',[list,enc],{priority:enc.encoding==='jsonParsed'?'metadata':'pools',context:'до миграции',source:'pump-card'}))?.value||[]};
+  const call=async(list,enc)=>{PRE_STATS.calls++;return (await rpc('getMultipleAccounts',[list,enc],{priority:'identity',context:'до миграции',source:'pump-card'}))?.value||[]};
   try{for(let i=0;i<needCurve.length;i+=100){const part=needCurve.slice(i,i+100),pools=part.map(c=>c.p),v=await call(pools,{encoding:'base64',dataSlice:{offset:0,length:115}}),at=Date.now();
       part.forEach((c,j)=>{const a=v[j];if(c.p!==pools[j]||!a||a.owner!==PUMP)return;const u=b64(a.data?.[0]);if(u.length<49)return;
         const bytes=Buffer.from(u);if(bytes.length>=81&&bytes.subarray(49,81).some(x=>x!==0)&&!c.creatorAddress){c.creatorAddress=pk(bytes,49);c.creatorObservedAt=at;}const lam=Number(bytes.readBigUInt64LE(32));(c.curveSol=c.curveSol||[]).push([at,lam,u[48]?1:0]);PRE_STATS.curve++})}
@@ -446,7 +446,7 @@ async function collectIntelligence(){const now=Date.now();if(INTEL_BUSY||now-INT
 // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
 // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
 const MODULES=['event-clock.js','admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
-  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js','module-library.js','active-history.js','launch-history.js','early-intelligence.js','migration-fast.js','legacy-birth-cleanup.js','manual-pools.js','pool-logs.js','legacy-data-redaction.js','side-pools.js'];
+  'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js','module-library.js','active-history.js','launch-history.js','early-intelligence.js','migration-fast.js','legacy-birth-cleanup.js','manual-pools.js','pool-logs.js','legacy-data-redaction.js','side-pools.js','observation-recovery.js'];
 let MODULES_OK=null;
 function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
   for(const name of MODULES){const r=await fetch('https://storage.googleapis.com/storage/v1/b/'+BUCKET+'/o/'+encodeURIComponent('code/'+name)+'?alt=media',
@@ -1040,12 +1040,12 @@ async function processManualPool(task){
  }
  return {outcome};
 }
-const MANUAL_AUDIT={checked:0,revoked:0,errors:0,busy:false,lastAt:0};const MANUAL_AUDITED=new Set();
-async function auditManualPools(){if(MANUAL_AUDIT.busy||!SOURCE)return;MANUAL_AUDIT.busy=true;try{
- const row=[...SOURCE.records.values()].find(r=>r.proof?.kind==='manual-pool-open-v1'&&Date.now()-r.acceptedAt<26*3600e3&&!MANUAL_AUDITED.has(r.mint));if(!row)return;
- const earlier=await require(DIR+'/side-pools.js').catalogue({mint:row.mint,pool:row.proof.pool,eventAt:row.eventAt});MANUAL_AUDIT.checked++;MANUAL_AUDITED.add(row.mint);while(MANUAL_AUDITED.size>2000)MANUAL_AUDITED.delete(MANUAL_AUDITED.values().next().value);MANUAL_AUDIT.lastAt=Date.now();
+const MANUAL_AUDIT={checked:0,revoked:0,errors:0,busy:false,lastAt:0};const MANUAL_AUDITED=new Map();
+async function auditManualPools(){if(MANUAL_AUDIT.busy||!SOURCE)return;MANUAL_AUDIT.busy=true;try{for(let checked=0;checked<4;checked++){
+ const row=[...SOURCE.records.values()].sort((a,b)=>(MANUAL_AUDITED.get(a.mint)||0)-(MANUAL_AUDITED.get(b.mint)||0)).find(r=>r.proof?.kind==='manual-pool-open-v1'&&Date.now()-r.acceptedAt<26*3600e3&&Date.now()-(MANUAL_AUDITED.get(r.mint)||0)>5*60e3);if(!row)return;
+ const earlier=await require(DIR+'/side-pools.js').catalogue({mint:row.mint,pool:row.proof.pool,eventAt:row.eventAt});MANUAL_AUDIT.checked++;MANUAL_AUDITED.set(row.mint,Date.now());while(MANUAL_AUDITED.size>2000)MANUAL_AUDITED.delete(MANUAL_AUDITED.keys().next().value);MANUAL_AUDIT.lastAt=Date.now();
  if(earlier&&SOURCE.revokeManualPool(row.mint,'earlier-pool')){MANUAL_AUDIT.revoked++;C.delete(row.mint);RESEARCH_V2?.pruneRevoked(SOURCE.revokedManual);RESEARCH_TWO?.pruneRevoked(SOURCE.revokedManual);if(PASS_V2?.records.get(row.mint)?.phase==='before')PASS_V2.records.delete(row.mint);RESEARCH_BANKS?.removeRevoked(SOURCE.revokedManual);save();}
- }catch{MANUAL_AUDIT.errors++;}finally{MANUAL_AUDIT.busy=false}}
+ }}catch{MANUAL_AUDIT.errors++;}finally{MANUAL_AUDIT.busy=false}}
 function discoveryStatus(){const x=FAST_DISCOVERY?.summary();if(!x)return null;return {...x,manualPoolStreamReady:POOL_LOGS?.summary().available===true,latency:{...x.latency,pool:POOL_DISCOVERY?.summary().latency.pool||x.latency.pool}};}
 function offerFastMigration(task){if(!FAST_DISCOVERY)return;FAST_DISCOVERY.offer({...task,receivedAt:Date.now()});}
 function chainWatch(){
@@ -1086,7 +1086,7 @@ function chainWatch(){
       setTimeout(()=>connect(channel),pre?10000:5000)};
   };
   POOL_DISCOVERY=new (require(DIR+'/migration-fast.js').FastSignals)({process:processManualPool,maxQueue:64,workers:1,onError:(e,t)=>{if(t?.mint)SOURCE?.observe({mint:t.mint,phase:'before',origin:'manual-pool',reason:e.code||'RPC_ERROR'});err('manual pool '+(e.code||'RPC_ERROR'))}});
-  POOL_LOGS=new (require(DIR+'/pool-logs.js').PoolLogs)({WebSocket,definitions:require(DIR+'/manual-pools.js').definitions,onSignal:t=>POOL_DISCOVERY.offer(t)});POOL_LOGS.start();
+  POOL_LOGS=new (require(DIR+'/pool-logs.js').PoolLogs)({WebSocket,definitions:require(DIR+'/manual-pools.js').definitions,onSignal:t=>POOL_DISCOVERY.offer(t),onSlot:(slot,at)=>EVENT_CLOCK?.observe(slot,at)});POOL_LOGS.start();
   connect('migrations'); // TZ20: birth stream intentionally disabled; migration socket is never budget-paused.
 }
 
@@ -1193,7 +1193,27 @@ async function exportSource(now) {
   await upload('source/live.json',{updated:now,count:today.length,coins:live});
   if(now-SOURCE_DAY_PUBLISHED_AT>=5*60e3){await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});SOURCE_DAY_PUBLISHED_AT=now;}
 }
-function researchCoins(){const contract=require(DIR+'/observation-contract.js');return {get:mint=>{const c=C.get(mint)||(typeof COMPLETED!=='undefined'&&COMPLETED?COMPLETED.readCoin(mint):null);return c?contract.toLegacy(contract.project(fullCoin(c),{metadata:fullCoin(c),admission:SOURCE?.get(mint)||null})):null}}}
+function initObservationRecovery(){
+ const api=require(DIR+'/observation-recovery.js');
+ OBS_RECOVERY=new api.ObservationRecovery({dir:DIR,gt,rpc:(m,p)=>rpc(m,p,{priority:'recovery',context:'дозагрузка',source:'recovery',urgent:true,maxBytes:2*1024*1024}),resolveCoin:mint=>C.get(mint)||COMPLETED?.readCoin(mint),onUpdated:(job,payload)=>{
+  const row=RESEARCH_V2?.rows.find(r=>r.mint===job.mint&&(!r.p||r.p===job.pool));if(row){const cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase),next=api.relabel(row,OBS_RECOVERY.evidence(job.mint,job.pool),cfg);Object.assign(row,next,{recoveryJobId:job.id,recoveredAt:Date.now(),outcomeAt:Date.now()});job.recoveredMinutes=next.backfilledMinutes||0;RESEARCH_BANKS?.upsert([row]);}
+  if(job.kind.startsWith('two')){RESEARCH_TWO?.retry.delete(job.mint);RESEARCH_TWO?.processed.delete(job.mint);}
+  const name='observations-v2/backfill/'+dayKey(job.start)+'/'+job.mint+'-'+job.id+'.json';if(!payload.mirrored){uploadLater(name,{...payload,backfilled:true});payload.mirrored=true;OBS_RECOVERY.store(job,payload);}const c=C.get(job.mint);if(c)c.recoveryRef={name,at:Date.now(),start:job.start,end:job.end};
+ }});
+}
+let RECOVERY_SCAN_AT=0,RECOVERY_CURSOR=0;
+function recoveryTick(){if(resourcePressure())return;if(!OBS_RECOVERY||!RESEARCH_V2||!SOURCE)return;const now=Date.now(),api=require(DIR+'/research-v2.js'),one=RESEARCH_V2;
+ const enqueue=(row,start,end,kind)=>{const source=SOURCE.get(row.mint);if(!source||source.phase!==row.phase)return;const pool=source.proof?.pool||row.p;if(!pool)return;const job=OBS_RECOVERY.enqueue({mint:row.mint,pool,start,end,kind});if(!job)return;
+  const raw=one.rows.find(r=>r.mint===row.mint);if(raw&&kind==='one'){raw.recoveryPending=['queued','fetching','waiting-budget'].includes(job.state);if(['recovered','unavailable'].includes(job.state)&&raw.recoveryJobId!==job.id)OBS_RECOVERY.onUpdated(job,OBS_RECOVERY.payload(job)||{candles:[]});}
+ };
+ for(const row of one.view())if(row.label==='unknown'||row.recoveryPending){const cfg=require(DIR+'/research-runtime.js').phaseSettings(one.config,row.phase),start=row.windowStart??row.eventAt??row.acceptedAt,end=row.windowEnd??start+cfg.hours*3600e3;if(end<now)enqueue(row,start,end,'one');}
+ if(now-RECOVERY_SCAN_AT>=120000){RECOVERY_SCAN_AT=now;const active=[...one.admitted.values()].filter(r=>!r.intakePending),window=active.slice(RECOVERY_CURSOR,RECOVERY_CURSOR+8);RECOVERY_CURSOR=RECOVERY_CURSOR+8>=active.length?0:RECOVERY_CURSOR+8;
+  for(const row of window){const c=C.get(row.mint),cfg=require(DIR+'/research-runtime.js').phaseSettings(one.config,row.phase),start=row.eventAt??row.acceptedAt,end=Math.min(Math.floor((now-3*60000)/60000)*60000,start+cfg.hours*3600e3);if(!c||end-start<10*60000)continue;const raw=api.activityEvidence(OBS_RECOVERY.attach(fullCoin(c)),start,end,cfg.decisionMinutes);let from=null,to=null;for(const minute of raw.minutes){if(minute[1]!==1){from??=minute[0]-60000;to=minute[0];}else if(from!=null)break;}if(from!=null&&to-from>=2*60000)enqueue(row,from,to,'one-gap');}
+  for(const pass of PASS_V2?.records.values()||[]){if(RESEARCH_TWO?.processed.has(pass.mint)||now-pass.zeroAt<5*3600e3)continue;enqueue(pass,pass.zeroAt-7*60000,pass.zeroAt+5*3600e3,'two');}
+ }
+ OBS_RECOVERY.tick();
+}
+function researchCoins(){const contract=require(DIR+'/observation-contract.js');return {get:mint=>{const c=C.get(mint)||(typeof COMPLETED!=='undefined'&&COMPLETED?COMPLETED.readCoin(mint):null);const row=c?contract.toLegacy(contract.project(fullCoin(c),{metadata:fullCoin(c),admission:SOURCE?.get(mint)||null})):null;return OBS_RECOVERY?OBS_RECOVERY.attach(row):row}}}
 async function exportResearchV2(now) {
   if(!RESEARCH_V2||!SOURCE)return;
   // All read-only observations originate from the accepted main source.
@@ -1422,7 +1442,7 @@ async function researchExportsCycle(){
 let STATUS_BUSY=false;
 async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const now=Date.now(),today=dayKey(now);
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:discoveryStatus(),poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,observationRecovery:OBS_RECOVERY?{...OBS_RECOVERY.summary(),r1Unknown:RESEARCH_V2?.summary().counts.unknown??null}:null,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:discoveryStatus(),poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,publishedAt:FAST_PASS_PUBLISH_AT},
@@ -1462,6 +1482,7 @@ const STARTED=Date.now();
   try{await initSource();await reloadSourceAgeConfig()}catch(e){SOURCE_ERR=e.message;err('главный источник не запустился: '+e.message)}
   try{await initResearchV2()}catch(e){RESEARCH_V2_ERR=e.message;err('исследование v2 не запустилось: '+e.message)}
   try{await initPathsV2()}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('серверные пути не запустились: '+e.message)}
+  initObservationRecovery();setTimeout(()=>recoveryTick(),20000);setInterval(()=>{try{recoveryTick()}catch(e){err('recovery '+e.message)}},15000);
   PROFILES=new (require(DIR+'/coin-profile.js').CoinProfiles)();
   const LAUNCH_HISTORY=new (require(DIR+'/launch-history.js').LaunchHistory)();
   const updateLaunchHistory=()=>{try{LAUNCH_HISTORY.update({source:SOURCE,coins:C,metadata:mint=>COMPLETED?.metadata(mint),now:Date.now()})}catch(e){err('launch history '+e.message)}};updateLaunchHistory();setInterval(updateLaunchHistory,60000);

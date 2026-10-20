@@ -1,7 +1,7 @@
 'use strict';
 // Public Solana discovery only. Proof RPC remains metered independently.
 class PoolLogs {
- constructor({WebSocket,definitions,onSignal,now=Date.now,setTimer=setTimeout,clearTimer=clearTimeout,maxBytesSecond=4000000}={}){this.WebSocket=WebSocket;this.definitions=definitions;this.onSignal=onSignal;this.now=now;this.setTimer=setTimer;this.clearTimer=clearTimer;this.maxBytesSecond=maxBytesSecond;this.running=false;this.timer=null;this.socket=null;this.subs=new Map();this.acks=new Set();this.seen=new Map();this.state={provider:'public-solana',endpoint:'wss://api.mainnet-beta.solana.com',heliusWS:false,connected:false,available:false,bytes:0,messages:0,noise:0,signals:0,duplicates:0,errors:0,overload:0,oversized:0,reconnects:0,connectedAt:null,lastMessageAt:null};}
+ constructor({WebSocket,definitions,onSignal,onSlot=()=>{},now=Date.now,setTimer=setTimeout,clearTimer=clearTimeout,maxBytesSecond=4000000}={}){this.WebSocket=WebSocket;this.definitions=definitions;this.onSignal=onSignal;this.onSlot=onSlot;this.lastClockAttemptAt=0;this.now=now;this.setTimer=setTimer;this.clearTimer=clearTimer;this.maxBytesSecond=maxBytesSecond;this.running=false;this.timer=null;this.socket=null;this.subs=new Map();this.acks=new Set();this.seen=new Map();this.state={provider:'public-solana',endpoint:'wss://api.mainnet-beta.solana.com',heliusWS:false,connected:false,available:false,bytes:0,messages:0,noise:0,signals:0,duplicates:0,errors:0,overload:0,oversized:0,reconnects:0,connectedAt:null,lastMessageAt:null,clockSamples:0};}
  summary(){return {...this.state,programs:[...new Set(this.definitions.map(s=>s.program))],subscriptions:this.acks.size,maxBytesSecond:this.maxBytesSecond};}
  start(){if(this.running)return;this.running=true;this.connect();}
  stop(){this.running=false;this.clearTimer(this.timer);this.timer=null;this.state.available=false;this.state.connected=false;this.socket?.close();}
@@ -9,6 +9,7 @@ class PoolLogs {
   ws.onopen=()=>{if(ws!==this.socket||!this.running)return;this.state.connected=true;this.state.connectedAt=this.now();programs.forEach((program,i)=>ws.send(JSON.stringify({jsonrpc:'2.0',id:i+1,method:'logsSubscribe',params:[{mentions:[program]},{commitment:'confirmed'}]})));};
   ws.onmessage=e=>{if(ws!==this.socket||!this.running||typeof e.data!=='string')return;const txt=e.data,at=this.now(),bytes=Buffer.byteLength(txt);this.state.bytes+=bytes;this.state.messages++;this.state.lastMessageAt=at;
    if(at-this.windowAt>=5000){this.windowAt=at;this.windowBytes=0;}this.windowBytes+=bytes;if(this.windowBytes>this.maxBytesSecond*5){this.state.overload++;retry=60000;ws.close();return;}if(bytes>512000){this.state.oversized++;return;}
+   if(at-this.lastClockAttemptAt>=5000){this.lastClockAttemptAt=at;const found=txt.slice(0,512).match(/"context"\s*:\s*\{[^}]{0,200}?"slot"\s*:\s*(\d+)/);if(found&&Number.isSafeInteger(+found[1])){this.state.clockSamples++;this.onSlot(+found[1],at);}}
    // Most messages are swaps. No JSON.parse for the discarded traffic.
    if(txt.includes('logsNotification')&&!this.definitions.some(s=>txt.includes('Instruction: '+s.name.replace(/(^|_)([a-z0-9])/g,(_,p,c)=>c.toUpperCase())))){this.state.noise++;return;}
    let m;try{m=JSON.parse(txt);}catch{this.state.errors++;return;}

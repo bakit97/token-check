@@ -163,3 +163,8 @@ test('manual pool proof uses idle fresh reserve but yields immediately to real m
  assert.ok(b.summary().creditsMinute<=17);
  b.freshMigrationPending=1;assert.equal(b.allow(1,'pool-discovery'),false);assert.equal(b.allow(1,'migration-fast'),true);
 });
+
+test('recovery uses spare capacity within seventeen and yields all calls to fresh migrations',t=>{
+ const f=fixture(t),b=new ResourceBudget(f);b.migrationWSOnly=true;b.freshMigrationReserve=6;b.poolsPending=true;b.charge(9,'rpc','migration','migration');
+ assert.equal(b.allow(1,'recovery'),true);b.reserveRPC('getSignaturesForAddress','recovery');assert.ok(b.summary().creditsMinute<=17);b.freshMigrationPending=1;assert.equal(b.allow(1,'recovery'),false);
+});
