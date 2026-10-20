@@ -494,3 +494,17 @@ ActivityEvidence объединяет raw tape/tail/recovery, сохраняет
 Проверено387 Node,4 publisher,38 modules. Реальная публичная проба: after DBC,2 GT native swap rows,1 уникальный покупатель как нижняя граница,полное окно ещё не завершено. GT block_number также сверён:459334850/851 при migration eventSlot459334849, но это НЕ доказательство birth-snipers. Подтверждён реальный424-byte DBC VirtualPool: discriminator/mint match и creator@104 успешно читается публичным RPC без Helius.
 
 Осталось: добрать п.27 — общий mixed batch mint/curve/metadata (сейчас отдельные identity calls конкурируют за60/час), честные coverage по всем ключам/уровням и новым когортам; DEX birth-snipers/bundles/LP требуют новых доказательств, >=90% всё ещё не достигнуто. Живую проверку п.18 сделать после выкладки; затем итоговая очисткаGCS.
+
+
+П.18 выложен6b7f24e, live1792522500416709: age15с,Helius11,40726/мин,RSS196/peak223,8МБ,state16,78МБ,DBC/LL=true,modules/feeds=true. Перерасчёт исторических строк идёт по мере получения доступных raw сделок; потерянную историю кошельков не выдумываем.
+
+## П.27: устранена конкуренция идентификации и пробел соцсетей — подготовлено
+До исправления preChainSweep делал отдельные RPC mint/creator/metadata, конкурируя за60 identity credits/hour. Теперь один mixed getMultipleAccounts(jsonParsed) пакет до100 адресов не чаще1мин: parsed mint и base64 fallback для curve/metadata. Адреса дедуплицируются, свежие<=20мин в приоритете; потом старые незавершённые. У каждого coin планируются все нужные части, известный creator не читается снова. Старая ct без точного supplyRaw/tokenProgram тоже дозапрашивается: иначе она навсегда выпадала из полного holder census.
+
+Публичная реальная проверка одной DBC mint+curve в ОДНОМ getMultipleAccounts(jsonParsed): mint=parsed,curve=base64,2 результата. Это проверка формата, не Helius-операция. Вызовы collector проходят прежний общий budget/identity60/час, параметры resource-budget.js и защита миграций не менялись.
+
+Metadata URI теперь читается и у coin, которой DS уже дал image: раньше условие !i блокировало description/socials. Известное изображение сохраняется, ранний повтор URI при сбое допускается через1мин в существующем ограниченном цикле; старые — через10мин. Получение/отсутствие соцсети основано на реальном metadata JSON, не на пустом DS.
+
+CoverageVersion2 перечисляет ВСЕ RULE_KEYS в знаменателе каждой минуты/фазы, включая ключи, отсутствующие у старых snapshots; null другого уровня не затирает известное значение. Это может уменьшить честный процент относительно старого отчёта, где новый ключ считал только несколько свежих записей. Поздний ответ по-прежнему не попадает в прошлый snapshot.
+
+Проверено391 Node,4 publisher,38 runtime files. Регрессии mixed batch<=100/33 coins, оба потока, повторный raw supply, отсутствие лишнего curve запроса известного creator,1мин retry, DS image+URI socials и правильный denominator. >=90% по всему п.27 ещё не достигнуто: birth-snipers/bundles after и доказательства LP/lock не реализованы полноценно; утраченную раннюю историю нельзя заполнить задним числом. После выкладки — проверить PRE_STATS.creators/identityBatch*, holderCensus, новые admission snapshots, бюджет/память; затем GCS cleanup.

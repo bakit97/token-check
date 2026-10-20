@@ -144,19 +144,22 @@ async function preChainSweepBody(){const now=Date.now(),dec=(PASS_V2?.config?.de
   const visible=new Set(SOURCE?.latest(200).map(r=>r.mint)||[]);
   const pre=[...C.values()].filter(c=>isRecordedPre(c)&&isCurve(c.d)&&now-(SOURCE.get(c.a)?.acceptedAt||now)<Math.max(dec+5*60e3,(require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2?.config||{},'before').hours||5)*3600e3));
   const admitted=[...C.values()].filter(c=>SOURCE?.has(c.a)&&now-c.t<2*3600e3);
-  const needCt=admitted.filter(c=>!c.ct).sort((a,b)=>(SOURCE.get(b.a)?.acceptedAt||0)-(SOURCE.get(a.a)?.acceptedAt||0)).slice(0,100);
   const needCurve=pre.filter(c=>c.p&&(!c.q||c.q===WSOL)&&now-(c.curveSol?.at(-1)?.[0]||0)>=(now-(SOURCE.get(c.a)?.acceptedAt||now)<dec+5*60e3?120e3:now-(SOURCE.get(c.a)?.acceptedAt||now)<2*3600e3?5*60e3:30*60e3)).sort((a,b)=>Number(visible.has(b.a))-Number(visible.has(a.a))||(a.curveSol?.at(-1)?.[0]||0)-(b.curveSol?.at(-1)?.[0]||0)||(SOURCE.get(b.a)?.acceptedAt||0)-(SOURCE.get(a.a)?.acceptedAt||0)).slice(0,200);
   const call=async(list,enc)=>{PRE_STATS.calls++;return (await rpc('getMultipleAccounts',[list,enc],{priority:'identity',context:'до миграции',source:'pump-card'}))?.value||[]};
   try{for(let i=0;i<needCurve.length;i+=100){const part=needCurve.slice(i,i+100),pools=part.map(c=>c.p),v=await call(pools,{encoding:'base64',dataSlice:{offset:0,length:115}}),at=Date.now();
       part.forEach((c,j)=>{const a=v[j];if(c.p!==pools[j]||!a||a.owner!==PUMP)return;const u=b64(a.data?.[0]);if(u.length<49)return;
         const bytes=Buffer.from(u);if(bytes.length>=81&&bytes.subarray(49,81).some(x=>x!==0)&&!c.creatorAddress){c.creatorAddress=pk(bytes,49);c.creatorObservedAt=at;}const lam=Number(bytes.readBigUInt64LE(32));(c.curveSol=c.curveSol||[]).push([at,lam,u[48]?1:0]);PRE_STATS.curve++})}
-  }catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else{PRE_STATS.errors++;err('pre sweep '+e.message)}}  try{
-    if(needCt.length){const v=await call(needCt.map(c=>c.a),{encoding:'jsonParsed'});const at=Date.now();needCt.forEach((c,j)=>{if(!v[j])return;try{const ct=ctFromMint(v[j]);ct.at=at;ct.batch=1;c.ct=ct;c.supplyRaw=v[j].data?.parsed?.info?.supply||c.supplyRaw;c.tokenProgram=v[j].owner;require(DIR+'/coin-profile.js').applyMintIdentity(c,v[j],at);PRE_STATS.ct++}catch{PRE_STATS.errors++}})}
-  }catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else{PRE_STATS.errors++;err('pre contracts '+e.message)}}
-  const needCreator=admitted.filter(c=>!c.creatorAddress&&(SOURCE.get(c.a)?.proof?.curve||c.mg?.watch||c.creatorCurveCandidate||c.mg?.k==='pump')&&now-(c.creatorAttemptAt||0)>5*60000).slice(0,100);
-  if(needCreator.length)try{const values=await call(await Promise.all(needCreator.map(c=>SOURCE.get(c.a)?.proof?.curve||c.mg?.watch||c.creatorCurveCandidate||bondingCurveOf(c.a))),{encoding:'base64'}),at=Date.now();needCreator.forEach((c,i)=>{c.creatorAttemptAt=at;const creator=require(DIR+'/holder-census.js').curveCreator(values[i],{mint:c.a,decode58:b58dec,encode58:b58enc});if(creator){c.creatorAddress=creator;c.creatorObservedAt=at;c.creatorIdentitySource='verified-launch-curve-state';}});}catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else PRE_STATS.errors++;}
-  const needMeta=admitted.filter(c=>(!c.n||!c.s||(!c.i&&!c.uri))&&now-(c.metadataAttemptAt||0)>5*60e3).sort((a,b)=>b.t-a.t).slice(0,20);
-  if(needMeta.length)try{const addresses=await Promise.all(needMeta.map(c=>metadataOf(c.a))),values=await call(addresses,{encoding:'base64'}),at=Date.now();needMeta.forEach((c,i)=>{c.metadataAttemptAt=at;const value=values[i];if(value?.owner!==META)return;try{const bytes=b64(value.data?.[0]);if(pk(bytes,33)!==c.a)return;const api=require(DIR+'/coin-profile.js'),meta=api.parseMetadata(bytes);api.applyIdentity(c,meta,at);if(c.ct){c.ct.metaMut=metaMutable(bytes);c.ct.metaMutAt=at;}c.metadataReason=null;}catch{c.metadataReason='metadata-invalid';}});}catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else PRE_STATS.errors++;}
+  }catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else{PRE_STATS.errors++;err('pre sweep '+e.message)}}
+  if(now-(PRE_STATS.identityBatchAt||0)>=60000){
+   const plan=await require(DIR+'/holder-census.js').identityPlan(admitted,{getRecord:a=>SOURCE.get(a),now,curveOf:bondingCurveOf,metadataOf});
+   if(plan.addresses.length)try{const values=await call(plan.addresses,{encoding:'jsonParsed'}),at=Date.now();PRE_STATS.identityBatchAt=at;PRE_STATS.identityBatchAccounts=plan.addresses.length;PRE_STATS.identityBatchCoins=plan.tasks.length;
+    for(const task of plan.tasks){const c=task.coin;c.identityAttemptAt=at;
+     if(task.mint!=null){const value=values[task.mint];if(value)try{const ct=ctFromMint(value);ct.at=at;ct.batch=1;c.ct=ct;c.supplyRaw=value.data?.parsed?.info?.supply;c.tokenProgram=value.owner;require(DIR+'/coin-profile.js').applyMintIdentity(c,value,at);PRE_STATS.ct++;}catch{PRE_STATS.errors++;}}
+     if(task.curve!=null){c.creatorAttemptAt=at;const creator=require(DIR+'/holder-census.js').curveCreator(values[task.curve],{mint:c.a,decode58:b58dec,encode58:b58enc});if(creator){c.creatorAddress=creator;c.creatorObservedAt=at;c.creatorIdentitySource='verified-launch-curve-state';PRE_STATS.creators=(PRE_STATS.creators||0)+1;}}
+     if(task.metadata!=null){c.metadataAttemptAt=at;const value=values[task.metadata];if(value?.owner!==META)continue;try{const bytes=b64(value.data?.[0]);if(pk(bytes,33)!==c.a)continue;const api=require(DIR+'/coin-profile.js'),meta=api.parseMetadata(bytes);api.applyIdentity(c,meta,at);if(c.ct){c.ct.metaMut=metaMutable(bytes);c.ct.metaMutAt=at;}c.metadataReason=null;PRE_STATS.metadata=(PRE_STATS.metadata||0)+1;}catch{c.metadataReason='metadata-invalid';}}
+    }
+   }catch(e){if(e.code==='BUDGET_DEFERRED')PRE_STATS.deferred++;else{PRE_STATS.errors++;err('identity batch '+e.message)}}
+  }
 }
 
 /* ---------- миграция. Доказательство = 2 условия вместе:
@@ -915,7 +918,7 @@ async function collectPoolBatch(part){
 async function chainObsLoop(){for(;;){const now=Date.now();
   try{
     // Pool balances precede holders. Oldest due observations are served first.
-    if(now-(globalThis.lastPools||0)>=10000){globalThis.lastPools=now;if(now-(globalThis.lastPreUrgent||0)>=30000&&SOURCE?.latest(200).some(r=>{const c=C.get(r.mint);return c&&(!c.ct||!c.n||!c.s||(!c.i&&!c.uri));})){globalThis.lastPreUrgent=now;await preChainSweep();}const jobs=[];
+    if(now-(globalThis.lastPools||0)>=10000){globalThis.lastPools=now;if(now-(globalThis.lastPreUrgent||0)>=30000&&SOURCE?.latest(200).some(r=>{const c=C.get(r.mint);return c&&(!c.ct||!c.supplyRaw||!c.creatorAddress||!c.n||!c.s||(!c.i&&!c.uri));})){globalThis.lastPreUrgent=now;await preChainSweep();}const jobs=[];
       for(const c of C.values()){if(!isOk(c))continue;const a=ageMin(c,now);if(a<0||a>24*60+15)continue;c.raw=c.raw||{};
         const rm=RAW_M.find(m=>!c.raw[m]&&a>=m&&a<m+Math.max(2,m*.1));
         for(const m of RAW_M)if(!c.raw[m]&&a>=m+Math.max(2,m*.1))c.raw[m]={at:now,miss:1,reason:c.poolBudgetDeferredAt?'budget':'not-observed'};

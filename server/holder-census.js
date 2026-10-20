@@ -18,4 +18,12 @@ function curveCreator(account,{mint,decode58,encode58}){const bytes=Buffer.from(
  if(owner==='LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj'&&disc==='f7ede3f5d7c3de46'){offset=333;mintOffset=205;}
  if(offset===null||bytes.length<offset+32||mintOffset!==null&&!bytes.subarray(mintOffset,mintOffset+32).equals(Buffer.from(decode58(mint))))return null;const key=bytes.subarray(offset,offset+32);return key.some(x=>x!==0)?encode58(key):null;
 }
-module.exports={measure,HolderCensus,TOKEN,T22,curveCreator};
+async function identityPlan(coins,{getRecord,now,curveOf,metadataOf,limit=100}){
+ const tasks=[],addresses=[],index=new Map(),add=address=>{if(!index.has(address)){index.set(address,addresses.length);addresses.push(address);}return index.get(address);};
+ const candidates=[...coins].filter(c=>{const r=getRecord(c.a);return r&&now-r.acceptedAt<2*3600000&&now-(c.identityAttemptAt||0)>=60000;}).sort((a,b)=>Number(now-getRecord(a.a).acceptedAt>20*60000)-Number(now-getRecord(b.a).acceptedAt>20*60000)||(a.identityAttemptAt||0)-(b.identityAttemptAt||0)||getRecord(b.a).acceptedAt-getRecord(a.a).acceptedAt);
+ for(const c of candidates){const row=getRecord(c.a),mint=!c.ct||!c.supplyRaw||!c.tokenProgram,curve=!c.creatorAddress&&(row.proof?.curve||c.mg?.watch||c.creatorCurveCandidate||c.mg?.k==='pump'),metadata=(!c.n||!c.s||!c.i&&!c.uri)&&now-(c.metadataAttemptAt||0)>=5*60000;
+  if(!mint&&!curve&&!metadata)continue;const wanted=[];if(mint)wanted.push(['mint',c.a]);if(curve)wanted.push(['curve',row.proof?.curve||c.mg?.watch||c.creatorCurveCandidate||await curveOf(c.a)]);if(metadata)wanted.push(['metadata',await metadataOf(c.a)]);
+  const needed=new Set(wanted.map(x=>x[1]).filter(a=>!index.has(a)));if(addresses.length+needed.size>limit)continue;const task={coin:c};for(const [key,address] of wanted)task[key]=add(address);tasks.push(task);
+ }return {addresses,tasks};
+}
+module.exports={identityPlan,measure,HolderCensus,TOKEN,T22,curveCreator};
