@@ -90,3 +90,8 @@ test('collector resolves a verified administrative notification without admittin
  const ctx={require,DIR:path.join(__dirname,'../server'),Buffer,Date,Map,Set,TextEncoder,SOURCE:source,rpc:async(m)=>{calls.push(m);return m==='getSignaturesForAddress'?[{signature:'sig',slot:10,err:null}]:transaction;},b58dec:x=>Buffer.from(x,'hex')};vm.createContext(ctx);const code=fs.readFileSync(path.join(__dirname,'../server/collector.js'),'utf8');vm.runInContext(code.slice(code.indexOf('async function processFastMigration('),code.indexOf('function offerFastMigration('))+'\nthis.run=processFastMigration;',ctx);
  const result=await ctx.run({curve:'curve',mint:M,kind:'dbc',slot:10,receivedAt:Date.now()});a.equal(result.outcome,'non-migration-update');a.equal(source.has(M),false);a.deepEqual(calls,['getSignaturesForAddress','getTransaction']);a.equal(source.dailySummary().after.unverifiedByReason['non-migration-update'],1);
 });
+
+
+test('all official DBC fee and surplus instructions require the exact curve position and never count as migration proof',()=>{
+ const {administrativeUpdate,administrativeSpecs}=require('../server/migration-fast');for(const spec of administrativeSpecs){const t=tx(specs.find(s=>s.family==='dbc')),ix=t.transaction.message.instructions[0];ix.accounts=Array.from({length:12},(_,i)=>i);t.transaction.message.accountKeys[spec.curve]='notification-curve';ix.data=spec.discriminator;a.equal(administrativeUpdate(t,'notification-curve',x=>Buffer.from(x,'hex')),true,spec.name);a.equal(administrativeUpdate(t,'wrong-curve',x=>Buffer.from(x,'hex')),false,spec.name);a.equal(migrationCandidates(t,x=>Buffer.from(x,'hex')).length,0,spec.name);}
+});
