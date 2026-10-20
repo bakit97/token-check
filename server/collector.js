@@ -88,7 +88,7 @@ const RPC_CACHE=new Map();
 async function rpc(method,params,options={}){
   if(!RESOURCE)throw Object.assign(new Error('Helius accounting unavailable'),{code:'BUDGET_DEFERRED'});
   const context=options.context||CTX,priority=options.priority??({'миграция':'migration','кривые':'migration','сверка':'reconcile','пулы':'pools','держатели':'holders','контракт':'metadata','новые до миграции':'pre'}[context]||'background'),source=options.source||context;
-  const cacheable=['getTransaction','getSignaturesForAddress','getProgramAccounts','getSlot'].includes(method);
+  const cacheable=options.cache!==false&&['getTransaction','getSignaturesForAddress','getProgramAccounts','getSlot'].includes(method);
   const cacheKey=cacheable?method+JSON.stringify(params):null,cached=RPC_CACHE.get(cacheKey);
   if(cached&&cached.until>Date.now())return cached.value;
   const key=await heliusKey();if(!key)throw new Error('нет ключа Helius');
@@ -987,18 +987,18 @@ function pumpCurveComplete(curve,u,slot){const now=Date.now();if(!u||u.length<49
   queueMigrationSignal(c,now);if(c.mg){c.mg.force=1;delete c.mg.final}}
 async function processFastMigration(task){
  const api=require(DIR+'/migration-fast.js'),options={priority:'migration-fast',context:'миграция:быстро',source:'migration-fast',urgent:true,maxBytes:3*1024*1024};
- let signatures=task.signatures||(task.signature?[task.signature]:[]);let outcome=null;
- if(!signatures.length){const rows=await rpc('getSignaturesForAddress',[task.curve,{limit:3,commitment:'confirmed'}],options);signatures=(rows||[]).filter(r=>r.err===null&&(!task.slot||Math.abs(r.slot-task.slot)<=2)).map(r=>r.signature).slice(0,2);}
+ let signatures=task.signature?[task.signature]:Object.keys(task.proofs||{}).filter(sig=>task.proofs[sig].some(v=>v.curve===task.curve));let outcome=null,proofSeen=false;
+ if(!signatures.length){const rows=await rpc('getSignaturesForAddress',[task.curve,{limit:6,commitment:'confirmed'}],{...options,cache:false});signatures=(rows||[]).filter(r=>r.err===null&&(!task.slot||Math.abs(r.slot-task.slot)<=2)).map(r=>r.signature).slice(0,6);}
  if(!signatures.length)throw Object.assign(Error('migration transaction pending'),{code:'TX_PENDING'});
- task.signatures=signatures;task.proofs=task.proofs||{};
+ task.proofs=task.proofs||{};
  for(const signature of signatures){const tx=task.proofs[signature]?null:await rpc('getTransaction',[signature,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}],options);if(!tx&&!task.proofs[signature])throw Object.assign(Error('migration transaction pending'),{code:'TX_PENDING'});
   const candidates=task.proofs[signature]||(task.proofs[signature]=api.migrationCandidates(tx,b58dec));
-  for(const v of candidates){if(v.signature!==signature)continue;task.mint=v.mint;let official=false;
+  for(const v of candidates){if(v.signature!==signature||(task.curve&&v.curve!==task.curve))continue;proofSeen=true;task.mint=v.mint;let official=false;
    if(v.family==='pump')official=await bondingCurveOf(v.mint)===v.curve&&await canonicalPoolOf(v.mint,v.quote)===v.pool;
    else if(v.family==='launch'){const [a,b]=cmpAsc(v.mint,v.quote);official=await launchPoolOf(v.mint,v.quote)===v.curve&&await findPDA([new TextEncoder().encode('pool'),b58dec(v.config),b58dec(a),b58dec(b)],CPMM)===v.pool;}
    else if(v.family==='launch-v4')official=await launchPoolOf(v.mint,v.quote)===v.curve&&await findPDA([b58dec(AMM4),b58dec(v.market),new TextEncoder().encode('amm_associated_seed')],AMM4)===v.pool;
    else if(v.family==='dbc-v1'){const [a,b]=orderKeys(v.mint,v.quote);official=await findPDA([a,b,b58dec(v.config)],DAMM1)===v.pool;}
-   else if(v.family==='dbc'){official=(await officialPools('dbc',v.mint,v.quote)).includes(v.pool);if(!official){const account=(await rpc('getAccountInfo',[v.pool,{encoding:'base64'}],options))?.value,u=b64(account?.data?.[0]);official=account?.owner===DAMM2&&u?.length>=680&&pk(u,648)===DBC_AUTH&&pair2(u,168,200,v.mint)===v.quote;}}
+   else if(v.family==='dbc'){official=(await officialPools('dbc',v.mint,v.quote)).includes(v.pool);if(!official){const account=(await rpc('getAccountInfo',[v.pool,{encoding:'base64',commitment:'confirmed'}],options))?.value;if(!account)throw Object.assign(Error('confirmed migration pool account pending'),{code:'TX_PENDING'});const u=b64(account?.data?.[0]);official=account?.owner===DAMM2&&u?.length>=680&&pk(u,648)===DBC_AUTH&&pair2(u,168,200,v.mint)===v.quote;}}
    if(!official)continue;SOURCE.observe({mint:v.mint,phase:'after',at:task.receivedAt,origin:'fast-'+task.kind});if(SOURCE.get(v.mint)?.phase==='after'){outcome='already-admitted';continue;}
    const now=Date.now(),limit=SOURCE.settings().afterMinutes*60000;if(v.eventAt>now)throw Object.assign(Error('migration block clock pending'),{code:'TX_PENDING'});if(now-v.eventAt>limit){SOURCE.observe({mint:v.mint,phase:'after',outcome:'tooOld',lateMs:now-v.eventAt-limit});outcome='too-old';continue;}
    const family=v.family==='dbc-v1'?'dbc':v.family;let c=C.get(v.mint);if(!c){c={a:v.mint,n:'',s:'',i:'',p:v.pool,d:DEXOF[family],q:v.quote,t:v.eventAt,seen:task.receivedAt,firstPostSeenAt:Math.max(task.receivedAt,v.eventAt),disc:'migration-signature',discoverySource:'migration-fast',pools:[v.pool],fv:FV};C.set(v.mint,c)}else moveTo(c,v.pool,family,{t:v.eventAt});
@@ -1006,7 +1006,7 @@ async function processFastMigration(task){
    setMg(c,'ok',family,'',{owner:v.dexProgram,pool:v.pool,sig:signature,mT:v.eventAt,ix:v.ix});const decision=SOURCE.afterVerifiedMigration(c);if(decision.admitted){FAST_DISCOVERY.accepted('after',v.eventAt,family,now);c.admissionVerifiedAt=now;outcome='accepted';}else outcome=decision.reason||'unverified';
   }
  }
- if(!outcome)throw Object.assign(Error('migration instruction or official pool proof not found'),{code:'PROOF_NOT_FOUND'});
+ if(!outcome)throw Object.assign(Error('migration instruction or official pool proof not found'),{code:task.curve&&!proofSeen?'TX_PENDING':'PROOF_NOT_FOUND'});
  return {outcome};
 }
 function offerFastMigration(task){if(!FAST_DISCOVERY)return;FAST_DISCOVERY.offer({...task,receivedAt:Date.now()});}
