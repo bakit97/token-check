@@ -45,3 +45,10 @@ test('recovery may use a rate-limited public history fallback when Helius is res
  let now=T,calls=0;const deferred=()=>Object.assign(Error('budget'),{code:'BUDGET_DEFERRED'}),rows=[{signature:'first',blockTime:T/1000,err:null}],adapter=new R.RecoveryRPC({now:()=>now,fallback:async()=>{throw deferred()},fetch:async(url,opt)=>{calls++;a.equal(url,'https://api.mainnet-beta.solana.com');a.equal(opt.headers.Authorization,undefined);a.equal(JSON.parse(opt.body).method,'getSignaturesForAddress');return {ok:true,headers:{get:()=>null},body:[Buffer.from(JSON.stringify({result:rows}))]};}});
  a.deepEqual(await adapter.call('getSignaturesForAddress',['pool',{}]),rows);a.deepEqual(await adapter.call('getSignaturesForAddress',['pool',{}]),rows);a.equal(calls,1);await a.rejects(adapter.call('getSignaturesForAddress',['other',{}]),{code:'BUDGET_DEFERRED'});now+=20001;await adapter.call('getSignaturesForAddress',['other',{}]);a.equal(calls,2);a.equal(adapter.summary().publicSuccess,2);
 });
+
+test('overlapping active-gap requests reuse queued work and completed studies do not duplicate their recovery window',t=>{
+ const manager=new R.ObservationRecovery({dir:temp(t),now:()=>T+60*M,gt:async()=>response([]),rpc:async()=>[],onUpdated:()=>{}}),study=manager.enqueue({mint,pool:'pool',start:T,end:T+60*M,kind:'one'});
+ a.equal(manager.enqueue({mint,pool:'pool',start:T+5*M,end:T+10*M,kind:'one-gap'}).id,study.id);a.equal(manager.jobs.size,1);
+ const gap=manager.enqueue({mint:'other',pool:'other',start:T,end:T+5*M,kind:'one-gap'});a.equal(manager.enqueue({mint:'other',pool:'other',start:T,end:T+10*M,kind:'one-gap'}).id,gap.id);
+ manager.enqueue({mint:'other',pool:'other',start:T,end:T+60*M,kind:'one'});manager.compactQueued();a.equal(gap.state,'superseded');a.equal(manager.summary().byKind.one.jobs,2);
+});
