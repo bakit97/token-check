@@ -23,7 +23,7 @@ test('Server daily counters show zero only for healthy current-day feeds; missin
    $:id=>{if(!nodes.has(id))nodes.set(id,{textContent:''});return nodes.get(id)}};
  const code=js.slice(js.indexOf('function dailySourceText('),js.indexOf('function renderLocalPreview('));
  vm.runInNewContext(code,context);context.renderDailySource();
- assert.equal(nodes.get('dailyBefore').textContent,'До миграции: нет данных');
+ assert.equal(nodes.get('dailyBefore').textContent,'Ручной пул: нет данных');
  assert.match(nodes.get('dailyAfter').textContent,/увидели 1240 · прошли 312 · опоздали 870/);
  assert.match(nodes.get('dailyAfter').textContent,/1,5 мин/);
  assert.match(nodes.get('dailySourceNote').textContent,/день неполный/);
@@ -129,7 +129,7 @@ test('главный источник authoritative: только принято
   assert.match(el('coinList').innerHTML,/Допущена/);
   assert.doesNotMatch(el('coinList').innerHTML,/Не допущена/);
   assert.equal(el('ageAfter').disabled,true,'браузер не должен притворяться серверной настройкой');
-  assert.match(el('sourceNote').textContent,/Источник до миграции|журнал сервера/);
+  assert.match(el('sourceNote').textContent,/Источник ручных пулов|журнал сервера/);
 });
 
 

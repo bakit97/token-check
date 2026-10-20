@@ -28,7 +28,7 @@ var serverPassActive=false,serverPassRows=[],passMeta=null,serverR2Active=false,
 var controlEndpoint=null,serverR2Curve=null,filterAuditMeta=null,storageMeta=null,libraryMeta=null;
 var moduleDraft=new Map();
 function draftModuleKey(m){return m.phase+':'+m.level+':'+m.filterId}
-var phaseNames={before:'🌱 До миграции',after:'🎓 После миграции'};
+var phaseNames={before:'🧪 Ручной пул',after:'🎓 После миграции'};
 function save(){try{localStorage.setItem(STORE,JSON.stringify(s))}catch(e){note('Не удалось сохранить настройки на устройстве')}}
 function saveSignals(){try{localStorage.setItem(PASS_LOG,JSON.stringify(signalLog))}catch(e){note('История сигналов не сохранилась на телефоне')}}
 function saveBank(){try{localStorage.setItem(BANK,JSON.stringify(researchServerBank?{'1':[],'2':bank['2']}:bank));lastBankWrite=now()}catch(e){note('Локальная память телефона заполнена: проверьте сохранение данных')}}
@@ -105,6 +105,7 @@ function sourceCard(record){
 function cardMarket(c){const live=liveOf(c)||{},row=(c.ds||[]).at(-1),server=Object.prototype.hasOwnProperty.call(c,'b5');
  return Object.assign({},live,{b5:server?c.b5:(live.b5??row?.[4]??null),s5:server?c.s5:(live.s5??row?.[5]??null)});
 }
+function venueOf(c){var e=c._entry||{},v=e.venue||c.venue;if(v)return v;var f=e.family||c.family,F={pump:'pump.fun → PumpSwap',dbc:'Meteora DBC → Meteora',launchlab:'Raydium LaunchLab → Raydium'};if(F[f])return F[f];var t=c.ty||'';return /^Другое/.test(t)?'':t}
 function cardAgeAt(c){return c._entry?.phase==='after'?(Number.isSafeInteger(c.createdAt)?c.createdAt:0):(c._entry?.eventAt||0)}
 function admitted() {
   // FAIL CLOSED: if the authoritative server source is stale or missing,
@@ -115,7 +116,7 @@ function admitted() {
     var raw=byMint.get(record.a)||{};
     return Object.assign({},raw,sourceCard(record),{a:record.a,n:raw.n||record.n||'',
       s:raw.s||record.s||'',i:raw.i||record.i||'',
-      _entry:{phase:record.phase,eventAt:record.eventAt,acceptedAt:record.acceptedAt},
+      _entry:{phase:record.phase,eventAt:record.eventAt,acceptedAt:record.acceptedAt,venue:record.venue||null,family:record.family||null},
       _sourceProof:record.proofSig||null,_uri:record.uri||null});
   }).sort(function(a,b){return b._entry.acceptedAt-a._entry.acceptedAt});
 }
@@ -323,7 +324,7 @@ function coinHtml(c,extra){
   var cl=cloneInfo(c),clb=cl&&cl.n>1?' <span class="clone">имя ×'+(cl.lower?'≥':'')+cl.n+' · №'+(cl.lower?'≥':'')+cl.rank+'</span>':'';
   return '<button type="button" class="coin '+(e.phase==='before'?'pre':'post')+'" data-coin="'+esc(mint(c))+'">'+
     (img?'<img class="avatar" src="'+esc(img)+'" alt="" loading="lazy">':'<span class="avatar empty"'+(c._uri?' data-uri="'+esc(c._uri)+'"':'')+'>'+esc((sy||nm||'?').slice(0,2))+'</span>')+
-    '<span class="body"><span class="name">'+name+symbol+'</span><span class="detail">'+(clb?clb.replace(' <span','<span')+' ':'')+(function(){var ag=cardAgeAt(c),pre=e.phase==='before';if(!pre&&!ag)return '🎓 миграция <b class="ago sh" data-t="'+(+e.eventAt||0)+'">'+agoShort(e.eventAt)+'</b>';return (pre?'🌱 ':'🎓 возраст ')+'<b class="ago sh" data-t="'+ag+'">'+agoShort(ag)+'</b>'})()+' · 👁 '+(e.acceptedAt&&e.eventAt?spd(e.acceptedAt-e.eventAt):'—')+'<span class="mline">'+(ml?' · '+mlHtml(ml):'')+'</span></span>'+
+    '<span class="body"><span class="name">'+name+symbol+'</span><span class="detail">'+(clb?clb.replace(' <span','<span')+' ':'')+(function(){var ag=cardAgeAt(c),pre=e.phase==='before';if(!pre&&!ag)return '🎓 миграция <b class="ago sh" data-t="'+(+e.eventAt||0)+'">'+agoShort(e.eventAt)+'</b>';return (pre?'🧪 ':'🎓 возраст ')+'<b class="ago sh" data-t="'+ag+'">'+agoShort(ag)+'</b>'})()+' · 👁 '+(e.acceptedAt&&e.eventAt?spd(e.acceptedAt-e.eventAt):'—')+'<span class="mline">'+(ml?' · '+mlHtml(ml):'')+'</span></span>'+
     (extra?'<span class="detail">'+(extra.charAt(0)==='<'?extra:esc(extra))+'</span>':'')+'</span><span class="right"><span class="price">'+price(L&&L.price||p&&p[1])+'</span><span class="growbox">'+growthHtml(c)+'</span><span class="sparkbox">'+spark(c)+'</span></span></button>';
 }
 function pc(v){return v==null||!Number.isFinite(+v)?'—':(v>0?'+':'')+Number(v).toFixed(Math.abs(v)>=10?0:1)+'%'}
@@ -336,7 +337,7 @@ function detailStats(m){var c=DETAIL_COIN||{},L=cardMarket(c),sol=solInPool(c),h
     ['SOL в пуле',sol==null?'—':sol.toFixed(sol<10?2:0)],['Объём 5м',usd(L.v5)],['Пок/прод 5м',(L.b5==null&&L.s5==null)?'—':'<b class="bu">'+(L.b5||0)+'↑</b> <b class="sl">'+(L.s5||0)+'↓</b>'],
     ['5м / 1ч',pc(L.ch5)+' / '+pc(L.ch1h)],['Топ-10',h?(h.top10*100).toFixed(0)+'%':'—'],['Контракт',safe==null?'—':safe?'<span class="good">чистый</span>':'<span class="bad">опасный</span>']];
   return cells.map(function(x){return '<div class="mini"><span>'+x[0]+'</span><b>'+x[1]+'</b></div>'}).join('')}
-function chartSrc(m){var L=LIVE[m]||{};return 'https://dexscreener.com/solana/'+(L.pair||m)+'?embed=1&loadChartSettings=0&trades=0&tabs=0&info=0&chartLeftToolbar=0&chartTheme=dark&theme=dark&chartStyle=1&chartType=usd&interval=1'}
+function chartSrc(m,c){var L=LIVE[m]||{};return 'https://dexscreener.com/solana/'+((c&&(c.pair||c.p))||L.pair||m)+'?embed=1&loadChartSettings=0&trades=0&tabs=0&info=0&chartLeftToolbar=0&chartTheme=dark&theme=dark&chartStyle=1&chartType=usd&interval=1'}
 // ---- Путь монеты по нашей системе: базовый фильтр → 1 уровень → исследование 1 → 2 уровень → исследование 2 ----
 function stepRow(icon,title,text){return '<div class="step"><span class="si">'+icon+'</span><span class="st"><b>'+title+'</b> '+text+'</span></div>'}
 function left(ms){if(ms<=0)return 'сейчас';var m=Math.round(ms/60000);return m<60?m+' мин':Math.floor(m/60)+' ч '+(m%60)+' мин'}
@@ -344,7 +345,7 @@ function pathHtml(c){var e=c._entry||{},m=mint(c),t=now(),chain=[],det=[];
   var lim=sourceMeta&&sourceMeta.settings?(e.phase==='before'?sourceMeta.settings.beforeMinutes:sourceMeta.settings.afterMinutes):null;
   var age=e.acceptedAt&&e.eventAt?(e.acceptedAt-e.eventAt)/1000:null;
   chain.push(['Время','✅']);
-  det.push(stepRow('✅','Время:',(e.phase==='before'?'до миграции':'после миграции')+' · вошла '+(age==null?'—':age<1?'сразу':age<60?'через '+Math.round(age)+' с':'через '+(age/60).toFixed(1)+' мин')+(lim?' (лимит '+lim+' мин)':'')));
+  det.push(stepRow('✅','Время:',(e.phase==='before'?'ручной пул':'после миграции')+' · вошла '+(age==null?'—':age<1?'сразу':age<60?'через '+Math.round(age)+' с':'через '+(age/60).toFixed(1)+' мин')+(lim?' (лимит '+lim+' мин)':'')));
   var cfg=passMeta&&passMeta.serverConfig,row=serverPassRows.find(function(r){return r.mint===m});
   var f1=[];if(cfg&&cfg.enabled){var byId={};(cfg.filters||[]).forEach(function(f){byId[f.id]=f});var dec=(cfg.decisionMinutes||10)*60000,deadline=(e.acceptedAt||0)+dec;
     var early=e.acceptedAt<(cfg.activatedAt||0);
@@ -373,8 +374,8 @@ function pathHtml(c){var e=c._entry||{},m=mint(c),t=now(),chain=[],det=[];
 // ---- Сделки в реальном времени (GeckoTerminal, только пока окно открыто) ----
 var TRADES_AT=0;
 async function loadTrades(){var d=document.getElementById('openCoinDetail');if(!d)return;var m=d.dataset.mint,L=LIVE[m]||{},box=document.getElementById('coinTrades');if(!box)return;
-  if(!L.pair){box.innerHTML='<p class="hint">Пул ещё не найден.</p>';return}
-  try{var r=await fetch('https://api.geckoterminal.com/api/v2/networks/solana/pools/'+L.pair+'/trades',{headers:{accept:'application/json'}});
+  var dc=DETAIL_COIN||{},pr=dc.pair||dc.p||L.pair;if(!pr){box.innerHTML='<p class="hint">Пул ещё не найден.</p>';return}
+  try{var r=await fetch('https://api.geckoterminal.com/api/v2/networks/solana/pools/'+pr+'/trades',{headers:{accept:'application/json'}});
     if(!r.ok)throw Error('HTTP '+r.status);var j=await r.json(),rows=(j.data||[]).slice(0,100).map(function(x){return x.attributes||{}});
     var B=rows.filter(function(a){return a.kind==='buy'}),S=rows.filter(function(a){return a.kind!=='buy'}),sm=function(g){return g.reduce(function(t,a){return t+(+a.volume_in_usd||0)},0)},ts=document.getElementById('coinTradeSum');
     if(ts)ts.innerHTML='<p class="hint" style="grid-column:1/3;margin:0">за последние '+rows.length+' сделок</p><div class="tcol b"><b>▲ Покупки</b>'+B.length+' · '+usd(sm(B))+'</div><div class="tcol s"><b>▼ Продажи</b>'+S.length+' · '+usd(sm(S))+'</div>';
@@ -389,14 +390,14 @@ function detail(c){
     '<div class="row"><div class="row" style="gap:9px;justify-content:flex-start">'+(imgOf(c)?'<img class="avatar dav" src="'+esc(imgOf(c))+'" alt="">':'<span class="avatar empty dav">'+esc((c.s||c.n||'?').slice(0,2))+'</span>')+'<div><h2 style="margin:0">'+esc(c.n||c.s||'Монета')+((c.s&&c.n&&c.s.toLowerCase()!==c.n.toLowerCase())?' <small class="muted">'+esc(c.s)+'</small>':'')+'</h2>'+
     '<div class="dhead">'+(function(){var pre=e.phase==='before',ag=cardAgeAt(c),r=[];
       r.push('<div><span>Возраст</span> '+(ag?'<b class="ago sh" data-t="'+ag+'">'+agoShort(ag)+'</b>':'<b>неизвестен</b>')+'</div>');
-      r.push('<div><span>Миграция</span> '+(pre?'<b>нет</b>':ag&&e.eventAt?'<b>в '+(e.eventAt-ag<3600000?spd(e.eventAt-ag):agoShort(now()-(e.eventAt-ag)))+'</b>':e.eventAt?'<b class="ago sh" data-t="'+e.eventAt+'">'+agoShort(e.eventAt)+'</b> назад':'—')+'</div>');
-      r.push('<div><span>Путь</span> <b>'+(pre?'🌱 До':'🎓 После')+'</b>'+(e.acceptedAt&&e.eventAt?' · 👁 поймали через '+spd(e.acceptedAt-e.eventAt)+' после '+(pre?'рождения':'миграции'):'')+'</div>');
+      var vn=venueOf(c);r.push('<div><span>Миграция</span> '+(pre?'<b>нет'+(vn?' · 🧪 '+esc(vn):'')+'</b>':ag&&e.eventAt?'<b>в '+(e.eventAt-ag<3600000?spd(e.eventAt-ag):agoShort(now()-(e.eventAt-ag)))+'</b>':e.eventAt?'<b class="ago sh" data-t="'+e.eventAt+'">'+agoShort(e.eventAt)+'</b> назад':'—')+(!pre&&vn?' · <b>'+esc(vn)+'</b>':'')+'</div>');
+      r.push('<div><span>Путь</span> <b>'+(pre?'🧪 Ручной пул':'🎓 После')+'</b>'+(e.acceptedAt&&e.eventAt?' · 👁 поймали через '+spd(e.acceptedAt-e.eventAt)+' после '+(pre?'открытия пула':'миграции'):'')+'</div>');
       return r.join('')})()+'</div></div></div><button id="closeCoin">✕</button></div>'+
-    '<div class="chartbox"><iframe id="coinChart" src="'+esc(chartSrc(m))+'" loading="lazy" title="График"></iframe></div>'+
+    '<div class="chartbox"><iframe id="coinChart" src="'+esc(chartSrc(m,c))+'" loading="lazy" title="График"></iframe></div>'+
     '<div class="minigrid" id="coinStats">'+detailStats(m)+'</div>'+
     '<div class="sec">Сделки</div><div id="coinTradeSum" class="tsum"></div><div id="coinTrades" class="trades"><p class="hint">загрузка…</p></div>'+
     '<div class="sec">Наша система</div><div class="path" id="coinPath">'+pathHtml(c)+'</div>'+
-    '<div class="action-bar"><a class="btn" target="_blank" rel="noopener" href="https://dexscreener.com/solana/'+esc(L.pair||m)+'">DexScreener</a>'+
+    '<div class="action-bar"><a class="btn" target="_blank" rel="noopener" href="https://dexscreener.com/solana/'+esc(c.pair||c.p||L.pair||m)+'">DexScreener</a>'+
     '<a class="btn" target="_blank" rel="noopener" href="https://gmgn.ai/sol/token/'+esc(m)+'">GMGN</a>'+
     '<a class="btn" target="_blank" rel="noopener" href="https://solscan.io/token/'+esc(m)+'">Solscan</a>'+
     '<button type="button" id="copyMint">Копировать</button></div>'+
@@ -405,7 +406,7 @@ function detail(c){
 function updateDetailStats(){var d=document.getElementById('openCoinDetail');if(!d)return;var m=d.dataset.mint;
   var st=document.getElementById('coinStats');if(st)st.innerHTML=detailStats(m);
   var pt=document.getElementById('coinPath');if(pt&&DETAIL_COIN){var op=pt.querySelector('details.fold[open]');pt.innerHTML=pathHtml(DETAIL_COIN);if(op){var f=pt.querySelector('details.fold');if(f)f.open=true}}
-  var fr=document.getElementById('coinChart');if(fr&&LIVE[m]&&LIVE[m].pair&&fr.src.indexOf(LIVE[m].pair)<0)fr.src=chartSrc(m);
+  var fr=document.getElementById('coinChart');var dc=DETAIL_COIN||{};if(fr&&!(dc.pair||dc.p)&&LIVE[m]&&LIVE[m].pair&&fr.src.indexOf(LIVE[m].pair)<0)fr.src=chartSrc(m,dc);
   if(now()-TRADES_AT>10000)loadTrades()}
 function showCoinDetail(c,anchorId){
   if(!c||!c._entry)return;
@@ -427,7 +428,7 @@ function renderAll(){
   var st=sourceMeta&&sourceMeta.settings;if($('ageSummary'))$('ageSummary').textContent=st?'до '+st.beforeMinutes+' мин · после '+st.afterMinutes+' мин':'—';
   setTimeout(function(){var n=$('sourceNote');if(n)n.classList.toggle('hide',/^✓/.test(n.textContent))},0);
   $('sourceNote').textContent=sourceActive?
-    (sourceMeta?.preConnected?'✓ Главный источник: журнал сервера. До миграции — публичные торговые кривые Pump.fun; после — подтверждённые миграции. Дублей нет.':'⚠ Источник до миграции пока не подтвердил связь с сетью. Постмиграционные события продолжают проверяться.')+' Возраст проверяется при ВХОДЕ, карточка не исчезает через 2 минуты.':
+    (sourceMeta?.preConnected?'✓ Главный источник: журнал сервера. Ручные пулы — проверенное открытие пула; после — подтверждённые миграции. Дублей нет.':'⚠ Источник ручных пулов пока не подтвердил связь с сетью. Постмиграционные события продолжают проверяться.')+' Возраст проверяется при ВХОДЕ, карточка не исчезает через 2 минуты.':
     '⛔ Главный источник сервера недоступен или устарел. Вход новых монет приостановлен. Непроверенные кандидаты из старых данных сюда не подставляются.';
   var list=lastVisible.slice(0,s.limit);
   updateList($('coinList'),list,function(c){return mint(c)},function(c){return coinHtml(c)},'<div class="empty-state">Пока нет подтверждённых записей в этом потоке. Монеты, не успевшие пройти фильтр возраста на входе, не добавляются позже задним числом.</div>');
@@ -450,7 +451,7 @@ function renderDailySource(){
   var daily=sourceMeta?.daily;
   var valid=sourceActive&&Number.isFinite(sourceMeta?.updated)&&now()-sourceMeta.updated<=7*60000&&daily?.schema===1&&daily.day===day(now())&&daily.complete===true;
   var availability=sourceMeta?.dailyAvailability;
-  $('dailyBefore').textContent=dailySourceText('До миграции',daily?.before,valid&&availability?.before===true);
+  $('dailyBefore').textContent=dailySourceText('Ручной пул',daily?.before,valid&&availability?.before===true);
   $('dailyAfter').textContent=dailySourceText('После миграции',daily?.after,valid&&availability?.after===true);
   $('dailySourceNote').textContent=valid?
     'Уникальные mint в каждом потоке. Опоздание — превышение порога возраста.'+(daily.partialDay?' Сегодня учёт с '+time(daily.startedAt)+' (UTC+5), день неполный.':'')+
@@ -615,7 +616,7 @@ function renderPassed(){
   var W=pwMin(),win=lastPassed.filter(function(q){return (q.firstSeenAt||q.deadline)+W*60000>now()}),ph=function(q){return (q.coin._entry||{}).phase};
   var PMm=PM_DRAFT||pwMode();document.querySelectorAll&&document.querySelectorAll('#pwMode [data-pm]').forEach(function(x){x.classList.toggle('active',x.dataset.pm===PMm)});$('pwSum').textContent=(pwMode()==='12'?'ур.1+2':'ур.1')+' · '+W+' мин';if($('pwApplyRow').classList.contains&&$('pwApplyRow').classList.contains('hide')){$('pwV').textContent=W;$('pwMin').value=W}
   var d0=new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Almaty'}));d0.setHours(0,0,0,0);var t0=Date.now()-(new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Almaty'}))-d0),td=lastPassed.filter(function(q){return (q.firstSeenAt||0)>=t0});
-  var totals=passMeta&&passMeta.today;$('pToday').textContent=totals&&totals.day===day(now())?'Сегодня сигналов: '+(totals.before+totals.after)+' · 🌱 '+totals.before+' · 🎓 '+totals.after:'Сегодня сигналов: нет данных';
+  var totals=passMeta&&passMeta.today;$('pToday').textContent=totals&&totals.day===day(now())?'Сегодня сигналов: '+(totals.before+totals.after)+' · 🧪 '+totals.before+' · 🎓 '+totals.after:'Сегодня сигналов: нет данных';
   $('pAllN').textContent=win.length;$('pBefN').textContent=win.filter(function(q){return ph(q)==='before'}).length;$('pAftN').textContent=win.filter(function(q){return ph(q)==='after'}).length;
   $('passedTab').textContent=win.length?' '+fmt(win.length):'';
   var sel=win.filter(function(q){return PF==='all'||ph(q)===PF});
@@ -628,7 +629,7 @@ function renderPassed(){
   $('passedArchiveList').innerHTML=history.length?history.map(function(x){
     var stamp=new Date(x.firstSeenAt).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
     return '<div class="vrow"><div class="row"><b>'+esc(x.name||x.mint)+'</b><span class="badge">'+esc(stamp)+'</span></div>'+
-      '<p class="muted">'+esc(x.phase==='before'?'🌱 До':'🎓 После')+' · '+esc(x.mint.slice(0,12))+'… · точка 0 '+time(x.zeroAt||x.deadline)+'</p>'+
+      '<p class="muted">'+esc(x.phase==='before'?'🧪 Ручной пул':'🎓 После')+' · '+esc(x.mint.slice(0,12))+'… · точка 0 '+time(x.zeroAt||x.deadline)+'</p>'+
       '<p class="muted">'+x.matches.map(function(f){return esc(f.name)+' · v'+esc(f.version)+' ('+esc(f.key)+' '+esc(f.op)+' '+fmt(f.value)+')'}).join(', ')+'</p></div>';
   }).join(''):'<p class="muted">Журнал пуст. Источником являются только признанные главным сервером монеты.</p>';
 }
@@ -683,7 +684,7 @@ function openTestSheet(ids){if(LP==='all'){note('Выбери До или Пос
   el.addEventListener('input',function(e){var t=e.target;if(t.dataset.tv)el.querySelector('.tv'+t.dataset.tv).textContent=t.value});
   el.addEventListener('click',function(e){var t=e.target;if(t===el||t.dataset.tclose){el.remove();return}if(t.dataset.trun){var a=+el.querySelector('[data-tv="a"]').value,b=+el.querySelector('[data-tv="b"]').value;el.remove();runLibTest(ids,a,b)}})}
 function modTile(m){var ev=m.eval||{},stale=modSig(m)!==m.evalSig&&!!(ev.train||ev.test||ev.live),age=m.createdAt?Math.max(0,Math.floor((Date.now()-m.createdAt)/864e5)):null;
-  return '<button type="button" class="modtile" data-mopen="'+esc(m.id)+'">'+(age!=null?'<span class="mage">'+(m.phase==='after'?'🎓 ':m.phase==='before'?'🌱 ':'')+age+' дн</span>':'')+'<b>'+esc(m.name)+'</b><span class="hint">вердикт '+m.dm+' мин</span>'+
+  return '<button type="button" class="modtile" data-mopen="'+esc(m.id)+'">'+(age!=null?'<span class="mage">'+(m.phase==='after'?'🎓 ':m.phase==='before'?'🧪 ':'')+age+' дн</span>':'')+'<b>'+esc(m.name)+'</b><span class="hint">вердикт '+m.dm+' мин</span>'+
     (stale?'<div class="mblk"><i>⚠ нужен перетест</i></div>':(ev.train?modBlk(ev.train,'mold','при создании'):'')+modBlk(ev.live,'mnow','сейчас'+(m.liveFrom&&!ev.live?' · с нуля':'')))+modTestBlk(ev.test)+'</button>'}
 function openModSheet(id){var openG={},m=JSON.parse(JSON.stringify(MODS[id])),old=document.getElementById('modSheet');if(old)old.remove();
   var el=document.createElement('div');el.id='modSheet';el.className='sheet';
@@ -740,7 +741,7 @@ function renderR1(){
       var bars=function(t,h,u){if(!h)return '';var mx=Math.max(1,...h.bins.map(function(b){return b.count}));return '<div class="dh"><b>'+t+'</b>'+(h.unknown?'<span class="hint" style="margin:0"> · неизв. '+h.unknown+'</span>':'')+'<div class="dbars">'+h.bins.map(function(b){return '<div class="db"><i style="height:'+Math.max(b.count?3:0,Math.round(b.count/mx*44))+'px"></i><span>'+b.count+'</span><small>'+lbl(b,u)+'</small></div>'}).join('')+'</div></div>'};
       var phs=R1P==='all'?['before','after']:[R1P];var tot=0;
       de.innerHTML=dist?phs.map(function(ph){var dp=dist[ph];if(!dp)return '';tot+=dp.completed||0;var allUnk=dp.uniqueBuyers&&dp.uniqueBuyers.known===0;
-        return '<div class="dph">'+(ph==='before'?'🌱 До':'🎓 После')+' · завершено '+dp.completed+'</div>'+bars('Активность, % времени',dp.activePct,'')+bars('Самый долгий простой, мин',dp.maxIdleObserved,'')+bars('Цена к концу, %',dp.priceChangePct,'')+(allUnk?'<p class="hint">Разные покупатели: пока не считаются сервером</p>':bars('Разные покупатели',dp.uniqueBuyers,''))}).join(''):'<p class="hint">Пока нет</p>';
+        return '<div class="dph">'+(ph==='before'?'🧪 Ручной пул':'🎓 После')+' · завершено '+dp.completed+'</div>'+bars('Активность, % времени',dp.activePct,'')+bars('Самый долгий простой, мин',dp.maxIdleObserved,'')+bars('Цена к концу, %',dp.priceChangePct,'')+(allUnk?'<p class="hint">Разные покупатели: пока не считаются сервером</p>':bars('Разные покупатели',dp.uniqueBuyers,''))}).join(''):'<p class="hint">Пока нет</p>';
       $('r1DistSum').textContent=dist?'завершено '+tot:''}
     $('r1Sum').textContent=cfg.hours+' ч · '+cfg.minActive+'% · '+cfg.maxIdle+' мин';
     var sel=all.filter(function(x){return R1F==='all'||x.label===R1F}).slice(-R1N).reverse();
@@ -900,7 +901,7 @@ function renderServerRuleHistory(){
       '🟢 '+v.positivePercent.toFixed(1)+'% · 🔴 '+v.negativePercent.toFixed(1)+
       '% · неизвестно '+fmt(v.missing):'Недостаточно обеих размеченных групп';};
     return '<div class="filter-row"><b>'+esc(x.name)+' · v'+fmt(x.version)+'</b>'+
-      '<span class="badge">'+esc(x.phase==='before'?'🌱 До':'🎓 После')+'</span>'+
+      '<span class="badge">'+esc(x.phase==='before'?'🧪 Ручной пул':'🎓 После')+'</span>'+
       '<p class="muted">'+esc(x.rule.key)+' '+esc(x.rule.op)+' '+fmt(x.rule.value)+
       ' · '+(x.archived?'Архив':'Серверная версия')+'</p>'+
       '<p class="muted">Исходная проверка: '+stats(x.original)+'</p>'+
@@ -919,7 +920,7 @@ function renderStore(){var box=$('storeBox');if(!box)return;if(LP==='all'){LP='b
   var info=STORE_KINDS.map(function(K){var g=classified(K[2])[K[3]].filter(function(x){return LP==='all'||r1Phase(x)===LP}),tg=phs.reduce(function(a,ph){return a+storeTarget(ph,K[0])},0);return {K:K,g:g,tg:tg}});
   var cur=info.find(function(i){return i.K[0]===STORE_K}),n=STORE_N[STORE_K]||20;
   var tabs='<div class="row" style="gap:5px;align-items:center"><div class="chips seg" style="margin:0;flex:1">'+info.map(function(i){return '<button type="button" data-sk="'+i.K[0]+'"'+(i.K[0]===STORE_K?' class="active"':'')+'>'+i.K[1].split(' ')[0]+' <span class="cnt">'+(storageMeta&&storageMeta.counts&&storageMeta.counts[LP]?fmt(storageMeta.counts[LP][i.K[0]]):'—')+'/'+fmt(i.tg)+'</span></button>'}).join('')+'</div><button type="button" class="add1" data-stgear="1" title="Настройка">⚙</button></div>';
-  var gear=!STORE_GEAR?'':(LP==='all'?'<p class="hint">Цель задаётся отдельно в 🌱 До и 🎓 После</p>':'<div class="frow" style="margin-top:6px"><div class="prow"><label>'+cur.K[1]+': хранить <b class="stv">'+storeTarget(LP,STORE_K)+'</b> монет</label><input type="range" min="50" max="5000" step="50" value="'+storeTarget(LP,STORE_K)+'" data-st="'+STORE_K+'"></div><div class="row applyrow"><button type="button" class="primary pbtn" data-stapply="'+STORE_K+'" style="margin-left:auto">Применить</button></div></div>');
+  var gear=!STORE_GEAR?'':(LP==='all'?'<p class="hint">Цель задаётся отдельно в 🧪 Ручной пул и 🎓 После</p>':'<div class="frow" style="margin-top:6px"><div class="prow"><label>'+cur.K[1]+': хранить <b class="stv">'+storeTarget(LP,STORE_K)+'</b> монет</label><input type="range" min="50" max="5000" step="50" value="'+storeTarget(LP,STORE_K)+'" data-st="'+STORE_K+'"></div><div class="row applyrow"><button type="button" class="primary pbtn" data-stapply="'+STORE_K+'" style="margin-left:auto">Применить</button></div></div>');
   var rows=cur.g.slice(-n).reverse().map(function(x){return coinHtml(coinOf(x))}).join('');
   box.innerHTML=tabs+gear+'<div class="meter" style="margin:8px 0"><div style="width:'+Math.min(100,100*cur.g.length/cur.tg)+'%"></div></div><div class="list">'+(rows||'<div class="empty-state">Пока нет</div>')+'</div>'+(cur.g.length>n?'<button type="button" class="add1" data-stmore="'+STORE_K+'">Показать ещё</button>':'')}
 function libRender(){var lvl=+s.level||1,rep=lvl===1?autoOne:autoTwo,h=renderAutoSuggestions(rep,lvl,LP);
@@ -954,7 +955,7 @@ function renderLibrary(){
       var later=p.background&&p.background.positivePercent!=null&&p.background.negativePercent!=null?
         '🟢 '+p.background.positivePercent.toFixed(1)+'% · 🔴 '+p.background.negativePercent.toFixed(1)+'%':
         'ещё нет обеих групп';
-      return '<p class="muted">'+esc(p.phase==='before'?'🌱 До':'🎓 После')+
+      return '<p class="muted">'+esc(p.phase==='before'?'🧪 Ручной пул':'🎓 После')+
         ' · начальные: '+start+' · новые: '+later+
         ' · пропуски '+fmt(p.background?.missing||0)+'</p>';
     }).join('');
@@ -1235,7 +1236,7 @@ async function loadPassedArchiveDay(){
     $('passedDayList').innerHTML=records.slice(0,150).map(function(p){
       return '<div class="filter-row"><div class="row"><b>'+esc(p.name||p.mint.slice(0,14))+
         '</b><span class="badge mono">'+time(p.firstSeenAt)+'</span></div>'+
-        '<p class="muted">'+esc(p.phase==='before'?'🌱 До миграции':'🎓 После миграции')+
+        '<p class="muted">'+esc(p.phase==='before'?'🧪 Ручной пул':'🎓 После миграции')+
         ' · '+esc(p.mint)+' · точка 0 '+time(p.zeroAt)+'</p>'+
         '<p class="muted">'+p.matches.map(function(f){
           return esc(f.name)+' · v'+esc(f.version)+' ('+esc(f.key)+' '+esc(f.op)+' '+fmt(f.value)+')';

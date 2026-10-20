@@ -23,7 +23,7 @@
 <section class="page" id="p-all">
 <details class="card compact" id="ageFilterBox"><summary>⚙ Фильтр возраста: <span id="ageSummary">—</span></summary>
 <div class="controls" style="margin-top:13px">
-<label class="control"><span>🌱 Возраст до миграции</span><select class="input" id="ageBefore" disabled></select></label>
+<label class="control"><span>🧪 Возраст ручного пула</span><select class="input" id="ageBefore" disabled></select></label>
 <label class="control"><span>🎓 Возраст после миграции</span><select class="input" id="ageAfter" disabled></select></label>
 <label class="control"><span>Последних карточек</span><select class="input" id="cardLimit"><option>10</option><option>20</option><option>30</option><option>50</option><option>100</option></select></label>
 </div><button class="primary" id="applySource" style="margin-top:12px">Применить</button><p class="hint">Возраст задаёт сервер. Менять его с телефона можно будет после подключения управления.</p>
@@ -34,23 +34,23 @@
 <button type="button" id="publishSourceAge" class="primary" disabled>Изменить возраст на сервере</button>
 <p id="sourceAgeControlState" class="hint">Защищённый канал управления пока не включён.</p>
 </div></details>
-<div class="chips seg" id="allStreams"><button class="active" data-stream="all">Все <span class="cnt" id="cntAll"></span></button><button data-stream="before">🌱 До <span class="cnt" id="cntBefore"></span></button><button data-stream="after">🎓 После <span class="cnt" id="cntAfter"></span></button></div>
+<div class="chips seg" id="allStreams"><button class="active" data-stream="all">Все <span class="cnt" id="cntAll"></span></button><button data-stream="before">🧪 Ручной пул <span class="cnt" id="cntBefore"></span></button><button data-stream="after">🎓 После <span class="cnt" id="cntAfter"></span></button></div>
 <div class="card daily-source hide" aria-label="Суточные счётчики источника">
 <div class="row"><strong>Потоки за сутки</strong><span class="hint">Сброс в 00:00 UTC+5</span></div>
-<p id="dailyBefore">До миграции: нет данных</p>
+<p id="dailyBefore">Ручной пул: нет данных</p>
 <p id="dailyAfter">После миграции: нет данных</p>
 <p class="hint" id="dailySourceNote">Счётчики рассчитывает сервер.</p>
 </div>
 
 <div class="statgrid hide"><div class="stat"><span>Допущено за сегодня · доступная выгрузка</span><strong id="admitCount">—</strong></div><div class="stat"><span>Всего допущено · за всё время</span><strong id="visibleCount">—</strong></div></div>
-<div id="sourceNote" class="notice">Источник до миграции ещё подключается. Не показываем непроверенные данные.</div>
+<div id="sourceNote" class="notice">Источник ручных пулов ещё подключается. Не показываем непроверенные данные.</div>
 <div id="coinList" class="list"><div class="empty-state">Получение новых событий…</div></div>
 </section>
 <section class="page" id="p-mine" hidden>
 <div class="chips seg" id="mineSub"><button class="active" data-msub="win">Окно возможностей</button><button data-msub="r1">Вход в Иссл. 1</button></div>
 <div id="paneWin">
 <div class="row winhead"><b>Окно возможностей</b><button type="button" class="r1sw" id="winR1"><span class="tg"></span> → И1</button></div>
-<div class="chips seg" id="mineStreams"><button class="active" data-mstream="before">🌱 До</button><button data-mstream="after">🎓 После</button></div>
+<div class="chips seg" id="mineStreams"><button class="active" data-mstream="before">🧪 Ручной пул</button><button data-mstream="after">🎓 После</button></div>
 <div class="card compact"><div class="row"><b>1 уровень</b><button type="button" class="pbtn add1" data-addlev="1">+ модуль</button></div><div id="mods1" class="flist"></div></div>
 <div class="card compact"><div class="row"><b>2 уровень</b><button type="button" class="pbtn add1" data-addlev="2">+ модуль</button></div><div id="mods2" class="flist"></div></div>
 <div id="modPicker" class="card compact" hidden><div class="row"><b id="modPickerT">Добавить</b><button type="button" class="pbtn" id="modPickerX">✕</button></div><div id="modPickerList" class="flist"></div></div>
@@ -63,7 +63,7 @@
 <div class="row winhead"><span class="hint" id="intakeStats" style="margin:0"></span><button type="button" class="r1sw" id="inManualSw"><span class="tg"></span> → И1</button><input type="checkbox" id="inManual" hidden></div>
 <details class="frow" id="inManualFold"><summary><span class="fname">Ручной фильтр <span class="hint" id="inManualSum"></span></span></summary>
 <div id="inManualBox">
-<div class="prow"><label>Поток</label><div class="chips seg" id="inPhaseSeg" style="margin:2px 0"><button type="button" data-ip="both">Оба</button><button type="button" data-ip="before">🌱 До</button><button type="button" data-ip="after">🎓 После</button></div><input type="checkbox" id="inPhaseOn" hidden><input type="hidden" id="inPhase" value="both"></div>
+<div class="prow"><label>Поток</label><div class="chips seg" id="inPhaseSeg" style="margin:2px 0"><button type="button" data-ip="both">Оба</button><button type="button" data-ip="before">🧪 Ручной пул</button><button type="button" data-ip="after">🎓 После</button></div><input type="checkbox" id="inPhaseOn" hidden><input type="hidden" id="inPhase" value="both"></div>
 <div class="prow"><label><input type="checkbox" id="inBuyOn"> Покупатели 10 мин ≥ <b id="inBuyV">3</b></label><input type="range" id="inBuy" min="0" max="100" step="1" value="3"></div>
 <div class="prow"><label><input type="checkbox" id="inSolOn"> SOL в пуле ≥ <b id="inSolV">0.5</b></label><input type="range" id="inSol" min="0" max="50" step="0.5" value="0.5"></div>
 <div class="prow"><label><input type="checkbox" id="inSampleOn"> Случайно <b id="inSampleV">100</b>%</label><input type="range" id="inSample" min="5" max="100" step="5" value="100"></div>
@@ -95,7 +95,7 @@
 <details class="frow" id="pwFold"><summary><span class="fname">Окно <span class="hint" id="pwSum">3 мин</span></span></summary>
 <div class="prow"><label>Режим</label><div class="chips seg" id="pwMode" style="margin:2px 0"><button type="button" data-pm="1">Только ур.1</button><button type="button" data-pm="12">Ур.1 + ур.2</button></div></div>
 <div class="prow"><label for="pwMin">Монета видна <b id="pwV">3</b> мин после прохода, потом скрывается</label><input id="pwMin" type="range" min="1" max="5" step="1" value="3"></div><div class="row applyrow hide" id="pwApplyRow"><button type="button" class="primary pbtn" id="pwApply" style="margin-left:auto">Применить</button></div></details>
-<div class="chips seg" id="pSeg"><button class="active" data-pf="all">Все <span class="cnt" id="pAllN">0</span></button><button data-pf="before">🌱 До <span class="cnt" id="pBefN">0</span></button><button data-pf="after">🎓 После <span class="cnt" id="pAftN">0</span></button></div>
+<div class="chips seg" id="pSeg"><button class="active" data-pf="all">Все <span class="cnt" id="pAllN">0</span></button><button data-pf="before">🧪 Ручной пул <span class="cnt" id="pBefN">0</span></button><button data-pf="after">🎓 После <span class="cnt" id="pAftN">0</span></button></div>
 <div class="list" id="passedList"></div>
 <div hidden>
 <h1>Прошли</h1><p class="muted">Монеты из главного источника, прошедшие условия. Серверные сигналы фиксируются независимо от телефона; локальные правила — только черновики до синхронизации с сервером.</p>
@@ -111,7 +111,7 @@
 </div>
 </section>
 <section class="page" id="p-r1" hidden>
-<div class="chips seg" id="r1Ph"><button class="active" data-r1p="all">Все</button><button data-r1p="before">🌱 До</button><button data-r1p="after">🎓 После</button></div>
+<div class="chips seg" id="r1Ph"><button class="active" data-r1p="all">Все</button><button data-r1p="before">🧪 Ручной пул</button><button data-r1p="after">🎓 После</button></div>
 <details class="frow" id="r1Fold"><summary><span class="fname">Фильтр <span class="hint" id="r1Sum"></span></span></summary>
 <div class="prow"><label for="r1Hours">Окно наблюдения <b id="r1HoursValue">5 ч</b></label><input id="r1Hours" type="range" min="1" max="12" step="1"></div>
 <div class="prow"><label><input id="r1UseActivity" type="checkbox"> Учитывать активность</label></div><div class="prow"><label for="r1Activity">Сделки не меньше <b id="r1ActivityValue">70%</b> времени</label><input id="r1Activity" type="range" min="0" max="100" step="5"></div>
@@ -135,7 +135,7 @@
 <div hidden><button id="applyR1"></button><input id="ownerResearchOneKey" class="ownerkey"><input id="confirmResearchOne" type="checkbox" checked><div id="r1Auto"></div></div>
 </section>
 <section class="page" id="p-r2" hidden>
-<div class="chips seg" id="r2Streams"><button data-stream="all">Все</button><button data-stream="before">🌱 До</button><button class="active" data-stream="after">🎓 После</button></div>
+<div class="chips seg" id="r2Streams"><button data-stream="all">Все</button><button data-stream="before">🧪 Ручной пул</button><button class="active" data-stream="after">🎓 После</button></div>
 <details class="frow" id="r2Fold"><summary><span class="fname">Фильтр <span class="hint" id="r2Sum"></span></span></summary>
 <div class="prow"><label for="r2Strong">Сильная, если цена выше точки 0 не меньше <b id="r2StrongValue">70%</b> из 300 мин</label><input type="range" id="r2Strong" min="1" max="100" value="70"></div>
 <div class="row applyrow hide" id="r2ApplyRow"><button type="button" class="primary pbtn" id="publishResearchTwo" style="margin-left:auto">Применить</button></div>
@@ -170,7 +170,7 @@
 </section>
 <section class="page" id="p-library" hidden>
 <div class="chips seg" id="levels"><button class="active" data-level="1">Уровень 1</button><button data-level="2">Уровень 2</button><button data-store="1">Хранилище</button></div>
-<div class="chips seg" id="libPh"><button class="active" data-lp="all">Все</button><button data-lp="before">🌱 До</button><button data-lp="after">🎓 После</button></div>
+<div class="chips seg" id="libPh"><button class="active" data-lp="all">Все</button><button data-lp="before">🧪 Ручной пул</button><button data-lp="after">🎓 После</button></div>
 <div id="storeBox" class="hide"></div>
 <div id="libLevelBox">
 <details class="frow hide" id="polyFold"><summary><span class="fname">Полигон <span class="hint" id="polyTitle">Живые / мёртвые</span></span></summary>
@@ -203,7 +203,7 @@
 
 </main>
 <script src="./server/observation-contract.js?v=20261018-admission-3" defer></script>
-<script src="./v2.js?v=20261020-lbl-2" defer></script>
+<script src="./v2.js?v=20261020-pool-1" defer></script>
 <noscript>Текстовая сводка для ИИ: https://storage.googleapis.com/sol-scan-511718-data/ai/summary.md (JSON: ai/summary.json)</noscript>
 </body></html>
 
