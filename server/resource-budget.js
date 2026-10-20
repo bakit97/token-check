@@ -58,13 +58,13 @@ class ResourceBudget{
   allow(cost,priority=0){const lane=this.lane(priority),m=this.totals(MIN),h=this.totals(60*MIN),rate=Math.min(this.target,this.rate());
     // Keep WS metering headroom. Fresh proof backlog takes priority over background RPC.
     if(this.freshMigrationPending&&lane!=='migration-fast')return false;
-    const wsReserve=this.migrationWSOnly&&lane==='migration-fast'&&this.freshMigrationPending?1:Math.min(3.5,Math.max(.5,rate-14));
+    const wsReserve=this.migrationWSOnly&&(lane==='pool-discovery'||lane==='migration-fast'&&this.freshMigrationPending)?1:Math.min(3.5,Math.max(.5,rate-14));
     const ceiling=Math.max(0,rate-Math.max(.5,wsReserve-m.ws)),total=m.rpc+m.ws;
     const poolFloor=Math.min(4,ceiling*.3),proofFloor=Math.min(10,Math.max(0,ceiling-poolFloor-.5));
     const proofReserve=this.migrationPending?Math.max(0,proofFloor-this.laneTotal('migration',MIN)-this.laneTotal('migration-fast',MIN)):0;
     const poolReserve=this.poolsPending?Math.max(0,poolFloor-this.laneTotal('pools',MIN)):0;
     const freshReserve=Math.max(0,Math.min(6,this.freshMigrationReserve||0)-this.laneTotal('migration-fast',MIN));
-    const cap=Math.max(0,ceiling-(lane==='migration-fast'?(this.freshMigrationPending?0:poolReserve):lane==='migration'||lane==='reconcile'?poolReserve+freshReserve:lane==='pools'?Math.max(proofReserve,freshReserve):Math.max(proofReserve,freshReserve)+poolReserve));
+    const cap=Math.max(0,ceiling-((lane==='migration-fast'||lane==='pool-discovery')?(this.freshMigrationPending?0:poolReserve):lane==='migration'||lane==='reconcile'?poolReserve+freshReserve:lane==='pools'?Math.max(proofReserve,freshReserve):Math.max(proofReserve,freshReserve)+poolReserve));
     const hourly={metadata:60,holders:60,pre:0,background:30,reconcile:65,'pool-discovery':120}[lane]??Infinity;
     if(lane==='reconcile'&&this.migrationPending)return false;
     return this.state.used+cost<=this.limit&&rate>0&&total+cost<=cap&&h.rpc+h.ws+cost<=rate*60&&this.laneTotal(lane)+cost<=hourly;
