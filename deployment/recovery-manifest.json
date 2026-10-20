@@ -1,8 +1,9 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "dcb53c1fcd3470e6370713b176b465965ee71ac2654b7d1bb8e922f32a5f2980",
+    "collector.js": "8c08e5bdb99783e2d68f4626b60d2f5ff7a79187ee361c40e3fb4eae8cbb48f4",
     "holder-census.js": "a5572adb40d24ade063cf4424e9c03c57251eae6dd6c20b220c09b4c36110bab",
+    "liquidity-proof.js": "80aec08bcd3dbbc3daf304e33555c1d977e738ac7c5243699ba831b6cbaec6ad",
     "venue-identity.js": "41335e3e48009553c4e89754d5ed45111109af97203d423c6538231755a6b378",
     "feature-snapshots.js": "30f7c6b7bf1fd83b8bee6fd0f7263d70c6fc15593fd52a0de0200dba9f002c1a",
     "activity-slices.js": "9d7b1f2bda4d04378f1fc8069bfc572facb3cac337ed77964f76d1075eca4a20",
@@ -11,7 +12,7 @@
     "source-runtime.js": "0e78d42f64a500d7b4e7fbbc59f7aa8d3ff24de97fc46d7f12ec41c14142fe46",
     "pump-pre.js": "8f01365922819d7900219eb316213f044e331c146f4cb71db9f1f398bbddac06",
     "pre-watcher.js": "72879fa8a144c40ec5c3bca90c64a0276ffb1582b39c1960fdc5ad7721e41dd3",
-    "research-v2.js": "bbfc7be98ab4739753ce3e61d6695ddaa5dfc71ce2cf905c0a6a05b9fba67d93",
+    "research-v2.js": "0dd3346e8d30fe0c01494eb1265057f10580bff1f1f643644018c8cb3fe4ceb8",
     "research-runtime.js": "8e1d20ac8fbf950ac19a31c2cdf22dc01adbdb5af74fc5fa9ad79ddec7fd953e",
     "research-config.js": "cc20c643eb80aae239777e1e700b749ff8eb5a1dbbb69744cefdd670f6a096e1",
     "pass-runtime.js": "7cd7562c24428aa20da771009a25f8261c4326e478aa845d7a859a75c39f5996",
