@@ -9,7 +9,7 @@ permissions:
   id-token: write
 concurrency:
   group: legacy-birth-cleanup
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   cleanup:
     runs-on: ubuntu-latest
