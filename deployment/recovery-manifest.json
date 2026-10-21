@@ -5,7 +5,7 @@
     "pool-balance-reader.js": "b4279be051aa5203779b723e96568665da43b3d7d7b4e3a31c60ec0f1e8100af",
     "bounded-cache.js": "71245b543751fc32faaf3e05951200df28fc725585001500853a2f35ef18d13b",
     "pool-trade-observer.js": "9e16d097cc96fc381e9e31c13a9c4dc0effaf34d9140f209860ee7594275842a",
-    "opening-evidence.js": "5799be682c2e87afc9c3aba5f018e277a705a6ec6cc91ee80b39fd8cddaf5bee",
+    "opening-evidence.js": "edf1c6b159abd7da581d9248c4c040f8e585d1d757208a2fa88b3ede1b6df1fc",
     "holder-census.js": "703f9647ded2fc9591b485c869ad0085fa96f8349617870239630837aad5b5e2",
     "liquidity-proof.js": "80aec08bcd3dbbc3daf304e33555c1d977e738ac7c5243699ba831b6cbaec6ad",
     "venue-identity.js": "37e494e49217fe6cbd11e3a19aaf0757d0f4e7324c44f82a81d6ef3e358769a7",
