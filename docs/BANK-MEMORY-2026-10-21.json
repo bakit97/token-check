@@ -8,12 +8,13 @@
     "auto-I1",
     "auto-I2-parents",
     "manual-module-tests",
-    "silent-live"
+    "silent-live",
+    "hourly-filter-audit"
   ],
   "heapLimitMB": 392.167424,
-  "maxObservedHeapMB": 52.8876,
+  "maxObservedHeapMB": 59.842728,
   "enforcedHeapBelow450MB": true,
-  "totalBankBytes": 227411128,
+  "totalBankBytes": 229451128,
   "maxRowBytes": 262144,
   "networkCalls": 0
 }
