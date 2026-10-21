@@ -850,7 +850,7 @@ function recordPoolTrades(c,row,data,at){if(!row)return null;const previous=Arra
 function researchActivityTape(now){
  if(!RESEARCH_V2)return;const queued=gtQ.filter(t=>t.key.startsWith('r1-activity:')).length;
  const watched=new Map([...RESEARCH_V2.admitted]);for(const row of SOURCE?.records.values()||[])if(row.acceptedAt>=RESEARCH_V2.cohortStart&&now-row.acceptedAt<13*60000)watched.set(row.mint,row);
- const deadline=row=>row.acceptedAt+(require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase).decisionMinutes||12)*60000;
+ const deadline=row=>{const selected=row.acceptedAt+(require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase).decisionMinutes||12)*60000,c=C.get(row.mint);return RESEARCH_V2.admitted.has(row.mint)&&!c?.activityFirstAt&&now-row.acceptedAt<60000?Math.min(selected,row.acceptedAt+60000):selected;};
  const needsBuyers=(c,row)=>RESEARCH_V2.admitted.has(row.mint)&&now<deadline(row)&&!(c.buyerPrefixes||[]).some(p=>p[1]===row.acceptedAt&&p[0]<=deadline(row)&&p[2]>0);
  for(const row of RESEARCH_V2.admitted.values()){const c=C.get(row.mint);if(c&&needsBuyers(c,row))for(const task of gtQ)if(task.path==='/pools/'+c.p+'/trades'){task.prio=0;task.urgentUntil=deadline(row);}}
  const rank=({c,row})=>needsBuyers(c,row)?0:!c.activityFirstAt&&now-row.acceptedAt<2*60000?1:2;
