@@ -478,6 +478,11 @@ function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await t
     if(!r.ok)throw new Error('module '+name+' HTTP '+r.status);
     const out=DIR+'/'+name,tmp=out+'.tmp';fs.writeFileSync(tmp,await r.text());fs.renameSync(tmp,out)}})().catch(e=>{MODULES_OK=null;throw e});
   return MODULES_OK}
+function restoreAdmittedMigrations(now=Date.now()){
+ let restored=0;for(const item of SOURCE.records.values()){const p=item.proof;if(item.phase!=='after'||C.has(item.mint)||now-item.acceptedAt>26*3600e3||COMPLETED?.metadata(item.mint)||!p?.pool||!p.signature||!Number.isSafeInteger(item.eventAt))continue;
+ const c={a:item.mint,n:p.name||'',s:p.symbol||'',i:'',p:p.pool,q:p.openingMetrics?.quoteMint||p.quote||null,d:DEXOF[p.family]||p.dex||'',t:item.eventAt,seen:item.acceptedAt,firstPostSeenAt:item.acceptedAt,wsSeen:item.acceptedAt,pools:[p.pool],fv:FV,preCurve:0,disc:'migration-journal-replay',discoverySource:'migration-fast',migrationSlot:p.slot||null,openingMetrics:p.openingMetrics||null,admissionVerifiedAt:p.verifiedAt||item.acceptedAt,graduation:p.graduation||null,restoredFromSourceAt:now,mg:{v:MGV,st:'ok',k:p.family,pool:p.pool,sig:p.signature,mT:item.eventAt,watch:p.curve||null,owner:p.dexProgram||'',final:1,lastAt:now}};C.set(item.mint,c);restored++;
+ }RETENTION.sourceMigrationsRestored=(RETENTION.sourceMigrationsRestored||0)+restored;return restored;
+}
 async function initSource() {
   await ensureModules();
 
@@ -507,6 +512,7 @@ async function initSource() {
       lastAt:item.acceptedAt},fv:FV});seedLaunchEvidence(C.get(item.mint),item.proof,item);
   }
   for(const item of SOURCE.records.values())if(item.proof?.kind==='manual-pool-open-v1'&&!C.has(item.mint)&&Date.now()-item.acceptedAt<26*3600e3){const p=item.proof;C.set(item.mint,{a:item.mint,n:'',s:'',i:'',p:p.pool,d:({'PumpSwap':'pumpswap','Raydium CPMM':'raydium-cpmm','Raydium CLMM':'raydium-clmm','Meteora DLMM':'meteora-dlmm','Meteora DAMM v2':'meteora-damm-v2','Orca':'orca-whirlpools'})[p.dex],q:p.quote,t:item.eventAt,seen:item.acceptedAt,pools:[p.pool],preCurve:0,fv:FV,disc:'manual-pool',discoverySource:'manual-pool',mg:{v:MGV,st:'ok',k:'manual-pool',pool:p.pool,sig:p.signature,mT:item.eventAt,owner:p.dexProgram},ct:p.ct,creatorAddress:p.creatorAddress,openingMetrics:p.openingMetrics,admissionVerifiedAt:p.verifiedAt,launchpad:null,dex:p.dex,venue:p.venue,vaults:[p.baseVault,p.quoteVault]});}
+  restoreAdmittedMigrations();
   SOURCE_ERR='';
   SOURCE.onAdmitted=admitResearchImmediately;
   log('главный источник готов, принято',SOURCE.records.size,'настройки',SOURCE.settings());
