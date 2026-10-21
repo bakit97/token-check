@@ -1,7 +1,7 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "2771e074481c88a0d9060a2dd27a83ccf7fb4bb3d42cb9c49321ab7365ab371d",
+    "collector.js": "2c71ecfeafe536d78bced419172d25a0c8ca4c8291f001fe3e2b88bd56170f9d",
     "pool-balance-reader.js": "983079034896a154438cf03bae14863d0f94ab0adcc1328830543a942a32cac7",
     "bounded-cache.js": "71245b543751fc32faaf3e05951200df28fc725585001500853a2f35ef18d13b",
     "pool-trade-observer.js": "9dcd9fe1b68774a3b56406fecb9e4b65168b3a5ccc386a11658e1621c6169b30",
@@ -32,7 +32,7 @@
     "seed-completed.js": "d1bfe44875a6e52062f6e2daceeff4ea4530889bb0a4dcd33c98f49c1dbf4a4b",
     "coin-profile.js": "16dc1953fc981b70b14f8b9fd532a9f0684be90ff420f5818651d896565eab23",
     "durable-json.js": "a042526c285613abc0935b43db8dffb98502054b1b9d43a8355438620dc8f192",
-    "research-banks.js": "4ef72159b27beca7da5287447a6e2181b708f04960cd160aaac4c7667192c670",
+    "research-banks.js": "e2018dacbbbd2231411dbb76e5e90f60052849e7429371f45a602c0a44671fbd",
     "module-library.js": "a850c18e16296730d8388c7be5427300dc3558e7c0f829666343b3856775a549",
     "active-history.js": "f34c939dff3b066b30af82ad0a415ed1ef7f1915ddc830777ff2f2d79094cc7a",
     "launch-history.js": "fce3b45fcd513c24673ceaafe31f747cb01c7e77f264a559414ce235b0905c49",

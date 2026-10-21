@@ -61,8 +61,10 @@ const metadataOf=mint=>findPDA([new TextEncoder().encode('metadata'),b58dec(META
 const T22='TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
 
 /* ---------- сеть: GeckoTerminal (бесплатно ≈10/мин, на деле меньше) — общая очередь с подстройкой скорости ---------- */
-async function getJSON(url){const r=await fetch(url,{headers:{accept:'application/json'},signal:AbortSignal.timeout(30000)});if(r.status===429){const e=new Error('429');e.rl=1;throw e}
-  if(!r.ok)throw new Error('HTTP '+r.status+' '+url.split('?')[0].slice(-60));return r.json()}
+async function getJSON(url,timeoutMs=15000){const controller=new AbortController();let timer=setTimeout(()=>controller.abort(),timeoutMs);try{
+  const r=await networkDeadline(fetch(url,{headers:{accept:'application/json'},signal:controller.signal}),timeoutMs);if(r.status===429){const e=new Error('429');e.rl=1;throw e}
+  if(!r.ok)throw new Error('HTTP '+r.status+' '+url.split('?')[0].slice(-60));return await networkDeadline(r.json(),timeoutMs);
+ }finally{clearTimeout(timer);controller.abort();}}
 // приоритеты: 0 новые пулы, 1 сделки первых минут, 2 свечи первых 10 минут, 3 график цены
 const gtQ=[];let gtPause=0,gtOK=0,gtFail=0,gtSp=6500,gtRun=0;
 const GT_BACKGROUND_LIMIT=24; // keep slow multi-hour charts from burying early trading evidence
@@ -834,7 +836,7 @@ function researchActivityTape(now){
  const watched=new Map([...RESEARCH_V2.admitted]);for(const row of SOURCE?.records.values()||[])if(row.acceptedAt>=RESEARCH_V2.cohortStart&&now-row.acceptedAt<13*60000)watched.set(row.mint,row);
  const candidates=[...watched.values()].map(row=>({row,c:C.get(row.mint)})).filter(({row,c})=>c?.p&&now-(c.activityAttemptAt||0)>Math.min(c.activityPollMs||10*60000,now-row.acceptedAt<13*60000?60000:10*60000)&&now-(c.activityLastAt||0)>Math.min(c.activityPollMs||10*60000,now-row.acceptedAt<13*60000?60000:10*60000)&&now<require(DIR+'/event-clock.js').eventAnchor(row)+(require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase).hours*60+30)*60000).sort((a,b)=>(a.c.activityAttemptAt||0)-(b.c.activityAttemptAt||0));
  const item=candidates[0];if(!item)return;const {row,c}=item,pool=c.p,start=require(DIR+'/event-clock.js').eventAnchor(row),end=start+require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase).hours*3600000;c.activityAttemptAt=now;
- gt('/pools/'+pool+'/trades',1,'r1-activity').then(response=>{if(c.p!==pool)return;recordPoolTrades(c,row,response.data,Date.now());}).catch(e=>err('activity history '+e.message));
+ gt('/pools/'+pool+'/trades',!c.activityFirstAt&&now-row.acceptedAt<2*60000?0:1,'r1-activity').then(response=>{if(c.p!==pool)return;recordPoolTrades(c,row,response.data,Date.now());}).catch(e=>err('activity history '+e.message));
 }
 // One bounded public GT request per tick; this uses no Helius credits.
 function researchTradeTail(now){if(!RESEARCH_V2||gtBackgroundBusy()||gtPending('r1-tail'))return;

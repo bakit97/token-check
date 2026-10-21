@@ -1,0 +1,6 @@
+"use strict";
+const test=require('node:test'),a=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const source=fs.readFileSync(require.resolve('../server/collector.js'),'utf8'),getJSON=source.slice(source.indexOf('async function getJSON(url'),source.indexOf('// приоритеты:')),deadline=source.match(/function networkDeadline\(promise,ms\)\{[^\n]+/)[0];
+function api(fetch){const context={fetch,AbortController,setTimeout,clearTimeout};vm.createContext(context);vm.runInContext(deadline+'\n'+getJSON+'\nthis.read=getJSON;',context);return context.read;}
+test('public JSON queue escapes a hung fetch and aborts its request',async()=>{let signal;const read=api((url,options)=>{signal=options.signal;return new Promise(()=>{})});await a.rejects(read('https://example.invalid',10),/network-deadline/);a.equal(signal.aborted,true);});
+test('public JSON queue escapes a hung response body and can process its next request',async()=>{let n=0;const read=api(async()=>({ok:true,status:200,json:()=>++n===1?new Promise(()=>{}):Promise.resolve({data:[]})}));await a.rejects(read('https://example.invalid',10),/network-deadline/);a.equal((await read('https://example.invalid',10)).data.length,0);});
