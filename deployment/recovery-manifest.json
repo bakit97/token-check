@@ -1,10 +1,10 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "7fe340be0ffa157d14dd8b5f98c913d7d5df596d933bde7842c8a96ddc4e5895",
+    "collector.js": "6cb0ebd3cb2fa99065144bd14b9a9b1532e2c511de35c962f3aa6a42f2dfc469",
     "pool-balance-reader.js": "983079034896a154438cf03bae14863d0f94ab0adcc1328830543a942a32cac7",
     "bounded-cache.js": "71245b543751fc32faaf3e05951200df28fc725585001500853a2f35ef18d13b",
-    "pool-trade-observer.js": "b43103cb2958810e4f51218311611208fcc0f304fbad5b0659e114c0acd5826d",
+    "pool-trade-observer.js": "8968142856caec076305c9ca2b1105b5dac795d0e602bc070a52ce3265db8260",
     "opening-evidence.js": "5799be682c2e87afc9c3aba5f018e277a705a6ec6cc91ee80b39fd8cddaf5bee",
     "holder-census.js": "703f9647ded2fc9591b485c869ad0085fa96f8349617870239630837aad5b5e2",
     "liquidity-proof.js": "80aec08bcd3dbbc3daf304e33555c1d977e738ac7c5243699ba831b6cbaec6ad",
