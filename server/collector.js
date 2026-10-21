@@ -34,7 +34,7 @@ function onCurve(bytes){let y=0n;for(let i=31;i>=0;i--)y=(y<<8n)+BigInt(bytes[i]
 async function findPDA(seeds,prog){const pb=b58dec(prog),te=new TextEncoder();
   for(let bump=255;bump>=0;bump--){const parts=[...seeds,new Uint8Array([bump]),pb,te.encode('ProgramDerivedAddress')];
     const buf=new Uint8Array(parts.reduce((s,p)=>s+p.length,0));let o=0;parts.forEach(p=>{buf.set(p,o);o+=p.length});
-    const h=new Uint8Array(await crypto.subtle.digest('SHA-256',buf));if(!onCurve(h))return b58enc(h)}throw new Error('no PDA')}
+    const h=require('node:crypto').createHash('sha256').update(buf).digest();if(!onCurve(h))return b58enc(h)}throw new Error('no PDA')}
 const PUMP='6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P',PUMP_AMM='pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA';
 // mint authority pump.fun (PDA 'mint-authority'): есть только в create/create_v2, а не в каждой сделке
 const PUMP_MINT_AUTH=process.env.PUMP_MINT_AUTH||'TSLvdd1pWpHVjahSpsvCXUbgwsL3JAcvokwaKt1eokM';
@@ -696,8 +696,7 @@ function load(){try{require(DIR+'/stream-json.js').loadRows(DIR+'/state.json',c=
     if(c.fv!==FV){c.legacy={snap:c.snap,act:c.act,k:c.k};for(const k of ['snap','act','k','o','cur','cn','orig'])delete c[k];c.fv=FV}
     if(c.disc==='ws'&&c.d==='pumpswap')return;c=require(DIR+'/legacy-data-redaction.js').coin(c);if(!c)return;require(DIR+'/packed-observations.js').compactCoin(c);C.set(c.a,c)},HEALTH);log('загружено монет',C.size)}catch(e){if(e.code!=='ENOENT')throw e}
   try{RC=JSON.parse(fs.readFileSync(DIR+'/recon.json','utf8'))}catch{}}
-function save(){try{require(DIR+'/stream-json.js').saveRows(DIR+'/state.json',(function*(){const {stateCoin}=require(DIR+'/packed-observations.js');for(const c of C.values())yield stateCoin(c)})(),HEALTH);
-  fs.writeFileSync(DIR+'/recon.json',JSON.stringify(RC));RETENTION.stateBytes=fs.statSync(DIR+'/state.json').size;return true}catch(e){err('save '+e.message);return false}}
+function save(){save.again=true;if(save.pending)return save.pending;save.pending=(async()=>{do{save.again=false;await require(DIR+'/stream-json.js').saveRowsAsync(DIR+'/state.json',(function*(){const {stateCoin}=require(DIR+'/packed-observations.js');for(const c of C.values())yield stateCoin(c)})(),HEALTH);await fs.promises.writeFile(DIR+'/recon.json',JSON.stringify(RC));RETENTION.stateBytes=(await fs.promises.stat(DIR+'/state.json')).size;}while(save.again);return true;})().catch(e=>{err('save '+e.message);return false}).finally(()=>save.pending=null);return save.pending;}
 const isCurve=d=>/pump-?fun/i.test(d||'')&&!/swap/i.test(d||'');
 const SKIP=new Set([WSOL,USDC,USDT]);
 function launchType(c){if(c.mg)return MIGNAME[c.mg.k]||('Другое ('+(c.d||'?')+')');return 'Проверяется'}
@@ -1514,7 +1513,7 @@ async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayK
     if(COMPLETED){COMPLETED.confirm(d,list);await retireConfirmed(d,live,Date.now());completedDays.push(d)}
     LAST_DAY_EXPORT.set(d,now);while(LAST_DAY_EXPORT.size>4)LAST_DAY_EXPORT.delete(LAST_DAY_EXPORT.keys().next().value);if(d===yest)lastYest=now;
   }
-  const stateCommitted=completedDays.length&&save();
+  const stateCommitted=completedDays.length&&await save();
   await flushUploads();
   // Lightweight feeds and bounded research have independent timers.
 
@@ -1615,8 +1614,8 @@ const STARTED=Date.now();
   (async()=>{for(;;){await sleep(5*60e3);try{await exportDays()}catch(e){err('export '+e.message)}}})();
   (async()=>{await sleep(45000);for(;;){try{await exportLive()}catch(e){err('live '+e.message)}await sleep(30000)}})();
   setTimeout(()=>exportDays().catch(e=>err('export '+e.message)),30000);
-  setInterval(async()=>{try{const g=await codeGen();if(g&&VERSION!=='dev'&&g!==VERSION){log('новая версия кода',g,'— перезапуск');save();process.exit(0)}}catch{}},60000);
+  setInterval(async()=>{try{const g=await codeGen();if(g&&VERSION!=='dev'&&g!==VERSION){log('новая версия кода',g,'— перезапуск');if(await save())process.exit(0)}}catch{}},60000);
 })();
-process.on('SIGTERM',()=>{save();process.exit(0)});
+process.on('SIGTERM',async()=>{process.exit(await save()?0:1)});
 
 }

@@ -29,6 +29,13 @@ function saveRows(file,rows,health){const tmp=file+'.tmp',fd=fs.openSync(tmp,'w'
  try{fs.writeSync(fd,'[');for(const row of rows){const json=JSON.stringify(row);if(count++)fs.writeSync(fd,',');fs.writeSync(fd,json);chars+=json.length}fs.writeSync(fd,']');fs.fsyncSync(fd)}finally{fs.closeSync(fd)}
  fs.renameSync(tmp,file);health?.capture('save:complete',{rows:count,chars});return count;
 }
+// Production checkpoints yield per row; compression/JSON and disk flushing
+// must not suspend WS delivery for the entire census.
+async function saveRowsAsync(file,rows,health){const tmp=file+'.async-'+process.pid+'-'+(++sequence),started=Date.now();let fd,count=0,chars=0;health?.capture('save:before');
+ const write=async value=>{const b=Buffer.from(value);let offset=0;while(offset<b.length){const r=await fd.write(b,offset,b.length-offset,null);if(!r.bytesWritten)throw Error('Incomplete state write');offset+=r.bytesWritten;}};
+ try{fd=await fs.promises.open(tmp,'wx');await write('[');for(const row of rows){const json=JSON.stringify(row);await write((count?',':'')+json);count++;chars+=json.length;if(count%4===0)await new Promise(r=>setImmediate(r));}await write(']');await fd.sync();await fd.close();fd=null;await fs.promises.rename(tmp,file);health?.capture('save:complete',{rows:count,chars,durationMs:Date.now()-started});return count;
+ }catch(e){if(fd)await fd.close().catch(()=>{});await fs.promises.unlink(tmp).catch(()=>{});throw e;}
+}
 // Incremental replay keeps the file text and parsed array from coexisting with C.
 function* readRows(file,health,{field=null}={}){
  const {StringDecoder}=require('node:string_decoder'),decoder=new StringDecoder('utf8');
@@ -71,4 +78,4 @@ function multipartGzip(payload,name){
  const close=stream=>stream.closed?Promise.resolve():new Promise(resolve=>{stream.once('close',resolve);stream.once('error',()=>{});stream.destroy()});
  return {body,contentType:'multipart/related; boundary='+boundary,length:head.length+payload.bytes+tail.length,close:async()=>{await close(body);await close(file)}};
 }
-module.exports={jsonChunks,gzipJson,saveRows,loadRows,multipartGzip,rowStream,readRows};
+module.exports={jsonChunks,gzipJson,saveRows,saveRowsAsync,loadRows,multipartGzip,rowStream,readRows};
