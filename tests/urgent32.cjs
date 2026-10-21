@@ -1,0 +1,4 @@
+"use strict";
+const {test}=require('node:test'),a=require('node:assert/strict'),slices=require('../server/activity-slices');
+test('rolling zero and old complete flags cannot prove inactive SOL slices',()=>{const minutes=Array.from({length:10},(_,i)=>[(i+1)*60000,1,0]);a.equal(slices.classify(slices.evidence({start:0,end:600000,minutes})).label,'unknown');a.equal(slices.classify({slices:[{complete:true,silent:true,walletMax:{}}]}).label,'unknown');});
+test('pool balance public failure falls back without fabricating balances',async()=>{const {PoolBalanceReader}=require('../server/pool-balance-reader');let used=0;const expected={context:{slot:12},value:[null]};const reader=new PoolBalanceReader({fetch:async()=>{throw Error('offline')},fallback:async()=>{used++;return expected;}});a.equal(await reader.call(['pool']),expected);a.equal(used,1);a.equal(reader.summary().publicErrors,1);});

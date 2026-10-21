@@ -10,7 +10,7 @@ function setup({count=33,failVault=false,missingVault=false}={}){
    if(failVault&&calls.length===2)throw Object.assign(Error('quota'),{code:'BUDGET_DEFERRED'});
    return {context:{slot:calls.length},value:keys.map((key,i)=>{if(key.startsWith('pool')){const n=+key.slice(4),b=Buffer.alloc(203);b[139]=n*2+20;b[171]=n*2+21;return {owner:'program',data:enc(b)}}
     if(missingVault&&i===0)return null;const b=Buffer.alloc(165);b[0]=i%2===0?1:2;b.writeBigUInt64LE(123n,64);return {data:enc(b)}})}}};
- vm.createContext(ctx);
+ ctx.POOL_BALANCES={call:keys=>ctx.rpc('getMultipleAccounts',[keys],{priority:'pools',context:'пулы'})};vm.createContext(ctx);
  vm.runInContext(code.slice(code.indexOf('function parseVaults('),code.indexOf('async function chainObsLoop()'))+'\nthis.collect=collectPoolBatch;this.coverage=poolCoverage;this.interval=poolInterval;',ctx);
  return {ctx,coins,calls};
 }

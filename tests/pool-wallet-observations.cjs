@@ -12,7 +12,7 @@ test('partial history returns a buyer lower bound and an empty or invalid respon
  const bad=api.observe(null,[trade(1,true,'missing')],mint,T,T+10*M,T+11*M);assert.equal(api.buyerMetrics(bad).uniqueBuyersComplete,false);
 });
 test('observed silence means zero buyers; conflicting unknown swap invalidates the silent confidence',()=>{
- const silent=api.evidence({start:T,end:T+10*M,minutes:Array.from({length:10},(_,i)=>[T+(i+1)*M,1,0])});assert.equal(api.buyerMetrics(silent).uniqueBuyers,0);
+ const silent=api.evidence({start:T,end:T+10*M,minutes:Array.from({length:10},(_,i)=>[T+(i+1)*M,1,0,null,{source:'chain-pool-signatures'}])});assert.equal(api.buyerMetrics(silent).uniqueBuyers,0);
  const swap=api.evidence({start:T,end:T+10*M,trades:[[T/1000+60,1,1,null,1,null,T+2*M]]}),merged=api.merge(silent,swap);assert.equal(merged.slices[0].silent,false);assert.equal(merged.slices[0].complete,false);assert.equal(api.buyerMetrics(merged).uniqueBuyers,null);assert.equal(api.classify(merged).label,'unknown');
 });
 test('rolling nonzero m5 does not invent five active minutes; a raw swap proves its actual minute',()=>{

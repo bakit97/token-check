@@ -57,7 +57,7 @@ class ResourceBudget{
   laneTotal(lane,window=60*MIN){this.trim();return this.state.buckets.filter(b=>b.at>this.now()-window).reduce((n,b)=>n+(b.lanes?.[lane]||0),0)}
   allow(cost,priority=0){const lane=this.lane(priority),m=this.totals(MIN),h=this.totals(60*MIN),rate=Math.min(this.target,this.rate());
     // Keep WS metering headroom. Fresh proof backlog takes priority over background RPC.
-    if(this.freshMigrationPending&&lane!=='migration-fast')return false;
+    if(this.freshMigrationPending&&!['migration-fast','pools'].includes(lane))return false;
     const wsReserve=this.migrationWSOnly&&(lane==='identity'||lane==='recovery'||lane==='pool-discovery'||lane==='migration-fast'&&this.freshMigrationPending)?1:Math.min(3.5,Math.max(.5,rate-14));
     const ceiling=Math.max(0,rate-Math.max(.5,wsReserve-m.ws)),total=m.rpc+m.ws;
     const poolFloor=Math.min(4,ceiling*.3),proofFloor=Math.min(10,Math.max(0,ceiling-poolFloor-.5));

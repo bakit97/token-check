@@ -33,19 +33,19 @@ function sampled(mint,pct){if(pct>=100)return true;let h=2166136261;for(const ch
 // Решение о входе; null-признак при включённом параметре = монета не входит (причина «нет данных»).
 function intakeDecision(intake,row,features,passes){
   if(!intake)return {ok:true,via:'all'};
-  const via=[];
+  const via=[];let manualWhy=null;
   const m=intake.manual;
   if(m.enabled){let ok=true,why=null;
     if(m.phase!=='both'&&row.phase!==m.phase){ok=false;why='phase'}
     if(ok&&m.buyers10.on){const v=features?.buyers10;if(v==null){ok=false;why='no-buyers10'}else if(v<m.buyers10.min){ok=false;why='buyers10'}}
     if(ok&&m.quoteSol.on){const v=features?.quoteSol;if(v==null){ok=false;why='no-quoteSol'}else if(v<m.quoteSol.min){ok=false;why='quoteSol'}}
     if(ok&&m.sample.on&&!sampled(row.mint,m.sample.pct)){ok=false;why='sample'}
-    if(ok)via.push('manual');else if(!intake.modules.enabled)return {ok:false,why};
+    if(ok)via.push('manual');else {manualWhy=why;if(!intake.modules.enabled)return {ok:false,why};}
   }
   if(intake.modules.enabled){const rec=passes?.records?.get?.(row.mint);
     if(rec){const all=passes.config?.r1?.[row.phase]===true,ids=new Set((passes.config?.modules||[]).filter(x=>x.toR1&&x.level==='1'&&x.phase===row.phase).map(x=>x.filterId));
       if(all||(rec.matches||[]).some(x=>ids.has(x.id)))via.push('modules')}}
-  return via.length?{ok:true,via:via.join('+')}:{ok:false,why:m.enabled?'not-matched':'modules-only-not-passed'};
+  return via.length?{ok:true,via:via.join('+')}:{ok:false,why:manualWhy||'modules-only-not-passed'};
 }
 function settings(cfg={}) {
   const result={

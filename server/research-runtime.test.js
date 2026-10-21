@@ -19,7 +19,7 @@ function stream(active) {
    active(m)?3:0,active(m)?2:0,active(m)?200:0
  ]);
  const x={};for(let m=1;m<300;m++)if(active(m))for(const [i,w] of [A,B].entries())x[m+'-'+i]=[(T+m*M+i*1000)/1000,1,1,w,1,.1,T+m*M+2000];
- return {ds,tr:{x}};
+ return {ds,tr:{x},activityTape:{windows:[{start:T,end:T+302*M,complete:true}]}};
 }
 function mockSource(){
  return {records:new Map([

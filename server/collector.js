@@ -462,7 +462,7 @@ async function collectIntelligence(){const now=Date.now();if(INTEL_BUSY||now-INT
  }catch(e){if(e.code==='BUDGET_DEFERRED')INTEL_STATS.deferred++;else INTEL_STATS.errors++;}finally{INTEL_BUSY=false;}}
 // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
 // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
-const MODULES=['bounded-cache.js','pool-trade-observer.js','opening-evidence.js','holder-census.js','liquidity-proof.js','venue-identity.js','feature-snapshots.js','activity-slices.js','event-clock.js','admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
+const MODULES=['pool-balance-reader.js','bounded-cache.js','pool-trade-observer.js','opening-evidence.js','holder-census.js','liquidity-proof.js','venue-identity.js','feature-snapshots.js','activity-slices.js','event-clock.js','admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
   'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js','module-library.js','active-history.js','launch-history.js','early-intelligence.js','migration-fast.js','legacy-birth-cleanup.js','manual-pools.js','pool-logs.js','legacy-data-redaction.js','side-pools.js','observation-recovery.js'];
 let MODULES_OK=null;
 function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
@@ -846,7 +846,7 @@ function gxTasks(now){if(gtPending('gx'))return;const list=[...C.values()].filte
     V.m5!=null?Math.round(+V.m5):null,V.m15!=null?Math.round(+V.m15):null];(c.gx=c.gx||[]).push(e)}}).catch(e=>err('gx '+e.message))}
 function tradeTasks(now,pins=collectionPins(now)){gxTasks(now);for(const c of C.values()){if(!observedEligible(c)||!collectionActive(c,now,pins)||c.trDone||c.trTry)continue;const a=ageMin(c,now);if(a<.5)continue;
     const tr=c.tr=c.tr||{f:[],x:{}},last=tr.f[tr.f.length-1];
-    if(a>40&&!last){finishTrades(c,'не успели (очередь)');continue}
+    if(a>40){finishTrades(c,last?'окно завершено':'не успели (очередь)');continue}
     const busy=last&&last[1]>=250,since=last?(now-last[0])/1000:1e9;
     const due=require(DIR+'/pool-trade-observer.js').due(c,now);
     if(!due)continue;if(c.d==='pump-fun'&&!c.gx?.length){if(now>sourceDecisionEnd(c))finishTrades(c,'GT не подтвердил наличие пула');continue}const end=sourceDecisionEnd(c),fresh=end>now;if(!fresh&&gtBackgroundBusy())continue;const pool=c.p;c.trTry=1;
@@ -876,6 +876,7 @@ function finishTrades(c,why){const tr=c.tr;c.trDone=1;if(!tr||!tr.f.length){c.bx
 
 /* ---------- 4. блокчейн в моменте: держатели (3/5/10 мин), состояние пула и хранилищ (ключевые моменты + каждые 5 минут) ---------- */
 const VAULT_OFF={[PUMP_AMM]:[139,171],[CPMM]:[72,104],[DAMM2]:[232,264],[AMM4]:[336,368],CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK:[137,169],LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo:[152,184],whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc:[133,213]};
+let POOL_BALANCES=null;
 const qDec=new Map([[WSOL,9],[USDC,6],[USDT,6]]);
 const HOLD_M=[10],RAW_M=[1,3,5,10,15,30,60,120,240,480,720,1440];
 const u64=(u,o)=>{let x=0n;for(let i=7;i>=0;i--)x=(x<<8n)+BigInt(u[o+i]);return Number(x)};
@@ -912,7 +913,7 @@ function poolCoverage(now=Date.now()){
   }return out;
 }
 async function collectPoolBatch(part){
-  const call=(keys)=>rpc('getMultipleAccounts',[keys,{encoding:'base64'}],{priority:'pools',context:'пулы',source:'пулы'});
+  const call=(keys)=>POOL_BALANCES.call(keys);
   const keys=[];for(const [c] of part)keys.push(c.p,...(c.vaults||[]));
   const r=await call(keys),at=Date.now(),slot=r?.context?.slot,V=r?.value||[];let j=0;const rows=[],missing=[];
   for(const [c,rm] of part){const pv=V[j++],vs=(c.vaults||[]).map(()=>V[j++]);
@@ -944,9 +945,9 @@ async function chainObsLoop(){for(;;){const now=Date.now();
         for(const m of RAW_M)if(!c.raw[m]&&a>=m+Math.max(2,m*.1))c.raw[m]={at:now,miss:1,reason:c.poolBudgetDeferredAt?'budget':'not-observed'};
         if(rm!=null||!c.lqAt||now-c.lqAt>=poolInterval(c,now))jobs.push([c,rm])}
       RESOURCE.poolsPending=jobs.length>0;
-      const urgent=c=>SOURCE?.get(c.a)&&now-c.t<15*60e3&&!c.lq?.length?1:0;
+      const urgent=c=>SOURCE?.get(c.a)&&now-c.t<20*60e3?1:0;
       jobs.sort((a,b)=>urgent(b[0])-urgent(a[0])||(a[0].poolAttemptAt||0)-(b[0].poolAttemptAt||0)||(a[0].lqAt||0)-(b[0].lqAt||0));
-      for(let i=0;i<jobs.length;i+=33){const part=jobs.slice(i,i+33);part.forEach(([c])=>c.poolAttemptAt=now);
+      for(let i=0;i<Math.min(jobs.length,66);i+=33){const part=jobs.slice(i,i+33);part.forEach(([c])=>c.poolAttemptAt=now);
         try{await collectPoolBatch(part);if(i+33>=jobs.length)RESOURCE.poolsPending=false}catch(e){if(e.code!=='BUDGET_DEFERRED')throw e;
           for(const [c] of jobs.slice(i))c.poolBudgetDeferredAt=c.poolBudgetDeferredAt||Date.now();break}}
     }
@@ -1490,7 +1491,7 @@ let STATUS_BUSY=false;
 async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const now=Date.now(),today=dayKey(now);
   const featureSnapshots=require(DIR+'/feature-snapshots.js').coverage(C.values());
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,caches:{rpc:RPC_CACHE.summary(),recovery:OBS_RECOVERY?.cache.summary()||null,recoveryRpc:RECOVERY_RPC?.cache.summary()||null},featureSnapshots,poolTradeObservations:{...POOL_TRADE_STATS},holderCensus:HOLDER_CENSUS?.stats||null,liquidityProofs:LP_PROOFS?.stats||null,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,observationRecovery:OBS_RECOVERY?{...OBS_RECOVERY.summary(),rpc:RECOVERY_RPC?.summary()||null,r1Unknown:RESEARCH_V2?.summary().counts.unknown??null}:null,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:discoveryStatus(),poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,identityPublic:{...FREE_IDENTITY_STATS},openingProofs:OPENING_PROOFS?{...OPENING_PROOFS.stats,active:OPENING_PROOFS.job?{mint:OPENING_PROOFS.job.mint,pages:OPENING_PROOFS.job.pages,blocks:OPENING_PROOFS.job.blocks.length}:null}:null,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,poolBalanceReads:POOL_BALANCES?.summary(),caches:{rpc:RPC_CACHE.summary(),recovery:OBS_RECOVERY?.cache.summary()||null,recoveryRpc:RECOVERY_RPC?.cache.summary()||null},featureSnapshots,poolTradeObservations:{...POOL_TRADE_STATS},holderCensus:HOLDER_CENSUS?.stats||null,liquidityProofs:LP_PROOFS?.stats||null,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,observationRecovery:OBS_RECOVERY?{...OBS_RECOVERY.summary(),rpc:RECOVERY_RPC?.summary()||null,r1Unknown:RESEARCH_V2?.summary().counts.unknown??null}:null,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:discoveryStatus(),poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,identityPublic:{...FREE_IDENTITY_STATS},openingProofs:OPENING_PROOFS?{...OPENING_PROOFS.stats,active:OPENING_PROOFS.job?{mint:OPENING_PROOFS.job.mint,pages:OPENING_PROOFS.job.pages,blocks:OPENING_PROOFS.job.blocks.length}:null}:null,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,publishedAt:FAST_PASS_PUBLISH_AT},
@@ -1525,6 +1526,7 @@ const STARTED=Date.now();
 (async()=>{fs.mkdirSync(DIR,{recursive:true});await ensureModules();
   RPC_CACHE=new (require(DIR+'/bounded-cache.js').BoundedCache)();
   setInterval(()=>{RPC_CACHE.sweep();OBS_RECOVERY?.cache.sweep();RECOVERY_RPC?.cache.sweep()},60000).unref();
+  POOL_BALANCES=new (require(DIR+'/pool-balance-reader.js').PoolBalanceReader)({fallback:keys=>rpc('getMultipleAccounts',[keys,{encoding:'base64',commitment:'confirmed'}],{priority:'pools',context:'пулы',source:'пулы',maxBytes:1024*1024})});
   RESOURCE=new (require(DIR+'/resource-budget.js').ResourceBudget)({dir:DIR,env:{...process.env,HELIUS_USED_CREDITS:process.env.HELIUS_USED_CREDITS||'185000'}});
   HEALTH=new (require(DIR+'/runtime-health.js').RuntimeHealth)();let expected=Date.now()+1000;setInterval(()=>{const at=Date.now();HEALTH.lagMs=Math.max(0,at-expected);HEALTH.maxLagMs=Math.max(HEALTH.maxLagMs,HEALTH.lagMs);expected=at+1000;HEALTH.capture()},1000).unref();
   COMPLETED=new (require(DIR+'/completed-coins.js').CompletedCoins)(DIR);UPQ.push(...COMPLETED.rawQueue());
