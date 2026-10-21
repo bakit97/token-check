@@ -504,6 +504,7 @@ async function initSource() {
   }
   for(const item of SOURCE.records.values())if(item.proof?.kind==='manual-pool-open-v1'&&!C.has(item.mint)&&Date.now()-item.acceptedAt<26*3600e3){const p=item.proof;C.set(item.mint,{a:item.mint,n:'',s:'',i:'',p:p.pool,d:({'PumpSwap':'pumpswap','Raydium CPMM':'raydium-cpmm','Raydium CLMM':'raydium-clmm','Meteora DLMM':'meteora-dlmm','Meteora DAMM v2':'meteora-damm-v2','Orca':'orca-whirlpools'})[p.dex],q:p.quote,t:item.eventAt,seen:item.acceptedAt,pools:[p.pool],preCurve:0,fv:FV,disc:'manual-pool',discoverySource:'manual-pool',mg:{v:MGV,st:'ok',k:'manual-pool',pool:p.pool,sig:p.signature,mT:item.eventAt,owner:p.dexProgram},ct:p.ct,creatorAddress:p.creatorAddress,openingMetrics:p.openingMetrics,admissionVerifiedAt:p.verifiedAt,launchpad:null,dex:p.dex,venue:p.venue,vaults:[p.baseVault,p.quoteVault]});}
   SOURCE_ERR='';
+  SOURCE.onAdmitted=admitResearchImmediately;
   log('главный источник готов, принято',SOURCE.records.size,'настройки',SOURCE.settings());
 }
 async function reloadSourceAgeConfig(){
@@ -550,6 +551,7 @@ function recoverSupersededStudies(now=Date.now()){
       })}));
   }
 }
+function admitResearchImmediately(row){try{RESEARCH_V2?.admit(row,C.get(row.mint),PASS_V2,Date.now());}catch(e){err('research admission '+e.message)}}
 async function initResearchV2() {
   await ensureModules();
   // Separate initialization: invalid research settings must never stop
@@ -1186,7 +1188,7 @@ function coinMetadata(c){const mg=c.mg||{};
 const GOOGLE_AUTH={value:'',until:0,pending:null};
 function networkDeadline(promise,ms){let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('network-deadline')),ms)})]).finally(()=>clearTimeout(timer));}
 async function token(){if(GOOGLE_AUTH.value&&Date.now()<GOOGLE_AUTH.until)return GOOGLE_AUTH.value;if(!GOOGLE_AUTH.pending)GOOGLE_AUTH.pending=networkDeadline((async()=>{const r=await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',{headers:{'Metadata-Flavor':'Google'},signal:AbortSignal.timeout(5000)});if(!r.ok)throw Error('metadata-auth-unavailable');const d=await r.json();if(typeof d.access_token!=='string'||!d.access_token||!(Number(d.expires_in)>60))throw Error('metadata-auth-unavailable');GOOGLE_AUTH.value=d.access_token;GOOGLE_AUTH.until=Date.now()+(Number(d.expires_in)-60)*1000;return GOOGLE_AUTH.value;})(),6000).finally(()=>GOOGLE_AUTH.pending=null);return GOOGLE_AUTH.pending;}
-async function getObj(name){return networkDeadline((async()=>{const tk=await token();const r=await fetch(`https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/${encodeURIComponent(name)}?alt=media`,{headers:{Authorization:'Bearer '+tk},signal:AbortSignal.timeout(30000)});
+async function getObj(name){return networkDeadline((async()=>{const tk=await token();const r=await fetch(`https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/${encodeURIComponent(name)}?alt=media${name.startsWith('config/')?'&x='+Date.now():''}`,{headers:{Authorization:'Bearer '+tk},signal:AbortSignal.timeout(30000)});
   if(r.status===404){await r.arrayBuffer();return null;}if(!r.ok)throw new Error('get '+name+' '+r.status);return r.json()})(),35000)}
 async function upload(name,obj){
   if(HEALTH)HEALTH.activeUploads++;

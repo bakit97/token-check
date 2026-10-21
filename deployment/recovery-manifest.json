@@ -1,7 +1,7 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "6cb0ebd3cb2fa99065144bd14b9a9b1532e2c511de35c962f3aa6a42f2dfc469",
+    "collector.js": "9636f8a59dfbf05dafac26e8cb49469b82cd0396d73bba4fdd50863c04114575",
     "pool-balance-reader.js": "983079034896a154438cf03bae14863d0f94ab0adcc1328830543a942a32cac7",
     "bounded-cache.js": "71245b543751fc32faaf3e05951200df28fc725585001500853a2f35ef18d13b",
     "pool-trade-observer.js": "8968142856caec076305c9ca2b1105b5dac795d0e602bc070a52ce3265db8260",
@@ -13,11 +13,11 @@
     "activity-slices.js": "e37794eaddbfb9bc54d440d64a7710bb3cd071909185572160f4960a7be27091",
     "event-clock.js": "9ee43c0e943da1147a3ec0e1274a577bdd4d8870603285fdf04c2c6253713c2c",
     "admission.js": "99feba0f235ce8e262f01b1e517a9373c906fb6c51353a2951a184ef5bfacde8",
-    "source-runtime.js": "0e78d42f64a500d7b4e7fbbc59f7aa8d3ff24de97fc46d7f12ec41c14142fe46",
+    "source-runtime.js": "7bb5f19ecbc68d58a09bd9b52af2a8aceca6b50e63efed8745b9b6f654721cd4",
     "pump-pre.js": "8f01365922819d7900219eb316213f044e331c146f4cb71db9f1f398bbddac06",
     "pre-watcher.js": "72879fa8a144c40ec5c3bca90c64a0276ffb1582b39c1960fdc5ad7721e41dd3",
     "research-v2.js": "bc1ec46456bfacec37c8628511b22a363311e141083cd76d467a656c8af3ad67",
-    "research-runtime.js": "93d04ff6ccc3ebdb2dcd5ad6a445c5cb329cf4507956ab9f5b8085222a867bf9",
+    "research-runtime.js": "fad743d033e2fb56b36ce6bb0d0ec3b42c57bd0f4bdc62acde19829fb25fb139",
     "research-config.js": "a42ec115b525a9ad382053a317ac1407e4f680392a4ffa0fb090d4e7d07b6fa3",
     "pass-runtime.js": "7cd7562c24428aa20da771009a25f8261c4326e478aa845d7a859a75c39f5996",
     "research-two-runtime.js": "28fa087f7797563719a6a10eafc3f3c56c5cf5c18ab940a3fd6ab159305729a2",

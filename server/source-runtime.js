@@ -210,6 +210,7 @@ class SourceRuntime {
     if(item.acceptedAt-this.lastRecentTrim>30*60_000)this._trimRecent(item.acceptedAt);
     if(item.phase==='before')this.stats.acceptedBefore++;
     else this.stats.acceptedAfter++;
+    this.onAdmitted?.(item);
     return {admitted:true,reason:'accepted',record:item};
   }
 

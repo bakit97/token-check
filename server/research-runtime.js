@@ -16,7 +16,7 @@ const RETRY_INCOMPLETE_MS=15*MIN;
 const MAX_CLASSIFICATION_CHECKS=250; // per two-minute collector export
 
 /* Вход в Исследование 1: два пути, каждый можно включить/выключить.
-   manual — ручной входной фильтр (поток, покупатели за 10 мин, SOL в пуле, случайная доля) — каждый параметр со своим переключателем;
+   manual — немедленный входной фильтр (поток, стартовый SOL в пуле, случайная доля) — каждый параметр со своим переключателем;
    modules — монеты, прошедшие модули окна возможностей («Прошли»).
    Нет конфигурации intake → прежнее поведение (все монеты «Все»). */
 function intakeSettings(x){
@@ -24,7 +24,6 @@ function intakeSettings(x){
   const num=(v,lo,hi)=>Number.isFinite(+v)&&+v>=lo&&+v<=hi?+v:null;
   const m=x.manual||{},on=v=>v===true;
   const out={manual:{enabled:on(m.enabled),phase:['before','after','both'].includes(m.phase)?m.phase:'both',
-      buyers10:{on:on(m.buyers10?.on),min:num(m.buyers10?.min,0,10000)??3},
       quoteSol:{on:on(m.quoteSol?.on),min:num(m.quoteSol?.min,0,100000)??0.5},
       sample:{on:on(m.sample?.on),pct:num(m.sample?.pct,1,100)??100}},
     modules:{enabled:on(x.modules?.enabled)}};
@@ -37,7 +36,6 @@ function intakeDecision(intake,row,features,passes){
   const m=intake.manual;
   if(m.enabled){let ok=true,why=null;
     if(m.phase!=='both'&&row.phase!==m.phase){ok=false;why='phase'}
-    if(ok&&m.buyers10.on){const v=features?.buyers10;if(v==null){ok=false;why='no-buyers10'}else if(v<m.buyers10.min){ok=false;why='buyers10'}}
     if(ok&&m.quoteSol.on){const v=features?.quoteSol;if(v==null){ok=false;why='no-quoteSol'}else if(v<m.quoteSol.min){ok=false;why='quoteSol'}}
     if(ok&&m.sample.on&&!sampled(row.mint,m.sample.pct)){ok=false;why='sample'}
     if(ok)via.push('manual');else {manualWhy=why;if(!intake.modules.enabled)return {ok:false,why};}
@@ -95,7 +93,7 @@ class ResearchRuntime {
     this.file=path.join(dir,bankName);
     this.cohortStart=cohortStart;this.cohortEnd=cohortEnd;
     fs.mkdirSync(dir,{recursive:true});
-    this.config=settings(config);this.intakeRejected={};this.intakeAccepted={};
+    this.config=settings(config);this.intakeRejected={};this.intakeAccepted={};this.intakeDecisions=new Map();
     this.rows=[];this.admitted=new Map();this.admissionUpgradeAt=Date.now();
     this.lookup=new Set();
     this.processed=new Map();
@@ -111,7 +109,7 @@ class ResearchRuntime {
            !r.features||typeof r.features!=='object')
           throw Error('Malformed saved research sample');
       }
-      this.admissionUpgradeAt=state.admissionUpgradeAt||this.admissionUpgradeAt;
+      this.admissionUpgradeAt=state.admissionUpgradeAt||this.admissionUpgradeAt;this.intakeDecisions=new Map(state.intakeDecisions||[]);this.intakeAccepted=state.intakeAccepted||{};this.intakeRejected=state.intakeRejected||{};
       this.rows=state.rows;this.admitted=new Map((state.admitted||state.rows).map(r=>[r.mint,r]));
       this.lookup=new Set(this.rows.map(r=>r.mint));
       for(const pair of state.processed||[]) {
@@ -119,12 +117,26 @@ class ResearchRuntime {
           this.processed.set(pair[0],pair[1]);
       }
       if(!state.admissionVersion){this.processed.clear();}
+      if((state.admissionVersion||0)<3){const completed=new Set(this.rows.map(r=>r.mint));for(const [mint] of this.processed)if(!completed.has(mint))this.processed.delete(mint);for(const row of this.admitted.values())if(!row.intakePending)this.intakeDecisions.set(row.mint,{ok:true,via:row.via||'preserved-observed-cohort',at:state.savedAt||row.acceptedAt,acceptedAt:row.acceptedAt});this.intakeAccepted={};this.intakeRejected={};for(const d of this.intakeDecisions.values()){const bank=d.ok?this.intakeAccepted:this.intakeRejected,key=d.ok?d.via:d.why;bank[key]=(bank[key]||0)+1;}}
       // Compatible with older snapshots that did not store the processed index.
       for(const r of this.rows)if(r.outcomeVersion===2)this.processed.set(r.mint,r.acceptedAt);else this.processed.delete(r.mint);
     }
     this.carryFrom(carry);
   }
   carryFrom(previous){if(!previous)return;for(const row of previous.admitted.values())if(!this.admitted.has(row.mint))this.admitted.set(row.mint,{...row,intakePending:true,transferred:true});}
+  admit(row,coin,passes=null,now=Date.now()){
+    if(row.acceptedAt<this.cohortStart||row.acceptedAt>=this.cohortEnd)return null;
+    const existing=this.admitted.get(row.mint);if(existing&&!existing.intakePending)return existing;
+    const cfg=phaseSettings(this.config,row.phase),pool=row.proof?.pool||coin?.p||null;
+    const initial=row.proof?.openingMetrics||coin?.openingMetrics;
+    let quoteSol=null;
+    if(initial&&initial.quoteMint==='So11111111111111111111111111111111111111112'&&(!initial.pool||initial.pool===pool)&&Number.isFinite(initial.liquiditySol)&&initial.liquiditySol>=0)quoteSol=initial.liquiditySol;
+    if(quoteSol==null&&coin){const first=[...(coin.lq||[])].sort((a,b)=>a[0]-b[0]).find(r=>r[0]*1000<=row.acceptedAt);if(first){const qi=coin.vmint?.indexOf('So11111111111111111111111111111111111111112');if(qi>=0&&coin.vmint[1-qi]===coin.a&&Number.isFinite(first[2+qi])&&first[2+qi]>=0)quoteSol=first[2+qi]/1e9;}}
+    const features={quoteSol},gate=intakeDecision(cfg.intake,row,features,passes),previous=this.intakeDecisions.get(row.mint);
+    if(!previous||previous.ok!==gate.ok||previous.why!==gate.why||previous.via!==gate.via){if(previous){const bank=previous.ok?this.intakeAccepted:this.intakeRejected,key=previous.ok?previous.via:previous.why;if(bank[key]>0)bank[key]--;if(!bank[key])delete bank[key];}const bank=gate.ok?this.intakeAccepted:this.intakeRejected,key=gate.ok?gate.via:gate.why;bank[key]=(bank[key]||0)+1;this.intakeDecisions.set(row.mint,{...gate,at:now,acceptedAt:row.acceptedAt,quoteSol});}
+    if(!gate.ok){this.admitted.delete(row.mint);if(!cfg.intake?.modules.enabled)this.processed.set(row.mint,row.acceptedAt);return null;}
+    this.processed.delete(row.mint);const admission={mint:row.mint,phase:row.phase,p:pool,pair:pool,phaseEpoch:row.proof?.poolEpoch?.id||null,eventAt:eventAnchor(row),acceptedAt:row.acceptedAt,admittedAt:now,intakeFeatures:features,intakeMode:'discovery-v3',features:{},via:gate.via};this.admitted.set(row.mint,admission);return admission;
+  }
   pruneRevoked(revoked){let n=0;for(const [mint,row] of this.admitted)if(row.phase==='before'&&revoked?.has(mint)){this.admitted.delete(mint);this.processed.delete(mint);this.lastAttemptAt.delete(mint);n++;}this.rows=this.rows.filter(r=>r.phase!=='before'||!revoked?.has(r.mint));return n;}
   reanchor({source,coins,now,limit=32}) {
     const candidates=this.rows.filter(r=>{const admission=source.get?.(r.mint)||source.records.get(r.mint);return admission&&admission.phase===r.phase&&Number.isSafeInteger(admission.eventAt)&&admission.eventAt>0&&admission.eventAt<=admission.acceptedAt&&(r.featureSnapshotVersion!==1||r.eventAt!==admission.eventAt||r.windowStart!==admission.eventAt||r.marketScopeVersion!==2);});
@@ -169,10 +181,11 @@ class ResearchRuntime {
       if((row.acceptedAt<this.cohortStart&&!this.admitted.has(row.mint))||row.acceptedAt>=this.cohortEnd||age<0||age>FRESH_WINDOW||this.processed.has(row.mint))continue;
       considered++;
       const cfg=phaseSettings(this.config,row.phase);
-      let admission=this.admitted.get(row.mint);if(admission?.intakePending&&row.acceptedAt<this.admissionUpgradeAt){admission={...admission,intakePending:false,via:'preserved-observed-cohort'};this.admitted.set(row.mint,admission);}
-      if(!admission&&(row.acceptedAt<this.admissionUpgradeAt||!cfg.intake)){admission={mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,eventAt:eventAnchor(row),acceptedAt:row.acceptedAt,features:{},via:'preserved-observed-cohort'};this.admitted.set(row.mint,admission);}
-      if((!admission||admission.intakePending)&&age>=cfg.decisionMinutes*MIN&&gateChecks++<MAX_CLASSIFICATION_CHECKS){const c=coins.get(row.mint);if(c){const features=require('./feature-snapshots').read(c,row.acceptedAt,cfg.decisionMinutes,row.phase),gate=intakeDecision(cfg.intake,row,features,passes);if(!gate.ok){this.admitted.delete(row.mint);this.processed.set(row.mint,row.acceptedAt);this.intakeRejected[gate.why]=(this.intakeRejected[gate.why]||0)+1;continue}admission={mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,eventAt:eventAnchor(row),acceptedAt:row.acceptedAt,features,via:gate.via};this.admitted.set(row.mint,admission);this.intakeAccepted[gate.via]=(this.intakeAccepted[gate.via]||0)+1;}}
-      if(!admission){admission={mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,eventAt:eventAnchor(row),acceptedAt:row.acceptedAt,features:{},intakePending:true};this.admitted.set(row.mint,admission);}
+      let admission=this.admitted.get(row.mint);
+      if(!admission||admission.intakePending)admission=this.admit(row,coins.get(row.mint),passes,now);
+      if(!admission)continue;
+      const featureAt=row.acceptedAt+cfg.decisionMinutes*MIN;
+      if(now>=featureAt){const coin=coins.get(row.mint);if(coin){admission.features=require('./feature-snapshots').read(coin,row.acceptedAt,cfg.decisionMinutes,row.phase);admission.decisionAt=featureAt;}}
 
       if(admission.intakePending||age<cfg.hours*HOURS+3*MIN){
         const why=age<cfg.hours*HOURS+3*MIN?'not-yet-finished':'deferred-by-batch';pending[why]=(pending[why]||0)+1;
@@ -223,13 +236,14 @@ class ResearchRuntime {
     for(const [mint,acceptedAt] of this.processed){
       if(now-acceptedAt>FRESH_WINDOW)this.processed.delete(mint);
     }
+    for(const [mint,decision] of this.intakeDecisions)if(now-decision.acceptedAt>FRESH_WINDOW)this.intakeDecisions.delete(mint);
     for(const [mint,retry] of this.lastAttemptAt)
       if(now-retry.acceptedAt>FRESH_WINDOW)this.lastAttemptAt.delete(mint);
     {
       this.rows=this.rows.sort((a,b)=>a.time-b.time);
       this.lookup=new Set(this.rows.map(r=>r.mint));
       atomicJSON(this.file,{schema:1,rows:this.rows,
-        admissionVersion:2,admissionUpgradeAt:this.admissionUpgradeAt,admitted:[...this.admitted.values()],processed:[...this.processed],savedAt:now});
+        admissionVersion:3,intakeDecisions:[...this.intakeDecisions],intakeAccepted:this.intakeAccepted,intakeRejected:this.intakeRejected,admissionUpgradeAt:this.admissionUpgradeAt,admitted:[...this.admitted.values()],processed:[...this.processed],savedAt:now});
     }
     for(const row of this.rows){
       const name=classOf(row,this.config);
@@ -244,7 +258,7 @@ class ResearchRuntime {
     const unknownReasons={};let recovering=0;
     const counts={live:0,dead:0,pending:0,unknown:0,entered:0,preLive:0,preDead:0,postLive:0,postDead:0},byPhase={before:{entered:0,live:0,dead:0,pending:0,unknown:0},after:{entered:0,live:0,dead:0,pending:0,unknown:0}};
     for(const row of this.view()){if(row.why==='backfill-pending')recovering++;if(row.label==='unknown')unknownReasons[row.why||'collector-gap']=(unknownReasons[row.why||'collector-gap']||0)+1;counts.entered++;counts[row.label]++;const p=byPhase[row.phase];if(p){p.entered++;p[row.label]++;}if(['live','dead'].includes(row.label))counts[row.phase==='before'?(row.label==='live'?'preLive':'preDead'):(row.label==='live'?'postLive':'postDead')]++;}
-    return {schema:2,updated:this.lastAt,eventMigration:this.eventMigration||null,cohortStart:this.cohortStart,settings:{...this.config},intakePending:[...this.admitted.values()].filter(a=>a.intakePending).length,counts,byPhase,unknownReasons,distributions:this.distributions(),pending:{...this.pending,'not-yet-finished':counts.pending-recovering,'backfill-pending':recovering,'collector-gap':counts.unknown},bankCapacityPerClass:MAX_BANK_PER_CLASS,status:'observational',secondLevel:'separate-server-verified-pass-stream'};
+    return {schema:2,updated:this.lastAt,eventMigration:this.eventMigration||null,cohortStart:this.cohortStart,settings:{...this.config},intakeMode:'discovery-v3',intakeAccepted:this.intakeAccepted,intakeRejected:this.intakeRejected,intakePending:[...this.admitted.values()].filter(a=>a.intakePending).length,counts,byPhase,unknownReasons,distributions:this.distributions(),pending:{...this.pending,'not-yet-finished':counts.pending-recovering,'backfill-pending':recovering,'collector-gap':counts.unknown},bankCapacityPerClass:MAX_BANK_PER_CLASS,status:'observational',secondLevel:'separate-server-verified-pass-stream'};
   }
   view(){const complete=new Map(this.rows.map(r=>[r.mint,r]));return [...this.admitted.values()].filter(a=>!a.intakePending).map(a=>{const r=complete.get(a.mint);if(r){const v=r.outcomeVersion===2?classifyActivity(r,phaseSettings(this.config,r.phase)):{label:'unknown',why:'legacy-observation-awaiting-recheck'};return {...r,...v,features:verifiedFeatures(r.features)};};const cfg=phaseSettings(this.config,a.phase),ended=this.lastAt>=eventAnchor(a)+cfg.hours*HOURS+3*MIN,why=this.lastAttemptAt.get(a.mint)?.why;return {...a,label:ended&&why&&why!=='deferred-by-batch'?'unknown':'pending',why:ended?why||'deferred-by-batch':'not-yet-finished'};}).sort((a,b)=>a.acceptedAt-b.acceptedAt);}
   distributions(){const histogram=(rows,key,edges)=>{const bins=edges.map((lo,i)=>({from:lo,to:edges[i+1]??(key==='activePct'?100:null),count:0}));let unknown=0;for(const r of rows){const x=r[key];if(typeof x!=='number'||!Number.isFinite(x)){unknown++;continue;}let i=edges.findLastIndex(n=>x>=n);if(i<0)i=0;bins[i].count++;}return {bins,known:rows.length-unknown,unknown};};return Object.fromEntries(['before','after'].map(phase=>{const rows=this.rows.filter(r=>r.phase===phase&&r.outcomeVersion===2).map(r=>({...r,...classifyActivity(r,phaseSettings(this.config,r.phase)),priceChangePct:r.priceKeep==null?null:r.priceKeep-100}));return [phase,{completed:rows.length,activePct:histogram(rows,'activePct',Array.from({length:10},(_,i)=>i*10)),maxIdleObserved:histogram(rows,'maxIdleObserved',[0,15,30,60,120]),priceChangePct:histogram(rows,'priceChangePct',[-100,-90,-70,-50,-30,-10,0,10,50,100]),uniqueBuyers:histogram(rows,'uniqueBuyers',[0,10,30,50,100,200]),lowerBounds:rows.filter(r=>r.lowerBounds?.includes('unique-buyers')).length}];}));}
