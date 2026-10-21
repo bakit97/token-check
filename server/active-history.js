@@ -10,17 +10,19 @@ function atomic(file,value){const tmp=file+'.tmp',fd=fs.openSync(tmp,'w',0o600);
 function same(a,b){return JSON.stringify(a)===JSON.stringify(b)}
 function at(key,row){return row[0]*(key==='curveSol'?1:1000)}
 function fieldsOf(pool,cutoff){const fields={};for(const key of ['ds','gx','lq','curveSol']){const rows=(pool[key]||[]).filter(r=>Array.isArray(r)&&at(key,r)<cutoff);if(rows.length>1)fields[key]=rows}
- const raw=Object.fromEntries(Object.entries(pool.raw||{}).filter(([,r])=>r?.b&&r.at<cutoff));if(Object.keys(raw).length)fields.raw=raw;
- for(const key of ['k10','path'])if(pool[key]?.c?.length&&pool[key].at<cutoff)fields[key]=pool[key];if(cutoff-pool.t>90*60000)for(const key of ['featureSnapshotsPacked','intelligenceSnapshots','earlyWallets'])if(pool[key]!=null)fields[key]=pool[key];if(cutoff-pool.t>8*H&&pool.activityTapePacked)fields.activityTapePacked=pool.activityTapePacked;return JSON.parse(JSON.stringify(fields))}
+ const raw=Object.fromEntries(Object.entries(pool.raw||{}).filter(([,r])=>(r?.b||r?.miss)&&r.at<cutoff));if(Object.keys(raw).length)fields.raw=raw;
+ for(const key of ['k10','path'])if(pool[key]?.c?.length&&pool[key].at<cutoff)fields[key]=pool[key];if(cutoff-pool.t>90*60000){if(pool.bx&&Object.keys(pool.bx).length>3)fields.bx=pool.bx;if(pool.trDone&&pool.tr?.f?.length)fields.tr=pool.tr;}if(cutoff-pool.t>90*60000)for(const key of ['featureSnapshotsPacked','intelligenceSnapshots','earlyWallets'])if(pool[key]!=null)fields[key]=pool[key];if(cutoff-pool.t>8*H&&pool.activityTapePacked)fields.activityTapePacked=pool.activityTapePacked;return JSON.parse(JSON.stringify(fields))}
 function mergeFields(earlier,later){const out={...earlier,...later};for(const key of ['ds','gx','lq','curveSol'])if(earlier[key]||later[key]){const rows=new Map();for(const r of [...(earlier[key]||[]),...(later[key]||[])])rows.set(JSON.stringify(r),r);out[key]=[...rows.values()].sort((a,b)=>a[0]-b[0])}
  for(const key of ['intelligenceSnapshots','earlyWallets'])if(earlier[key]||later[key])out[key]=[...new Map([...(earlier[key]||[]),...(later[key]||[])].map(x=>[JSON.stringify(x),x])).values()];
+ for(const key of ['bx','tr'])if(earlier[key]||later[key])out[key]={...earlier[key],...later[key]};
  if(earlier.raw||later.raw){out.raw={...earlier.raw};for(const [k,r] of Object.entries(later.raw||{}))out.raw[k]={...out.raw[k],...r}}
  for(const key of ['k10','path'])if(earlier[key]&&!later[key]?.c?.length)out[key]={...earlier[key],...later[key],c:earlier[key].c};return out}
 function trim(pool,fields,reference){for(const key of ['ds','gx','lq','curveSol'])if(fields[key]){const archived=new Set(fields[key].map(r=>JSON.stringify(r))),old=(pool[key]||[]).filter(r=>archived.has(JSON.stringify(r))),keep=new Set();if(old.length)keep.add(JSON.stringify(old.at(-1)));
   if(key==='lq'&&old.length){const qi=pool.vmint?.includes(pool.a)?1-pool.vmint.indexOf(pool.a):pool.vmint?.indexOf('So11111111111111111111111111111111111111112');if(qi>=0){const maximum=old.reduce((a,b)=>b[2+qi]>a[2+qi]?b:a);keep.add(JSON.stringify(maximum))}}
   pool[key]=(pool[key]||[]).filter(r=>!archived.has(JSON.stringify(r))||keep.has(JSON.stringify(r)));}
- for(const [key,row] of Object.entries(fields.raw||{}))if(same(pool.raw?.[key],row)){const {b,...metadata}=row;pool.raw[key]={...metadata,historyArchived:true}}
+ for(const [key,row] of Object.entries(fields.raw||{}))if(same(pool.raw?.[key],row)){if(row.miss)pool.raw[key]={miss:row.miss,...(row.reason?{reason:row.reason}:{})};else{const {b,...metadata}=row;pool.raw[key]={...metadata,historyArchived:true}}}
  for(const key of ['k10','path'])if(fields[key]&&same(fields[key],pool[key])){const {c,...metadata}=pool[key];pool[key]={...metadata,historyArchived:true}}
+ if(fields.bx&&same(pool.bx,fields.bx)){const {at,cov,payers}=pool.bx;pool.bx={at,cov,payers};}if(fields.tr&&same(pool.tr,fields.tr))pool.tr={};
  for(const key of ['featureSnapshotsPacked','intelligenceSnapshots','earlyWallets','activityTapePacked'])if(fields[key]!=null&&same(pool[key],fields[key]))delete pool[key];
  pool.archiveRefs={...pool.archiveRefs,activeHistory:[...(pool.archiveRefs?.activeHistory||[]),reference]};delete pool.historyHydrated;
 }
@@ -49,7 +51,7 @@ class ActiveHistory{
   }
   fs.unlinkSync(this.pendingFile);syncDir(this.dir);this.pending=null;this.stats.confirmedChunks++;
  }
- async compact({coins,publish,read,now=Date.now(),maxChunks=8}={}){if(this.busy||now-this.lastAt<60000)return false;this.busy=true;this.lastAt=now;let changed=false;try{for(let i=0;i<maxChunks;i++){if(!this.pending&&!this._prepare(coins,now))break;await this._finish(coins,publish,read);changed=true;await new Promise(r=>setImmediate(r))}this.gc(coins,now);return changed}catch(e){this.stats.errors++;throw e}finally{this.busy=false}}
+ async compact({coins,publish,read,now=Date.now(),maxChunks=32}={}){if(this.busy||now-this.lastAt<60000)return false;this.busy=true;this.lastAt=now;let changed=false;try{for(let i=0;i<maxChunks;i++){if(!this.pending&&!this._prepare(coins,now))break;await this._finish(coins,publish,read);changed=true;await new Promise(r=>setImmediate(r))}this.gc(coins,now);return changed}catch(e){this.stats.errors++;throw e}finally{this.busy=false}}
  gc(coins,now){const used=new Set(this.references(coins).map(r=>r.base));for(const [base,index] of this.chunks)if(!used.has(base)&&now-index.at>48*H){fs.unlinkSync(this.file(base));fs.unlinkSync(path.join(this.dir,base+'.index.json'));this.chunks.delete(base)}}
  summary(){return {...this.stats,localChunks:this.chunks.size,localBytes:[...this.chunks.values()].reduce((n,x)=>n+x.bytes,0),pending:!!this.pending,lastAt:this.lastAt}}
 }

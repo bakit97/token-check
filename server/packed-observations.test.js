@@ -22,3 +22,5 @@ test('active five-minute cohort can append and apply the existing 520-row retent
  for(const series of [c.ds,original]){series.push([2000,3,null]);if(series.length>520)series.splice(130,1)}
  assert.equal(JSON.stringify(c.ds),JSON.stringify(original));compactCoin(c,now);assert.equal(packedStats(new Map([['m',c]])).series,1);
 });
+
+test('verified old migration snapshot is deduplicated without removing canonical proof data',()=>{const signal={address:'pool',data:'raw',at:1},c={t:0,mg:{st:'ok',signal:structuredClone(signal)},wsMigrationSnapshot:signal};compactCoin(c,3*3600000);assert.equal(c.wsMigrationSnapshot,undefined);assert.deepEqual(c.mg.signal,signal);const pending={t:0,mg:{st:'unk',signal},wsMigrationSnapshot:signal};compactCoin(pending,3*3600000);assert.deepEqual(pending.wsMigrationSnapshot,signal);});

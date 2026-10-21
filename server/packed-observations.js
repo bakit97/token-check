@@ -27,6 +27,7 @@ function packRows(rows){
 }
 function compactCoin(c,now=Date.now()){
  if(!Number.isFinite(c.t)||now-c.t<2*3600000)return;
+ if(c.mg?.st==='ok'&&c.wsMigrationSnapshot&&c.mg.signal&&JSON.stringify(c.wsMigrationSnapshot)===JSON.stringify(c.mg.signal))delete c.wsMigrationSnapshot;
  // DS frequency becomes five minutes after two hours. Preserve every row;
  // the next real observation transparently thaws this individual series.
  for(const pool of [c,...(c.origs||[])]){
