@@ -35,6 +35,8 @@ class SourceRuntime {
     this.maxRecords=maxRecords;this.maxJournalBytes=maxJournalBytes;this.capacityRejected=0;
     fs.mkdirSync(dir, {recursive:true});
     this.revokedPath=path.join(dir,'manual-pool-revocations-v1.json');this.revokedManual=new Map(fs.existsSync(this.revokedPath)?JSON.parse(fs.readFileSync(this.revokedPath,'utf8')).entries:[]);
+    this.migrationRevokedPath=path.join(dir,'migration-revocations-v1.json');this.revokedMigrations=new Map(fs.existsSync(this.migrationRevokedPath)?JSON.parse(fs.readFileSync(this.migrationRevokedPath,'utf8')).entries:[]);
+    this.graduationPath=path.join(dir,'graduation-receipts-v1.json');this.graduationReceipts=new Map(fs.existsSync(this.graduationPath)?JSON.parse(fs.readFileSync(this.graduationPath,'utf8')).entries:[]);
     this.logPath = path.join(dir, 'source-accepted-v1.jsonl');
     const settingsFile = path.join(dir, 'source-settings-v1.json');
     this.settingsPath = settingsFile;
@@ -123,6 +125,7 @@ class SourceRuntime {
       if(!line)continue;
       if(this.records.size>=this.maxRecords)throw Error('Source journal exceeds memory-safe index capacity');
       const record=JSON.parse(line);if(record.phase==='before'&&this.revokedManual.has(record.mint)&&this.revokedManual.get(record.mint)?.pool===record.proof?.pool)continue;
+      if(record.phase==='after'&&this.revokedMigrations.has(record.mint)&&this.revokedMigrations.get(record.mint)?.signature===record.proof?.signature)continue;
       if(record.v!==1)throw new Error('Неизвестная версия журнала источника');
       // Реплей защищён той же схемой валидации, но не запускает возрастной фильтр.
       const gate=new AdmissionGate({beforeMinutes:this.gate.beforeMinutes,
@@ -163,6 +166,10 @@ class SourceRuntime {
     const key=kzDay(row.acceptedAt)+':before:'+mint;this.dailyRows.delete(key);this.observe({mint,phase:'before',at:row.acceptedAt,outcome:'rejectedSidePool',origin:'manual-pool-audit',reason:why});return true;
   }
 
+  _saveMigrationMap(file,map){const temp=file+'.tmp',fd=fs.openSync(temp,'w',0o600);try{fs.writeFileSync(fd,JSON.stringify({schema:1,entries:[...map]}));fs.fsyncSync(fd)}finally{fs.closeSync(fd)}fs.renameSync(temp,file);require('./durable-json').syncDirectory(this.dir);}
+  recordGraduation(mint,receipt){const row=this.records.get(mint);if(row?.phase!=='after'||!receipt?.known||receipt.graduated!==true)return false;const next=new Map(this.graduationReceipts);next.set(mint,{pool:row.proof.pool,signature:row.proof.signature,receipt});for(const [key,value] of next)if(this.clock()-value.receipt.at>48*3600000)next.delete(key);if(next.size>10000)throw Error('Graduation receipt index limit');this._saveMigrationMap(this.graduationPath,next);this.graduationReceipts=next;return true;}
+  revokeMigration(mint,why,at=this.clock()){const row=this.records.get(mint);if(row?.phase!=='after')return false;const next=new Map(this.revokedMigrations);next.set(mint,{pool:row.proof?.pool,signature:row.proof?.signature,why,at,acceptedAt:row.acceptedAt});if(next.size>10000)throw Error('Migration revocation index limit');this._saveMigrationMap(this.migrationRevokedPath,next);this.revokedMigrations=next;this.records.delete(mint);this.recent.delete(mint);this.gate.accepted.delete(mint);this.stats.acceptedAfter=Math.max(0,this.stats.acceptedAfter-1);this.dailyRows.delete(kzDay(row.acceptedAt)+':after:'+mint);this.observe({mint,phase:'after',at:row.acceptedAt,outcome:'unverified',origin:'graduation-audit',reason:'rejectedNotGraduated'});return true;}
+  graduationSummary(at=this.clock()){const day=kzDay(at),byLaunchpad={};let pendingRecheck=0;for(const row of this.records.values())if(row.phase==='after'&&kzDay(row.acceptedAt)===day){const stored=this.graduationReceipts.get(row.mint),receipt=row.proof?.graduation||(stored&&stored.signature===row.proof?.signature?stored.receipt:null);if(receipt?.graduated===true){const family=row.proof?.launchpad||row.proof?.family||'unknown';byLaunchpad[family]=(byLaunchpad[family]||0)+1;}else pendingRecheck++;}const rejectedNotGraduated=this.dailySummary(at).after.unverifiedByReason.rejectedNotGraduated||0;return {day,byLaunchpad,pendingRecheck,rejectedNotGraduated,revoked:this.revokedMigrations.size,proof:'official-migration-instruction-and-completed-curve'};}
   configure(options) {
     const next=validateSettings(options);
     const tmp=this.settingsPath+'.tmp';
@@ -176,6 +183,7 @@ class SourceRuntime {
   get(mint){return this.records.get(mint)||null;}
 
   _admit(event, detectedAt, proof) {
+    if(event.phase==='after'&&this.revokedMigrations.has(event.mint)&&this.revokedMigrations.get(event.mint)?.signature===proof?.signature)return {admitted:false,reason:'rejected-not-graduated'};
     if(event.phase==='before'&&this.revokedManual.has(event.mint))return {admitted:false,reason:'rejected-side-pool'};
     if(!this.has(event.mint)&&this.records.size>=this.maxRecords){this.capacityRejected++;return {admitted:false,reason:'resource-capacity'}}
     const decision=this.gate.offer(event, detectedAt);
@@ -241,7 +249,7 @@ class SourceRuntime {
     if(!seenAt)return {admitted:false,reason:'no-post-observation'};
     return this._admit({
       mint:c.a,phase:'after',migrationAt:c.mg.mT,migrationVerified:true
-    },seenAt,{...require('./venue-identity').identity(c,'after',Date.now()),dexProgram:c.mg.owner||null,family:c.mg.k,signature:c.mg.sig,pool:c.mg.pool,curve:c.mg.watch||null,slot:c.migrationSlot||null,verifiedAt:c.admissionVerifiedAt||null,openingMetrics:c.openingMetrics||null});
+    },seenAt,{...require('./venue-identity').identity(c,'after',Date.now()),dexProgram:c.mg.owner||null,family:c.mg.k,signature:c.mg.sig,pool:c.mg.pool,graduation:c.graduation||null,curve:c.mg.watch||null,slot:c.migrationSlot||null,verifiedAt:c.admissionVerifiedAt||null,openingMetrics:c.openingMetrics||null});
   }
 
   day(date) {
@@ -271,7 +279,7 @@ class SourceRuntime {
   }
   summary(at=Date.now()) {
     const d=kzDay(at),today=this.day(d),before=today.filter(x=>x.phase==='before').length;
-    return {updated:at,day:d,total:this.records.size,
+    return {updated:at,graduations:this.graduationSummary(at),day:d,total:this.records.size,
       today:today.length,todayBefore:before,todayAfter:today.length-before,
       capacity:{maxRecords:this.maxRecords,rejected:this.capacityRejected,full:this.records.size>=this.maxRecords},settings:this.settings(),stats:{...this.stats,acceptedPool:this.stats.acceptedBefore,tooOldPool:this.stats.tooOldBefore},daily:this.dailySummary(at)};
   }

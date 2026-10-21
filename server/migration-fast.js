@@ -22,6 +22,16 @@ function administrativeUpdate(tx,curve,decode58){
  if(tx?.meta?.err!==null||!curve)return false;const keys=keysOf(tx);
  return [...(tx.transaction?.message?.instructions||[]),...(tx.meta?.innerInstructions||[]).flatMap(g=>g.instructions||[])].some(ix=>{if((ix.programId||keys[ix.programIdIndex])!==DBC||!Array.isArray(ix.accounts))return false;let disc;try{disc=Buffer.from(decode58(ix.data||'1')).subarray(0,8).toString('hex');}catch{return false;}const spec=administrativeSpecs.find(s=>s.discriminator===disc);if(!spec)return false;return (typeof ix.accounts[spec.curve]==='number'?keys[ix.accounts[spec.curve]]:ix.accounts[spec.curve])===curve;});
 }
+function curveGraduation(account,{family,mint,curve,encode58,at=Date.now(),slot=null}={}){
+ const program=family==='pump'?PUMP:family?.startsWith('launch')?LAUNCH:family?.startsWith('dbc')?DBC:null;
+ const base={schema:1,curve,program,at,slot,known:false,graduated:null};if(!program||!account)return {...base,reason:'curve-unavailable'};
+ if(account.owner!==program)return {...base,known:true,graduated:false,reason:'wrong-curve-program'};
+ if(!Array.isArray(account.data)||account.data[1]!=='base64')return {...base,reason:'curve-data-unavailable'};
+ const data=Buffer.from(account.data[0],'base64');let flag;
+ if(program===PUMP){if(data.length<49)return {...base,reason:'curve-data-short'};flag=data[48];if(flag>1)return {...base,reason:'curve-state-unknown'};}
+ else{const offset=program===DBC?136:205,minimum=program===DBC?424:269;if(data.length<minimum||typeof encode58!=='function')return {...base,reason:'curve-data-short'};if(encode58(data.subarray(offset,offset+32))!==mint)return {...base,known:true,graduated:false,reason:'wrong-curve-mint'};flag=data[program===DBC?305:17];if(flag>(program===DBC?1:2))return {...base,reason:'curve-state-unknown'};}
+ const graduated=flag===(program===LAUNCH?2:1);return {...base,known:true,graduated,status:flag,reason:graduated?'graduated':'curve-not-graduated'};
+}
 class FastSignals{
  constructor({process,now=Date.now,maxQueue=128,workers=2,onError=()=>{},setTimer=setTimeout,clearTimer=clearTimeout,maxAgeMs=90000,onPending=()=>{}}){this.process=process;this.now=now;this.startedAt=now();this.maxQueue=maxQueue;this.workers=workers;this.onError=onError;this.setTimer=setTimer;this.clearTimer=clearTimer;this.maxAgeMs=maxAgeMs;this.onPending=onPending;this.timer=null;this.queue=[];this.active=0;this.seen=new Map();this.day=null;this.resetDay();this.latency={pool:[],after:[]};this.byLaunchpad={};}
  resetDay(){const day=new Date(this.now()+5*3600000).toISOString().slice(0,10);if(day!==this.day){this.day=day;this.counts={signals:0,duplicates:0,overflow:0,completed:0,retries:0,errors:0,rejected:0};this.byLaunchpad={};this.failureReasons={};this.retryReasons={};this.outcomes={};this.lastFailures=[];if(this.latency)this.latency={pool:[],after:[]};}}
@@ -43,4 +53,4 @@ class FastSignals{
  accepted(phase,eventAt,launchpad,at=this.now()){this.resetDay();if(!this.latency[phase]||!Number.isFinite(eventAt)||at<eventAt)return;this.latency[phase].push(at-eventAt);if(this.latency[phase].length>500)this.latency[phase].shift();if(launchpad)this.byLaunchpad[launchpad]=(this.byLaunchpad[launchpad]||0)+1;}
  summary(){this.resetDay();const latency=Object.fromEntries(Object.entries(this.latency).map(([phase,values])=>{const a=[...values].sort((x,y)=>x-y),q=p=>a.length?a[Math.min(a.length-1,Math.ceil(a.length*p)-1)]:null;return [phase,{samples:a.length,p50Ms:q(.5),p90Ms:q(.9),maxMs:a.at(-1)??null}];}));return {startedAt:this.startedAt,day:this.day,timezone:'UTC+5',counts:{...this.counts},failureReasons:{...this.failureReasons},retryReasons:{...this.retryReasons},outcomes:{...this.outcomes},lastFailures:[...this.lastFailures],queue:this.queue.length,waitingBudget:this.queue.filter(t=>t.lastCode==='BUDGET_DEFERRED').length,oldestAgeMs:this.queue.length?this.now()-Math.min(...this.queue.map(t=>t.receivedAt)):0,active:this.active,latency,byLaunchpad:{...this.byLaunchpad},birthStreamEnabled:false,manualPoolStreamReady:false};}
 }
-module.exports={administrativeSpecs,administrativeUpdate,migrationCandidates,keysOf,FastSignals,PUMP_WITHDRAW_AUTH,specs};
+module.exports={curveGraduation,administrativeSpecs,administrativeUpdate,migrationCandidates,keysOf,FastSignals,PUMP_WITHDRAW_AUTH,specs};

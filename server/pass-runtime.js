@@ -177,6 +177,7 @@ class PassRuntime {
   }
   update({source,coins,now=Date.now()}={}){
     for(const [mint,row] of this.records)if(row.phase==='before'&&source?.revokedManual?.has(mint))this.records.delete(mint);
+    for(const [mint,row] of this.records)if(row.phase==='after'&&source?.revokedMigrations?.has(mint)&&!source.records.has(mint))this.records.delete(mint);
     if(!source?.records||!coins?.get)throw new TypeError('Source ledger and candidate map required');
     let added=0,missingFeatures=0,considered=0;
     if(this.config.passMode)return this._updateVerdicts({source,coins,now});

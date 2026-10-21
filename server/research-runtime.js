@@ -137,7 +137,7 @@ class ResearchRuntime {
     if(!gate.ok){this.admitted.delete(row.mint);if(!cfg.intake?.modules.enabled)this.processed.set(row.mint,row.acceptedAt);return null;}
     this.processed.delete(row.mint);const admission={mint:row.mint,phase:row.phase,p:pool,pair:pool,phaseEpoch:row.proof?.poolEpoch?.id||null,eventAt:eventAnchor(row),acceptedAt:row.acceptedAt,admittedAt:now,intakeFeatures:features,intakeMode:'discovery-v3',features:{},via:gate.via};this.admitted.set(row.mint,admission);return admission;
   }
-  pruneRevoked(revoked){let n=0;for(const [mint,row] of this.admitted)if(row.phase==='before'&&revoked?.has(mint)){this.admitted.delete(mint);this.processed.delete(mint);this.lastAttemptAt.delete(mint);n++;}this.rows=this.rows.filter(r=>r.phase!=='before'||!revoked?.has(r.mint));return n;}
+  pruneRevoked(revoked,phase='before'){let n=0;for(const [mint,row] of this.admitted)if(row.phase===phase&&revoked?.has(mint)){this.admitted.delete(mint);this.processed.delete(mint);this.lastAttemptAt.delete(mint);const d=this.intakeDecisions.get(mint);if(d){const bank=d.ok?this.intakeAccepted:this.intakeRejected,key=d.ok?d.via:d.why;if(bank[key]>0)bank[key]--;if(!bank[key])delete bank[key];this.intakeDecisions.delete(mint);}n++;}this.rows=this.rows.filter(r=>r.phase!==phase||!revoked?.has(r.mint));return n;}
   reanchor({source,coins,now,limit=32}) {
     const candidates=this.rows.filter(r=>{const admission=source.get?.(r.mint)||source.records.get(r.mint);return admission&&admission.phase===r.phase&&Number.isSafeInteger(admission.eventAt)&&admission.eventAt>0&&admission.eventAt<=admission.acceptedAt&&(r.featureSnapshotVersion!==1||r.eventAt!==admission.eventAt||r.windowStart!==admission.eventAt||r.marketScopeVersion!==2);});
     this.eventMigration={remaining:candidates.length,rawMissing:0,changed:this.eventMigration?.changed||0};
@@ -165,7 +165,7 @@ class ResearchRuntime {
     this.eventMigrationCursor=cursor+limit;
   }
   update({source,coins,passes=null,now=Date.now()}={}) {
-    this.pruneRevoked(source?.revokedManual);
+    this.pruneRevoked(source?.revokedManual);this.pruneRevoked(new Map([...(source?.revokedMigrations||[])].filter(([mint])=>!source.records.has(mint))),'after');
     if(!source?.records || !coins?.get)throw new TypeError('Need source ledger and coin map');
     this.reanchor({source,coins,now});
     let added=0,considered=0,attempted=0,gateChecks=0;

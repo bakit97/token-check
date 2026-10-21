@@ -168,7 +168,7 @@ class ResearchTwoRuntime {
     finally{fs.closeSync(fd)}
     this.journalCount=0;this.compactedAt=now;
   }
-  pruneRevoked(revoked){for(const r of this.rows)if(r.phase==='before'&&revoked?.has(r.mint)){this.processed.delete(r.mint);this.retry.delete(r.mint);}this.rows=this.rows.filter(r=>r.phase!=='before'||!revoked?.has(r.mint));}
+  pruneRevoked(revoked,phase='before'){for(const r of this.rows)if(r.phase===phase&&revoked?.has(r.mint)){this.processed.delete(r.mint);this.retry.delete(r.mint);}this.rows=this.rows.filter(r=>r.phase!==phase||!revoked?.has(r.mint));}
   reanchor({source,coins,now,limit=32}){
     if(!source?.records)return;
     const todo=this.rows.filter(r=>{const a=source.records.get(r.mint);return a&&a.phase===r.phase&&Number.isSafeInteger(a.eventAt)&&a.eventAt>0&&a.eventAt<=a.acceptedAt&&(r.featureSnapshotVersion!==1||r.eventAt!==a.eventAt||r.marketScopeVersion!==2);});
@@ -195,6 +195,7 @@ class ResearchTwoRuntime {
   }
   update({passes,coins,source=null,now=Date.now()}={}){
     if(!passes?.records||!coins?.get)throw TypeError('Need verified pass journal and candidate map');
+    this.pruneRevoked(new Map([...(source?.revokedMigrations||[])].filter(([mint])=>!source.records.has(mint))),'after');
     this.reanchor({source,coins,now});
     this.relabel();
     let added=0,attempted=0,considered=0;

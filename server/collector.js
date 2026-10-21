@@ -213,7 +213,8 @@ function verifyMigTransaction(pool,fam,curve,t,signature,blockTime,slot){
   (msg.instructions||[]).forEach(check);(t.meta.innerInstructions||[]).forEach(g=>(g.instructions||[]).forEach(check));
   if(!hit)return {why:'нет инструкции миграции с пулом и кривой'};
   const seconds=t.blockTime||blockTime;if(!Number.isFinite(seconds)||seconds<=0)return {why:'нет времени блока'};
-  return {ok:1,sig:signature,slot:t.slot||slot,t:seconds*1000,ix:hit};
+  const binding=curve?{curve}:require(DIR+'/migration-fast.js').migrationCandidates(t,b58dec).find(v=>v.pool===pool);if(!binding)return {why:'migration curve binding not proven'};
+  return {ok:1,sig:signature,slot:t.slot||slot,t:seconds*1000,ix:hit,curve:binding.curve};
 }
 function hasMigrationInstruction(t){
   if(t.meta?.err||!t.transaction?.message)return false;
@@ -345,11 +346,11 @@ async function migCheck(c){if(rejectOldProof(c))return;const rpc=rpcFor(c,'ми�
   const x={owner,creator,watch};
   // 1) этот пул — официальный?
   if(cands.includes(c.p)){const r=await proveMig(c.p,fam,curve,rpc,c.migrationSlot);
-    if(r.ok){setMg(c,'ok',MIG_OK[fam],'',{...x,pool:c.p,sig:r.sig,mT:r.t,ix:r.ix});if(c.t!==r.t){c.t0=c.t0||c.t;c.t=r.t}admitVerifiedMigration(c);return}
+    if(r.ok){setMg(c,'ok',MIG_OK[fam],'',{...x,watch:r.curve||curve,pool:c.p,sig:r.sig,mT:r.t,ix:r.ix});if(c.t!==r.t){c.t0=c.t0||c.t;c.t=r.t}await admitVerifiedMigration(c);return}
     setMg(c,'unk',MIG_UNK[fam],r.why,{...x,final:r.tooLong||r.final?1:0});return}
   // 2) у монеты есть официальный пул в другом месте — витрина переезжает туда
   let fail=null;for(const P of await exists(cands.filter(p=>p!==c.p),rpc)){const r=await proveMig(P,fam,curve,rpc,c.migrationSlot);
-    if(r.ok){moveTo(c,P,fam,r);setMg(c,'ok',MIG_OK[fam],'',{owner:'',pool:P,sig:r.sig,mT:r.t,ix:r.ix});admitVerifiedMigration(c);return}fail=fail||r}
+    if(r.ok){moveTo(c,P,fam,r);setMg(c,'ok',MIG_OK[fam],'',{owner:'',watch:r.curve||curve,pool:P,sig:r.sig,mT:r.t,ix:r.ix});await admitVerifiedMigration(c);return}fail=fail||r}
   if(fail){setMg(c,'unk',MIG_UNK[fam],'официальный пул есть, но миграция не доказана: '+fail.why,{...x,final:fail.tooLong||fail.final?1:0});return}
   setMg(c,base,baseK,why,x)}
 const MIGNAME={pump:'pump.fun → PumpSwap',dbc:'Meteora DBC → Meteora',launch:'LaunchLab → Raydium','launch-v4':'LaunchLab → Raydium',
@@ -675,14 +676,15 @@ async function reloadPassConfig(){
     PASS_CFG_ERR=e.message;err('pass control '+e.message);
   }
 }
-function admitVerifiedMigration(c){
+async function admitVerifiedMigration(c){
   if(!SOURCE)return;
   try{
     const now=Date.now(),deadline=c.mg?.mT+(SOURCE.settings().afterMinutes||2)*60e3;c.buyDeadlineAt=deadline;
     if(!SOURCE.has(c.a)&&Number.isFinite(deadline)&&now>deadline){c.buyWindowMissedAt=now;SOURCE.observe({mint:c.a,phase:'after',outcome:'tooOld',lateMs:now-deadline});return}
+    if(!c.mg?.watch)return;let graduation;try{graduation=await readCurveGraduation({mint:c.a,curve:c.mg.watch,family:c.mg.k,slot:c.migrationSlot},{priority:'migration',context:'кривая:завершение',source:'graduation',urgent:true});}catch(e){if(e.code==='BUDGET_DEFERRED')throw e;c.graduationPending={at:now,why:e.code||'provider-unavailable'};return;}if(!graduation.graduated){SOURCE.observe({mint:c.a,phase:'after',outcome:'unverified',reason:'rejectedNotGraduated',origin:'legacy-proof'});return;}c.graduation=graduation;
     const d=SOURCE.afterVerifiedMigration(c);
     if(d.admitted)log('ВСЕ + после',c.a,'возраст секунд',Math.round((d.record.acceptedAt-d.record.eventAt)/1000));
-  }catch(e){SOURCE_ERR='ошибка записи источника: '+e.message;err('source '+e.message)}
+  }catch(e){if(e.code==='BUDGET_DEFERRED')throw e;SOURCE_ERR='ошибка записи источника: '+e.message;err('source '+e.message)}
 }
 
 const OBS_KEYS=['curveSol','ds','k10','path','hold','bx','lq','gx','vaults','vmint','vdec','vaultIdentityAt','legacy','raw','tr','rawUp','trDone','archiveRefs'],OBS_TMP=['tr','raw','dsAt','dsTryAt','tokAt','gxAt','lastTrade','kTry','pTry','trTry','trDone','lqAt','rawUp','vTry'];
@@ -1075,17 +1077,23 @@ async function processFastMigration(task){
    else if(v.family==='launch-v4')official=await launchPoolOf(v.mint,v.quote)===v.curve&&await findPDA([b58dec(AMM4),b58dec(v.market),new TextEncoder().encode('amm_associated_seed')],AMM4)===v.pool;
    else if(v.family==='dbc-v1'){const [a,b]=orderKeys(v.mint,v.quote);official=await findPDA([a,b,b58dec(v.config)],DAMM1)===v.pool;}
    else if(v.family==='dbc'){official=(await officialPools('dbc',v.mint,v.quote)).includes(v.pool);if(!official){const account=(await rpc('getAccountInfo',[v.pool,{encoding:'base64',commitment:'confirmed'}],options))?.value;if(!account)throw Object.assign(Error('confirmed migration pool account pending'),{code:'TX_PENDING'});const u=b64(account?.data?.[0]);official=account?.owner===DAMM2&&u?.length>=680&&pk(u,648)===DBC_AUTH&&pair2(u,168,200,v.mint)===v.quote;}}
-   if(!official)continue;SOURCE.observe({mint:v.mint,phase:'after',at:task.receivedAt,origin:'fast-'+task.kind});if(SOURCE.get(v.mint)?.phase==='after'){outcome='already-admitted';if(task.curve)return {outcome};continue;}
+   if(!official)continue;const graduation=await readCurveGraduation(v,options);if(!graduation.graduated){SOURCE.observe({mint:v.mint,phase:'after',outcome:'unverified',reason:'rejectedNotGraduated',origin:'fast-'+task.kind});outcome='rejected-not-graduated';continue;}SOURCE.observe({mint:v.mint,phase:'after',at:task.receivedAt,origin:'fast-'+task.kind});if(SOURCE.get(v.mint)?.phase==='after'){outcome='already-admitted';if(task.curve)return {outcome};continue;}
    const now=Date.now(),limit=SOURCE.settings().afterMinutes*60000;if(v.eventAt>now)throw Object.assign(Error('migration block clock pending'),{code:'TX_PENDING'});if(now-v.eventAt>limit){SOURCE.observe({mint:v.mint,phase:'after',outcome:'tooOld',lateMs:now-v.eventAt-limit});outcome='too-old';if(task.curve)return {outcome};continue;}
    const family=v.family==='dbc-v1'?'dbc':v.family;let c=C.get(v.mint);if(!c){c={a:v.mint,n:'',s:'',i:'',p:v.pool,d:DEXOF[family],q:v.quote,t:v.eventAt,seen:task.receivedAt,firstPostSeenAt:Math.max(task.receivedAt,v.eventAt),disc:'migration-signature',discoverySource:'migration-fast',pools:[v.pool],fv:FV};C.set(v.mint,c)}else moveTo(c,v.pool,family,{t:v.eventAt});
    c.openingMetrics={pool:v.pool,quoteMint:v.quote,at:now,eventAt:v.eventAt,scope:'creation-transaction-end',liquiditySol:v.openingQuoteSol,liquidityUsd:null,marketCapUsd:null,liquidityToMarketCap:null,creatorAddress:null,creatorDepositSol:null,lpEvidence:null};c.q=v.quote;if(v.baseVault&&v.quoteVault&&Number.isFinite(v.openingQuoteSol)){c.vaults=[v.baseVault,v.quoteVault];c.vmint=[v.mint,v.quote];c.vaultIdentityAt=now;c.lq=c.lq||[];c.lq.push([Math.floor(now/1000),v.slot,null,Math.round(v.openingQuoteSol*1e9)]);c.lqAt=now;}c.admissionVerifiedAt=now;c.t=v.eventAt;c.migrationSlot=v.slot;c.migrationSignalAt=task.receivedAt;c.wsSeen=Math.max(task.receivedAt,v.eventAt);c.firstPostSeenAt=c.wsSeen;c.preCurve=0;
-   setMg(c,'ok',family,'',{owner:v.dexProgram,pool:v.pool,watch:v.curve,sig:signature,mT:v.eventAt,ix:v.ix});const decision=SOURCE.afterVerifiedMigration(c);if(decision.admitted){FAST_DISCOVERY.accepted('after',v.eventAt,family,now);c.admissionVerifiedAt=now;outcome='accepted';}else outcome=decision.reason||'unverified';
+   c.graduation=graduation;setMg(c,'ok',family,'',{owner:v.dexProgram,pool:v.pool,watch:v.curve,sig:signature,mT:v.eventAt,ix:v.ix});const decision=SOURCE.afterVerifiedMigration(c);if(decision.admitted){FAST_DISCOVERY.accepted('after',v.eventAt,family,now);c.admissionVerifiedAt=now;outcome='accepted';}else outcome=decision.reason||'unverified';
    if(task.curve)return {outcome};
   }
  }
  if(!outcome&&task.administrativeUpdate){if(task.mint)SOURCE.observe({mint:task.mint,phase:'after',origin:'ws-'+task.kind,reason:'non-migration-update'});return {outcome:'non-migration-update'};}
  if(!outcome)throw Object.assign(Error('migration instruction or official pool proof not found'),{code:task.curve&&!proofSeen?'TX_PENDING':'PROOF_NOT_FOUND'});
  return {outcome};
+}
+async function readCurveGraduation(v,options){
+ const api=require(DIR+'/migration-fast.js'),snapshot=C.get(v.mint)?.wsMigrationSnapshot;
+ let account,slot=v.slot,method='curve-account';if(snapshot?.address===v.curve&&Date.now()-snapshot.at<30000&&snapshot.slot>=v.slot){account={owner:snapshot.owner,data:[snapshot.data,'base64']};slot=snapshot.slot;method='ws-curve-account';}
+ else{let result;try{result=await rpc('getAccountInfo',[v.curve,{encoding:'base64',commitment:'confirmed',dataSlice:{offset:0,length:424},...(Number.isSafeInteger(v.slot)?{minContextSlot:v.slot}:{})}],{...options,cache:false,maxBytes:8192});}catch(e){if(e.code==='BUDGET_DEFERRED')throw e;throw Object.assign(Error('curve state not available yet'),{code:'TX_PENDING'});}if(Number.isSafeInteger(result?.context?.slot)&&result.context.slot<v.slot)throw Object.assign(Error('curve state slot pending'),{code:'TX_PENDING'});account=result?.value;slot=result?.context?.slot||slot;}
+ const receipt=api.curveGraduation(account,{...v,encode58:typeof b58enc==='function'?b58enc:null,slot});if(!receipt.known)throw Object.assign(Error(receipt.reason),{code:'TX_PENDING'});return {...receipt,method};
 }
 async function processManualPool(task){
  const call=(m,p,o)=>PUBLIC_POOL_RPC.call(m,p,o);
@@ -1114,6 +1122,17 @@ async function auditManualPools(){if(MANUAL_AUDIT.busy||!SOURCE)return;MANUAL_AU
  const earlier=await require(DIR+'/side-pools.js').catalogue({mint:row.mint,pool:row.proof.pool,eventAt:row.eventAt});MANUAL_AUDIT.checked++;MANUAL_AUDITED.set(row.mint,Date.now());while(MANUAL_AUDITED.size>2000)MANUAL_AUDITED.delete(MANUAL_AUDITED.keys().next().value);MANUAL_AUDIT.lastAt=Date.now();
  if(earlier&&SOURCE.revokeManualPool(row.mint,'earlier-pool')){MANUAL_AUDIT.revoked++;C.delete(row.mint);RESEARCH_V2?.pruneRevoked(SOURCE.revokedManual);RESEARCH_TWO?.pruneRevoked(SOURCE.revokedManual);if(PASS_V2?.records.get(row.mint)?.phase==='before')PASS_V2.records.delete(row.mint);RESEARCH_BANKS?.removeRevoked(SOURCE.revokedManual);save();}
  }}catch{MANUAL_AUDIT.errors++;}finally{MANUAL_AUDIT.busy=false}}
+const GRADUATION_AUDIT={busy:false,checked:0,verified:0,revoked:0,unknown:0,errors:0,lastAt:0,remaining:0};let GRADUATION_RPC=null;const GRADUATION_ATTEMPTS=new Map();
+function activeMigrationRevocations(){return new Map([...(SOURCE?.revokedMigrations||[])].filter(([mint])=>!SOURCE.records.has(mint)));}
+async function auditGraduations(){if(GRADUATION_AUDIT.busy||!SOURCE||!GRADUATION_RPC||!RESEARCH_V2)return;GRADUATION_AUDIT.busy=true;const now=Date.now();try{
+ const all=[...SOURCE.records.values()].filter(r=>r.phase==='after'&&!r.proof?.graduation?.graduated&&SOURCE.graduationReceipts.get(r.mint)?.signature!==r.proof?.signature);GRADUATION_AUDIT.remaining=all.length;
+ const rows=all.filter(r=>now-(GRADUATION_ATTEMPTS.get(r.mint)||0)>60000).sort((a,b)=>Number(b.acceptedAt>=RESEARCH_V2.cohortStart)-Number(a.acceptedAt>=RESEARCH_V2.cohortStart)||b.acceptedAt-a.acceptedAt).slice(0,32),ready=[];
+ for(const row of rows){GRADUATION_ATTEMPTS.set(row.mint,now);let curve=row.proof?.curve||C.get(row.mint)?.mg?.watch;const family=row.proof?.family;if(!curve&&family==='pump')curve=await bondingCurveOf(row.mint);if(!curve&&family?.startsWith('launch'))curve=await launchPoolOf(row.mint,row.proof?.openingMetrics?.quoteMint||C.get(row.mint)?.q||WSOL);if(curve)ready.push({row,curve,family});else GRADUATION_AUDIT.unknown++;}
+ while(GRADUATION_ATTEMPTS.size>10000)GRADUATION_ATTEMPTS.delete(GRADUATION_ATTEMPTS.keys().next().value);if(!ready.length)return;
+ const response=await GRADUATION_RPC.call('getMultipleAccounts',[ready.map(x=>x.curve),{encoding:'base64',commitment:'confirmed',dataSlice:{offset:0,length:424},minContextSlot:Math.max(...ready.map(x=>x.row.proof?.slot||0))}],{priority:'identity',context:'аудит завершения кривой',source:'graduation-audit',urgent:true});if(!Array.isArray(response?.value)||response.value.length!==ready.length)throw Error('Graduation audit account batch incomplete');
+ for(let i=0;i<ready.length;i++){const {row,curve,family}=ready[i],receipt=require(DIR+'/migration-fast.js').curveGraduation(response.value[i],{mint:row.mint,curve,family,encode58:b58enc,slot:response.context?.slot||null,at:Date.now()});GRADUATION_AUDIT.checked++;if(!receipt.known){GRADUATION_AUDIT.unknown++;continue;}const coin=C.get(row.mint);if(receipt.graduated){SOURCE.recordGraduation(row.mint,receipt);if(coin)coin.graduation=receipt;GRADUATION_AUDIT.verified++;}else if(SOURCE.revokeMigration(row.mint,receipt.reason)){if(coin){coin.graduation=receipt;setMg(coin,'unk','unk-not-graduated','кривая не завершена',{final:1});}const revoked=activeMigrationRevocations();RESEARCH_V2?.pruneRevoked(revoked,'after');RESEARCH_TWO?.pruneRevoked(revoked,'after');PASS_V2?.records.delete(row.mint);RESEARCH_BANKS?.removeRevoked(revoked,'after');GRADUATION_AUDIT.revoked++;}}
+ GRADUATION_AUDIT.lastAt=Date.now();
+ }catch(e){GRADUATION_AUDIT.errors++;err('graduation audit '+(e.code||'provider-unavailable'));}finally{GRADUATION_AUDIT.busy=false}}
 function discoveryStatus(){const x=FAST_DISCOVERY?.summary();if(!x)return null;return {...x,manualPoolStreamReady:POOL_LOGS?.summary().available===true,latency:{...x.latency,pool:POOL_DISCOVERY?.summary().latency.pool||x.latency.pool}};}
 function offerFastMigration(task){if(!FAST_DISCOVERY)return;FAST_DISCOVERY.offer({...task,receivedAt:Date.now()});}
 function chainWatch(){
@@ -1293,7 +1312,7 @@ async function exportResearchV2(now) {
   const result=RESEARCH_V2.update({source:SOURCE,coins:researchCoins(),passes:PASS_V2,now});
   // A settings change does NOT abandon previously admitted cohorts.
   // Earlier raw cohorts remain on disk; current labels must not be overwritten by old criteria.
-  RESEARCH_BANKS?.removeRevoked(SOURCE.revokedManual);RESEARCH_BANKS?.relabelOne(RESEARCH_V2.config);
+  RESEARCH_BANKS?.removeRevoked(SOURCE.revokedManual);RESEARCH_BANKS?.removeRevoked(activeMigrationRevocations(),'after');RESEARCH_BANKS?.relabelOne(RESEARCH_V2.config);
   RESEARCH_BANKS?.upsert(RESEARCH_V2.select({limit:20000}));
   AI_SNAP.r1=result;
   const population=RESEARCH_V2.view().map(r=>withPoolReference({mint:r.mint,phase:r.phase,acceptedAt:r.acceptedAt,label:r.label,why:r.why||null,activePct:r.activePct??null,maxIdleObserved:r.maxIdleObserved??null,features:r.features||{}}));
@@ -1521,7 +1540,7 @@ async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const n
   const featureSnapshots=globalThis.featureCoverage||{pending:true};
   if(!globalThis.stateShapeBusy&&now-(RETENTION.fieldBytes?.at||0)>15*60e3){globalThis.stateShapeBusy=true;require(DIR+'/runtime-health.js').stateFieldBytes(C.values()).then(x=>RETENTION.fieldBytes=x).catch(e=>RETENTION.fieldBytesError=e.name||'Error').finally(()=>globalThis.stateShapeBusy=false);}
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,researchStorage:RESEARCH_BANKS?.summary(),poolProofReads:PUBLIC_POOL_RPC?.stats,poolBalanceReads:POOL_BALANCES?.summary(),caches:{rpc:RPC_CACHE.summary(),recovery:OBS_RECOVERY?.cache.summary()||null,recoveryRpc:RECOVERY_RPC?.cache.summary()||null},featureSnapshots,poolTradeObservations:{...POOL_TRADE_STATS},holderCensus:HOLDER_CENSUS?.stats||null,liquidityProofs:LP_PROOFS?.stats||null,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,observationRecovery:OBS_RECOVERY?{...OBS_RECOVERY.summary(),rpc:RECOVERY_RPC?.summary()||null,r1Unknown:RESEARCH_V2?.summary().counts.unknown??null}:null,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:discoveryStatus(),poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,identityPublic:{...FREE_IDENTITY_STATS},openingProofs:OPENING_PROOFS?{...OPENING_PROOFS.stats,active:OPENING_PROOFS.job?{mint:OPENING_PROOFS.job.mint,pages:OPENING_PROOFS.job.pages,blocks:OPENING_PROOFS.job.blocks.length}:null}:null,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,migrationGraduation:{...SOURCE?.graduationSummary(now),audit:{...GRADUATION_AUDIT},rpc:GRADUATION_RPC?.stats||null},researchStorage:RESEARCH_BANKS?.summary(),poolProofReads:PUBLIC_POOL_RPC?.stats,poolBalanceReads:POOL_BALANCES?.summary(),caches:{rpc:RPC_CACHE.summary(),recovery:OBS_RECOVERY?.cache.summary()||null,recoveryRpc:RECOVERY_RPC?.cache.summary()||null},featureSnapshots,poolTradeObservations:{...POOL_TRADE_STATS},holderCensus:HOLDER_CENSUS?.stats||null,liquidityProofs:LP_PROOFS?.stats||null,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,observationRecovery:OBS_RECOVERY?{...OBS_RECOVERY.summary(),rpc:RECOVERY_RPC?.summary()||null,r1Unknown:RESEARCH_V2?.summary().counts.unknown??null}:null,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:discoveryStatus(),poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,identityPublic:{...FREE_IDENTITY_STATS},openingProofs:OPENING_PROOFS?{...OPENING_PROOFS.stats,active:OPENING_PROOFS.job?{mint:OPENING_PROOFS.job.mint,pages:OPENING_PROOFS.job.pages,blocks:OPENING_PROOFS.job.blocks.length}:null}:null,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,publishedAt:FAST_PASS_PUBLISH_AT},
@@ -1569,6 +1588,7 @@ const STARTED=Date.now();
   captureFeatureSnapshots();setInterval(()=>{try{captureFeatureSnapshots()}catch(e){err('feature snapshots '+e.message)}},30000);
   initObservationRecovery();setTimeout(()=>recoveryTick(),20000);setInterval(()=>{try{recoveryTick()}catch(e){err('recovery '+e.message)}},15000);
   setInterval(()=>freeIdentityTick(),10000);OPENING_PROOFS=new (require(DIR+'/opening-evidence.js').OpeningEvidence)({});setInterval(()=>openingTick().catch(e=>err('opening proof '+e.message)),2000);PROFILES=new (require(DIR+'/coin-profile.js').CoinProfiles)();HOLDER_CENSUS=new (require(DIR+'/holder-census.js').HolderCensus)({});setInterval(()=>censusTick().catch(e=>err('holder census '+e.message)),10000);LP_PROOFS=new (require(DIR+'/liquidity-proof.js').LiquidityProofs)({});setInterval(()=>liquidityTick().catch(e=>err('liquidity proof '+e.message)),10000);
+  GRADUATION_RPC=new (require(DIR+'/pool-balance-reader.js').PublicPoolRPC)({fallback:(m,p,o)=>rpc(m,p,o)});setTimeout(()=>auditGraduations(),5000);setInterval(()=>auditGraduations(),10000);
   const LAUNCH_HISTORY=new (require(DIR+'/launch-history.js').LaunchHistory)();
   const updateLaunchHistory=()=>{try{LAUNCH_HISTORY.update({source:SOURCE,coins:C,metadata:mint=>COMPLETED?.metadata(mint),now:Date.now()})}catch(e){err('launch history '+e.message)}};updateLaunchHistory();setInterval(updateLaunchHistory,60000);
   const updateProfiles=()=>PROFILES.update({coins:C,source:SOURCE,rpc:(m,p)=>rpc(m,p,{priority:'identity',context:'карточка',source:'coin-profile'})}).catch(e=>err('profiles '+e.message));

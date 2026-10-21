@@ -17,10 +17,10 @@ test('a genuinely new migration signal on an old token starts a fresh proof task
  const coin={t:1,proofExpiredAt:100,mg:{st:'unk',v:3,final:1,k:'unk-expired'}},ctx=setup([coin]);ctx.signal(coin,clock);assert.equal(coin.proofExpiredAt,undefined);assert.equal(coin.proofEnqueuedAt,clock);assert.equal(coin.mg.force,1);assert.equal(ctx.summary(clock).freshUnder15m,1);
 });
 
-test('an open buying window outranks an older fresh partial proof, without allowing retroactive late admission',()=>{
+test('an open buying window outranks an older fresh partial proof, without allowing retroactive late admission',async()=>{
  const open={t:clock-30000},late={t:clock-180000,proofProgressAt:clock-1},ctx=setup([late,open]);assert.ok(ctx.compare(open,late)<0);const q=ctx.summary(clock);assert.equal(q.buyWindowOpen,1);assert.equal(q.buyWindowMissedPending,1);
- const admitted=[],observed=[],scope={Date:{now:()=>clock},SOURCE:{settings:()=>({afterMinutes:2}),has:()=>false,observe:x=>observed.push(x),afterVerifiedMigration:c=>{admitted.push(c.a);return {admitted:false}}},Number,Math,log:()=>{},err:()=>{},SOURCE_ERR:''};vm.createContext(scope);
- vm.runInContext(code.slice(code.indexOf('function admitVerifiedMigration(c)'),code.indexOf('const OBS_KEYS='))+'\nthis.admit=admitVerifiedMigration;',scope);
- const tooLate={a:'late',mg:{mT:clock-180000}},timely={a:'fresh',mg:{mT:clock-30000}};scope.admit(tooLate);scope.admit(timely);assert.equal(tooLate.buyWindowMissedAt,clock);assert.deepEqual(admitted,['fresh']);
+ const admitted=[],observed=[],scope={Date:{now:()=>clock},SOURCE:{settings:()=>({afterMinutes:2}),has:()=>false,observe:x=>observed.push(x),afterVerifiedMigration:c=>{admitted.push(c.a);return {admitted:false}}},Number,Math,log:()=>{},err:()=>{},SOURCE_ERR:'',readCurveGraduation:async()=>({known:true,graduated:true})};vm.createContext(scope);
+ vm.runInContext(code.slice(code.indexOf('async function admitVerifiedMigration(c)'),code.indexOf('const OBS_KEYS='))+'\nthis.admit=admitVerifiedMigration;',scope);
+ const tooLate={a:'late',mg:{mT:clock-180000}},timely={a:'fresh',mg:{mT:clock-30000,watch:'curve',k:'pump'}};await scope.admit(tooLate);await scope.admit(timely);assert.equal(tooLate.buyWindowMissedAt,clock);assert.deepEqual(admitted,['fresh']);
  assert.equal(observed[0].outcome,'tooOld');assert.equal(observed[0].lateMs,60000);assert.equal(scope.SOURCE_ERR,'');
 });
