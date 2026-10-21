@@ -44,7 +44,7 @@ function poolVaultsInTransaction(tx,pool,program,mint,quote,decode58){
   const spec=definitions.find(s=>s.program===program&&s.discriminator===disc);if(!spec)continue;
   const at=i=>typeof ix.accounts[i]==='number'?keys[ix.accounts[i]]:ix.accounts[i],a=at(spec.mintA),b=at(spec.mintB);
   if(at(spec.pool)!==pool||!((a===mint&&b===quote)||(a===quote&&b===mint)))continue;
-  return {baseVault:at(a===mint?spec.vaultA:spec.vaultB),quoteVault:at(a===quote?spec.vaultA:spec.vaultB)};
+  return {baseVault:at(a===mint?spec.vaultA:spec.vaultB),quoteVault:at(a===quote?spec.vaultA:spec.vaultB),poolCreator:at(spec.creator),poolConfig:spec.program==='cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG'&&spec.name==='initialize_pool'?at(4):null,poolInit:spec.name};
  }return null;
 }
 module.exports={manualPoolCandidates,definitions,poolSnapshot,poolVaultsInTransaction};

@@ -10,7 +10,7 @@ async function* jsonPieces(value,depth=0){
  if(value===null||typeof value!=='object'||depth>=2){const json=JSON.stringify(value);if(json===undefined)throw TypeError('Undefined JSON root');yield json;return}
  if(Array.isArray(value)||value instanceof JsonRows){yield '[';let first=true,n=0;for(const item of value){if(!first)yield ',';first=false;
    if(item===undefined||typeof item==='function'||typeof item==='symbol')yield 'null';else yield*jsonPieces(item,depth+1);
-   if(++n%64===0)await new Promise(r=>setImmediate(r));}yield ']';return}
+   if(++n%4===0)await new Promise(r=>setImmediate(r));}yield ']';return}
  yield '{';let first=true;for(const key of Object.keys(value)){const item=value[key];if(item===undefined||typeof item==='function'||typeof item==='symbol')continue;
   if(!first)yield ',';first=false;yield JSON.stringify(key)+':';yield*jsonPieces(item,depth+1);}yield '}';
 }
