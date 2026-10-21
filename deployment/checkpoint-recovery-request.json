@@ -1,1 +1,1 @@
-{"id": "live-map-checkpoint-recovery-20261022", "allowedFromGeneration": "1792612657852336", "maxWaitMs": 1000, "maxStateBytes": 64000000, "enabled": true, "allowExistingCheckpoint": true, "maxCheckpointAgeMs": 1800000}
+{"id": "live-map-checkpoint-recovery-current-20261022", "allowedFromGeneration": "1792613166515930", "maxWaitMs": 1000, "maxStateBytes": 64000000, "enabled": true, "allowExistingCheckpoint": true, "maxCheckpointAgeMs": 1800000}
