@@ -560,6 +560,7 @@ async function initResearchV2() {
   const baseline=settings();
   RESEARCH_ONE_EPOCH=new ResearchEpoch({dir:DIR,key:'one',validate:settings,
     config,adoptLegacy:JSON.stringify(config)===JSON.stringify(baseline)});
+  RESEARCH_ONE_EPOCH.apply(config,await getObj('config/research-epoch-one.json'));
   const epoch=RESEARCH_ONE_EPOCH.current;
   RESEARCH_V2=new ResearchRuntime({
     dir:DIR,config:epoch.config,cohortStart:epoch.activeAt,
@@ -583,6 +584,7 @@ async function initPathsV2(){
   const requested=await getObj('config/research-two.json')||configOf();
   RESEARCH_TWO_EPOCH=new ResearchEpoch({dir:DIR,key:'two',validate:configOf,
     config:requested});
+  RESEARCH_TWO_EPOCH.apply(requested,await getObj('config/research-epoch-two.json'));
   const two=RESEARCH_TWO_EPOCH.current;
   RESEARCH_TWO=new ResearchTwoRuntime({
     dir:DIR,config:two.config,cohortStart:two.activeAt,
@@ -595,20 +597,22 @@ async function initPathsV2(){
   try{LIBRARY_SCORES=JSON.parse(fs.readFileSync(DIR+'/module-live-evaluations.json','utf8'))}catch(e){if(e.code!=='ENOENT')err('library live scores unavailable')}
   await refreshLibrary(PASS_V2.config);
   RESEARCH_BANKS=new (require(DIR+'/research-banks.js').ResearchBanks)({dir:DIR,config:await getObj('config/research-storage.json')||{},one:RESEARCH_V2?.config||{},two:RESEARCH_TWO.config});
+  syncResearchEpochBanks();
   FILTER_AUDIT=new (require(DIR+'/filter-audit.js').FilterAudit)({dir:DIR});
   PASS_ERR='';TWO_ERR='';PASS_CFG_ERR='';
   log('серверные пути готовы: Прошли',PASS_V2.records.size,
     'Уровень 2',RESEARCH_TWO.rows.length,'включено',PASS_V2.config.enabled);
 }
+function syncResearchEpochBanks(){for(const [level,epoch] of [['1',RESEARCH_ONE_EPOCH?.current],['2',RESEARCH_TWO_EPOCH?.current]])if(epoch?.resetId)RESEARCH_BANKS?.setEpoch(level,epoch.resetId,epoch.resetAt);}
 async function reloadResearchConfig(){
   try{
     if(RESEARCH_ONE_EPOCH&&RESEARCH_V2){
       const cfg=await getObj('config/research-one.json');
       if(!cfg)throw Error('First research config missing');
-      if(RESEARCH_ONE_EPOCH.apply(cfg)){
+      if(RESEARCH_ONE_EPOCH.apply(cfg,await getObj('config/research-epoch-one.json'))){
         const x=RESEARCH_ONE_EPOCH.current;
         const {ResearchRuntime}=require(DIR+'/research-runtime.js');
-        RESEARCH_V2=new ResearchRuntime({dir:DIR,config:x.config,carry:RESEARCH_V2,
+        RESEARCH_V2=new ResearchRuntime({dir:DIR,config:x.config,carry:x.resetAt===x.activeAt?null:RESEARCH_V2,
           cohortStart:x.activeAt,bankName:oneResearchBankName(x)});
         recoverSupersededStudies();
         RESEARCH_BANK_UPLOADED=0;AUTO_UPLOADED=0;
@@ -618,7 +622,7 @@ async function reloadResearchConfig(){
     if(RESEARCH_TWO_EPOCH&&RESEARCH_TWO){
       const cfg=await getObj('config/research-two.json');
       if(!cfg)throw Error('Second research config missing');
-      if(RESEARCH_TWO_EPOCH.apply(cfg)){
+      if(RESEARCH_TWO_EPOCH.apply(cfg,await getObj('config/research-epoch-two.json'))){
         const x=RESEARCH_TWO_EPOCH.current;
         const {ResearchTwoRuntime}=require(DIR+'/research-two-runtime.js');
         RESEARCH_TWO=new ResearchTwoRuntime({dir:DIR,config:x.config,
@@ -629,6 +633,7 @@ async function reloadResearchConfig(){
       }else RESEARCH_TWO.config=RESEARCH_TWO_EPOCH.current.config;
       if(PASS_V2)PASS_V2.displayWindows=RESEARCH_TWO.config;
     }
+    syncResearchEpochBanks();
     if(RESEARCH_BANKS){RESEARCH_BANKS.applyConfig(await getObj('config/research-storage.json')||{},RESEARCH_V2?.config||{},RESEARCH_TWO?.config||{});RESEARCH_BANKS.upsert([])}
     RESEARCH_CONFIG_ERR='';
   }catch(e){
@@ -823,10 +828,11 @@ function captureFeatureSnapshots(now=Date.now()){
 }
 function birthBackfill(now){if(!SOURCE||gtPending('birth-curve'))return;const c=[...C.values()].filter(c=>!c.createdAt&&(c.creatorCurveCandidate||c.mg?.watch||SOURCE.get(c.a)?.proof?.curve)&&SOURCE.has(c.a)&&now-(c.birthAttemptAt||0)>30*60000).sort((a,b)=>(a.birthAttemptAt||0)-(b.birthAttemptAt||0))[0];if(!c)return;c.birthAttemptAt=now;const curve=c.creatorCurveCandidate||c.mg?.watch||SOURCE.get(c.a)?.proof?.curve;gt('/pools/'+curve,2,'birth-curve').then(response=>require(DIR+'/coin-profile.js').birthFromGT(c,response,SOURCE.get(c.a),Date.now())).catch(()=>{});}
 const POOL_TRADE_STATS={responses:0,nativeTrades:0,unusableRows:0,earlyResponses:0,lastAt:0,heliusCredits:0};
-function recordPoolTrades(c,row,data,at){if(!row)return null;const cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2?.config||{},row.phase),result=require(DIR+'/pool-trade-observer.js').observe(c,row,data,at,{hours:cfg.hours,append:appendIntelligence});const oldest=Math.min(...result.rows.map(r=>r[0]*1000)),span=at-oldest;c.activityPollMs=data.length>=250&&Number.isFinite(span)?Math.max(60000,Math.min(10*60000,span*.65)):10*60000;POOL_TRADE_STATS.responses++;POOL_TRADE_STATS.nativeTrades+=result.valid;POOL_TRADE_STATS.unusableRows+=result.unusable;POOL_TRADE_STATS.lastAt=at;if(at<=row.acceptedAt+20*60000)POOL_TRADE_STATS.earlyResponses++;if(RESEARCH_V2?.rows.some(r=>r.mint===row.mint)){RESEARCH_V2.processed.delete(row.mint);RESEARCH_V2.lastAttemptAt.delete(row.mint);}return result;}
+function recordPoolTrades(c,row,data,at){if(!row)return null;const cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2?.config||{},row.phase),result=require(DIR+'/pool-trade-observer.js').observe(c,row,data,at,{hours:cfg.hours,append:appendIntelligence});c.activityFirstAt=c.activityFirstAt||at;c.activityLastAt=at;if(result.valid)c.activityFirstProofAt=c.activityFirstProofAt||at;const oldest=Math.min(...result.rows.map(r=>r[0]*1000)),span=at-oldest;c.activityPollMs=data.length>=250&&Number.isFinite(span)?Math.max(60000,Math.min(10*60000,span*.65)):10*60000;POOL_TRADE_STATS.responses++;POOL_TRADE_STATS.nativeTrades+=result.valid;POOL_TRADE_STATS.unusableRows+=result.unusable;POOL_TRADE_STATS.lastAt=at;if(at<=row.acceptedAt+20*60000)POOL_TRADE_STATS.earlyResponses++;if(RESEARCH_V2?.rows.some(r=>r.mint===row.mint)){RESEARCH_V2.processed.delete(row.mint);RESEARCH_V2.lastAttemptAt.delete(row.mint);}return result;}
 function researchActivityTape(now){
  if(!RESEARCH_V2||gtPending('r1-activity'))return;
- const candidates=[...RESEARCH_V2.admitted.values()].map(row=>({row,c:C.get(row.mint)})).filter(({row,c})=>c?.p&&now-(c.activityAttemptAt||0)>(c.activityPollMs||10*60000)&&now<require(DIR+'/event-clock.js').eventAnchor(row)+(require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase).hours*60+30)*60000).sort((a,b)=>(a.c.activityAttemptAt||0)-(b.c.activityAttemptAt||0));
+ const watched=new Map([...RESEARCH_V2.admitted]);for(const row of SOURCE?.records.values()||[])if(row.acceptedAt>=RESEARCH_V2.cohortStart&&now-row.acceptedAt<13*60000)watched.set(row.mint,row);
+ const candidates=[...watched.values()].map(row=>({row,c:C.get(row.mint)})).filter(({row,c})=>c?.p&&now-(c.activityAttemptAt||0)>Math.min(c.activityPollMs||10*60000,now-row.acceptedAt<13*60000?60000:10*60000)&&now-(c.activityLastAt||0)>Math.min(c.activityPollMs||10*60000,now-row.acceptedAt<13*60000?60000:10*60000)&&now<require(DIR+'/event-clock.js').eventAnchor(row)+(require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase).hours*60+30)*60000).sort((a,b)=>(a.c.activityAttemptAt||0)-(b.c.activityAttemptAt||0));
  const item=candidates[0];if(!item)return;const {row,c}=item,pool=c.p,start=require(DIR+'/event-clock.js').eventAnchor(row),end=start+require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase).hours*3600000;c.activityAttemptAt=now;
  gt('/pools/'+pool+'/trades',1,'r1-activity').then(response=>{if(c.p!==pool)return;recordPoolTrades(c,row,response.data,Date.now());}).catch(e=>err('activity history '+e.message));
 }
@@ -1276,6 +1282,7 @@ function recoveryTick(){if(resourcePressure())return;if(!OBS_RECOVERY||!RESEARCH
 function researchCoins(){const contract=require(DIR+'/observation-contract.js');return {get:mint=>{const c=C.get(mint)||(typeof COMPLETED!=='undefined'&&COMPLETED?COMPLETED.readCoin(mint):null);const row=c?contract.toLegacy(contract.project(fullCoin(c),{metadata:fullCoin(c),admission:SOURCE?.get(mint)||null})):null;return OBS_RECOVERY?OBS_RECOVERY.attach(row):row}}}
 async function exportResearchV2(now) {
   if(!RESEARCH_V2||!SOURCE)return;
+  syncResearchEpochBanks();
   // All read-only observations originate from the accepted main source.
   const result=RESEARCH_V2.update({source:SOURCE,coins:researchCoins(),passes:PASS_V2,now});
   // A settings change does NOT abandon previously admitted cohorts.
@@ -1284,7 +1291,7 @@ async function exportResearchV2(now) {
   RESEARCH_BANKS?.upsert(RESEARCH_V2.select({limit:20000}));
   AI_SNAP.r1=result;
   const population=RESEARCH_V2.view().map(r=>withPoolReference({mint:r.mint,phase:r.phase,acceptedAt:r.acceptedAt,label:r.label,why:r.why||null,activePct:r.activePct??null,maxIdleObserved:r.maxIdleObserved??null,features:r.features||{}}));
-  await upload('research-v2/status.json',{...result,snapshotId:String(now),population});
+  await upload('research-v2/status.json',{...result,epoch:RESEARCH_ONE_EPOCH.summary(),firstMinuteEvidence:require(DIR+'/pool-trade-observer.js').coverage([...SOURCE.records.values()].filter(r=>r.acceptedAt>=RESEARCH_V2.cohortStart),C,now),snapshotId:String(now),population});
   const debug={epochStart:result.cohortStart,selection:'sha256-order-independent-sample',auditSelection:'named-mints-then-sha256',audit:RESEARCH_V2.debugSample(10,{coins:researchCoins(),now,pinnedMints:['fpam8wyNiDSHtwx1znYeipGgRNnBcBTcN1iechcpump','8ikdGCtt5gcc3Lf9eQrwMgQqRmg24Py5abrzDovopump','3LTox4ciobeuUivZRueYbyuXjeTga4CA1w8JjqhQpump']}),coins:RESEARCH_V2.debugSample(20,{coins:researchCoins(),now})},debugSig=JSON.stringify(debug);if(debugSig!==RESEARCH_DEBUG_SIG){await upload('research-v2/debug-sample.json',{updated:now,...debug});RESEARCH_DEBUG_SIG=debugSig;}
   {
     await upload('research-v2/polygon-1.json',{

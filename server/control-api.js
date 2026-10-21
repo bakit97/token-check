@@ -13,6 +13,7 @@ const OBJECT='config/pass-filters.json';
 const AGE_OBJECT='config/source-age.json';
 const ONE_OBJECT='config/research-one.json';
 const TWO_OBJECT='config/research-two.json';
+const EPOCH_ONE='config/research-epoch-one.json',EPOCH_TWO='config/research-epoch-two.json';
 const STORAGE_OBJECT='config/research-storage.json';
 const MODULE_OBJECT='config/modules.json';
 const ORIGIN=process.env.SOLSCAN_CONTROL_ORIGIN||'https://bakit97.github.io';
@@ -60,6 +61,7 @@ async function readBody(req,which){
   let data;
   try{data=JSON.parse(Buffer.concat(chunks).toString('utf8'))}
   catch{throw Object.assign(Error('Invalid JSON'),{http:400})}
+  if([EPOCH_ONE,EPOCH_TWO].includes(which)){if(data.confirm!==true)throw Object.assign(Error('Explicit confirm:true required'),{http:422});return {schema:1,id:crypto.randomUUID(),requestedAt:Date.now()};}
   try{return which===AGE_OBJECT?validAges(data):
     which===ONE_OBJECT?settingsOne(data):
     which===TWO_OBJECT?settingsTwo(data):which===STORAGE_OBJECT?require('./research-banks').storageConfig(data):which===MODULE_OBJECT?data:configOf(data)}
@@ -118,7 +120,7 @@ function handler(req,res){
   }
   if(req.url==='/health'&&req.method==='GET')
     return reply(res,200,{status:'running',service:'solscan-owner-control'});
-  const objectName=req.url==='/api/filter-config'?OBJECT:
+  const objectName=req.url==='/api/research-one/new-epoch'?EPOCH_ONE:req.url==='/api/research-two/new-epoch'?EPOCH_TWO:req.url==='/api/filter-config'?OBJECT:
     req.url==='/api/source-age'?AGE_OBJECT:
     req.url==='/api/research-one'?ONE_OBJECT:
     req.url==='/api/research-two'?TWO_OBJECT:req.url==='/api/research-storage'?STORAGE_OBJECT:['/api/modules','/api/module-test'].includes(req.url)?MODULE_OBJECT:null;
@@ -136,6 +138,7 @@ function handler(req,res){
       return reply(res,200,{config:value});
     }
     const proposed=await readBody(req,objectName);
+    if([EPOCH_ONE,EPOCH_TWO].includes(objectName)){const token=await cloudToken(),generation=await storageGeneration(token,objectName),stored=await storagePut(token,proposed,objectName,generation);return reply(res,stored.conflict?409:200,stored.conflict?{error:'concurrent-update-retry'}:{accepted:true,request:proposed,generation:stored.generation,note:'Settings unchanged; collector starts an empty epoch and preserves previous observations'});}
     if(objectName===MODULE_OBJECT){
       const token=await cloudToken(),generation=await storageGeneration(token,MODULE_OBJECT),current=generation==='0'?{schema:1,modules:[],deleted:[]}:await storageGet(token,MODULE_OBJECT,generation);
       const snapshot=(await storageGet(token,'research-v2/modules.json'))?.modules||[],lib=require('./module-library');let config,module,results,deleted;

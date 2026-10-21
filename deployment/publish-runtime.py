@@ -1,5 +1,5 @@
 """Publish only changed runtime files with generation leases, collector last."""
-import argparse,base64,hashlib,json,pathlib,shutil,subprocess,re
+import argparse,base64,hashlib,json,pathlib,shutil,subprocess,re,runpy
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 def upload_plan(files,metadata):
     changed=[name for name,body in files.items() if metadata[name].get('md5_hash')!=base64.b64encode(hashlib.md5(body).digest()).decode()]
@@ -18,6 +18,7 @@ def main():
             if allow_missing and re.search(r'404|not found|does not exist|no urls matched',r.stderr,re.I):return None
             raise RuntimeError('Cloud operation failed: '+args[1]+' (no credentials logged)')
         return r.stdout
+    runpy.run_path(str(ROOT/'deployment/apply-research-epoch.py'))['apply'](ROOT,a.bucket,run)
     metadata={}
     for name in files:
         described=run(['storage','objects','describe','gs://'+a.bucket+'/code/'+name,'--format=json(generation,md5_hash)'],allow_missing=True)

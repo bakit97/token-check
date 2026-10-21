@@ -46,13 +46,16 @@ class ResearchEpoch{
     }
     this.apply(config);
   }
-  apply(raw){
-    const config=this.validate(raw),hash=hashOf(this.key==='one'?{hours:config.hours,intake:config.intake,phases:config.phases?Object.fromEntries(Object.entries(config.phases).map(([p,v])=>[p,{hours:v.hours,intake:v.intake}])):undefined}:twoIdentity(config));
-    if(this.key==='one'&&this.current){const old=this.current.config,identity=c=>hashOf({hours:c.hours,intake:c.intake,phases:c.phases?Object.fromEntries(Object.entries(c.phases).map(([p,v])=>[p,{hours:v.hours,intake:v.intake}])):undefined});if(identity(old)===identity(config)){if(JSON.stringify(old)!==JSON.stringify(config)){const next={...this.current,config};atomic(this.file,{schema:2,current:next,history:this.history,updated:Date.now()});this.current=next;}return false;}}
-    if(this.current?.hash===hash){if(JSON.stringify(config)!==JSON.stringify(this.current.config)){const next={...this.current,config};atomic(this.file,{schema:2,current:next,history:this.history,updated:Date.now()});this.current=next}return false;}
+  apply(raw,reset=null){
+    const config=this.validate(raw);
+    if(reset){if(typeof reset.id!=='string'||!/^[-a-zA-Z0-9]{8,80}$/.test(reset.id)||!Number.isSafeInteger(reset.requestedAt)||reset.requestedAt<=0||reset.requestedAt>Date.now()+60000)throw TypeError('Invalid epoch reset');}
+    const fresh=reset&&reset.id!==this.current?.resetId;
+    const hash=hashOf(this.key==='one'?{hours:config.hours,intake:config.intake,phases:config.phases?Object.fromEntries(Object.entries(config.phases).map(([p,v])=>[p,{hours:v.hours,intake:v.intake}])):undefined}:twoIdentity(config));
+    if(!fresh&&this.key==='one'&&this.current){const old=this.current.config,identity=c=>hashOf({hours:c.hours,intake:c.intake,phases:c.phases?Object.fromEntries(Object.entries(c.phases).map(([p,v])=>[p,{hours:v.hours,intake:v.intake}])):undefined});if(identity(old)===identity(config)){if(JSON.stringify(old)!==JSON.stringify(config)){const next={...this.current,config};atomic(this.file,{schema:2,current:next,history:this.history,updated:Date.now()});this.current=next;}return false;}}
+    if(!fresh&&this.current?.hash===hash){if(JSON.stringify(config)!==JSON.stringify(this.current.config)){const next={...this.current,config};atomic(this.file,{schema:2,current:next,history:this.history,updated:Date.now()});this.current=next}return false;}
     const now=Date.now();
     const activeAt=this.current?now:(this.adoptLegacy?0:now);
-    const next={key:this.key,hash,activeAt,config};
+    const next={key:this.key,hash,activeAt,config,...(fresh?{resetId:reset.id,resetAt:activeAt}:this.current?.resetId?{resetId:this.current.resetId,resetAt:this.current.resetAt}:{})};
     const history=this.current?
       this.history.concat([{...this.current,endedAt:now}]):this.history;
     atomic(this.file,{schema:2,current:next,history,updated:now});
