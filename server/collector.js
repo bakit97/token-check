@@ -66,20 +66,20 @@ async function getJSON(url,timeoutMs=15000){const controller=new AbortController
   if(!r.ok)throw new Error('HTTP '+r.status+' '+url.split('?')[0].slice(-60));return await networkDeadline(r.json(),timeoutMs);
  }finally{clearTimeout(timer);controller.abort();}}
 // приоритеты: 0 новые пулы, 1 сделки первых минут, 2 свечи первых 10 минут, 3 график цены
-const gtQ=[],gtActive=new Map();let gtCoalesced=0,gtPause=0,gtOK=0,gtFail=0,gtSp=3500,gtRun=0;
+const gtQ=[],gtActive=new Map();let gtCoalesced=0,gtPause=0,gtOK=0,gtFail=0,gtSp=6500,gtRun=0;
 const GT_BACKGROUND_LIMIT=24; // keep slow multi-hour charts from burying early trading evidence
 const gtBackgroundBusy=()=>gtQ.filter(x=>x.prio===3).length>=GT_BACKGROUND_LIMIT;const gtLog=[]; // gtLog: [время, 1=ок/0=429/2=ошибка, задержка в очереди мс]
 function gtPending(key){return [...gtQ,...gtActive.values()].some(x=>x.key===key||x.aliases?.has(key))}
 function gt(path,prio,key,windowEnd){key=key||path;const ex=[...gtQ,...gtActive.values()].find(x=>x.key===key||x.path===path);if(ex){gtCoalesced++;(ex.aliases=ex.aliases||new Set([ex.key])).add(key);ex.prio=Math.min(ex.prio,prio);ex.windowEnd=ex.windowEnd&&windowEnd?Math.max(ex.windowEnd,windowEnd):0;return ex.p;}
   let res,rej;const p=new Promise((a,b)=>{res=a;rej=b});gtQ.push({path,prio,res,rej,t:Date.now(),key,p,windowEnd});gtQ.sort((a,b)=>a.prio-b.prio||a.t-b.t);return p}
-(async function gtLoop(){for(;;){if(gtQ.length&&Date.now()>gtPause){for(const q of gtQ)if(q.windowEnd&&Date.now()>q.windowEnd)q.prio=3;gtQ.sort((a,b)=>a.prio-b.prio||a.t-b.t);const t=gtQ.shift();gtActive.set(t.path,t);
-    try{const j=await getJSON(GT+t.path);gtOK++;gtLog.push([Date.now(),1,Date.now()-t.t]);if(++gtRun>=20){gtRun=0;gtSp=Math.max(3000,gtSp-250)}t.res(j)}
+(async function gtLoop(){for(;;){if(gtQ.length&&Date.now()>gtPause){for(const q of gtQ){if(q.windowEnd&&Date.now()>q.windowEnd)q.prio=3;if(q.urgentUntil&&Date.now()>q.urgentUntil){q.prio=Math.max(q.prio,1);delete q.urgentUntil;}}gtQ.sort((a,b)=>a.prio-b.prio||(a.urgentUntil||Infinity)-(b.urgentUntil||Infinity)||a.t-b.t);const t=gtQ.shift();gtActive.set(t.path,t);
+    try{const j=await getJSON(GT+t.path);gtOK++;gtLog.push([Date.now(),1,Date.now()-t.t]);if(++gtRun>=20){gtRun=0;gtSp=Math.max(6000,gtSp-250)}t.res(j)}
     catch(e){gtFail++;gtLog.push([Date.now(),e.rl?0:2,Date.now()-t.t]);if(e.rl){gtPause=Date.now()+30e3;gtSp=Math.min(15000,gtSp+500);gtRun=0;
         if(t.prio<=2&&!t.retry){t.retry=1;gtQ.unshift(t);continue}}t.rej(e)}finally{gtActive.delete(t.path);}
     while(gtLog.length&&gtLog[0][0]<Date.now()-3600e3)gtLog.shift()}
   await sleep(gtSp)}})();
 function gtStats(){const ok=gtLog.filter(x=>x[1]===1),rl=gtLog.filter(x=>x[1]===0).length,lat=ok.map(x=>x[2]).sort((a,b)=>a-b);
-  return{queue:gtQ.length,inFlight:gtActive.size,coalesced:gtCoalesced,backgroundLimit:GT_BACKGROUND_LIMIT,oldestSec:gtQ.length?Math.round((Date.now()-Math.min(...gtQ.map(x=>x.t)))/1000):0,okHour:ok.length,r429Hour:rl,errHour:gtLog.filter(x=>x[1]===2).length,
+  return{buyersDeadlinePriority:true,queue:gtQ.length,inFlight:gtActive.size,coalesced:gtCoalesced,backgroundLimit:GT_BACKGROUND_LIMIT,oldestSec:gtQ.length?Math.round((Date.now()-Math.min(...gtQ.map(x=>x.t)))/1000):0,okHour:ok.length,r429Hour:rl,errHour:gtLog.filter(x=>x[1]===2).length,
     spacingMs:gtSp,waitMedSec:lat.length?Math.round(lat[lat.length>>1]/1000):null,waitMaxSec:lat.length?Math.round(lat[lat.length-1]/1000):null,
     byPrio:[0,1,2,3].map(p=>gtQ.filter(x=>x.prio===p).length)}}
 
@@ -696,7 +696,7 @@ function load(){try{require(DIR+'/stream-json.js').loadRows(DIR+'/state.json',c=
     if(c.fv!==FV){c.legacy={snap:c.snap,act:c.act,k:c.k};for(const k of ['snap','act','k','o','cur','cn','orig'])delete c[k];c.fv=FV}
     if(c.disc==='ws'&&c.d==='pumpswap')return;c=require(DIR+'/legacy-data-redaction.js').coin(c);if(!c)return;require(DIR+'/packed-observations.js').compactCoin(c);C.set(c.a,c)},HEALTH);log('загружено монет',C.size)}catch(e){if(e.code!=='ENOENT')throw e}
   try{RC=JSON.parse(fs.readFileSync(DIR+'/recon.json','utf8'))}catch{}}
-function save(){save.again=true;if(save.pending)return save.pending;save.pending=(async()=>{do{save.again=false;await require(DIR+'/stream-json.js').saveRowsAsync(DIR+'/state.json',(function*(){const {stateCoin}=require(DIR+'/packed-observations.js');for(const c of C.values())yield stateCoin(c)})(),HEALTH);await fs.promises.writeFile(DIR+'/recon.json',JSON.stringify(RC));RETENTION.stateBytes=(await fs.promises.stat(DIR+'/state.json')).size;}while(save.again);return true;})().catch(e=>{err('save '+e.message);return false}).finally(()=>save.pending=null);return save.pending;}
+function save(){if(save.pending)return save.pending;save.pending=(async()=>{await require(DIR+'/stream-json.js').saveRowsAsync(DIR+'/state.json',(function*(){const {stateCoin}=require(DIR+'/packed-observations.js');for(const c of C.values())yield stateCoin(c)})(),HEALTH);await fs.promises.writeFile(DIR+'/recon.json',JSON.stringify(RC));RETENTION.stateBytes=(await fs.promises.stat(DIR+'/state.json')).size;return true;})().catch(e=>{err('save '+e.message);return false}).finally(()=>save.pending=null);return save.pending;}
 const isCurve=d=>/pump-?fun/i.test(d||'')&&!/swap/i.test(d||'');
 const SKIP=new Set([WSOL,USDC,USDT]);
 function launchType(c){if(c.mg)return MIGNAME[c.mg.k]||('Другое ('+(c.d||'?')+')');return 'Проверяется'}
@@ -840,12 +840,16 @@ const POOL_TRADE_RECEIPTS=new WeakMap();
 const POOL_TRADE_STATS={responses:0,nativeTrades:0,unusableRows:0,earlyResponses:0,lastAt:0,heliusCredits:0};
 function recordPoolTrades(c,row,data,at){if(!row)return null;const previous=Array.isArray(data)?POOL_TRADE_RECEIPTS.get(data):null;if(previous?.coin===c&&previous.pool===c.p)return previous.result;const cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2?.config||{},row.phase),result=require(DIR+'/pool-trade-observer.js').observe(c,row,data,at,{hours:cfg.hours,append:appendIntelligence});c.activityFirstAt=c.activityFirstAt||at;c.activityLastAt=at;delete c.activityError;if(result.nativeProofRows)c.activityFirstProofAt=c.activityFirstProofAt||at;const oldest=Math.min(...result.rows.map(r=>r[0]*1000)),span=at-oldest;c.activityPollMs=data.length>=250&&Number.isFinite(span)?Math.max(60000,Math.min(10*60000,span*.65)):10*60000;POOL_TRADE_STATS.responses++;POOL_TRADE_STATS.nativeTrades+=result.nativeProofRows;POOL_TRADE_STATS.unusableRows+=result.unusable+result.valid-result.nativeProofRows;POOL_TRADE_STATS.lastAt=at;if(at<=row.acceptedAt+20*60000)POOL_TRADE_STATS.earlyResponses++;POOL_TRADE_RECEIPTS.set(data,{coin:c,pool:c.p,result});if(RESEARCH_V2?.rows.some(r=>r.mint===row.mint)){RESEARCH_V2.processed.delete(row.mint);RESEARCH_V2.lastAttemptAt.delete(row.mint);}return result;}
 function researchActivityTape(now){
- if(!RESEARCH_V2)return;const queued=gtQ.filter(t=>t.key.startsWith('r1-activity:')).length;if(queued>=6)return;
+ if(!RESEARCH_V2)return;const queued=gtQ.filter(t=>t.key.startsWith('r1-activity:')).length;
  const watched=new Map([...RESEARCH_V2.admitted]);for(const row of SOURCE?.records.values()||[])if(row.acceptedAt>=RESEARCH_V2.cohortStart&&now-row.acceptedAt<13*60000)watched.set(row.mint,row);
- const rank=({c,row})=>!c.activityFirstAt&&now-row.acceptedAt<2*60000?0:1;
- const candidates=[...watched.values()].map(row=>({row,c:C.get(row.mint)})).filter(({row,c})=>c?.p&&!gtPending('r1-activity:'+c.p)&&now-(c.activityAttemptAt||0)>Math.min(c.activityPollMs||10*60000,now-row.acceptedAt<13*60000?60000:10*60000)&&now-(c.activityLastAt||0)>Math.min(c.activityPollMs||10*60000,now-row.acceptedAt<13*60000?60000:10*60000)&&now<require(DIR+'/event-clock.js').eventAnchor(row)+(require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase).hours*60+30)*60000).sort((a,b)=>rank(a)-rank(b)||(a.c.activityAttemptAt||0)-(b.c.activityAttemptAt||0)||a.row.acceptedAt-b.row.acceptedAt);
- const item=candidates[0];if(!item)return;const {row,c}=item,fresh=!c.activityFirstAt&&now-row.acceptedAt<2*60000;if(!fresh&&queued>=2)return;const pool=c.p,start=require(DIR+'/event-clock.js').eventAnchor(row),end=start+require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase).hours*3600000;c.activityAttemptAt=now;
- gt('/pools/'+pool+'/trades',fresh?0:1,'r1-activity:'+pool).then(response=>{if(c.p!==pool)return;recordPoolTrades(c,row,response.data,Date.now());}).catch(e=>{c.activityError=/HTTP (\d+)/.exec(e.message)?.[0]||'provider-unavailable';err('activity history '+e.message)});
+ const deadline=row=>row.acceptedAt+(require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase).decisionMinutes||12)*60000;
+ const needsBuyers=(c,row)=>RESEARCH_V2.admitted.has(row.mint)&&now<deadline(row)&&!(c.buyerPrefixes||[]).some(p=>p[1]===row.acceptedAt&&p[0]<=deadline(row)&&p[2]>0);
+ for(const row of RESEARCH_V2.admitted.values()){const c=C.get(row.mint);if(c&&needsBuyers(c,row))for(const task of gtQ)if(task.path==='/pools/'+c.p+'/trades'){task.prio=0;task.urgentUntil=deadline(row);}}
+ const rank=({c,row})=>needsBuyers(c,row)?0:!c.activityFirstAt&&now-row.acceptedAt<2*60000?1:2;
+ const candidates=[...watched.values()].map(row=>({row,c:C.get(row.mint)})).filter(({row,c})=>c?.p&&!gtPending('r1-activity:'+c.p)&&now-(c.activityAttemptAt||0)>Math.min(c.activityPollMs||10*60000,now-row.acceptedAt<13*60000?60000:10*60000)&&now-(c.activityLastAt||0)>Math.min(c.activityPollMs||10*60000,now-row.acceptedAt<13*60000?60000:10*60000)&&now<require(DIR+'/event-clock.js').eventAnchor(row)+(require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase).hours*60+30)*60000).sort((a,b)=>rank(a)-rank(b)||(rank(a)===0?deadline(a.row)-deadline(b.row):0)||(a.c.activityAttemptAt||0)-(b.c.activityAttemptAt||0)||a.row.acceptedAt-b.row.acceptedAt);
+ const item=candidates[0];if(!item)return;const {row,c}=item,urgent=needsBuyers(c,row),fresh=!c.activityFirstAt&&now-row.acceptedAt<2*60000;if(queued>=(urgent?8:6)||!fresh&&!urgent&&queued>=2)return;const pool=c.p;c.activityAttemptAt=now;
+ const response=gt('/pools/'+pool+'/trades',urgent||fresh?0:1,'r1-activity:'+pool);if(urgent){const task=gtQ.find(q=>q.path==='/pools/'+pool+'/trades');if(task)task.urgentUntil=deadline(row);}
+ response.then(response=>{if(c.p!==pool)return;recordPoolTrades(c,row,response.data,Date.now());}).catch(e=>{c.activityError=/HTTP (\d+)/.exec(e.message)?.[0]||'provider-unavailable';err('activity history '+e.message)});
 }
 // One bounded public GT request per tick; this uses no Helius credits.
 function researchTradeTail(now){if(!RESEARCH_V2||gtBackgroundBusy()||gtPending('r1-tail'))return;

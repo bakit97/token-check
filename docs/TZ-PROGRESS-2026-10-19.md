@@ -811,3 +811,17 @@ P34 proof efficiency follow-up: official DAMM v2 InitializePoolCtx has creator i
 
 
 P34 publication fairness: streamed JSON previously yielded to event-loop work only after 64 projected coins. Active-history hydration can make each projection expensive on e2-micro; reduced this batch to four. Added an event-order test proving timers run before a long census batch, while wire JSON still round-trips exactly. This complements yielding state writes; it is not a claim that all remaining CPU stalls are resolved.
+
+
+P37 live feedback and correction: the trial 3.5 s GT spacing produced eight HTTP429 responses; adaptive backoff reached 7.5 s. Restored the prior 6.5 s start / 6 s minimum instead of relying on the advertised upper rate. Deduplication stays enabled. Added deadline priority specifically for admitted I1 coins still missing buyer receipts before their own minute N, rather than losing priority after age two minutes. Existing queued requests are promoted too; after a proved buyer prefix or the deadline, they yield back to normal observation scheduling. Urgent research requests are bounded, no Helius quota is borrowed, and no intake waiting/gate is reintroduced. New tests cover an 11-minute I1 coin versus a new source-only candidate and promotion of an already full queue. 489 Node tests pass before publication.
+
+
+## 2026-10-21: checkpoint restart regression, bounded repair and scoped recovery
+
+Live discovery exposed a regression introduced in the yielding checkpoint change: save.again was repeatedly set by periodic/code-version callers, so the do/while checkpoint promise could never settle while a pass took longer than the calling interval. The last observed pass took 168,485 ms. GCS had collector 1792599498981345, while VM remained on 1792598435053228; the deploy health job failed its version check. This is an implementation mistake, not a successful deployment.
+
+Fixed save() to coalesce callers into ONE bounded pass, with a regression test issuing 100 concurrent save calls and proving a single completion. Buffered checkpoint writes in 64 KiB groups while retaining per-four-row event-loop yields, file fsync and atomic replacement; this avoids thousands of tiny file writes on pd-standard.
+
+One-time recovery is restricted to parent CODE_GEN=1792598435053228 and a collector.js parent command/start identity. Publisher first preserves the previous diagnostic script with pinned-generation copy, verifies its checksum, and uses a generation lease to replace code/diag.js. The recovery child verifies the newly published collector code hash, waits for the NEXT complete checkpoint, copies and validates that state and packed-field checksums, records a local receipt, then sends SIGINT to that one parent. server/startup.sh confirms Restart=always / RestartSec=5; no VM reset, machine/disk change, key disclosure or legacy-data deletion. Different runtime generation, wrong parent, bad code hash, missing/new empty checkpoint, or changed PID identity refuse the signal. The backup stays on VM.
+
+This preserves a verified complete state file and journals; the normal restart can have a brief observation gap, which must remain explicit rather than fabricated. The previous short monitoring window is invalid for one-hour acceptance because its runtime is changing. The final one-hour check must start only after the repaired version is active and healthy. Before publication: 493 Node tests and seven publisher/recovery tests pass; no interface edits.

@@ -31,5 +31,6 @@ def main():
     generation=run(['storage','objects','describe','gs://'+a.bucket+'/code/collector.js','--format=value(generation)']).strip()
     result={'collectorGeneration':generation,'changed':changed,'unchanged':len(files)-len(changed)}
     if a.result:pathlib.Path(a.result).write_text(json.dumps(result),encoding='utf-8')
+    runpy.run_path(str(ROOT/'deployment/recover-checkpoint.py'))['dispatch'](ROOT,a.bucket,generation,run)
     print(json.dumps(result))
 if __name__=='__main__':main()
