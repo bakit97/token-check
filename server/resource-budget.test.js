@@ -155,13 +155,13 @@ test('pre stream is not starved for hours by pending reserves: floor after five 
 });
 
 test('owner starvation floor survives a collector restart without changing its five-minute rule',t=>{const f=fixture(t),b=new ResourceBudget(f);b.migrationPending=true;b.poolsPending=true;b.stream(200000,'pre');assert.equal(b.streamAllowed('pre'),false);f.advance(290000);const restored=new ResourceBudget(f);assert.equal(restored.preStarvedSince,b.preStarvedSince);f.advance(11000);restored.stream(200000,'pre');assert.equal(restored.streamAllowed('pre'),true);});
-test('manual pool proof uses idle fresh reserve but yields immediately to real migration backlog',t=>{
+test('manual pool proof keeps a bounded lane during fresh migration backlog',t=>{
  const f=fixture(t),b=new ResourceBudget(f);b.migrationWSOnly=true;b.freshMigrationReserve=6;b.poolsPending=true;b.migrationPending=true;
  b.charge(9,'rpc','migration','migration');
  assert.equal(b.allow(1,'pool-discovery'),true);
  b.reserveRPC('getTransaction','pool-discovery');b.reserveRPC('getMultipleAccounts','pool-discovery');
  assert.ok(b.summary().creditsMinute<=17);
- b.freshMigrationPending=1;assert.equal(b.allow(1,'pool-discovery'),false);assert.equal(b.allow(1,'migration-fast'),true);
+ b.freshMigrationPending=1;assert.equal(b.allow(1,'pool-discovery'),true);assert.equal(b.allow(1,'migration-fast'),true);
 });
 
 test('recovery uses spare capacity within seventeen and yields all calls to fresh migrations',t=>{

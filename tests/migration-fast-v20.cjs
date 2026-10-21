@@ -97,7 +97,7 @@ test('all official DBC fee and surplus instructions require the exact curve posi
 });
 
 
-test('migration-only WS leaves one real credit of headroom for fresh proofs without raising the 17 cap',t=>{const {ResourceBudget}=require('../server/resource-budget');const b=new ResourceBudget({dir:temp(t),now:()=>T,env:{HELIUS_RESET_AT:new Date(T+86400000).toISOString(),HELIUS_USED_CREDITS:'0'}});b.migrationWSOnly=true;b.freshMigrationPending=2;while(b.allow(1,'migration-fast'))b.reserveRPC('getTransaction','migration-fast');a.equal(b.summary().creditsMinute,16);b.stream(40000,'migrations');a.ok(b.summary().creditsMinute<17);a.equal(b.allow(1,'migration-fast'),false);});
+test('migration-only WS leaves one real credit of headroom for fresh proofs without raising the 17 cap',t=>{const {ResourceBudget}=require('../server/resource-budget');const b=new ResourceBudget({dir:temp(t),now:()=>T,env:{HELIUS_RESET_AT:new Date(T+86400000).toISOString(),HELIUS_USED_CREDITS:'0'}});b.migrationWSOnly=true;b.poolsPending=false;b.freshMigrationPending=2;while(b.allow(1,'migration-fast'))b.reserveRPC('getTransaction','migration-fast');a.equal(b.summary().creditsMinute,16);b.stream(40000,'migrations');a.ok(b.summary().creditsMinute<17);a.equal(b.allow(1,'migration-fast'),false);});
 
 test('DBC opening SOL uses the exact DAMM CPI quote vault even when its authority is not the pool',()=>{
  const spec=specs.find(s=>s.family==='dbc'),t=tx(spec),SOL='So11111111111111111111111111111111111111112',def=require('../server/manual-pools').definitions.find(s=>s.program===spec.dex&&s.name==='initialize_pool');
