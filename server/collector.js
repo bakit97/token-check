@@ -1570,6 +1570,7 @@ const STARTED=Date.now();
   // Legacy research results are invalid; keep observation exports, run only v2 research.
   setTimeout(()=>deduplicateClosedArchiveRows().catch(e=>err('archive dedup '+e.message)),1000);
   setInterval(()=>{prune();save();deduplicateClosedArchiveRows().catch(e=>err('archive dedup '+e.message))},120000);
+  setInterval(()=>{if(RETENTION.stateBytes>=RETENTION.stateTargetBytes&&ACTIVE_HISTORY&&!ACTIVE_HISTORY.busy)ACTIVE_HISTORY.compact({coins:C,publish:upload,read:getObj,now:Date.now(),maxChunks:4}).then(changed=>{if(changed)save()}).catch(e=>err('state archive '+e.message));},60000);
   fastPassedLoop().catch(e=>err('fast pass loop '+e.message));
   (async()=>{for(;;){await sleep(5*60e3);try{await exportDays()}catch(e){err('export '+e.message)}}})();
   (async()=>{await sleep(45000);for(;;){try{await exportLive()}catch(e){err('live '+e.message)}await sleep(30000)}})();
