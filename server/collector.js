@@ -937,6 +937,8 @@ async function collectPoolBatch(part){
   if(missing.length){const extra=await call(missing.flatMap(x=>x.vaults)),vat=Date.now(),vals=extra?.value||[];
     missing.forEach((row,i)=>{row.vs=vals.slice(i*2,i*2+2);row.at=vat;row.slot=extra?.context?.slot;commit(row)})}
 }
+function poolReserveNeeded(c,now){return !!SOURCE?.get(c.a)&&!c.poolUnsupported&&ageMin(c,now)<120&&(!c.lqAt||now-c.lqAt>=poolInterval(c,now));}
+function setPoolReservation(pending){const before=RESOURCE.poolsPending;RESOURCE.poolsPending=pending;if(before&&!pending&&RESOURCE.allow(1,'migration-fast'))FAST_DISCOVERY?.resumeBudget?.();}
 async function samplePoolBalances(now=Date.now()){
  if(globalThis.poolBalancesBusy)return;globalThis.poolBalancesBusy=true;POOL_BALANCES.stats.cycleStartedAt=now;
  try{
@@ -945,11 +947,11 @@ async function samplePoolBalances(now=Date.now()){
         const rm=RAW_M.find(m=>!c.raw[m]&&a>=m&&a<m+Math.max(2,m*.1));
         for(const m of RAW_M)if(!c.raw[m]&&a>=m+Math.max(2,m*.1))c.raw[m]={at:now,miss:1,reason:c.poolBudgetDeferredAt?'budget':'not-observed'};
         if(rm!=null||!c.lqAt||now-c.lqAt>=poolInterval(c,now))jobs.push([c,rm])}
-      RESOURCE.poolsPending=jobs.length>0;
+      setPoolReservation(jobs.some(([c])=>poolReserveNeeded(c,now)));
       const urgent=c=>!SOURCE?.get(c.a)?0:now-c.t<20*60e3?2:now-c.t<120*60e3?1:0;
       jobs.sort((a,b)=>urgent(b[0])-urgent(a[0])||(a[0].poolAttemptAt||0)-(b[0].poolAttemptAt||0)||(a[0].lqAt||0)-(b[0].lqAt||0));
       for(let i=0;i<Math.min(jobs.length,66);i+=33){const part=jobs.slice(i,i+33);part.forEach(([c])=>c.poolAttemptAt=now);
-        try{await collectPoolBatch(part);if(i+33>=jobs.length)RESOURCE.poolsPending=false}catch(e){if(e.code!=='BUDGET_DEFERRED')throw e;
+        try{await collectPoolBatch(part);setPoolReservation(jobs.some(([c])=>poolReserveNeeded(c,Date.now())));}catch(e){if(e.code!=='BUDGET_DEFERRED')throw e;
           for(const [c] of jobs.slice(i))c.poolBudgetDeferredAt=c.poolBudgetDeferredAt||Date.now();break}}
     }
  POOL_BALANCES.stats.cycleCompletedAt=Date.now();POOL_BALANCES.stats.cycleError=null;
@@ -1139,7 +1141,7 @@ function chainWatch(){
       else{WS.on=false;WS.connected={dbc:false,ll:false,pc:false};WS.disconnects=(WS.disconnects||0)+1}
       setTimeout(()=>connect(channel),pre?10000:5000)};
   };
-  POOL_DISCOVERY=new (require(DIR+'/migration-fast.js').FastSignals)({process:processManualPool,maxQueue:64,workers:1,maxAgeMs:120000,onPending:n=>{if(RESOURCE)RESOURCE.poolDiscoveryPending=n>0},onError:(e,t)=>{if(t?.mint)SOURCE?.observe({mint:t.mint,phase:'before',origin:'manual-pool',reason:e.code||'RPC_ERROR'});err('manual pool '+(e.code||'RPC_ERROR'))}});
+  POOL_DISCOVERY=new (require(DIR+'/migration-fast.js').FastSignals)({process:processManualPool,maxQueue:64,workers:1,maxAgeMs:120000,onPending:n=>{if(RESOURCE){const before=RESOURCE.poolDiscoveryPending;RESOURCE.poolDiscoveryPending=n>0;if(before&&!n&&RESOURCE.allow(1,'migration-fast'))FAST_DISCOVERY?.resumeBudget?.();}},onError:(e,t)=>{if(t?.mint)SOURCE?.observe({mint:t.mint,phase:'before',origin:'manual-pool',reason:e.code||'RPC_ERROR'});err('manual pool '+(e.code||'RPC_ERROR'))}});
   POOL_LOGS=new (require(DIR+'/pool-logs.js').PoolLogs)({WebSocket,definitions:require(DIR+'/manual-pools.js').definitions,onSignal:t=>POOL_DISCOVERY.offer(t),onSlot:(slot,at)=>EVENT_CLOCK?.observe(slot,at)});POOL_LOGS.start();
   connect('migrations'); // TZ20: birth stream intentionally disabled; migration socket is never budget-paused.
 }

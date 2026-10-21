@@ -1,7 +1,7 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "ac39cee442c6724a68f56e0c8cc9849b4ae9b2d0be56545f4e42b5bb9acff789",
+    "collector.js": "02895ca39eef792ba80f30c80a433948da59896714e729bc044be3e4070f1d7c",
     "pool-balance-reader.js": "0592b76d2862d3b19675e648579fbc4b5b37607e8823aad8268bdf17693f63ca",
     "bounded-cache.js": "71245b543751fc32faaf3e05951200df28fc725585001500853a2f35ef18d13b",
     "pool-trade-observer.js": "f7b3f02ff15cbac724c36a31666ed561ff8a595d424173105f3e00c2913c1f42",
@@ -23,7 +23,7 @@
     "research-two-runtime.js": "28fa087f7797563719a6a10eafc3f3c56c5cf5c18ab940a3fd6ab159305729a2",
     "auto-research-v2.js": "fecd3f5ce02a0a13f545ee398d55ba59f178fcb1a3d3164e9d449fb9e67916c8",
     "filter-audit.js": "45b0e37e8116e1bf068d1ae5a5f3485940adcd44d5de8a060c592303dedc9101",
-    "resource-budget.js": "0de68a1c2dcb1e847745847c5060ccc74484be24caa5b0eb7e6a91465708e9f7",
+    "resource-budget.js": "665897a43073a26e11ef59307efc01eea5f4377be9097b62b6a92c3a6b3cb11f",
     "runtime-health.js": "3766fe31b09cf8a9216849a6dec47f2046668e715d81f0cf2e0647541a06d0d0",
     "stream-json.js": "b212a8cabdb25f9f8ef5fe7e7c081d04dbda3e4218e6c3df6adfb453d6a48461",
     "observation-contract.js": "a5a9492b15481a799c9f3e905e842847d393ca413b073f11836073c9b6a4d244",
@@ -37,7 +37,7 @@
     "active-history.js": "f34c939dff3b066b30af82ad0a415ed1ef7f1915ddc830777ff2f2d79094cc7a",
     "launch-history.js": "fce3b45fcd513c24673ceaafe31f747cb01c7e77f264a559414ce235b0905c49",
     "early-intelligence.js": "7b9415a3c7c5dadf283e89e325083ca19494bfd5dbb68c5b65774de8a16f49e0",
-    "migration-fast.js": "3c83041827d3694a818b4435d968a151a0e59d6f638db65fd1bee5c27668cfaa",
+    "migration-fast.js": "030259cf89e3bb89e8dbed51cadefbab32ec736a51b0352ce45a4e6e7e6e1ca9",
     "legacy-birth-cleanup.js": "4a2d77a67115da171cef1cdeb76c30c9cc9db79c26a3dff522443887b7d77534",
     "manual-pools.js": "a4a7e3e1630ff1882e36c9c299713dfc30b860510446e684df598bb34cdec947",
     "pool-logs.js": "44ab75877243a95796b1a59488d4123358fac0372d84f52f6f50d6f3514f21ea",
