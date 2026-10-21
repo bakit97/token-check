@@ -27,7 +27,7 @@
     "runtime-health.js": "3766fe31b09cf8a9216849a6dec47f2046668e715d81f0cf2e0647541a06d0d0",
     "stream-json.js": "fa80c33517f9fb2baef05f5e9c884be286ea316ca008386863b507a39a948f90",
     "observation-contract.js": "5a8952c09d1345b0555a80a141c901d1a3fffeaf29c0f7e161e4bfcfd69385ba",
-    "packed-observations.js": "b48ca6d600e7b4918513b258ea207bc6b75fdd014f4602b22d3bb467de644de2",
+    "packed-observations.js": "c205bae62de39e7e8bf6def9c7e856d26cac04bbc66e77c315b69aa233e6dcf9",
     "completed-coins.js": "d16146b51da4478a00d848879f3e73f553cebce20467c606f729c949136b23dc",
     "seed-completed.js": "d1bfe44875a6e52062f6e2daceeff4ea4530889bb0a4dcd33c98f49c1dbf4a4b",
     "coin-profile.js": "16dc1953fc981b70b14f8b9fd532a9f0684be90ff420f5818651d896565eab23",
