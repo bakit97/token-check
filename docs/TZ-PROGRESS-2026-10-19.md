@@ -795,3 +795,13 @@ P35 checked after multiple restarts: minActive=60 is applied; intakeAccepted pre
 
 
 Measured a second real p34 blocker: synchronous save:before to save:complete took 16,943 ms; event-loop max lag 18,493 ms. Checkpoint writing now yields per row and flushes asynchronously, keeps the previous file until atomic replacement, coalesces overlapping saves, and awaits the final successful checkpoint before code restart/SIGTERM exit. Completed-day sealing awaits checkpoint success. The on-disk representation remains lossless; failure leaves the old complete state intact. Added preservation/yield/failure cleanup tests.
+
+
+P37 collection follow-up: one endpoint request is now shared across queued and in-flight GT consumers; priority is promoted for fresh research and aliases remain visible to pending checks. The shared response updates trade/intelligence telemetry once. Before raw ten-minute trades leave RAM, bounded buyers prefixes preserve original receipt times; this also covers legacy-compatible trade rows which did not produce a native-SOL activity row. Frozen snapshot repair begins at the selected research minute, rather than waiting unconditionally until minute 21. It still cannot invent receipts for missing archives.
+
+GT starts at 3.5 s spacing and never below 3 s (at most 20 starts/min before request duration); existing HTTP429 backoff remains. Latest official CoinGecko help states 30 calls/min for the free API: https://support.coingecko.com/articles/6867086195-does-geckoterminal-have-an-api . The older public FAQ has a lower approximate rate, so actual HTTP429 telemetry/backoff remains authoritative; this change does not assert guaranteed provider capacity. Helius accounting/quotas are unchanged. Two real missing examples (manual pool CnkPv... and migrated LEGO 2eD6...) had no own uploaded raw trade archive to replay when checked, so their old null fields cannot honestly be filled from future external history.
+
+
+P34 migration sub-allocation adjusted within the same independent eight-credit quota: fresh reserve 7, legacy checks 1 (rather than 6/2). Pool 4 and other/WS 5 guarantees are unchanged. Test proves the old-proof lane cannot consume the seven fresh calls or another group reservation. Live pre-step collector 1792597541831803 passed health: RSS 248 MB, peak 284.6 MB, state 27,074,381 bytes, total 12.34/min, DBC/LaunchLab on, all exports fresh. Speed still fails: after p50 9.284s / p90 76.521s, five samples, 12 signals / 5 completed / 4 errors; manual budget failure count zero. The p34 one-hour simultaneous acceptance remains open.
+
+Collection/sub-reserve release validation: 483 Node tests, four publisher tests and the epoch idempotency test pass. Interface files were not changed.

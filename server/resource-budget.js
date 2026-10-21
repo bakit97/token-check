@@ -46,7 +46,7 @@ class ResourceBudget{
       usageSamples:this.state.usageSamples.filter(x=>x[0]>=this.now()-6*3600000),usageSampleIntervalMs:60000,usageSampleScope:'cumulative local estimate; latest charge in each minute; six-hour view',
       hourlyWindows:this.billingWindows(),
       comparisonWindow:{from:this.now()-60*MIN,to:this.now(),rpcCredits:h.rpc,wsCredits:h.ws,estimatedCredits:h.rpc+h.ws,providerCredits:null},
-      allocation:{version:'independent-guaranteed-v1',guaranteedCreditsMinute:this.quotas(),borrowing:false,poolDiscoveryCreditsMinute:2,poolBalanceCreditsMinute:2,unusedPoolDiscoveryReserveShared:false,freshMigrationReserve:this.freshMigrationReserve,migration:'8/min independent; fresh reserve 6, legacy 2',pools:'4/min independent: manual discovery 2, balances 2; 5 min / 30 min sampling',holdersCreditsHour:60,preCreditsHour:0,preWS:'residual of independent other quota including all WS',preMaxBudgetPauseMs:90000,wsHeadroomCredits:this.migrationWSOnly?1:3.5},
+      allocation:{version:'independent-guaranteed-v1',guaranteedCreditsMinute:this.quotas(),borrowing:false,poolDiscoveryCreditsMinute:2,poolBalanceCreditsMinute:2,unusedPoolDiscoveryReserveShared:false,freshMigrationReserve:this.freshMigrationReserve,migration:'8/min independent; fresh reserve 7, legacy 1',pools:'4/min independent: manual discovery 2, balances 2; 5 min / 30 min sampling',holdersCreditsHour:60,preCreditsHour:0,preWS:'residual of independent other quota including all WS',preMaxBudgetPauseMs:90000,wsHeadroomCredits:this.migrationWSOnly?1:3.5},
       projectedAtReset:Math.ceil(this.state.used+observed*remainingMinutes),
       overForecast:this.state.used+observed*remainingMinutes>this.limit,
       lanes:Object.fromEntries(['identity','recovery','pool-discovery','migration-fast','migration','reconcile','pools','holders','metadata','pre'].map(lane=>[lane,{creditsMinute:this.laneTotal(lane,MIN),creditsHour:this.laneTotal(lane)}])),pending:{migration:this.migrationPending,pools:this.poolsPending,freshMigration:this.freshMigrationPending||0,poolDiscovery:this.poolDiscoveryPending===true},reconcileCreditsHour:this.laneTotal('reconcile'),resetRequired:this.now()>=this.state.resetAt,deferred:this.state.deferred};}
@@ -64,7 +64,7 @@ class ResourceBudget{
     const hourly={metadata:60,holders:60,pre:0,background:30,reconcile:65,'pool-discovery':180,recovery:120,identity:60}[lane]??Infinity;
     const own=this.laneTotal(lane,MIN),ws=this.state.buckets.filter(b=>b.at>this.now()-MIN).reduce((n,b)=>n+b.ws,0);
     const wsHeadroom=group==='other'?Math.max(0,Math.min(1,quotas.other)-ws):0;
-    const fresh=Math.min(6,this.freshMigrationReserve||0)*rate/17;
+    const fresh=Math.min(7,this.freshMigrationReserve||0)*rate/17;
     const subcap=lane==='migration'?quotas.migration-fresh:lane==='pools'||lane==='pool-discovery'?quotas.pools/2:Infinity;
     return this.state.used+cost<=this.limit&&rate>0&&m.rpc+m.ws+cost<=rate&&h.rpc+h.ws+cost<=rate*60&&this.groupTotal(group)+cost+wsHeadroom<=quotas[group]&&own+cost<=subcap&&this.laneTotal(lane)+cost<=hourly;
   }

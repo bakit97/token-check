@@ -223,6 +223,7 @@ function recordedBuyerProof(coin,decisionAt,start){const wallets=new Map(),proof
  for(const snapshot of coin?.intelligenceSnapshots||[])if(snapshot.at<=decisionAt&&snapshot.buyerWindowStart===start&&Number.isInteger(snapshot.features?.buyers10)&&snapshot.features.buyers10>0)proofs.push({n:snapshot.features.buyers10,at:snapshot.at,source:'recorded-pool-wallet-snapshot'});
  return proofs.sort((a,b)=>b.n-a.n||a.at-b.at)[0]||null;
 }
+function recordedBuyerPrefixes(coin,start,now){const bins=new Map();const add=r=>{if(r[1]!==start||!Number.isFinite(r[0])||r[0]>now||r[0]>start+20*MIN||!Number.isInteger(r[2])||r[2]<=0)return;const key=Math.floor((r[0]-start)/MIN),old=bins.get(key);if(!old||r[2]>old[2]||r[2]===old[2]&&r[0]<old[0])bins.set(key,r);};for(const r of coin.buyerPrefixes||[])add(r);for(let m=1;m<=20;m++){const proof=recordedBuyerProof(coin,Math.min(now,start+m*MIN),start);if(proof)add([proof.at,start,proof.n]);}return [...bins.values()].sort((a,b)=>a[0]-b[0]).slice(-21);}
 function starterFeaturesAt(coin,decisionAt,context={}){
  const WSOL='So11111111111111111111111111111111111111112',ct=coin?.ct;
  let safeContract=null,quoteSol=null,buyers10=null;
@@ -347,5 +348,5 @@ function capBank(rows,labelFn=it=>it.label,positive='live',negative='dead',max=5
   const n=dedup.filter(x=>labelFn(x)===negative).slice(0,max);
   return [...p,...n].sort((a,b)=>a.time-b.time);
 }
-module.exports={recordedBuyerProof,CATEGORY_KEYS,validCondition,verifiedFeatures,KEYS,LEVEL1_KEYS,RULE_KEYS,LEVEL2_KEYS,levelTwoFeaturesAt,samples,candles,featuresAt,starterFeaturesAt,activityOutcome,
+module.exports={recordedBuyerPrefixes,recordedBuyerProof,CATEGORY_KEYS,validCondition,verifiedFeatures,KEYS,LEVEL1_KEYS,RULE_KEYS,LEVEL2_KEYS,levelTwoFeaturesAt,samples,candles,featuresAt,starterFeaturesAt,activityOutcome,
   classifyActivity,activityEvidence,tradeOutcomeEvidence,strengthOutcome,evaluation,passes,ruleKey,ruleStats,wilsonInterval,weightedScore,proposeRules,capBank};
