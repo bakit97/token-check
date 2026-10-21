@@ -8,7 +8,8 @@ def dispatch(root,bucket,generation,run,read=None):
     request=json.loads(request_file.read_text(encoding='utf-8'))
     if request.get('enabled') is False:return {'action':'disabled-request'}
     if not re.fullmatch(r'[a-z0-9-]{1,80}',request['id']) or not re.fullmatch(r'\d+',request['allowedFromGeneration']):raise ValueError('Invalid recovery scope')
-    if request['maxWaitMs']>300000 or request['maxStateBytes']>32000000:raise ValueError('Invalid recovery bounds')
+    if request['maxWaitMs']>300000 or request['maxStateBytes']>64000000:raise ValueError('Invalid recovery bounds')
+    if request.get('allowExistingCheckpoint') and not 0<request.get('maxCheckpointAgeMs',0)<=1800000:raise ValueError('Invalid checkpoint age')
     if read is None:
         def read():
             with urllib.request.urlopen('https://storage.googleapis.com/'+bucket+'/status.json?recovery='+str(time.time_ns()),timeout=20) as r:return json.load(r)
