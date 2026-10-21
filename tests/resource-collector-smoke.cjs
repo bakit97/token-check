@@ -28,3 +28,5 @@ test('failed fetch is still accounted, while a deferred request does not touch n
   await assert.rejects(ctx.call('getTransaction',['other'],{priority:0}),{code:'BUDGET_DEFERRED'});
   assert.equal(requests.length,0);
 });
+
+test('a stalled metadata response cannot hold the recovery FIFO', {timeout:2000}, async t=>{const {ctx}=setup(t);let release,started;const blocked=new Promise(r=>release=r),seen=new Promise(r=>started=r);t.after(()=>release());ctx.fetch=async(url,o)=>{if(JSON.parse(o.body).params[0]==='blocked'){started();await blocked;}return {ok:true,status:200,json:async()=>({result:{okay:true}})};};const pending=ctx.call('getAccountInfo',['blocked'],{priority:'metadata'});await seen;const recovered=await ctx.call('getAccountInfo',['ready'],{priority:'recovery'});assert.equal(recovered.okay,true);release();await pending;});
