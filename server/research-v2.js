@@ -231,13 +231,14 @@ function starterFeaturesAt(coin,decisionAt,context={}){
   const flags=['mint','freeze','hook','deleg','nontr','defFrozen','pause','feeAuthority'];
   if(flags.every(k=>typeof ct[k]==='boolean')&&Number.isFinite(ct.fee))safeContract=flags.some(k=>ct[k])||ct.fee>0||ct.unknownExtensions.length>0?0:1;
  }
+ let lower=false,buyerAt=null,buyerSource=null;
+ if(context.withoutBuyers!==true){
  const eventAt=Number.isFinite(context.eventAt)?context.eventAt:coin.t,endAt=eventAt+10*MIN;
  // Every observation must belong to the mint's original ten-minute window.
  // Early migration may add a new pool inside that window; overlapping pools
  // yield a MAXIMUM lower bound, never a sum of potentially identical buyers.
  const pools=marketPools(coin).filter((p,i,all)=>p&&Number.isFinite(p.t)&&p.t<=endAt&&all.findIndex(x=>x&&x.p===p.p&&x.t===p.t)===i);
  const pool=pools.find(p=>p.t===eventAt),bx=pool?.bx;
- let lower=false,buyerAt=null,buyerSource=null;
  if(pools.length===1&&bx?.cov===true&&Number.isFinite(bx.at)&&bx.at<=decisionAt&&bx.at>=pool.t+10*MIN+5000&&Number.isFinite(bx.payers)&&decisionAt-bx.at<=7*MIN)buyers10=bx.payers;
  if(buyers10==null){
   const recorded=recordedBuyerProof(coin,decisionAt,eventAt),proofs=recorded?[recorded]:[];
@@ -248,6 +249,7 @@ function starterFeaturesAt(coin,decisionAt,context={}){
    const b=p.bx;if(p.t===eventAt&&b&&Number.isFinite(b.at)&&b.at<=decisionAt&&b.at>=endAt&&Number.isInteger(b.payers)&&b.payers>=0&&b.n>=b.payers&&b.buys>=b.payers)proofs.push({n:b.payers,at:b.at,source:'recorded-first-ten-minute-trades'});
   }
   const best=proofs.sort((a,b)=>b.n-a.n||a.at-b.at)[0];if(best){buyers10=best.n;lower=true;buyerAt=best.at;buyerSource=best.source;}
+ }
  }
  const qi=coin?.vmint?.indexOf(WSOL);
  if(qi>=0&&coin.vmint.length===2&&coin.vmint[1-qi]===coin.a&&Number.isFinite(coin.vaultIdentityAt)&&coin.vaultIdentityAt<=decisionAt){

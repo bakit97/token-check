@@ -4,7 +4,7 @@ const {starterFeaturesAt}=require('./research-v2');
 const MIN=60000;
 function tokenInfoDue(c,now){return !c.tokAt||((!c.n||!c.s||!c.i||!c.createdAt)&&now-c.tokAt>=5*MIN);}
 function cardAt(c,at){
- const f=starterFeaturesAt(c||{},at),d=(c?.ds||[]).filter(x=>Number.isFinite(x?.[0])&&x[0]*1000<=at&&at-x[0]*1000<=7*MIN).at(-1),count=v=>Number.isInteger(v)&&v>=0?v:null;
+ const f=starterFeaturesAt(c||{},at,{withoutBuyers:true}),d=(c?.ds||[]).filter(x=>Number.isFinite(x?.[0])&&x[0]*1000<=at&&at-x[0]*1000<=7*MIN).at(-1),count=v=>Number.isInteger(v)&&v>=0?v:null;
  const WSOL='So11111111111111111111111111111111111111112',qi=c?.vmint?.indexOf(WSOL),vault=qi>=0&&c.vmint.length===2&&c.vmint[1-qi]===c.a&&c.vaultIdentityAt<=at;
  const native=vault?(c.lq||[]).filter(r=>r[0]*1000<=at&&at-r[0]*1000<=35*MIN).at(-1):null,curve=c?.mg?.st!=='ok'&&/pump-?fun/i.test(c?.d||'')&&(!c.q||c.q===WSOL)?(c.curveSol||[]).filter(r=>r[0]<=at&&at-r[0]<=35*MIN).at(-1):null;
  let sol=f.quoteSol,measuredAt=null;if(native&&Number.isFinite(native[2+qi])){sol=native[2+qi]/1e9;measuredAt=native[0]*1000;}else if(curve&&Number.isFinite(curve[1])){sol=curve[1]/1e9;measuredAt=curve[0];}

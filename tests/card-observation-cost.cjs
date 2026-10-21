@@ -1,0 +1,3 @@
+"use strict";
+const test=require('node:test'),a=require('node:assert/strict'),{cardAt}=require('../server/coin-profile'),{starterFeaturesAt}=require('../server/research-v2');
+test('cards do not inspect unused raw buyer histories while keeping SOL and holder values',()=>{const now=1792620000000,c={a:'mint',p:'pool',t:now-60000,vmint:['mint','So11111111111111111111111111111111111111112'],vaultIdentityAt:now-1000,lq:[[now/1000,42,100,3e9]],hold:{10:{at:now-1000,top10:.2,top1:.05}},ds:[]};Object.defineProperty(c,'tr',{get(){throw Error('raw buyer history must not be read by cards');}});const card=cardAt(c,now);a.equal(card.sol,3);a.equal(card.top10,20);a.throws(()=>starterFeaturesAt(c,now),/raw buyer/);});
