@@ -1,0 +1,194 @@
+{
+  "checkedAtUtc": "2026-10-21T10:12:59.240154+00:00",
+  "statusUpdated": 1792577533613,
+  "ownerReportedBefore": {
+    "dead": 264,
+    "deadWithTradesAbove50": 89,
+    "source": "TZ section 32; owner-provided baseline, not a captured pre-change bank"
+  },
+  "observedAfter": {
+    "counts": {
+      "live": 0,
+      "dead": 0,
+      "pending": 8,
+      "unknown": 351,
+      "entered": 359,
+      "preLive": 0,
+      "preDead": 0,
+      "postLive": 0,
+      "postDead": 0
+    },
+    "populationRows": 359,
+    "tradesAbove50": 184,
+    "tradesAbove50Labels": {
+      "unknown": 182,
+      "pending": 2
+    },
+    "tradesAbove50Reasons": {
+      "trade-coverage-gap": 182,
+      "not-yet-finished": 2
+    }
+  },
+  "namedAndDeterministicAudit": [
+    {
+      "mint": "fpam8wyNiDSHtwx1znYeipGgRNnBcBTcN1iechcpump",
+      "name": "Darkinator Cat",
+      "label": "unknown",
+      "why": "trade-coverage-gap",
+      "activeSlices": 0,
+      "totalSlices": 30,
+      "classification": {
+        "activeSlices": 0,
+        "totalSlices": 30,
+        "activityCoverage": 0,
+        "activePct": 0,
+        "label": "unknown",
+        "why": "trade-coverage-gap"
+      }
+    },
+    {
+      "mint": "8ikdGCtt5gcc3Lf9eQrwMgQqRmg24Py5abrzDovopump",
+      "name": "AOP",
+      "label": "unknown",
+      "why": "trade-coverage-gap",
+      "activeSlices": 0,
+      "totalSlices": 30,
+      "classification": {
+        "activeSlices": 0,
+        "totalSlices": 30,
+        "activityCoverage": 0,
+        "activePct": 0,
+        "label": "unknown",
+        "why": "trade-coverage-gap"
+      }
+    },
+    {
+      "mint": "3LTox4ciobeuUivZRueYbyuXjeTga4CA1w8JjqhQpump",
+      "name": "American Overwatch Protocol",
+      "label": "unknown",
+      "why": "trade-coverage-gap",
+      "activeSlices": 0,
+      "totalSlices": 30,
+      "classification": {
+        "activeSlices": 0,
+        "totalSlices": 30,
+        "activityCoverage": 0,
+        "activePct": 0,
+        "label": "unknown",
+        "why": "trade-coverage-gap"
+      }
+    },
+    {
+      "mint": "4o9tQjy3bWKM3qjDTTnQCYhHb64ie9VcDFCjGqDTpump",
+      "name": "The Last Hope",
+      "label": "unknown",
+      "why": "trade-coverage-gap",
+      "activeSlices": 0,
+      "totalSlices": 30,
+      "classification": {
+        "activeSlices": 0,
+        "totalSlices": 30,
+        "activityCoverage": 0,
+        "activePct": 0,
+        "label": "unknown",
+        "why": "trade-coverage-gap"
+      }
+    },
+    {
+      "mint": "8F24cA26PdETzEQFd3Ru6ygAKsB4ijGZfnGbo6oxtHwt",
+      "name": null,
+      "label": "unknown",
+      "why": "trade-coverage-gap",
+      "activeSlices": 0,
+      "totalSlices": 30,
+      "classification": {
+        "activeSlices": 0,
+        "totalSlices": 30,
+        "activityCoverage": 0,
+        "activePct": 0,
+        "label": "unknown",
+        "why": "trade-coverage-gap"
+      }
+    },
+    {
+      "mint": "4pvnbgFEj4iSn1QZ3rm94B13JqV4QMgP8PCz9T8Cpump",
+      "name": "XTO",
+      "label": "unknown",
+      "why": "trade-coverage-gap",
+      "activeSlices": 0,
+      "totalSlices": 30,
+      "classification": {
+        "activeSlices": 0,
+        "totalSlices": 30,
+        "activityCoverage": 0,
+        "activePct": 0,
+        "label": "unknown",
+        "why": "trade-coverage-gap"
+      }
+    },
+    {
+      "mint": "G7SnrQNdZkqSUYAxVHkxNA2JSwuro1HegApDkrp8pump",
+      "name": "Official MrBeast Coin",
+      "label": "unknown",
+      "why": "trade-coverage-gap",
+      "activeSlices": 6,
+      "totalSlices": 30,
+      "classification": {
+        "activeSlices": 6,
+        "totalSlices": 30,
+        "activityCoverage": 0.2,
+        "activePct": 20,
+        "label": "unknown",
+        "why": "trade-coverage-gap"
+      }
+    },
+    {
+      "mint": "F9o1WyJ3bd6g9U9M5mnGycX7sTFCWE9CDGh75i8uPFy9",
+      "name": null,
+      "label": "unknown",
+      "why": "trade-coverage-gap",
+      "activeSlices": 0,
+      "totalSlices": 30,
+      "classification": {
+        "activeSlices": 0,
+        "totalSlices": 30,
+        "activityCoverage": 0,
+        "activePct": 0,
+        "label": "unknown",
+        "why": "trade-coverage-gap"
+      }
+    },
+    {
+      "mint": "CoKjhq9i74KWQrTXsXhuZFWMZiLaehBjsbMfjiH6TYVb",
+      "name": "fomo",
+      "label": "unknown",
+      "why": "trade-coverage-gap",
+      "activeSlices": 0,
+      "totalSlices": 30,
+      "classification": {
+        "activeSlices": 0,
+        "totalSlices": 30,
+        "activityCoverage": 0,
+        "activePct": 0,
+        "label": "unknown",
+        "why": "trade-coverage-gap"
+      }
+    },
+    {
+      "mint": "4V4owdC2VvM7F9guD1Yyrw3EfCpR2bMerrdEpWL8WLjo",
+      "name": "Physical Inu",
+      "label": "unknown",
+      "why": "trade-coverage-gap",
+      "activeSlices": 0,
+      "totalSlices": 30,
+      "classification": {
+        "activeSlices": 0,
+        "totalSlices": 30,
+        "activityCoverage": 0,
+        "activePct": 0,
+        "label": "unknown",
+        "why": "trade-coverage-gap"
+      }
+    }
+  ]
+}

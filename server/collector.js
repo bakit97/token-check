@@ -946,7 +946,7 @@ async function samplePoolBalances(now=Date.now()){
         for(const m of RAW_M)if(!c.raw[m]&&a>=m+Math.max(2,m*.1))c.raw[m]={at:now,miss:1,reason:c.poolBudgetDeferredAt?'budget':'not-observed'};
         if(rm!=null||!c.lqAt||now-c.lqAt>=poolInterval(c,now))jobs.push([c,rm])}
       RESOURCE.poolsPending=jobs.length>0;
-      const urgent=c=>SOURCE?.get(c.a)&&now-c.t<20*60e3?1:0;
+      const urgent=c=>!SOURCE?.get(c.a)?0:now-c.t<20*60e3?2:now-c.t<120*60e3?1:0;
       jobs.sort((a,b)=>urgent(b[0])-urgent(a[0])||(a[0].poolAttemptAt||0)-(b[0].poolAttemptAt||0)||(a[0].lqAt||0)-(b[0].lqAt||0));
       for(let i=0;i<Math.min(jobs.length,66);i+=33){const part=jobs.slice(i,i+33);part.forEach(([c])=>c.poolAttemptAt=now);
         try{await collectPoolBatch(part);if(i+33>=jobs.length)RESOURCE.poolsPending=false}catch(e){if(e.code!=='BUDGET_DEFERRED')throw e;
