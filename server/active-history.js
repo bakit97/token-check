@@ -11,7 +11,7 @@ function same(a,b){return JSON.stringify(a)===JSON.stringify(b)}
 function at(key,row){return row[0]*(key==='curveSol'?1:1000)}
 function fieldsOf(pool,cutoff){const fields={};for(const key of ['ds','gx','lq','curveSol']){const rows=(pool[key]||[]).filter(r=>Array.isArray(r)&&at(key,r)<cutoff);if(rows.length>1)fields[key]=rows}
  const raw=Object.fromEntries(Object.entries(pool.raw||{}).filter(([,r])=>r?.b&&r.at<cutoff));if(Object.keys(raw).length)fields.raw=raw;
- for(const key of ['k10','path'])if(pool[key]?.c?.length&&pool[key].at<cutoff)fields[key]=pool[key];return JSON.parse(JSON.stringify(fields))}
+ for(const key of ['k10','path'])if(pool[key]?.c?.length&&pool[key].at<cutoff)fields[key]=pool[key];if(cutoff-pool.t>90*60000)for(const key of ['featureSnapshotsPacked','intelligenceSnapshots','earlyWallets'])if(pool[key]!=null)fields[key]=pool[key];if(cutoff-pool.t>8*H&&pool.activityTapePacked)fields.activityTapePacked=pool.activityTapePacked;return JSON.parse(JSON.stringify(fields))}
 function mergeFields(earlier,later){const out={...earlier,...later};for(const key of ['ds','gx','lq','curveSol'])if(earlier[key]||later[key]){const rows=new Map();for(const r of [...(earlier[key]||[]),...(later[key]||[])])rows.set(JSON.stringify(r),r);out[key]=[...rows.values()].sort((a,b)=>a[0]-b[0])}
  if(earlier.raw||later.raw){out.raw={...earlier.raw};for(const [k,r] of Object.entries(later.raw||{}))out.raw[k]={...out.raw[k],...r}}
  for(const key of ['k10','path'])if(earlier[key]&&!later[key]?.c?.length)out[key]={...earlier[key],...later[key],c:earlier[key].c};return out}
@@ -20,6 +20,7 @@ function trim(pool,fields,reference){for(const key of ['ds','gx','lq','curveSol'
   pool[key]=(pool[key]||[]).filter(r=>!archived.has(JSON.stringify(r))||keep.has(JSON.stringify(r)));}
  for(const [key,row] of Object.entries(fields.raw||{}))if(same(pool.raw?.[key],row)){const {b,...metadata}=row;pool.raw[key]={...metadata,historyArchived:true}}
  for(const key of ['k10','path'])if(fields[key]&&same(fields[key],pool[key])){const {c,...metadata}=pool[key];pool[key]={...metadata,historyArchived:true}}
+ for(const key of ['featureSnapshotsPacked','intelligenceSnapshots','earlyWallets','activityTapePacked'])if(fields[key]!=null&&same(pool[key],fields[key]))delete pool[key];
  pool.archiveRefs={...pool.archiveRefs,activeHistory:[...(pool.archiveRefs?.activeHistory||[]),reference]};delete pool.historyHydrated;
 }
 class ActiveHistory{

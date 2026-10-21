@@ -21,3 +21,7 @@ test('completed archive confirmation reads hydrated prefixes before retiring a h
 test('bounded active state stays small without deleting the canonical observation history',async t=>{
  const d=dir(t),a=new ActiveHistory(d),coins=new Map(Array.from({length:300},(_,i)=>{const c=coin('mint'+i);return [c.a,c]})),before=Buffer.byteLength(JSON.stringify([...coins.values()])),net=network();await a.compact({coins,...net,now});const after=Buffer.byteLength(JSON.stringify([...coins.values()]));assert.ok(after<before*.2,{before,after});for(const c of coins.values())assert.equal(a.hydrate(c).ds.length,301);assert.ok(net.objects.size<=3,'batch immutable mirrors rather than one object per mint');
 });
+
+test('cold frozen features release hot state only after mirror and hydrate exactly',async t=>{
+ const a=new ActiveHistory(dir(t)),c=coin(),frozen='abc'.repeat(5000);c.featureSnapshotsPacked=frozen;c.intelligenceSnapshots=[{at:T,features:{holders:30}}];c.earlyWallets=['wallet'];const coins=new Map([[c.a,c]]),net=network();await a.compact({coins,...net,now});assert.equal(c.featureSnapshotsPacked,undefined);assert.equal(c.intelligenceSnapshots,undefined);assert.equal(a.hydrate(c).featureSnapshotsPacked,frozen);assert.deepEqual(a.hydrate(c).earlyWallets,['wallet']);
+});
