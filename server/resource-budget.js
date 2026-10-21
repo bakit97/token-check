@@ -46,7 +46,7 @@ class ResourceBudget{
       usageSamples:this.state.usageSamples.filter(x=>x[0]>=this.now()-6*3600000),usageSampleIntervalMs:60000,usageSampleScope:'cumulative local estimate; latest charge in each minute; six-hour view',
       hourlyWindows:this.billingWindows(),
       comparisonWindow:{from:this.now()-60*MIN,to:this.now(),rpcCredits:h.rpc,wsCredits:h.ws,estimatedCredits:h.rpc+h.ws,providerCredits:null},
-      allocation:{poolDiscoveryCreditsMinute:3,unusedPoolDiscoveryReserveShared:true,freshMigrationReserve:this.freshMigrationReserve,migration:'fresh first; up to 10 RPC credits/min reserved',pools:'4 RPC credits/min reserved only for due admitted first-2h balances; older pools share idle budget; 5 min / 30 min sampling',holdersCreditsHour:60,preCreditsHour:0,preWS:'residual after migration/pool reserves; no fixed hourly cap',preMaxBudgetPauseMs:90000,wsHeadroomCredits:this.migrationWSOnly?1:3.5},
+      allocation:{version:'independent-guaranteed-v1',guaranteedCreditsMinute:this.quotas(),borrowing:false,poolDiscoveryCreditsMinute:2,poolBalanceCreditsMinute:2,unusedPoolDiscoveryReserveShared:false,freshMigrationReserve:this.freshMigrationReserve,migration:'8/min independent; fresh reserve 6, legacy 2',pools:'4/min independent: manual discovery 2, balances 2; 5 min / 30 min sampling',holdersCreditsHour:60,preCreditsHour:0,preWS:'residual of independent other quota including all WS',preMaxBudgetPauseMs:90000,wsHeadroomCredits:this.migrationWSOnly?1:3.5},
       projectedAtReset:Math.ceil(this.state.used+observed*remainingMinutes),
       overForecast:this.state.used+observed*remainingMinutes>this.limit,
       lanes:Object.fromEntries(['identity','recovery','pool-discovery','migration-fast','migration','reconcile','pools','holders','metadata','pre'].map(lane=>[lane,{creditsMinute:this.laneTotal(lane,MIN),creditsHour:this.laneTotal(lane)}])),pending:{migration:this.migrationPending,pools:this.poolsPending,freshMigration:this.freshMigrationPending||0,poolDiscovery:this.poolDiscoveryPending===true},reconcileCreditsHour:this.laneTotal('reconcile'),resetRequired:this.now()>=this.state.resetAt,deferred:this.state.deferred};}
@@ -55,20 +55,18 @@ class ResourceBudget{
   source(name){return this.state.sources[name]||(this.state.sources[name]={rpcCredits:0,wsCredits:0,budgetDeferredAttempts:0})}
   deferred(source){this.state.deferred++;this.source(source).budgetDeferredAttempts++}
   laneTotal(lane,window=60*MIN){this.trim();return this.state.buckets.filter(b=>b.at>this.now()-window).reduce((n,b)=>n+(b.lanes?.[lane]||0),0)}
-  allow(cost,priority=0){const lane=this.lane(priority),m=this.totals(MIN),h=this.totals(60*MIN),rate=Math.min(this.target,this.rate());
-    // Keep WS metering headroom. Fresh proof backlog takes priority over background RPC.
-    if(this.freshMigrationPending&&!['migration-fast','pools','pool-discovery'].includes(lane))return false;
-    const wsReserve=this.migrationWSOnly&&(lane==='identity'||lane==='recovery'||lane==='pool-discovery'||lane==='migration-fast'&&this.freshMigrationPending)?1:Math.min(3.5,Math.max(.5,rate-14));
-    const ceiling=Math.max(0,rate-Math.max(.5,wsReserve-m.ws)),total=m.rpc+m.ws;
-    const discoveryFloor=this.poolDiscoveryPending?Math.min(3,ceiling*.22):0,discoveryReserve=Math.max(0,discoveryFloor-this.laneTotal('pool-discovery',MIN));
-    const poolFloor=Math.min(4,ceiling*.3),proofFloor=Math.min(10,Math.max(0,ceiling-poolFloor-discoveryFloor-.5));
-    const proofReserve=this.migrationPending?Math.max(0,proofFloor-this.laneTotal('migration',MIN)-this.laneTotal('migration-fast',MIN)):0;
-    const poolReserve=this.poolsPending?Math.max(0,poolFloor-this.laneTotal('pools',MIN)):0;
-    const freshReserve=Math.max(0,Math.min(6,this.freshMigrationReserve||0)-this.laneTotal('migration-fast',MIN));
-    const cap=Math.max(0,ceiling-(lane==='pool-discovery'?0:discoveryReserve)-((lane==='migration-fast'||lane==='pool-discovery'||lane==='recovery'||lane==='identity')?poolReserve:lane==='migration'||lane==='reconcile'?poolReserve+freshReserve:lane==='pools'?Math.max(proofReserve,freshReserve):Math.max(proofReserve,freshReserve)+poolReserve));
+  group(lane){return ['migration','migration-fast'].includes(lane)?'migration':['pools','pool-discovery'].includes(lane)?'pools':'other'}
+  groupTotal(group,window=MIN){this.trim();return this.state.buckets.filter(b=>b.at>this.now()-window).reduce((n,b)=>n+Object.entries(b.lanes||{}).filter(([lane])=>this.group(lane)===group).reduce((a,[,v])=>a+v,0),0)}
+  quotas(){const scale=Math.min(this.target,this.rate())/17;return {migration:8*scale,pools:4*scale,other:5*scale}}
+  allow(cost,priority=0){const lane=this.lane(priority),m=this.totals(MIN),h=this.totals(60*MIN),rate=Math.min(this.target,this.rate()),group=this.group(lane),quotas=this.quotas();
+    // Hard independent reservations: no borrowing can create debt for a lane
+    // which becomes active later in this rolling minute. Free providers do not enter here.
     const hourly={metadata:60,holders:60,pre:0,background:30,reconcile:65,'pool-discovery':180,recovery:120,identity:60}[lane]??Infinity;
-    if(lane==='reconcile'&&this.migrationPending)return false;
-    return this.state.used+cost<=this.limit&&rate>0&&total+cost<=cap&&h.rpc+h.ws+cost<=rate*60&&this.laneTotal(lane)+cost<=hourly;
+    const own=this.laneTotal(lane,MIN),ws=this.state.buckets.filter(b=>b.at>this.now()-MIN).reduce((n,b)=>n+b.ws,0);
+    const wsHeadroom=group==='other'?Math.max(0,Math.min(1,quotas.other)-ws):0;
+    const fresh=Math.min(6,this.freshMigrationReserve||0)*rate/17;
+    const subcap=lane==='migration'?quotas.migration-fresh:lane==='pools'||lane==='pool-discovery'?quotas.pools/2:Infinity;
+    return this.state.used+cost<=this.limit&&rate>0&&m.rpc+m.ws+cost<=rate&&h.rpc+h.ws+cost<=rate*60&&this.groupTotal(group)+cost+wsHeadroom<=quotas[group]&&own+cost<=subcap&&this.laneTotal(lane)+cost<=hourly;
   }
   charge(cost,type,lane=type,source=lane,bytes=0){this.trim();const at=Math.floor(this.now()/1000)*1000;let b=this.state.buckets.find(b=>b.at===at);
     if(!b)this.state.buckets.push(b={at,rpc:0,ws:0,lanes:{}});b.lanes=b.lanes||{};b[type]+=cost;b.lanes[lane]=(b.lanes[lane]||0)+cost;
@@ -86,12 +84,7 @@ class ResourceBudget{
     this.charge(bytes/1e6*this.wsPerMB,'ws','ws:'+source,source,bytes);
     return source!=='pre'||this.streamAllowed('pre');
   }
-  preCapacity(){const m=this.totals(MIN),rate=Math.min(this.target,this.rate());
-    const migration=this.laneTotal('migration',MIN),pools=this.laneTotal('pools',MIN);
-    const proofReserve=this.migrationPending?Math.max(0,10-migration):0;
-    const poolReserve=this.poolsPending?Math.max(0,4-pools):0;
-    return Math.max(0,rate-m.rpc-(m.ws-this.laneTotal('ws:pre',MIN))-proofReserve-poolReserve-.5);
-  }
+  preCapacity(){const m=this.totals(MIN),otherRPC=this.groupTotal('other')-m.ws,otherWS=m.ws-this.laneTotal('ws:pre',MIN);return Math.max(0,Math.min(this.quotas().other-otherRPC-otherWS-.5,Math.min(this.target,this.rate())-m.rpc-otherWS-.5));}
   streamAllowed(source='pre'){const before=[this.preStarvedSince,this.prePauseSince].join('|'),allowed=this._streamAllowed(source);if(source==='pre'&&before!==[this.preStarvedSince,this.prePauseSince].join('|'))this.persist();return allowed;}
   _streamAllowed(source='pre'){if(source!=='pre')return true;
     const now=this.now();
@@ -102,7 +95,7 @@ class ResourceBudget{
     let cap=this.preCapacity();
     if(cap>this.laneTotal('ws:pre',MIN))this.preStarvedSince=0;
     else{if(!this.preStarvedSince)this.preStarvedSince=now;
-      if(now-this.preStarvedSince>=300000)cap=Math.max(cap,Math.min(10,this.rate(),this.target));}
+      if(now-this.preStarvedSince>=300000)cap=this.preCapacity();}
     const own=this.laneTotal('ws:pre',MIN),allowed=own<cap;
     if(allowed){this.prePauseSince=0;this.preProbeUntil=0;return true;}
     // Short bounded probes preserve visibility. Received bytes remain fully charged;

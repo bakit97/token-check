@@ -15,7 +15,7 @@ test('collector charges before network; cached immutable proof avoids another bi
   await ctx.call('getTransaction',['proof'],{priority:0,context:'proof'});
   assert.equal(resource.state.used-start,1);assert.equal(requests.length,1);
   await ctx.call('getTransaction',['proof'],{priority:0});assert.equal(requests.length,1);
-  for(let i=0;i<9;i++)resource.reserveRPC('getAccountInfo','migration');
+  for(let i=0;i<7;i++)resource.reserveRPC('getAccountInfo','migration');
   await assert.rejects(ctx.call('getSignaturesForAddress',['pool'],{priority:0}),{code:'BUDGET_DEFERRED'});
   assert.equal(requests.length,1);
 });
@@ -24,7 +24,7 @@ test('failed fetch is still accounted, while a deferred request does not touch n
   ctx.fetch=async()=>{throw Error('offline')};
   await assert.rejects(ctx.call('getTransaction',['proof'],{priority:0}),/offline/);
   assert.equal(resource.state.used-start,1);
-  for(let i=0;i<9;i++)resource.reserveRPC('getAccountInfo','migration');
+  for(let i=0;i<7;i++)resource.reserveRPC('getAccountInfo','migration');
   await assert.rejects(ctx.call('getTransaction',['other'],{priority:0}),{code:'BUDGET_DEFERRED'});
   assert.equal(requests.length,0);
 });

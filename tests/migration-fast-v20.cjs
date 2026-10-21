@@ -70,12 +70,8 @@ test('curve signature indexing lag is retried without stale cache or repeated im
 });
 
 
-test('fresh backlog blocks competing RPC and can use remaining budget beyond a consumed fixed reserve',t=>{
- const {ResourceBudget}=require('../server/resource-budget');const b=new ResourceBudget({dir:temp(t),now:()=>T,env:{HELIUS_RESET_AT:new Date(T+86400000).toISOString(),HELIUS_USED_CREDITS:'0'}});b.freshMigrationReserve=6;
- for(let i=0;i<6;i++)b.reserveRPC('getTransaction','migration-fast');b.freshMigrationPending=2;
- for(const lane of ['migration','holders','metadata','reconcile','background'])a.equal(b.allow(1,lane),false,lane);
- a.equal(b.allow(1,'migration-fast'),true);while(b.allow(1,'migration-fast'))b.reserveRPC('getTransaction','migration-fast');a.ok(b.summary().creditsMinute<=17);a.ok(b.laneTotal('migration-fast',60000)>6);
-});
+test('fresh backlog cannot block independent other and pool quotas',t=>{const {ResourceBudget}=require('../server/resource-budget');const b=new ResourceBudget({dir:temp(t),now:()=>T,env:{HELIUS_RESET_AT:new Date(T+86400000).toISOString(),HELIUS_USED_CREDITS:'0'}});b.freshMigrationReserve=6;for(let i=0;i<6;i++)b.reserveRPC('getTransaction','migration-fast');b.freshMigrationPending=2;for(const lane of ['migration','holders','metadata','reconcile','background','pools','pool-discovery'])a.equal(b.allow(1,lane),true,lane);while(b.allow(1,'migration-fast'))b.reserveRPC('getTransaction','migration-fast');a.equal(b.laneTotal('migration-fast',60000),8);a.equal(b.allow(1,'pools'),true);a.equal(b.allow(1,'identity'),true);});
+
 test('backlog callback includes waiting tasks and returns to zero on terminal completion',async()=>{const levels=[];const q=new FastSignals({onPending:n=>levels.push(n),process:async()=>({outcome:'accepted'})});q.offer({signature:'one'});await flush();a.ok(levels.some(x=>x>0));a.equal(levels.at(-1),0);});
 
 
@@ -98,7 +94,7 @@ test('all official DBC fee and surplus instructions require the exact curve posi
 });
 
 
-test('migration-only WS leaves one real credit of headroom for fresh proofs without raising the 17 cap',t=>{const {ResourceBudget}=require('../server/resource-budget');const b=new ResourceBudget({dir:temp(t),now:()=>T,env:{HELIUS_RESET_AT:new Date(T+86400000).toISOString(),HELIUS_USED_CREDITS:'0'}});b.migrationWSOnly=true;b.poolsPending=false;b.freshMigrationPending=2;while(b.allow(1,'migration-fast'))b.reserveRPC('getTransaction','migration-fast');a.equal(b.summary().creditsMinute,16);b.stream(40000,'migrations');a.ok(b.summary().creditsMinute<17);a.equal(b.allow(1,'migration-fast'),false);});
+test('migration-only WS leaves one real credit of headroom for fresh proofs without raising the 17 cap',t=>{const {ResourceBudget}=require('../server/resource-budget');const b=new ResourceBudget({dir:temp(t),now:()=>T,env:{HELIUS_RESET_AT:new Date(T+86400000).toISOString(),HELIUS_USED_CREDITS:'0'}});b.migrationWSOnly=true;b.poolsPending=false;b.freshMigrationPending=2;while(b.allow(1,'migration-fast'))b.reserveRPC('getTransaction','migration-fast');a.equal(b.summary().creditsMinute,8);b.stream(40000,'migrations');a.ok(b.summary().creditsMinute<17);a.equal(b.allow(1,'migration-fast'),false);});
 
 test('DBC opening SOL uses the exact DAMM CPI quote vault even when its authority is not the pool',()=>{
  const spec=specs.find(s=>s.family==='dbc'),t=tx(spec),SOL='So11111111111111111111111111111111111111112',def=require('../server/manual-pools').definitions.find(s=>s.program===spec.dex&&s.name==='initialize_pool');
