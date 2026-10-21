@@ -10,7 +10,7 @@ let HEALTH=null,PROFILES=null,HOLDER_CENSUS=null,LP_PROOFS=null;
 let COMPLETED=null,ACTIVE_HISTORY=null,OBS_RECOVERY=null,RECOVERY_RPC=null;
 const fullCoin=c=>ACTIVE_HISTORY?ACTIVE_HISTORY.hydrate(c):c;
 const PUBLIC_FEEDS={busy:false,sourceAt:0,libraryAt:0,storageAt:0,error:''},RESEARCH_EXPORTS={busy:false,oneAt:0,twoAt:0,error:''};let SOURCE_DAY_PUBLISHED_AT=0;
-const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:30000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0,pendingWork:0,cancelledGT:0};
+const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:30000000,stateArchiveTriggerBytes:27000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0,pendingWork:0,cancelledGT:0};
 let RESOURCE=null,FAST_DISCOVERY=null,POOL_DISCOVERY=null,POOL_LOGS=null;const POOL_TRANSITION={mode:'pools-v1',legacySourceRemoved:0,legacyDataCleanupPending:true};
 const resourcePressure=()=>process.memoryUsage().rss>=360*1024*1024;
 const BUCKET='sol-scan-511718-data',DIR=process.env.SOLSCAN_DIR||'/var/solscan',TZ=5*3600e3;
@@ -1570,7 +1570,7 @@ const STARTED=Date.now();
   // Legacy research results are invalid; keep observation exports, run only v2 research.
   setTimeout(()=>deduplicateClosedArchiveRows().catch(e=>err('archive dedup '+e.message)),1000);
   setInterval(()=>{prune();save();deduplicateClosedArchiveRows().catch(e=>err('archive dedup '+e.message))},120000);
-  setInterval(()=>{if(RETENTION.stateBytes>=RETENTION.stateTargetBytes&&ACTIVE_HISTORY&&!ACTIVE_HISTORY.busy)ACTIVE_HISTORY.compact({coins:C,publish:upload,read:getObj,now:Date.now(),maxChunks:4}).then(changed=>{if(changed)save()}).catch(e=>err('state archive '+e.message));},60000);
+  setInterval(()=>{if(RETENTION.stateBytes>=RETENTION.stateArchiveTriggerBytes&&ACTIVE_HISTORY&&!ACTIVE_HISTORY.busy)ACTIVE_HISTORY.compact({coins:C,publish:upload,read:getObj,now:Date.now(),maxChunks:4}).then(changed=>{if(changed)save()}).catch(e=>err('state archive '+e.message));},60000);
   fastPassedLoop().catch(e=>err('fast pass loop '+e.message));
   (async()=>{for(;;){await sleep(5*60e3);try{await exportDays()}catch(e){err('export '+e.message)}}})();
   (async()=>{await sleep(45000);for(;;){try{await exportLive()}catch(e){err('live '+e.message)}await sleep(30000)}})();
