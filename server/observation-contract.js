@@ -1,6 +1,6 @@
 (function(root){
 'use strict';
-const META=new Set(['a','n','s','i','p','d','q','t','t0','tSrc','seen','disc','rcSeen','wsSeen','firstPostSeenAt','preCurve','preTradingAt','ty','mk','mst','mw','mT','mSig','mSeen','mCr','mH','mk0','ct','soc','tk','tkAt','lastTrade','live','legacy','createdAt','createdAtObservedAt','createdAtSource','uri','description','metadataAt','sol','postPoolSol','solQuoteMint','solUnavailableReason','solMeasuredAt','solAgeMs','b5','s5','top10','safeContract','img','cardAt','marketObservedAt','outcomeTape','activityTapePacked','featureSnapshotsPacked','discoveryFeatures','nameObservedAt','imageObservedAt','socialFeatures','lpEvidence','intelligenceSnapshots','creatorAddress','creatorCurveCandidate','creatorCurveCandidateAt','creatorObservedAt','creatorAta','supplyRaw','tokenProgram','earlyWallets','earlyWalletsAt','earlyWalletsComplete','initialTradingEvidence','earlyProgress','creatorHistoryAt','creatorBalanceAt','smartAt','earlyDone','earlyUnavailableReason','recoveryRef','openingMetrics','admissionVerifiedAt','launchpad','dex','venue','venueObservedAt']);
+const META=new Set(['a','n','s','i','p','d','q','t','t0','tSrc','seen','disc','rcSeen','wsSeen','firstPostSeenAt','preCurve','preTradingAt','ty','mk','mst','mw','mT','mSig','mSeen','mCr','mH','mk0','ct','soc','tk','tkAt','lastTrade','live','legacy','createdAt','createdAtObservedAt','createdAtSource','uri','description','metadataAt','sol','postPoolSol','solQuoteMint','solUnavailableReason','solMeasuredAt','solAgeMs','b5','s5','top10','safeContract','img','cardAt','marketObservedAt','outcomeTape','activityTapePacked','featureSnapshotsPacked','discoveryFeatures','nameObservedAt','imageObservedAt','socialFeatures','lpEvidence','intelligenceSnapshots','creatorAddress','creatorCurveCandidate','creatorCurveCandidateAt','creatorObservedAt','creatorAta','supplyRaw','tokenProgram','earlyWallets','earlyWalletsAt','earlyWalletsComplete','initialTradingEvidence','earlyProgress','creatorHistoryAt','creatorBalanceAt','smartAt','earlyDone','earlyUnavailableReason','recoveryRef','openingMetrics','buyerPrefixes','admissionVerifiedAt','launchpad','dex','venue','venueObservedAt']);
 const day=t=>new Date(t+5*3600000).toISOString().slice(0,10);
 function series(rows,kind){return (rows||[]).map(row=>kind==='vault'?{at:row[0]*1000,slot:row[1],balances:row.slice(2)}:{at:row[0]*1000,values:row.slice(1)})}
 function poolRecord(c,mint){
@@ -8,8 +8,8 @@ function poolRecord(c,mint){
  return {address:c.p||null,marketAt:c.t,kind:c.d||null,quoteMint:c.q||null,movedAt:c.movedAt||null,
   ds:series(c.ds,'ds'),vaults:{addresses:c.vaults||null,mints:c.vmint||null,decimals:c.vdec||null,identityAt:c.vaultIdentityAt||null,samples:series(c.lq,'vault')},
   candles10:c.k10||null,holders10:c.hold?.['10']||null,holders:c.hold||{},rawStates:raw,
-  curveSol:c.curveSol||null,tradeCoverage:c.bx||null,tradeFetches:(tr?.f||[]).map(f=>({at:f[0],count:f[1],marketMinAt:f[2]==null?null:f[2]*1000,marketMaxAt:f[3]==null?null:f[3]*1000})),tradeRows:tr?.x||null,tradeRowMarketTimeUnit:'unix-seconds',tradeRowReceiptTime:'fetch-coverage-only',
-  activity:series(c.gx,'ds'),path:c.path||null,
+  curveSol:c.curveSol||null,tradeCoverage:c.bx||null,tradeFetches:(tr?.f||[]).map(f=>({at:f[0],count:f[1],marketMinAt:f[2]==null?null:f[2]*1000,marketMaxAt:f[3]==null?null:f[3]*1000})),tradeRows:tr?.x||null,tradeRowMarketTimeUnit:'unix-seconds',tradeRowReceiptTime:'per-row-when-present',tradeRowReceiptIndex:6,tradeWalletReceiptIndex:8,legacyTradeReceipt:'fetch-coverage-only',
+  buyerPrefixes:c.buyerPrefixes||null,activity:series(c.gx,'ds'),path:c.path||null,
   archives:c.archiveRefs?{...c.archiveRefs}:{rawStates:c.rawUp?'raw/'+archiveDay+'/'+mint+'-state.json':null,trades:c.trDone&&tr?.f?.length?'raw/'+archiveDay+'/'+mint+'-trades.json':null,verification:'legacy-reference-not-reconciled'}};
 }
 function project(c,{metadata={},admission=null}={}){
@@ -26,7 +26,7 @@ function projectSummary(c,options={}){
  row.observations.readScope='latest-observations-only';return row;
 }
 function restorePool(p,cutoff){const valid=x=>Number.isFinite(x?.at)&&x.at<=cutoff;
- return {curveSol:(p.curveSol||[]).filter(r=>Number.isFinite(r[0])&&r[0]<=cutoff),p:p.address,t:p.marketAt,d:p.kind,q:p.quoteMint,movedAt:p.movedAt,archiveRefs:p.archives||null,rawUp:p.archives?.rawStates?1:0,trDone:p.archives?.trades?1:0,
+ return {buyerPrefixes:p.buyerPrefixes||null,curveSol:(p.curveSol||[]).filter(r=>Number.isFinite(r[0])&&r[0]<=cutoff),p:p.address,t:p.marketAt,d:p.kind,q:p.quoteMint,movedAt:p.movedAt,archiveRefs:p.archives||null,rawUp:p.archives?.rawStates?1:0,trDone:p.archives?.trades?1:0,
   ds:(p.ds||[]).filter(valid).map(x=>[x.at/1000,...x.values]),lq:(p.vaults?.samples||[]).filter(valid).map(x=>[x.at/1000,x.slot,...x.balances]),
   vaults:p.vaults?.addresses,vmint:p.vaults?.mints,vdec:p.vaults?.decimals,vaultIdentityAt:p.vaults?.identityAt,
   k10:valid(p.candles10)?p.candles10:null,hold:Object.fromEntries(Object.entries(p.holders||{}).filter(([,x])=>valid(x))),

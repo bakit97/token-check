@@ -64,7 +64,8 @@ function featuresAt(coin,decisionAt,context={}){
   const ct=coin?.ct,metaAt=coin?.metadataAt,discovery=coin?.discoveryFeatures;
   const clone=discovery&&discovery.at<=decisionAt?{isFirstOfName:discovery.isFirstOfName,cloneCount:discovery.cloneCount,cloneRank:discovery.cloneRank,...(discovery.cloneCountLowerBound?{lowerBoundKeys:['cloneCount','cloneRank']}:{})}:{isFirstOfName:null,cloneCount:null,cloneRank:null};
   const extra=extendedFeaturesAt(coin,decisionAt,context,F);const migrationAt=coin?.mg?.mT??coin?.openingMetrics?.eventAt??context.eventAt;extra.ageAtMigrationMin=Number.isSafeInteger(coin?.createdAt)&&Number.isFinite(coin?.createdAtObservedAt)&&coin.createdAtObservedAt<=decisionAt&&Number.isSafeInteger(migrationAt)&&migrationAt>=coin.createdAt?(migrationAt-coin.createdAt)/MIN:null;
-  return {...Object.fromEntries(RULE_KEYS.map(k=>[k,null])),...extra,...F,...clone,...require('./venue-identity').features(coin,context.phase,decisionAt),...starterFeaturesAt(coin,decisionAt,context),lowerBoundKeys:[...new Set([...(extra.lowerBoundKeys||[]),...(clone.lowerBoundKeys||[])])],
+  const starter=starterFeaturesAt(coin,decisionAt,context);
+  return {...Object.fromEntries(RULE_KEYS.map(k=>[k,null])),...extra,...F,...clone,...require('./venue-identity').features(coin,context.phase,decisionAt),...starter,lowerBoundKeys:[...new Set([...(extra.lowerBoundKeys||[]),...(clone.lowerBoundKeys||[]),...(starter.buyers10LowerBound?['buyers10']:[])])],
     token2022:ct&&ct.at<=decisionAt&&['token','token2022'].includes(ct.prog)?(ct.prog==='token2022'?1:0):null,
     hasImage:Number.isFinite(metaAt)&&metaAt<=decisionAt?(coin.img||coin.i?1:0):Number.isFinite(coin?.imageObservedAt)&&coin.imageObservedAt<=decisionAt&&(coin.img||coin.i)?1:null,
     hasDescription:Number.isFinite(metaAt)&&metaAt<=decisionAt?(coin.description?1:0):null,
@@ -216,6 +217,12 @@ function strengthOutcome(coin,zeroAt,{minAbove=70,minCoverage=.9,minAboveMarginP
     above,covered,pctAbove:above/total*100,p0,curve,minuteCurve};
 }
 // Starter rules use confirmed account rights and native on-chain balances, never USD proxies.
+function recordedBuyerProof(coin,decisionAt,start){const wallets=new Map(),proofs=[],end=Math.min(start+10*MIN,decisionAt);
+ for(const pool of marketPools(coin)){for(const prefix of pool.buyerPrefixes||[])if(prefix[1]===start&&prefix[0]<=decisionAt&&Number.isInteger(prefix[2])&&prefix[2]>0)proofs.push({n:prefix[2],at:prefix[0],source:'recorded-pool-wallet-prefix'});for(const row of Object.values(pool.tr?.x||{})){const at=row[0]*1000,receivedAt=row[8]??row[6],wallet=row[3];if(row[1]!==1||at<start||at>end||!Number.isFinite(receivedAt)||receivedAt>decisionAt||typeof wallet!=='string'||!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(wallet))continue;if(wallets.has(wallet)||wallets.size<5000)wallets.set(wallet,Math.min(wallets.get(wallet)??Infinity,receivedAt));}}
+ if(wallets.size)proofs.push({n:wallets.size,at:Math.max(...wallets.values()),source:'recorded-pool-wallet-prefix'});
+ for(const snapshot of coin?.intelligenceSnapshots||[])if(snapshot.at<=decisionAt&&snapshot.buyerWindowStart===start&&Number.isInteger(snapshot.features?.buyers10)&&snapshot.features.buyers10>0)proofs.push({n:snapshot.features.buyers10,at:snapshot.at,source:'recorded-pool-wallet-snapshot'});
+ return proofs.sort((a,b)=>b.n-a.n||a.at-b.at)[0]||null;
+}
 function starterFeaturesAt(coin,decisionAt,context={}){
  const WSOL='So11111111111111111111111111111111111111112',ct=coin?.ct;
  let safeContract=null,quoteSol=null,buyers10=null;
@@ -232,7 +239,7 @@ function starterFeaturesAt(coin,decisionAt,context={}){
  let lower=false,buyerAt=null,buyerSource=null;
  if(pools.length===1&&bx?.cov===true&&Number.isFinite(bx.at)&&bx.at<=decisionAt&&bx.at>=pool.t+10*MIN+5000&&Number.isFinite(bx.payers)&&decisionAt-bx.at<=7*MIN)buyers10=bx.payers;
  if(buyers10==null){
-  const proofs=[];
+  const recorded=recordedBuyerProof(coin,decisionAt,eventAt),proofs=recorded?[recorded]:[];
   for(const p of pools){
    for(const g of p.gx||[]){const at=g[0]*1000;if(at<p.t||at>endAt||at>decisionAt||at<eventAt)continue;
     if(p.t<eventAt&&at-5*MIN<eventAt)continue;
@@ -340,5 +347,5 @@ function capBank(rows,labelFn=it=>it.label,positive='live',negative='dead',max=5
   const n=dedup.filter(x=>labelFn(x)===negative).slice(0,max);
   return [...p,...n].sort((a,b)=>a.time-b.time);
 }
-module.exports={CATEGORY_KEYS,validCondition,verifiedFeatures,KEYS,LEVEL1_KEYS,RULE_KEYS,LEVEL2_KEYS,levelTwoFeaturesAt,samples,candles,featuresAt,starterFeaturesAt,activityOutcome,
+module.exports={recordedBuyerProof,CATEGORY_KEYS,validCondition,verifiedFeatures,KEYS,LEVEL1_KEYS,RULE_KEYS,LEVEL2_KEYS,levelTwoFeaturesAt,samples,candles,featuresAt,starterFeaturesAt,activityOutcome,
   classifyActivity,activityEvidence,tradeOutcomeEvidence,strengthOutcome,evaluation,passes,ruleKey,ruleStats,wilsonInterval,weightedScore,proposeRules,capBank};

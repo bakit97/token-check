@@ -11,7 +11,7 @@ function same(a,b){return JSON.stringify(a)===JSON.stringify(b)}
 function at(key,row){return row[0]*(key==='curveSol'?1:1000)}
 function fieldsOf(pool,cutoff){const fields={};for(const key of ['ds','gx','lq','curveSol']){const rows=(pool[key]||[]).filter(r=>Array.isArray(r)&&at(key,r)<cutoff);if(rows.length>1)fields[key]=rows}
  const raw=Object.fromEntries(Object.entries(pool.raw||{}).filter(([,r])=>(r?.b||r?.miss)&&r.at<cutoff));if(Object.keys(raw).length)fields.raw=raw;
- for(const key of ['k10','path'])if(pool[key]?.c?.length&&pool[key].at<cutoff)fields[key]=pool[key];if(cutoff-pool.t>90*60000){if(pool.bx&&Object.keys(pool.bx).length>3)fields.bx=pool.bx;if(pool.trDone&&pool.tr?.f?.length)fields.tr=pool.tr;}if(cutoff-pool.t>90*60000)for(const key of ['featureSnapshotsPacked','intelligenceSnapshots','earlyWallets','openingMetrics'])if(pool[key]!=null)fields[key]=pool[key];if(cutoff-pool.t>8*H&&pool.activityTapePacked)fields.activityTapePacked=pool.activityTapePacked;return JSON.parse(JSON.stringify(fields))}
+ for(const key of ['k10','path'])if(pool[key]?.c?.length&&pool[key].at<cutoff)fields[key]=pool[key];if(cutoff-pool.t>90*60000){if(pool.bx&&Object.keys(pool.bx).length>3)fields.bx=pool.bx;if(pool.trDone&&pool.tr?.f?.length)fields.tr=pool.tr;}if(cutoff-pool.t>90*60000)for(const key of ['featureSnapshotsPacked','intelligenceSnapshots','earlyWallets','openingMetrics','buyerPrefixes'])if(pool[key]!=null)fields[key]=pool[key];if(cutoff-pool.t>8*H&&pool.activityTapePacked)fields.activityTapePacked=pool.activityTapePacked;return JSON.parse(JSON.stringify(fields))}
 function mergeFields(earlier,later){const out={...earlier,...later};for(const key of ['ds','gx','lq','curveSol'])if(earlier[key]||later[key]){const rows=new Map();for(const r of [...(earlier[key]||[]),...(later[key]||[])])rows.set(JSON.stringify(r),r);out[key]=[...rows.values()].sort((a,b)=>a[0]-b[0])}
  for(const key of ['intelligenceSnapshots','earlyWallets'])if(earlier[key]||later[key])out[key]=[...new Map([...(earlier[key]||[]),...(later[key]||[])].map(x=>[JSON.stringify(x),x])).values()];
  for(const key of ['bx','tr'])if(earlier[key]||later[key])out[key]={...earlier[key],...later[key]};
@@ -23,7 +23,7 @@ function trim(pool,fields,reference){for(const key of ['ds','gx','lq','curveSol'
  for(const [key,row] of Object.entries(fields.raw||{}))if(same(pool.raw?.[key],row)){if(row.miss)pool.raw[key]={miss:row.miss,...(row.reason?{reason:row.reason}:{})};else{const {b,...metadata}=row;pool.raw[key]={...metadata,historyArchived:true}}}
  for(const key of ['k10','path'])if(fields[key]&&same(fields[key],pool[key])){const {c,...metadata}=pool[key];pool[key]={...metadata,historyArchived:true}}
  if(fields.bx&&same(pool.bx,fields.bx)){const {at,cov,payers}=pool.bx;pool.bx={at,cov,payers};}if(fields.tr&&same(pool.tr,fields.tr))pool.tr={};
- for(const key of ['featureSnapshotsPacked','intelligenceSnapshots','earlyWallets','openingMetrics','activityTapePacked'])if(fields[key]!=null&&same(pool[key],fields[key]))delete pool[key];
+ for(const key of ['featureSnapshotsPacked','intelligenceSnapshots','earlyWallets','openingMetrics','buyerPrefixes','activityTapePacked'])if(fields[key]!=null&&same(pool[key],fields[key]))delete pool[key];
  pool.archiveRefs={...pool.archiveRefs,activeHistory:[...(pool.archiveRefs?.activeHistory||[]),reference]};delete pool.historyHydrated;
 }
 class ActiveHistory{
