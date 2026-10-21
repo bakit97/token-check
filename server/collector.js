@@ -96,7 +96,7 @@ async function rpc(method,params,options={}){
   // No FIFO of sleeping calls: old background jobs cannot delay fresh proofs.
   if(!RESOURCE.allow(require(DIR+'/resource-budget.js').rpcCost(method),priority)){RESOURCE.deferred(source);throw Object.assign(new Error('Helius budget: observation deferred'),{code:'BUDGET_DEFERRED',retryAfterMs:RESOURCE.retryAfterMs?.()||5000})}
   const go=async()=>{for(let t=0;t<3;t++){
-      const cr=RESOURCE.reserveRPC(method,priority,source); // charge BEFORE fetch, including failures/retries
+      const cr=RESOURCE.reserveRPC(method,priority,source);options.onReserved?.(); // charge BEFORE fetch, including failures/retries
       rpcN++;rpcCredits+=cr;crLog.push([Date.now(),cr,method]);RPCCTX[context]=(RPCCTX[context]||0)+cr;
       while(crLog.length&&crLog[0][0]<Date.now()-3600e3)crLog.shift();
       const r=await fetch('https://mainnet.helius-rpc.com/?api-key='+key,{signal:AbortSignal.timeout(30000),method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
@@ -938,6 +938,7 @@ async function collectPoolBatch(part){
     missing.forEach((row,i)=>{row.vs=vals.slice(i*2,i*2+2);row.at=vat;row.slot=extra?.context?.slot;commit(row)})}
 }
 function poolReserveNeeded(c,now){return !!SOURCE?.get(c.a)&&!c.poolUnsupported&&ageMin(c,now)<120&&(!c.lqAt||now-c.lqAt>=poolInterval(c,now));}
+function releaseManualReservation(){if(!RESOURCE)return;const before=RESOURCE.poolDiscoveryPending;RESOURCE.poolDiscoveryPending=false;if(before&&RESOURCE.allow(1,'migration-fast'))FAST_DISCOVERY?.resumeBudget?.();}
 function setPoolReservation(pending){const before=RESOURCE.poolsPending;RESOURCE.poolsPending=pending;if(before&&!pending&&RESOURCE.allow(1,'migration-fast'))FAST_DISCOVERY?.resumeBudget?.();}
 async function samplePoolBalances(now=Date.now()){
  if(globalThis.poolBalancesBusy)return;globalThis.poolBalancesBusy=true;POOL_BALANCES.stats.cycleStartedAt=now;
@@ -1141,7 +1142,7 @@ function chainWatch(){
       else{WS.on=false;WS.connected={dbc:false,ll:false,pc:false};WS.disconnects=(WS.disconnects||0)+1}
       setTimeout(()=>connect(channel),pre?10000:5000)};
   };
-  POOL_DISCOVERY=new (require(DIR+'/migration-fast.js').FastSignals)({process:processManualPool,maxQueue:64,workers:1,maxAgeMs:120000,onPending:n=>{if(RESOURCE){const before=RESOURCE.poolDiscoveryPending;RESOURCE.poolDiscoveryPending=n>0;if(before&&!n&&RESOURCE.allow(1,'migration-fast'))FAST_DISCOVERY?.resumeBudget?.();}},onError:(e,t)=>{if(t?.mint)SOURCE?.observe({mint:t.mint,phase:'before',origin:'manual-pool',reason:e.code||'RPC_ERROR'});err('manual pool '+(e.code||'RPC_ERROR'))}});
+  POOL_DISCOVERY=new (require(DIR+'/migration-fast.js').FastSignals)({process:processManualPool,maxQueue:64,workers:1,maxAgeMs:120000,onPending:n=>{if(!n)releaseManualReservation();},onError:(e,t)=>{if(t?.mint)SOURCE?.observe({mint:t.mint,phase:'before',origin:'manual-pool',reason:e.code||'RPC_ERROR'});err('manual pool '+(e.code||'RPC_ERROR'))}});
   POOL_LOGS=new (require(DIR+'/pool-logs.js').PoolLogs)({WebSocket,definitions:require(DIR+'/manual-pools.js').definitions,onSignal:t=>POOL_DISCOVERY.offer(t),onSlot:(slot,at)=>EVENT_CLOCK?.observe(slot,at)});POOL_LOGS.start();
   connect('migrations'); // TZ20: birth stream intentionally disabled; migration socket is never budget-paused.
 }
@@ -1542,7 +1543,7 @@ const STARTED=Date.now();
 (async()=>{fs.mkdirSync(DIR,{recursive:true});await ensureModules();
   RPC_CACHE=new (require(DIR+'/bounded-cache.js').BoundedCache)();
   setInterval(()=>{RPC_CACHE.sweep();OBS_RECOVERY?.cache.sweep();RECOVERY_RPC?.cache.sweep()},60000).unref();
-  PUBLIC_POOL_RPC=new (require(DIR+'/pool-balance-reader.js').PublicPoolRPC)({fallback:(m,p,o)=>rpc(m,p,o)});
+  PUBLIC_POOL_RPC=new (require(DIR+'/pool-balance-reader.js').PublicPoolRPC)({onPublicStart:releaseManualReservation,fallback:async(m,p,o)=>{RESOURCE.poolDiscoveryPending=true;try{return await rpc(m,p,{...o,onReserved:releaseManualReservation})}catch(e){if(e.code!=='BUDGET_DEFERRED')releaseManualReservation();throw e;}}});
   POOL_BALANCES=new (require(DIR+'/pool-balance-reader.js').PoolBalanceReader)({fallback:keys=>rpc('getMultipleAccounts',[keys,{encoding:'base64',commitment:'confirmed'}],{priority:'pools',context:'пулы',source:'пулы',urgent:true,maxBytes:1024*1024})});
   RESOURCE=new (require(DIR+'/resource-budget.js').ResourceBudget)({dir:DIR,env:{...process.env,HELIUS_USED_CREDITS:process.env.HELIUS_USED_CREDITS||'185000'}});
   HEALTH=new (require(DIR+'/runtime-health.js').RuntimeHealth)();let expected=Date.now()+1000;setInterval(()=>{const at=Date.now();HEALTH.lagMs=Math.max(0,at-expected);HEALTH.maxLagMs=Math.max(HEALTH.maxLagMs,HEALTH.lagMs);expected=at+1000;HEALTH.capture()},1000).unref();
