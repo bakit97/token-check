@@ -1,0 +1,163 @@
+{
+  "checkedAtUtc": "2026-10-21T11:23:25.103906+00:00",
+  "commit": "1843970d7f68d8d3352f2fe35f185538c851cafc",
+  "health": {
+    "okay": true,
+    "version": "1792581228416901",
+    "ageSec": 32,
+    "memoryMB": 246,
+    "peakMB": 264.4,
+    "stateBytes": 29436490,
+    "creditsMinute": 16.3682,
+    "dbc": true,
+    "launchLab": true,
+    "modulesReady": true,
+    "publicFeedsFresh": true
+  },
+  "heliusCounterIsEstimate": true,
+  "sol": {
+    "known": 193,
+    "cards": 200,
+    "byVenue": {
+      "Meteora DBC": {
+        "rows": 142,
+        "solKnown": 142,
+        "fresh7min": 138
+      },
+      "pump.fun": {
+        "rows": 52,
+        "solKnown": 45,
+        "fresh7min": 44
+      },
+      "Meteora DAMM v2": {
+        "rows": 4,
+        "solKnown": 4,
+        "fresh7min": 4
+      },
+      "PumpSwap": {
+        "rows": 2,
+        "solKnown": 2,
+        "fresh7min": 2
+      }
+    },
+    "ageBuckets": {
+      "0-8m": {
+        "rows": 16,
+        "solKnown": 16,
+        "fresh7min": 16
+      },
+      "8-20m": {
+        "rows": 26,
+        "solKnown": 24,
+        "fresh7min": 24
+      },
+      "20-120m": {
+        "rows": 147,
+        "solKnown": 143,
+        "fresh7min": 143
+      },
+      "over120m": {
+        "rows": 11,
+        "solKnown": 10,
+        "fresh7min": 5
+      }
+    }
+  },
+  "r1": {
+    "counts": {
+      "live": 0,
+      "dead": 0,
+      "pending": 10,
+      "unknown": 352,
+      "entered": 362,
+      "preLive": 0,
+      "preDead": 0,
+      "postLive": 0,
+      "postDead": 0
+    },
+    "intakeAcceptedThisProcess": {},
+    "intakeRejectedThisProcess": {
+      "no-buyers10": 18
+    },
+    "epochStart": 1792397613254
+  },
+  "exports": {
+    "busy": false,
+    "oneAt": 1792581685820,
+    "twoAt": 1792581692570,
+    "error": ""
+  },
+  "tests": {
+    "node": 438,
+    "publisher": 4,
+    "runtimeModules": 43
+  },
+  "scaleTest": {
+    "banks": 8,
+    "rowsPerBank": 5000,
+    "totalRows": 40000,
+    "workloads": [
+      "relabel-I1",
+      "relabel-I2",
+      "auto-I1",
+      "auto-I2-parents",
+      "manual-module-tests",
+      "silent-live",
+      "hourly-filter-audit"
+    ],
+    "heapLimitMB": 392.167424,
+    "maxObservedHeapMB": 59.842728,
+    "enforcedHeapBelow450MB": true,
+    "totalBankBytes": 229451128,
+    "maxRowBytes": 262144,
+    "networkCalls": 0
+  },
+  "remaining": {
+    "33": "not started; epoch was not reset",
+    "34": {
+      "hourAcceptanceComplete": false,
+      "latency": {
+        "migrations": {
+          "pool": {
+            "samples": 0,
+            "p50Ms": null,
+            "p90Ms": null,
+            "maxMs": null
+          },
+          "after": {
+            "samples": 17,
+            "p50Ms": 17077,
+            "p90Ms": 46800,
+            "maxMs": 46820
+          }
+        },
+        "manualPools": {
+          "pool": {
+            "samples": 0,
+            "p50Ms": null,
+            "p90Ms": null,
+            "maxMs": null
+          },
+          "after": {
+            "samples": 0,
+            "p50Ms": null,
+            "p90Ms": null,
+            "maxMs": null
+          }
+        }
+      },
+      "counts": {
+        "signals": 23,
+        "duplicates": 0,
+        "overflow": 0,
+        "completed": 18,
+        "retries": 15,
+        "errors": 2,
+        "rejected": 0
+      },
+      "budgetRetriesThisProcess": 15,
+      "targetReachedOnShortSample": false,
+      "note": "Budget reservation fixes are published; latency target is not yet achieved. Dedicated scheduler/network investigation and one-hour acceptance remain."
+    }
+  }
+}
