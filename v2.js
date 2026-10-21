@@ -548,8 +548,8 @@ function renderIntake(){if(!$('intakeBox'))return;var st=researchMeta&&researchM
   if(!INTAKE_DIRTY){var m=x?x.manual:{enabled:true,phase:'both',buyers10:{on:true,min:3},quoteSol:{on:true,min:0.5},sample:{on:false,pct:100}};
     $('inManual').checked=!!m.enabled;$('inModules').checked=x?!!x.modules.enabled:true;
     $('inPhase').value=m.phase||'both';
-    $('inBuyOn').checked=m.buyers10.on;$('inBuy').value=m.buyers10.min;$('inSolOn').checked=m.quoteSol.on;$('inSol').value=m.quoteSol.min;
-    $('inSampleOn').checked=m.sample.on;$('inSample').value=m.sample.pct}
+    var b10=m.buyers10||{},qs=m.quoteSol||{},sp=m.sample||{};$('inBuyOn').checked=false;if(b10.min!=null)$('inBuy').value=b10.min;$('inSolOn').checked=!!qs.on;if(qs.min!=null)$('inSol').value=qs.min;
+    $('inSampleOn').checked=!!sp.on;if(sp.pct!=null)$('inSample').value=sp.pct}
   $('inBuyV').textContent=$('inBuy').value;$('inSolV').textContent=$('inSol').value;$('inSampleV').textContent=$('inSample').value;
   $('inManualBox').classList.toggle('dim',!$('inManual').checked);
   var ms=$('inManualSw');if(ms){var on=$('inManual').checked;ms.classList.toggle('on',on);var t1=ms.querySelector&&ms.querySelector('.tg');if(t1)t1.classList.toggle('on',on)}
