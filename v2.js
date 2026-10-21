@@ -540,7 +540,7 @@ async function applyModules(){var key=keyFrom('modKey'),d=draft();
   catch(e){$('modMsg').textContent='Ошибка связи'}finally{$('modApply').disabled=false}}
 // ---- Вход в Исследование 1 ----
 function intakeFromUI(){return {manual:{enabled:$('inManual').checked,phase:$('inPhase').value||'both',
-    buyers10:{on:$('inBuyOn').checked,min:Number($('inBuy').value)},quoteSol:{on:$('inSolOn').checked,min:Number($('inSol').value)},
+    buyers10:{on:false,min:Number($('inBuy').value)},quoteSol:{on:$('inSolOn').checked,min:Number($('inSol').value)},
     sample:{on:$('inSampleOn').checked,pct:Number($('inSample').value)}},modules:{enabled:true}}}
 var INTAKE_DIRTY=false;
 function renderIntake(){if(!$('intakeBox'))return;var st=researchMeta&&researchMeta.settings,x=st&&st.intake;
