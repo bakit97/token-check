@@ -1,10 +1,10 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "2c71ecfeafe536d78bced419172d25a0c8ca4c8291f001fe3e2b88bd56170f9d",
+    "collector.js": "98b93156560cd30fb6d9d0ddd4e3a110979f470471d7e0f0576c94d13a99c2eb",
     "pool-balance-reader.js": "983079034896a154438cf03bae14863d0f94ab0adcc1328830543a942a32cac7",
     "bounded-cache.js": "71245b543751fc32faaf3e05951200df28fc725585001500853a2f35ef18d13b",
-    "pool-trade-observer.js": "9dcd9fe1b68774a3b56406fecb9e4b65168b3a5ccc386a11658e1621c6169b30",
+    "pool-trade-observer.js": "b43103cb2958810e4f51218311611208fcc0f304fbad5b0659e114c0acd5826d",
     "opening-evidence.js": "5799be682c2e87afc9c3aba5f018e277a705a6ec6cc91ee80b39fd8cddaf5bee",
     "holder-census.js": "703f9647ded2fc9591b485c869ad0085fa96f8349617870239630837aad5b5e2",
     "liquidity-proof.js": "80aec08bcd3dbbc3daf304e33555c1d977e738ac7c5243699ba831b6cbaec6ad",
@@ -43,6 +43,6 @@
     "pool-logs.js": "44ab75877243a95796b1a59488d4123358fac0372d84f52f6f50d6f3514f21ea",
     "legacy-data-redaction.js": "041cf44f6bc92db632c9cef9c1d19bb39c1d182738a653f2fa42ac7d2cf012cb",
     "side-pools.js": "c4550ee578dfe8e42f52542c6628f074ff81a420e5911ea56c386485a4670d43",
-    "observation-recovery.js": "469146011f1e472a333e946f1ca372c48f705c65e216f89d64e561e6da6e4600"
+    "observation-recovery.js": "b9ae9131a78ab9588d71bebd72f3cbfafe0213b01f5de9b19d0b4fe5654c0857"
   }
 }

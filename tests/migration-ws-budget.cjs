@@ -8,7 +8,7 @@ test('TZ20 disables birth socket while DBC, LaunchLab and migration-authority lo
  const WS={preOn:false,msgs:{},cand:{},bytes:0,err:0,preGapMs:0,prePausedAt:0,preBudgetPauses:0};
  const ctx={require,DIR:path.join(__dirname,'../server'),FAST_DISCOVERY:null,processFastMigration:async()=>{},processManualPool:async()=>{},POOL_DISCOVERY:null,POOL_LOGS:null,offerFastMigration:t=>offered.push(t),EVENT_CLOCK:null,WS,WebSocket:Socket,heliusKey:async()=>'<mock>',RESOURCE:{streamAllowed:()=>preAllowed,stream:(n,source)=>{metered.push(source);return false}},PRE:{onLog:()=>{}},
   PUMP_MINT_AUTH:'mint-auth',PUMP:'pump-program',DBC:'dbc-program',LAUNCH:'ll-program',Buffer,Date,JSON,err:()=>{},b64:x=>x,wsCandidate:(...x)=>received.push(x),
-  setTimeout:f=>timers.push(f),setInterval:f=>{timers.push(f);return f},clearInterval:()=>{}};
+  setTimeout:(f,ms)=>{f.delay=ms;timers.push(f);return f},clearTimeout:()=>{},setInterval:f=>{timers.push(f);return f},clearInterval:()=>{}};
  vm.createContext(ctx);vm.runInContext(code.slice(code.indexOf('function chainWatch()'),code.indexOf('/* ---------- 6.'))+'\nchainWatch();',ctx);
  await new Promise(r=>setImmediate(r));assert.equal(sockets.length,2);
  const migration=sockets[1];migration.onopen();
@@ -27,4 +27,7 @@ test('TZ20 disables birth socket while DBC, LaunchLab and migration-authority lo
  assert.equal(offered.length,1);
  assert.equal(WS.on,true);assert.equal(WS.preOn,false);assert.equal(metered.includes('pre'),false);
  assert.ok(metered.includes('migrations'));
+ const reconnects=()=>timers.filter(f=>f.delay===5000);
+ migration.onerror();migration.onclose();assert.equal(reconnects().length,1,'error plus close must schedule only one reconnect');
+ reconnects()[0]();await new Promise(r=>setImmediate(r));const stalled=sockets.at(-1);timers.filter(f=>f.delay===15000).at(-1)();assert.equal(stalled.closed,true);assert.equal(WS.connectTimeouts,1);assert.equal(reconnects().length,2);stalled.onopen();assert.equal(stalled.sent.length,0,'a retired connection must not subscribe after a delayed open');
 });

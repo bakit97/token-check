@@ -830,13 +830,13 @@ function captureFeatureSnapshots(now=Date.now()){
 }
 function birthBackfill(now){if(!SOURCE||gtPending('birth-curve'))return;const c=[...C.values()].filter(c=>!c.createdAt&&(c.creatorCurveCandidate||c.mg?.watch||SOURCE.get(c.a)?.proof?.curve)&&SOURCE.has(c.a)&&now-(c.birthAttemptAt||0)>30*60000).sort((a,b)=>(a.birthAttemptAt||0)-(b.birthAttemptAt||0))[0];if(!c)return;c.birthAttemptAt=now;const curve=c.creatorCurveCandidate||c.mg?.watch||SOURCE.get(c.a)?.proof?.curve;gt('/pools/'+curve,2,'birth-curve').then(response=>require(DIR+'/coin-profile.js').birthFromGT(c,response,SOURCE.get(c.a),Date.now())).catch(()=>{});}
 const POOL_TRADE_STATS={responses:0,nativeTrades:0,unusableRows:0,earlyResponses:0,lastAt:0,heliusCredits:0};
-function recordPoolTrades(c,row,data,at){if(!row)return null;const cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2?.config||{},row.phase),result=require(DIR+'/pool-trade-observer.js').observe(c,row,data,at,{hours:cfg.hours,append:appendIntelligence});c.activityFirstAt=c.activityFirstAt||at;c.activityLastAt=at;if(result.valid)c.activityFirstProofAt=c.activityFirstProofAt||at;const oldest=Math.min(...result.rows.map(r=>r[0]*1000)),span=at-oldest;c.activityPollMs=data.length>=250&&Number.isFinite(span)?Math.max(60000,Math.min(10*60000,span*.65)):10*60000;POOL_TRADE_STATS.responses++;POOL_TRADE_STATS.nativeTrades+=result.valid;POOL_TRADE_STATS.unusableRows+=result.unusable;POOL_TRADE_STATS.lastAt=at;if(at<=row.acceptedAt+20*60000)POOL_TRADE_STATS.earlyResponses++;if(RESEARCH_V2?.rows.some(r=>r.mint===row.mint)){RESEARCH_V2.processed.delete(row.mint);RESEARCH_V2.lastAttemptAt.delete(row.mint);}return result;}
+function recordPoolTrades(c,row,data,at){if(!row)return null;const cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2?.config||{},row.phase),result=require(DIR+'/pool-trade-observer.js').observe(c,row,data,at,{hours:cfg.hours,append:appendIntelligence});c.activityFirstAt=c.activityFirstAt||at;c.activityLastAt=at;delete c.activityError;if(result.valid)c.activityFirstProofAt=c.activityFirstProofAt||at;const oldest=Math.min(...result.rows.map(r=>r[0]*1000)),span=at-oldest;c.activityPollMs=data.length>=250&&Number.isFinite(span)?Math.max(60000,Math.min(10*60000,span*.65)):10*60000;POOL_TRADE_STATS.responses++;POOL_TRADE_STATS.nativeTrades+=result.valid;POOL_TRADE_STATS.unusableRows+=result.unusable;POOL_TRADE_STATS.lastAt=at;if(at<=row.acceptedAt+20*60000)POOL_TRADE_STATS.earlyResponses++;if(RESEARCH_V2?.rows.some(r=>r.mint===row.mint)){RESEARCH_V2.processed.delete(row.mint);RESEARCH_V2.lastAttemptAt.delete(row.mint);}return result;}
 function researchActivityTape(now){
  if(!RESEARCH_V2||gtPending('r1-activity'))return;
  const watched=new Map([...RESEARCH_V2.admitted]);for(const row of SOURCE?.records.values()||[])if(row.acceptedAt>=RESEARCH_V2.cohortStart&&now-row.acceptedAt<13*60000)watched.set(row.mint,row);
  const candidates=[...watched.values()].map(row=>({row,c:C.get(row.mint)})).filter(({row,c})=>c?.p&&now-(c.activityAttemptAt||0)>Math.min(c.activityPollMs||10*60000,now-row.acceptedAt<13*60000?60000:10*60000)&&now-(c.activityLastAt||0)>Math.min(c.activityPollMs||10*60000,now-row.acceptedAt<13*60000?60000:10*60000)&&now<require(DIR+'/event-clock.js').eventAnchor(row)+(require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase).hours*60+30)*60000).sort((a,b)=>(a.c.activityAttemptAt||0)-(b.c.activityAttemptAt||0));
  const item=candidates[0];if(!item)return;const {row,c}=item,pool=c.p,start=require(DIR+'/event-clock.js').eventAnchor(row),end=start+require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase).hours*3600000;c.activityAttemptAt=now;
- gt('/pools/'+pool+'/trades',!c.activityFirstAt&&now-row.acceptedAt<2*60000?0:1,'r1-activity').then(response=>{if(c.p!==pool)return;recordPoolTrades(c,row,response.data,Date.now());}).catch(e=>err('activity history '+e.message));
+ gt('/pools/'+pool+'/trades',!c.activityFirstAt&&now-row.acceptedAt<2*60000?0:1,'r1-activity').then(response=>{if(c.p!==pool)return;recordPoolTrades(c,row,response.data,Date.now());}).catch(e=>{c.activityError=/HTTP (\d+)/.exec(e.message)?.[0]||'provider-unavailable';err('activity history '+e.message)});
 }
 // One bounded public GT request per tick; this uses no Helius credits.
 function researchTradeTail(now){if(!RESEARCH_V2||gtBackgroundBusy()||gtPending('r1-tail'))return;
@@ -1118,8 +1118,8 @@ function chainWatch(){
   FAST_DISCOVERY=new (require(DIR+'/migration-fast.js').FastSignals)({process:processFastMigration,onPending:n=>{RESOURCE.freshMigrationPending=n},onError:(e,task)=>{if(task?.mint)SOURCE?.observe({mint:task.mint,phase:'after',origin:'fast-'+task.kind,reason:e.code||'RPC_ERROR'});err('fast migration '+(e.code||'RPC_ERROR')+' '+e.message)}});
   const PUMP_WITHDRAW_AUTH=require(DIR+'/migration-fast.js').PUMP_WITHDRAW_AUTH;
   const connect=async(channel)=>{const key=await heliusKey();if(!key||(channel==='pre'&&(!PRE||!RESOURCE?.streamAllowed('pre')))){setTimeout(()=>connect(channel),10000);return}
-    const pre=channel==='pre',subs={},ws=new WebSocket('wss://mainnet.helius-rpc.com/?api-key='+key);let timer;
-    ws.onopen=()=>{
+    const pre=channel==='pre',subs={},ws=new WebSocket('wss://mainnet.helius-rpc.com/?api-key='+key);let timer;let reconnectScheduled=false;const openTimer=setTimeout(()=>{if(ws.readyState!==1){WS.connectTimeouts=(WS.connectTimeouts||0)+1;try{ws.close()}catch{};ws.onclose?.();}},15000);
+    ws.onopen=()=>{clearTimeout(openTimer);if(reconnectScheduled){try{ws.close()}catch{};return}
       if(pre){WS.preOn=true;WS.preGapMs+=WS.prePausedAt?Date.now()-WS.prePausedAt:0;WS.prePausedAt=0}
       else{WS.on=true;WS.since=Date.now();WS.connected={dbc:false,ll:false,pc:false}}
       const requests=pre?[[150,'pre','logsSubscribe',[{mentions:[PUMP_MINT_AUTH]},{commitment:'confirmed'}]]]:
@@ -1145,8 +1145,8 @@ function chainWatch(){
       if(n==='pc'){try{pumpCurveComplete(v.pubkey,b64(v.account?.data?.[0]),slot)}catch(x){WS.err++;err('ws pc '+x.message)}return}
       try{wsCandidate(n,v.pubkey,b64(v.account?.data?.[0]),slot,v.account?.owner)}catch(x){WS.err++;err('ws '+x.message)}
     };
-    ws.onerror=()=>{WS.err++;try{ws.close()}catch{}};
-    ws.onclose=()=>{clearInterval(timer);if(pre){PRE?.telemetry?.disconnected(ws.budgetPause?'budget':'network',EVENT_CLOCK?.anchor?.slot);WS.preOn=false;WS.preSub=false;WS.prePausedAt=WS.prePausedAt||Date.now()}
+    ws.onerror=()=>{WS.err++;try{ws.close()}catch{};ws.onclose?.();};
+    ws.onclose=()=>{if(reconnectScheduled)return;reconnectScheduled=true;clearTimeout(openTimer);clearInterval(timer);if(pre){PRE?.telemetry?.disconnected(ws.budgetPause?'budget':'network',EVENT_CLOCK?.anchor?.slot);WS.preOn=false;WS.preSub=false;WS.prePausedAt=WS.prePausedAt||Date.now()}
       else{WS.on=false;WS.connected={dbc:false,ll:false,pc:false};WS.disconnects=(WS.disconnects||0)+1}
       setTimeout(()=>connect(channel),pre?10000:5000)};
   };
@@ -1279,6 +1279,7 @@ function recoveryTick(){if(resourcePressure())return;if(!OBS_RECOVERY||!RESEARCH
   for(const row of window){const c=C.get(row.mint),cfg=require(DIR+'/research-runtime.js').phaseSettings(one.config,row.phase),start=row.eventAt??row.acceptedAt,end=Math.min(Math.floor((now-3*60000)/60000)*60000,start+cfg.hours*3600e3);if(!c||end-start<10*60000)continue;const raw=api.activityEvidence(OBS_RECOVERY.attach(fullCoin(c)),start,end,cfg.decisionMinutes);let from=null,to=null;for(const minute of raw.minutes){if(minute[1]!==1){from??=minute[0]-60000;to=minute[0];}else if(from!=null)break;}if(from!=null&&to-from>=2*60000)enqueue(row,from,to,'one-gap');}
   for(const pass of PASS_V2?.records.values()||[]){const cfg=RESEARCH_TWO?.config.phases?.[pass.phase]||RESEARCH_TWO?.config||{},clock=require(DIR+'/research-two-runtime.js').lineClock(pass,cfg);if(RESEARCH_TWO?.processed.has(pass.mint)||now<clock.windowEnd)continue;enqueue(pass,clock.lineAt-7*60000,clock.windowEnd,'two');}
  }
+ const reset=RESEARCH_ONE_EPOCH?.current;if(reset?.resetId)OBS_RECOVERY.archiveJobs(reset.resetAt,j=>j.kind.startsWith('one')&&(SOURCE.get(j.mint)?.acceptedAt??0)<reset.resetAt);
  OBS_RECOVERY.tick();
 }
 function researchCoins(){const contract=require(DIR+'/observation-contract.js');return {get:mint=>{const c=C.get(mint)||(typeof COMPLETED!=='undefined'&&COMPLETED?COMPLETED.readCoin(mint):null);const row=c?contract.toLegacy(contract.project(fullCoin(c),{metadata:fullCoin(c),admission:SOURCE?.get(mint)||null})):null;return OBS_RECOVERY?OBS_RECOVERY.attach(row):row}}}
