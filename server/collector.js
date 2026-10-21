@@ -685,12 +685,12 @@ function admitVerifiedMigration(c){
 
 const OBS_KEYS=['curveSol','ds','k10','path','hold','bx','lq','gx','vaults','vmint','vdec','vaultIdentityAt','legacy','raw','tr','rawUp','trDone','archiveRefs'],OBS_TMP=['tr','raw','dsAt','dsTryAt','tokAt','gxAt','lastTrade','kTry','pTry','trTry','trDone','lqAt','rawUp','vTry'];
 function takeObs(c){const o={};for(const k of OBS_KEYS){if(c[k]!=null)o[k]=c[k];delete c[k]}for(const k of OBS_TMP)delete c[k];return o}
-function load(){try{require(DIR+'/stream-json.js').loadRows(DIR+'/state.json',c=>{
+function load(){try{require(DIR+'/stream-json.js').loadRows(DIR+'/state.json',c=>{c=require(DIR+'/packed-observations.js').restoreStateCoin(c);
     for(const key of ['chTry','kTry','pTry','trTry','vTry'])delete c[key]; // in-flight locks belong to the old process
     if(c.fv!==FV){c.legacy={snap:c.snap,act:c.act,k:c.k};for(const k of ['snap','act','k','o','cur','cn','orig'])delete c[k];c.fv=FV}
     if(c.disc==='ws'&&c.d==='pumpswap')return;c=require(DIR+'/legacy-data-redaction.js').coin(c);if(!c)return;require(DIR+'/packed-observations.js').compactCoin(c);C.set(c.a,c)},HEALTH);log('загружено монет',C.size)}catch(e){if(e.code!=='ENOENT')throw e}
   try{RC=JSON.parse(fs.readFileSync(DIR+'/recon.json','utf8'))}catch{}}
-function save(){try{require(DIR+'/stream-json.js').saveRows(DIR+'/state.json',C.values(),HEALTH);
+function save(){try{require(DIR+'/stream-json.js').saveRows(DIR+'/state.json',(function*(){const {stateCoin}=require(DIR+'/packed-observations.js');for(const c of C.values())yield stateCoin(c)})(),HEALTH);
   fs.writeFileSync(DIR+'/recon.json',JSON.stringify(RC));RETENTION.stateBytes=fs.statSync(DIR+'/state.json').size;return true}catch(e){err('save '+e.message);return false}}
 const isCurve=d=>/pump-?fun/i.test(d||'')&&!/swap/i.test(d||'');
 const SKIP=new Set([WSOL,USDC,USDT]);

@@ -1,7 +1,7 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "98b93156560cd30fb6d9d0ddd4e3a110979f470471d7e0f0576c94d13a99c2eb",
+    "collector.js": "7fe340be0ffa157d14dd8b5f98c913d7d5df596d933bde7842c8a96ddc4e5895",
     "pool-balance-reader.js": "983079034896a154438cf03bae14863d0f94ab0adcc1328830543a942a32cac7",
     "bounded-cache.js": "71245b543751fc32faaf3e05951200df28fc725585001500853a2f35ef18d13b",
     "pool-trade-observer.js": "b43103cb2958810e4f51218311611208fcc0f304fbad5b0659e114c0acd5826d",
@@ -27,7 +27,7 @@
     "runtime-health.js": "3766fe31b09cf8a9216849a6dec47f2046668e715d81f0cf2e0647541a06d0d0",
     "stream-json.js": "b212a8cabdb25f9f8ef5fe7e7c081d04dbda3e4218e6c3df6adfb453d6a48461",
     "observation-contract.js": "a5a9492b15481a799c9f3e905e842847d393ca413b073f11836073c9b6a4d244",
-    "packed-observations.js": "d18abb310941f743b7cb9af9008b8f2c5377f7afb9b85ebab0ff1261c7ca91d2",
+    "packed-observations.js": "fe20d3405803e3f6f77c3694b361049d483a9b03c4ff1f2aee97f1e80f3bfba7",
     "completed-coins.js": "d16146b51da4478a00d848879f3e73f553cebce20467c606f729c949136b23dc",
     "seed-completed.js": "d1bfe44875a6e52062f6e2daceeff4ea4530889bb0a4dcd33c98f49c1dbf4a4b",
     "coin-profile.js": "16dc1953fc981b70b14f8b9fd532a9f0684be90ff420f5818651d896565eab23",

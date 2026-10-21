@@ -39,4 +39,7 @@ function packedStats(C){let series=0,rows=0,bytes=0;
  for(const c of C.values())for(const p of [c,...(c.origs||[])])for(const k of ['ds','lq']){const s=packed.get(p[k]);if(s?.active){series++;rows+=s.rows;bytes+=s.bytes}}
  return {series,rows,bytes};
 }
-module.exports={packRows,compactCoin,packedStats};
+// Disk-only encoding: runtime archive readers continue to see the original object.
+function stateCoin(c){const encode=p=>{if(!p.archiveRefs)return p;const text=JSON.stringify(p.archiveRefs);if(Buffer.byteLength(text)<512)return p;const z=require('node:zlib'),crypto=require('node:crypto'),packed={v:1,data:z.deflateSync(Buffer.from(text),{level:1}).toString('base64'),hash:crypto.createHash('sha256').update(text).digest('hex')};if(JSON.stringify(packed).length>=text.length)return p;const out={...p,archiveRefsPacked:packed};delete out.archiveRefs;return out;};const root=encode(c);return c.origs?.length?{...root,origs:c.origs.map(encode)}:root;}
+function restoreStateCoin(c){for(const p of [c,...(c.origs||[])])if(p.archiveRefsPacked){const packed=p.archiveRefsPacked;if(packed.v!==1||typeof packed.data!=='string'||!/^[a-f0-9]{64}$/.test(packed.hash||''))throw Error('Invalid packed archive references');const text=require('node:zlib').inflateSync(Buffer.from(packed.data,'base64'),{maxOutputLength:2*1024*1024}).toString('utf8');if(require('node:crypto').createHash('sha256').update(text).digest('hex')!==packed.hash)throw Error('Archive reference checksum mismatch');const refs=JSON.parse(text);if(!refs||typeof refs!=='object'||Array.isArray(refs))throw Error('Invalid archive reference object');p.archiveRefs=refs;delete p.archiveRefsPacked;}return c;}
+module.exports={packRows,compactCoin,packedStats,stateCoin,restoreStateCoin};
