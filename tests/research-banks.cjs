@@ -26,3 +26,5 @@ test('eventAt anchored outcomes enter banks and survive relabel and restart',t=>
  const d=dir(t),b=new ResearchBanks({dir:d,...opts}),row={mint:'event-clock',phase:'after',label:'dead',acceptedAt:2000,eventAt:1000,featureAnchor:'eventAt',features:{postPoolSol:17.7}};
  assert.equal(b.upsert([row]),1);assert.equal(new ResearchBanks({dir:d,...opts}).select()[0].eventAt,1000);b.upsert([{...row,label:'live'}]);assert.equal(b.summary().counts.after.dead,0);assert.equal(b.summary().counts.after.live,1);
 });
+
+test('oversized bank row fails safely, analysis projection excludes packed histories',t=>{const {encode,analysisRow}=require('../server/research-banks');assert.throws(()=>encode({mint:'x',huge:'x'.repeat(300000)}),/256 KiB/);const row={mint:'a',features:{holders:5},featureTimesPacked:'large',outcomePacked:'large',curvePacked:'large'};assert.deepEqual(analysisRow(row),{mint:'a',features:{holders:5}});});

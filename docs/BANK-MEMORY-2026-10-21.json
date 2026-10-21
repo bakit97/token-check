@@ -1,0 +1,19 @@
+{
+  "banks": 8,
+  "rowsPerBank": 5000,
+  "totalRows": 40000,
+  "workloads": [
+    "relabel-I1",
+    "relabel-I2",
+    "auto-I1",
+    "auto-I2-parents",
+    "manual-module-tests",
+    "silent-live"
+  ],
+  "heapLimitMB": 392.167424,
+  "maxObservedHeapMB": 48.862848,
+  "enforcedHeapBelow450MB": true,
+  "totalBankBytes": 226571128,
+  "maxRowBytes": 262144,
+  "networkCalls": 0
+}

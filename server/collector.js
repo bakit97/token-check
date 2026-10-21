@@ -936,9 +936,9 @@ async function collectPoolBatch(part){
   if(missing.length){const extra=await call(missing.flatMap(x=>x.vaults)),vat=Date.now(),vals=extra?.value||[];
     missing.forEach((row,i)=>{row.vs=vals.slice(i*2,i*2+2);row.at=vat;row.slot=extra?.context?.slot;commit(row)})}
 }
-async function chainObsLoop(){for(;;){const now=Date.now();
-  try{
-    // Pool balances precede holders. Oldest due observations are served first.
+async function samplePoolBalances(now=Date.now()){
+ if(globalThis.poolBalancesBusy)return;globalThis.poolBalancesBusy=true;POOL_BALANCES.stats.cycleStartedAt=now;
+ try{
     if(now-(globalThis.lastPools||0)>=10000){globalThis.lastPools=now;if(now-(globalThis.lastPreUrgent||0)>=30000&&SOURCE?.latest(200).some(r=>{const c=C.get(r.mint);return c&&(!c.ct||!c.supplyRaw||!c.creatorAddress||!c.n||!c.s||(!c.i&&!c.uri));})){globalThis.lastPreUrgent=now;if(!globalThis.preUrgentBusy){globalThis.preUrgentBusy=true;preChainSweep().catch(e=>{if(e.code!=='BUDGET_DEFERRED')err('pre identity '+e.message)}).finally(()=>globalThis.preUrgentBusy=false);}}const jobs=[];
       for(const c of C.values()){if(!isOk(c))continue;const a=ageMin(c,now);if(a<0||a>24*60+15)continue;c.raw=c.raw||{};
         const rm=RAW_M.find(m=>!c.raw[m]&&a>=m&&a<m+Math.max(2,m*.1));
@@ -951,6 +951,12 @@ async function chainObsLoop(){for(;;){const now=Date.now();
         try{await collectPoolBatch(part);if(i+33>=jobs.length)RESOURCE.poolsPending=false}catch(e){if(e.code!=='BUDGET_DEFERRED')throw e;
           for(const [c] of jobs.slice(i))c.poolBudgetDeferredAt=c.poolBudgetDeferredAt||Date.now();break}}
     }
+ POOL_BALANCES.stats.cycleCompletedAt=Date.now();POOL_BALANCES.stats.cycleError=null;
+ }catch(e){POOL_BALANCES.stats.cycleError=e.code==='BUDGET_DEFERRED'?'BUDGET_DEFERRED':'POOL_SAMPLE_ERROR';if(e.code!=='BUDGET_DEFERRED')err('pool sampling '+e.message)}finally{globalThis.poolBalancesBusy=false;}
+}
+async function chainObsLoop(){for(;;){const now=Date.now();
+  try{
+    // Pool balances precede holders. Oldest due observations are served first.
     // Держатели — только у монет, допущенных в «Все» после миграции: опоздавшие нам не нужны, а бюджет ограничен.
     for(const c of C.values()){if(!isOk(c)||!c.ct||Object.values(c.hold||{}).some(h=>h.holdersComplete===true)||SOURCE?.get(c.a)?.phase!=='after')continue;c.hold=c.hold||{};const a=ageMin(c,now);
       for(const m of HOLD_M){if(c.hold[m])continue;if(a>=m+2){c.hold[m]={at:now,miss:c.holderBudgetDeferredAt?'бюджет':'опоздали'};continue}
@@ -1332,12 +1338,14 @@ async function exportPathsV2(now){
     TWO_BANK_UPLOADED=now;
   }
   if(AUTO_V2&&RESEARCH_V2&&(now-AUTO_UPLOADED>60*60e3)){
-    const levelOne=(RESEARCH_BANKS?RESEARCH_BANKS.select({level:'1'}):RESEARCH_V2.select({limit:20000})).filter(x=>x.outcomeVersion===2&&['live','dead'].includes(x.label)).map(x=>({
+    let levelOne=(RESEARCH_BANKS?RESEARCH_BANKS.select({level:'1',projection:'analysis'}):RESEARCH_V2.select({limit:20000})).filter(x=>x.outcomeVersion===2&&['live','dead'].includes(x.label)).map(x=>({
       ...x,time:x.acceptedAt
     }));
-    const levelTwo=(RESEARCH_BANKS?RESEARCH_BANKS.select({level:'2'}):RESEARCH_TWO.select({limit:20000})).filter(r=>{const c=RESEARCH_TWO.config.phases?.[r.phase]||RESEARCH_TWO.config;return r.lineVersion===2&&r.hours===c.hours&&r.passWindowMinutes===c.passWindowMinutes;});
     const one=AUTO_STUDIES.report(levelOne,{level:'1',settings:RESEARCH_V2.config,now});
+    levelOne=null;
+    let levelTwo=(RESEARCH_BANKS?RESEARCH_BANKS.select({level:'2',projection:'analysis'}):RESEARCH_TWO.select({limit:20000})).filter(r=>{const c=RESEARCH_TWO.config.phases?.[r.phase]||RESEARCH_TWO.config;return r.lineVersion===2&&r.hours===c.hours&&r.passWindowMinutes===c.passWindowMinutes;});
     const two=AUTO_STUDIES.reportParents(levelTwo,{settings:RESEARCH_TWO.config,now});
+    levelTwo=null;
     await refreshLibrary(PASS_V2.config);
     const visible=report=>({...report,rules:report.rules.map(r=>LIBRARY_ROWS.find(m=>m.id===r.id&&m.level===report.level)).filter(Boolean).map(m=>({...m,rule:{...m.conds[0],conditions:m.conds.slice(1),conds:m.conds,phase:m.phase,verdictMinutes:m.verdictMinutes},train:m.eval.train,holdout:m.eval.holdout,live:m.eval.live}))});
     await upload('research-v2/auto-1.json',{updated:now,epochStart:RESEARCH_V2.cohortStart,...visible(one)});
@@ -1493,7 +1501,7 @@ async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const n
   if(!globalThis.featureCoverageBusy&&now-(globalThis.featureCoverageAt||0)>10*60e3){globalThis.featureCoverageBusy=true;require(DIR+'/feature-snapshots.js').coverageAsync(C.values(),fullCoin).then(x=>{globalThis.featureCoverage={...x,updated:Date.now()};globalThis.featureCoverageAt=Date.now()}).catch(e=>err('feature coverage '+e.message)).finally(()=>globalThis.featureCoverageBusy=false);}
   const featureSnapshots=globalThis.featureCoverage||{pending:true};
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,poolProofReads:PUBLIC_POOL_RPC?.stats,poolBalanceReads:POOL_BALANCES?.summary(),caches:{rpc:RPC_CACHE.summary(),recovery:OBS_RECOVERY?.cache.summary()||null,recoveryRpc:RECOVERY_RPC?.cache.summary()||null},featureSnapshots,poolTradeObservations:{...POOL_TRADE_STATS},holderCensus:HOLDER_CENSUS?.stats||null,liquidityProofs:LP_PROOFS?.stats||null,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,observationRecovery:OBS_RECOVERY?{...OBS_RECOVERY.summary(),rpc:RECOVERY_RPC?.summary()||null,r1Unknown:RESEARCH_V2?.summary().counts.unknown??null}:null,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:discoveryStatus(),poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,identityPublic:{...FREE_IDENTITY_STATS},openingProofs:OPENING_PROOFS?{...OPENING_PROOFS.stats,active:OPENING_PROOFS.job?{mint:OPENING_PROOFS.job.mint,pages:OPENING_PROOFS.job.pages,blocks:OPENING_PROOFS.job.blocks.length}:null}:null,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,researchStorage:RESEARCH_BANKS?.summary(),poolProofReads:PUBLIC_POOL_RPC?.stats,poolBalanceReads:POOL_BALANCES?.summary(),caches:{rpc:RPC_CACHE.summary(),recovery:OBS_RECOVERY?.cache.summary()||null,recoveryRpc:RECOVERY_RPC?.cache.summary()||null},featureSnapshots,poolTradeObservations:{...POOL_TRADE_STATS},holderCensus:HOLDER_CENSUS?.stats||null,liquidityProofs:LP_PROOFS?.stats||null,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,observationRecovery:OBS_RECOVERY?{...OBS_RECOVERY.summary(),rpc:RECOVERY_RPC?.summary()||null,r1Unknown:RESEARCH_V2?.summary().counts.unknown??null}:null,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:discoveryStatus(),poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,identityPublic:{...FREE_IDENTITY_STATS},openingProofs:OPENING_PROOFS?{...OPENING_PROOFS.stats,active:OPENING_PROOFS.job?{mint:OPENING_PROOFS.job.mint,pages:OPENING_PROOFS.job.pages,blocks:OPENING_PROOFS.job.blocks.length}:null}:null,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,publishedAt:FAST_PASS_PUBLISH_AT},
@@ -1529,7 +1537,7 @@ const STARTED=Date.now();
   RPC_CACHE=new (require(DIR+'/bounded-cache.js').BoundedCache)();
   setInterval(()=>{RPC_CACHE.sweep();OBS_RECOVERY?.cache.sweep();RECOVERY_RPC?.cache.sweep()},60000).unref();
   PUBLIC_POOL_RPC=new (require(DIR+'/pool-balance-reader.js').PublicPoolRPC)({fallback:(m,p,o)=>rpc(m,p,o)});
-  POOL_BALANCES=new (require(DIR+'/pool-balance-reader.js').PoolBalanceReader)({fallback:keys=>rpc('getMultipleAccounts',[keys,{encoding:'base64',commitment:'confirmed'}],{priority:'pools',context:'пулы',source:'пулы',maxBytes:1024*1024})});
+  POOL_BALANCES=new (require(DIR+'/pool-balance-reader.js').PoolBalanceReader)({fallback:keys=>rpc('getMultipleAccounts',[keys,{encoding:'base64',commitment:'confirmed'}],{priority:'pools',context:'пулы',source:'пулы',urgent:true,maxBytes:1024*1024})});
   RESOURCE=new (require(DIR+'/resource-budget.js').ResourceBudget)({dir:DIR,env:{...process.env,HELIUS_USED_CREDITS:process.env.HELIUS_USED_CREDITS||'185000'}});
   HEALTH=new (require(DIR+'/runtime-health.js').RuntimeHealth)();let expected=Date.now()+1000;setInterval(()=>{const at=Date.now();HEALTH.lagMs=Math.max(0,at-expected);HEALTH.maxLagMs=Math.max(HEALTH.maxLagMs,HEALTH.lagMs);expected=at+1000;HEALTH.capture()},1000).unref();
   COMPLETED=new (require(DIR+'/completed-coins.js').CompletedCoins)(DIR);UPQ.push(...COMPLETED.rawQueue());
@@ -1553,7 +1561,7 @@ const STARTED=Date.now();
   setInterval(pollNew,90000);
   (async()=>{for(;;){try{await pollDS()}catch(e){err('dsloop '+e.message)}await sleep(15000)}})();
   setInterval(()=>{try{candleTasks()}catch(e){err('candles '+e.message)}},15000);
-  chainLoop();chainObsLoop();setInterval(diagCheck,60000);diagCheck();
+  samplePoolBalances();setInterval(()=>samplePoolBalances(),10000);chainLoop();chainObsLoop();setInterval(diagCheck,60000);diagCheck();
   setTimeout(()=>{reconcile();setInterval(reconcile,60*60e3)},60000);
   // Legacy research results are invalid; keep observation exports, run only v2 research.
   setTimeout(()=>deduplicateClosedArchiveRows().catch(e=>err('archive dedup '+e.message)),1000);
