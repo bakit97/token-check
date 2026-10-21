@@ -1,7 +1,7 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "d267baa70d69e3c8965933b14ee34e1dd8f8be7dc102dd744f2be5d504df68f0",
+    "collector.js": "4bf6e3a80e6e719d05faef18efa1d7fe932bae7888c3b87e837a894b185442d8",
     "pool-balance-reader.js": "b4279be051aa5203779b723e96568665da43b3d7d7b4e3a31c60ec0f1e8100af",
     "bounded-cache.js": "71245b543751fc32faaf3e05951200df28fc725585001500853a2f35ef18d13b",
     "pool-trade-observer.js": "9e16d097cc96fc381e9e31c13a9c4dc0effaf34d9140f209860ee7594275842a",
