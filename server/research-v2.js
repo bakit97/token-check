@@ -254,7 +254,7 @@ function starterFeaturesAt(coin,decisionAt,context={}){
  }
  // Концентрация у крупнейших держателей (без хранилищ пула) — снимок не позже момента решения.
  let top1=null,top10=null;
- for(const [,h] of Object.entries(coin?.hold||{}))if(h&&!h.miss&&Number.isFinite(h.at)&&h.at<=decisionAt&&Number.isFinite(h.top10)&&(!top10||h.at>top10.at))top10={at:h.at,v:h.top10*100,v1:Number.isFinite(h.top1)?h.top1*100:null};
+ for(const [,h] of Object.entries(coin?.hold||{}))if(h&&!h.miss&&Number.isFinite(h.at)&&h.at<=decisionAt&&Number.isFinite(h.top10)&&h.top10>0&&(!top10||h.at>top10.at))top10={at:h.at,v:h.top10*100,v1:Number.isFinite(h.top1)?h.top1*100:null};
  if(top10){top1=top10.v1;top10=top10.v}
  return {safeContract,quoteSol,postPoolSol:coin?.mg?.st==='ok'?quoteSol:null,buyers10,top1,top10,...(lower?{buyers10LowerBound:true,buyers10At:buyerAt,buyers10Source:buyerSource}:{})};
 }
@@ -279,7 +279,7 @@ function levelTwoFeaturesAt(coin,decisionAt,{entryAt,acceptedAt,phase}={}){
  return {...featuresAt(coin,decisionAt,{eventAt:acceptedAt,phase}),...Object.fromEntries(Object.entries(out).filter(([,v])=>v!=null))};
 }
 const INTEL_ZERO_KEYS=new Set(['devBuySol','devHold','devHoldPct','bundleShare','bundledWallets']);
-function verifiedFeatures(F={}){if(F.intelligenceEvidenceVersion===2)return F;const out={...F};for(const k of ['smartBuyers','smartShare'])if(k in out)out[k]=null;for(const k of INTEL_ZERO_KEYS)if(out[k]===0)out[k]=null;return out;}
+function verifiedFeatures(F={}){if(F.top10===0)F={...F,top10:null};if(F.intelligenceEvidenceVersion===2)return F;const out={...F};for(const k of ['smartBuyers','smartShare'])if(k in out)out[k]=null;for(const k of INTEL_ZERO_KEYS)if(out[k]===0)out[k]=null;return out;}
 function evaluation(F,rule){
   if(rule?.conds){if(!Array.isArray(rule.conds)||!rule.conds.length||rule.conds.length>8)return 'unknown';const results=rule.conds.map(c=>evaluation(F,{key:c?.key,op:c?.op,value:c?.value,value2:c?.value2,values:c?.values}));return results.includes('reject')?'reject':results.includes('unknown')?'unknown':'pass'}
   if(!F||!validCondition(rule))return 'unknown';

@@ -11,9 +11,9 @@
     "silent-live"
   ],
   "heapLimitMB": 392.167424,
-  "maxObservedHeapMB": 48.862848,
+  "maxObservedHeapMB": 52.8876,
   "enforcedHeapBelow450MB": true,
-  "totalBankBytes": 226571128,
+  "totalBankBytes": 227411128,
   "maxRowBytes": 262144,
   "networkCalls": 0
 }

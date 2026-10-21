@@ -20,4 +20,5 @@ function structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESE
  const bank=b=>({rows:b?.rows?.length||0,processed:b?.processed?.size||0,lookup:b?.lookup?.size||0,retry:b?.retry?.size||0,lastAttemptAt:b?.lastAttemptAt?.size||0,journalCount:b?.journalCount||0});
  return {C:c,wsSeen:wsSeen.size,rpcCache:RPC_CACHE.size,queues:{gt:gtQ.length,uploads:UPQ.length,pre:PRE?.queue?.length||0,prePending:PRE?.pending?.size||0,preSeen:PRE?.seenSignatures?.size||0},banks:{one:bank(RESEARCH_V2),two:bank(RESEARCH_TWO),oldOne:OLD_RESEARCH_ONE.map(x=>bank(x.runtime)),oldTwo:OLD_RESEARCH_TWO.map(x=>bank(x.runtime))},journals:{sourceRecords:SOURCE?.records?.size||0,sourceRecent:SOURCE?.recent?.size||0,sourceGateAccepted:SOURCE?.gate?.accepted?.size||0,passedRecords:PASS_V2?.records?.size||0,auditVersions:FILTER_AUDIT?.versions?.size||0,rpcHour:crLog.length}};
 }
-module.exports={RuntimeHealth,structureCounts};
+async function stateFieldBytes(coins){const totals={};let n=0;for(const c of coins){for(const [key,value] of Object.entries(c)){const json=JSON.stringify(value);if(json!==undefined)totals[key]=(totals[key]||0)+Buffer.byteLength(json);}if(++n%8===0)await new Promise(r=>setImmediate(r));}return {at:Date.now(),coins:n,fields:totals};}
+module.exports={stateFieldBytes,RuntimeHealth,structureCounts};

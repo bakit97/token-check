@@ -28,3 +28,5 @@ test('eventAt anchored outcomes enter banks and survive relabel and restart',t=>
 });
 
 test('oversized bank row fails safely, analysis projection excludes packed histories',t=>{const {encode,analysisRow}=require('../server/research-banks');assert.throws(()=>encode({mint:'x',huge:'x'.repeat(300000)}),/256 KiB/);const row={mint:'a',features:{holders:5},featureTimesPacked:'large',outcomePacked:'large',curvePacked:'large'};assert.deepEqual(analysisRow(row),{mint:'a',features:{holders:5}});});
+
+test('unchanged runtime observations do not rewrite full banks every heartbeat',t=>{const b=new ResearchBanks({dir:dir(t),...opts}),row={mint:'same',phase:'before',label:'live',acceptedAt:1,featureAnchor:'acceptedAt',features:{holders:3}};b.upsert([row]);const file=b.file('before-live'),before=fs.statSync(file).mtimeMs;b.dirty.clear();assert.equal(b.upsert([structuredClone(row)]),0);assert.equal(fs.statSync(file).mtimeMs,before);assert.equal(b.dirty.size,0);});
