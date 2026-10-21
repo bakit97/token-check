@@ -42,6 +42,11 @@ class CheckpointRecoveryTests(unittest.TestCase):
   copies=[x for x in calls if x[:2]==['storage','cp']]
   self.assertIn('#77',copies[0][2]);self.assertIn('--if-generation-match=0',copies[0]);self.assertIn('--if-generation-match=77',copies[1])
   self.assertIn('"allowedFromGeneration":"123"',payload[0]);self.assertIn('generation=456',payload[0]);self.assertIn('"targetHash":"'+'a'*64+'"',payload[0])
+ def test_disabled_recovery_does_not_even_read_runtime_or_write_cloud(self):
+  import json
+  dispatch=runpy.run_path(str(pathlib.Path(__file__).with_name('recover-checkpoint.py')))['dispatch'];root=self.fixture();p=root/'deployment/checkpoint-recovery-request.json';value=json.loads(p.read_text());value['enabled']=False;p.write_text(json.dumps(value))
+  def refuse(*args,**kwargs):raise AssertionError('Disabled recovery must not access cloud')
+  self.assertEqual(dispatch(root,'bucket','456',refuse,refuse)['action'],'disabled-request')
  def test_missing_diagnostic_channel_refuses_the_recovery(self):
   dispatch=runpy.run_path(str(pathlib.Path(__file__).with_name('recover-checkpoint.py')))['dispatch'];root=self.fixture()
   with self.assertRaisesRegex(RuntimeError,'Existing diagnostic channel'):dispatch(root,'bucket','456',lambda *args,**kwargs:None,lambda:{'version':'123'})

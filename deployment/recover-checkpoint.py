@@ -6,6 +6,7 @@ def dispatch(root,bucket,generation,run,read=None):
     root=Path(root);request_file=root/'deployment/checkpoint-recovery-request.json'
     if not request_file.exists():return {'action':'no-request'}
     request=json.loads(request_file.read_text(encoding='utf-8'))
+    if request.get('enabled') is False:return {'action':'disabled-request'}
     if not re.fullmatch(r'[a-z0-9-]{1,80}',request['id']) or not re.fullmatch(r'\d+',request['allowedFromGeneration']):raise ValueError('Invalid recovery scope')
     if request['maxWaitMs']>300000 or request['maxStateBytes']>32000000:raise ValueError('Invalid recovery bounds')
     if read is None:

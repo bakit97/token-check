@@ -1,1 +1,1 @@
-{"id":"checkpoint-coalescing-recovery-20261021","allowedFromGeneration":"1792598435053228","maxWaitMs":300000,"maxStateBytes":32000000}
+{"id":"checkpoint-coalescing-recovery-20261021","allowedFromGeneration":"1792598435053228","maxWaitMs":300000,"maxStateBytes":32000000,"enabled":false}
