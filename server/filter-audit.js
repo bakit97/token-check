@@ -77,7 +77,8 @@ class FilterAudit{
     for(const row of this.versions.values()){
       const positive=row.level==='1'?'live':'strong';
       const negative=row.level==='1'?'dead':'weak';
-      const bank=(row.level==='1'?one:two).filter(r=>
+      const provider=row.level==='1'?one:two;
+      const bank=(typeof provider==='function'?[...provider(row.phase)]:provider||[]).filter(r=>
         r.phase===row.phase&&[positive,negative].includes(r.label)&&r.features);
       const start=row.firstPublishedAt;
       const doneAt=r=>row.level==='1'?r.acceptedAt+oneHours*HOUR:r.zeroAt+5*HOUR;

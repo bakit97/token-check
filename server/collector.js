@@ -1355,7 +1355,7 @@ async function exportPathsV2(now){
     await upload('research-v2/auto-2.json',{updated:now,epochStart:RESEARCH_TWO.cohortStart,...visible(two)});
     if(FILTER_AUDIT){
       const audit=FILTER_AUDIT.report({
-        config:PASS_V2.config,one:levelOne,two:levelTwo,
+        config:PASS_V2.config,one:phase=>RESEARCH_BANKS?RESEARCH_BANKS.rows({level:'1',phase,projection:'analysis'}):RESEARCH_V2.select({phase,limit:20000}),two:phase=>RESEARCH_BANKS?RESEARCH_BANKS.rows({level:'2',phase,projection:'analysis'}):RESEARCH_TWO.select({phase,limit:20000}),
         oneHours:RESEARCH_V2.config.hours,now
       });
       await upload('research-v2/filter-audit.json',audit);

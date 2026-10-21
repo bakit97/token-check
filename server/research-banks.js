@@ -3,7 +3,7 @@ const fs=require('node:fs'),path=require('node:path'),zlib=require('node:zlib');
 const {readRows,saveRows}=require('./stream-json');
 const {syncDirectory}=require('./durable-json');
 const MAX_ROW_BYTES=256*1024;
-function analysisRow(r){const keys=['mint','phase','label','features','time','acceptedAt','eventAt','decisionAt','outcomeAt','windowEnd','featureAnchor','outcomeVersion','lineVersion','hours','passWindowMinutes','sourceFilterVersions','sourceFilterRules'];return Object.fromEntries(keys.filter(k=>r[k]!==undefined).map(k=>[k,r[k]]));}
+function analysisRow(r){const keys=['mint','phase','label','features','time','zeroAt','firstSeenAt','acceptedAt','eventAt','decisionAt','outcomeAt','windowEnd','featureAnchor','outcomeVersion','lineVersion','hours','passWindowMinutes','sourceFilterVersions','sourceFilterRules'];return Object.fromEntries(keys.filter(k=>r[k]!==undefined).map(k=>[k,r[k]]));}
 const PHASES=['before','after'],LABELS=['live','dead','strong','weak'];
 function storageConfig(raw={},one={},two={}){
  if(raw.schema!=null&&raw.schema!==1)throw TypeError('Invalid storage schema');
