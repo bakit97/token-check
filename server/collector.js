@@ -823,7 +823,7 @@ function candleTasks(){const now=Date.now(),pins=collectionPins(now);
           let k2=[];if(k1.length&&k1[0][0]*1000>c.t)k2=kList(await gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=1000&before_timestamp=${k1[0][0]}&currency=usd`,3,'p24b:'+pool));
           if(c.p===pool)c.path={at:Date.now(),upto:24,c:mergeK(mergeK(c.path?.c,k2),k1)}})
         .catch(e=>{if(e.code!=='OBSERVATION_COMPLETE')err('path24 '+e.message)}).finally(()=>{c.pTry=0})}}
-  birthBackfill(now);researchActivityTape(now);researchTradeTail(now);tradeTasks(now,pins)}
+  birthBackfill(now);researchTradeTail(now);tradeTasks(now,pins)}
 async function censusTick(now=Date.now()){
  if(!HOLDER_CENSUS||!SOURCE||resourcePressure())return;const choices=[];
  for(const c of C.values()){const row=SOURCE.get(c.a);if(!row||now-row.acceptedAt>21*60000||!c.vaults||!c.supplyRaw||!c.ct)continue;const age=(now-row.acceptedAt)/60000;
@@ -1618,6 +1618,7 @@ const STARTED=Date.now();
   setInterval(pollNew,90000);
   (async()=>{for(;;){try{await pollDS()}catch(e){err('dsloop '+e.message)}await sleep(15000)}})();
   setInterval(()=>{try{candleTasks()}catch(e){err('candles '+e.message)}},15000);
+  setInterval(()=>{try{researchActivityTape(Date.now())}catch(e){err('activity scheduler '+e.message)}},2000);
   samplePoolBalances();setInterval(()=>samplePoolBalances(),10000);chainLoop();chainObsLoop();setInterval(diagCheck,60000);diagCheck();
   setTimeout(()=>{reconcile();setInterval(reconcile,60*60e3)},60000);
   // Legacy research results are invalid; keep observation exports, run only v2 research.
