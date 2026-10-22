@@ -1085,7 +1085,7 @@ async function processFastMigration(task){
  if(!signatures.length){const rows=await rpc('getSignaturesForAddress',[task.curve,{limit:6,commitment:'confirmed'}],{...options,cache:false});signatures=(rows||[]).filter(r=>r.err===null&&(!task.slot||Math.abs(r.slot-task.slot)<=2)).map(r=>r.signature).slice(0,6);}
  if(!signatures.length)throw Object.assign(Error('migration transaction pending'),{code:'TX_PENDING'});
  task.proofs=task.proofs||{};
- for(const signature of signatures){const tx=task.proofs[signature]?null:await rpc('getTransaction',[signature,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}],options);if(!tx&&!task.proofs[signature])throw Object.assign(Error('migration transaction pending'),{code:'TX_PENDING'});
+ for(const signature of signatures){if(task.mint&&SOURCE.get(task.mint)?.phase==='after')return {outcome:'already-admitted'};const tx=task.proofs[signature]?null:await rpc('getTransaction',[signature,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}],options);if(!tx&&!task.proofs[signature])throw Object.assign(Error('migration transaction pending'),{code:'TX_PENDING'});
   if(tx&&tx.slot===task.slot&&api.administrativeUpdate(tx,task.curve,b58dec))task.administrativeUpdate=true;
   const candidates=task.proofs[signature]||(task.proofs[signature]=api.migrationCandidates(tx,b58dec));
   for(const v of candidates){if(v.signature!==signature||(task.curve&&v.curve!==task.curve))continue;proofSeen=true;task.mint=v.mint;let official=false;
@@ -1191,7 +1191,7 @@ function chainWatch(){
       setTimeout(()=>connect(channel),pre?10000:5000)};
   };
   POOL_DISCOVERY=new (require(DIR+'/migration-fast.js').FastSignals)({process:processManualPool,maxQueue:64,workers:1,maxAgeMs:120000,onPending:n=>{if(!n)releaseManualReservation();},onError:(e,t)=>{if(t?.mint)SOURCE?.observe({mint:t.mint,phase:'before',origin:'manual-pool',reason:e.code||'RPC_ERROR'});err('manual pool '+(e.code||'RPC_ERROR'))}});
-  POOL_LOGS=new (require(DIR+'/pool-logs.js').PoolLogs)({WebSocket,definitions:require(DIR+'/manual-pools.js').definitions,onSignal:t=>POOL_DISCOVERY.offer(t),onSlot:(slot,at)=>EVENT_CLOCK?.observe(slot,at)});POOL_LOGS.start();
+  POOL_LOGS=new (require(DIR+'/pool-logs.js').PoolLogs)({WebSocket,definitions:require(DIR+'/manual-pools.js').definitions,onSignal:t=>t.migrationKind?offerFastMigration({...t,kind:t.migrationKind}):POOL_DISCOVERY.offer(t),onSlot:(slot,at)=>EVENT_CLOCK?.observe(slot,at)});POOL_LOGS.start();
   connect('migrations'); // TZ20: birth stream intentionally disabled; migration socket is never budget-paused.
 }
 

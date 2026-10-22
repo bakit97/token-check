@@ -10,3 +10,18 @@ test('discarded public swaps refresh the slot clock at most once per five second
  try{for(let i=0;i<6001;i++)ws.onmessage({data:'{"method":"logsNotification","params":{"result":{"context":{"slot":123},"logs":["Program log: Instruction: Swap"]}}}'});at+=5001;ws.onmessage({data:'{"method":"logsNotification","params":{"result":{"context":{"slot":124},"logs":["Program log: Instruction: Swap"]}}}'});}finally{JSON.parse=parse;}
  a.equal(calls,0);a.deepEqual(observed,[[123,10000],[124,15001]]);a.equal(feed.summary().clockSamples,2);feed.stop();
 });
+
+test('existing pool logs pass an official migration signature hint only with its exact program and instruction',()=>{
+ const {feed,ws,signals}=setup(),spec=require('../server/migration-fast').specs.find(x=>x.family==='dbc'),def=definitions.find(x=>x.program===spec.dex),programs=[...new Set(definitions.map(x=>x.program))],label=n=>'Program log: Instruction: '+n.replace(/(^|_)([a-z0-9])/g,(_,p,c)=>c.toUpperCase());
+ function send(signature,extra,err=null){ws.onmessage({data:JSON.stringify({method:'logsNotification',params:{subscription:100+programs.indexOf(def.program),result:{context:{slot:42},value:{err,signature,logs:['Program '+def.program+' invoke [2]',label(def.name),...extra]}}}})});}
+ send('migration',['Program '+spec.program+' invoke [1]',label(spec.name)]);a.equal(signals[0].migrationKind,'dbc');a.equal(signals[0].signature,'migration');
+ send('ordinary',[]);a.equal(signals[1].migrationKind,undefined);
+ send('spoof',[label(spec.name)]);a.equal(signals[2].migrationKind,undefined);
+ send('prefix',['Program '+spec.program+' invoke [1]',label(spec.name)+'Other']);a.equal(signals[3].migrationKind,undefined);
+ send('failed',['Program '+spec.program+' invoke [1]',label(spec.name)],{failed:true});a.equal(signals.length,4);
+ a.equal(feed.summary().subscriptions,programs.length);feed.stop();
+});
+test('migration log hint enters proof queue rather than direct admission or manual discovery',()=>{
+ const vm=require('node:vm'),fs=require('node:fs'),src=fs.readFileSync(require.resolve('../server/collector.js'),'utf8'),line=src.split('\n').find(x=>x.includes('POOL_LOGS=new ')),fast=[],manual=[],ctx={DIR:'/runtime',WebSocket:class{},offerFastMigration:t=>fast.push(t),POOL_DISCOVERY:{offer:t=>manual.push(t)},EVENT_CLOCK:null,require:p=>p.endsWith('pool-logs.js')?{PoolLogs:class{constructor(options){ctx.options=options;}start(){}}}:{definitions}};
+ vm.createContext(ctx);vm.runInContext(line,ctx);ctx.options.onSignal({signature:'known',kind:'pool',migrationKind:'dbc',slot:1});ctx.options.onSignal({signature:'manual',kind:'pool',slot:2});a.equal(fast.length,1);a.equal(fast[0].kind,'dbc');a.equal(fast[0].signature,'known');a.equal(manual.length,1);
+});
