@@ -125,8 +125,8 @@ class ResearchRuntime {
   }
   carryFrom(previous){if(!previous)return;for(const row of previous.admitted.values())if(!this.admitted.has(row.mint))this.admitted.set(row.mint,{...row,intakePending:true,transferred:true});}
   admit(row,coin,passes=null,now=Date.now()){
-    if(row.acceptedAt<this.cohortStart||row.acceptedAt>=this.cohortEnd)return null;
-    const existing=this.admitted.get(row.mint);if(existing&&!existing.intakePending)return existing;
+    const existing=this.admitted.get(row.mint);
+    if((row.acceptedAt<this.cohortStart&&!existing?.transferred)||row.acceptedAt>=this.cohortEnd)return null;if(existing&&!existing.intakePending)return existing;
     const cfg=phaseSettings(this.config,row.phase),pool=row.proof?.pool||coin?.p||null;
     const initial=row.proof?.openingMetrics||coin?.openingMetrics;
     let quoteSol=null;
