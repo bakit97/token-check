@@ -102,11 +102,12 @@ test('continuous research limits CPU work and retries missing data every fifteen
  const first=runtime.update({source,coins,now:T+6*H});
  assert.equal(first.attempted,16);
  assert.equal(first.pending['deferred-by-batch'],24);
- assert.equal(first.counts.unknown,16);
+ assert.equal(first.counts.unknown,40);
+ assert.equal(first.unknownReasons['classification-deadline-exceeded'],24);
  const second=runtime.update({source,coins,now:T+6*H+M});
  assert.equal(second.attempted,16);
  assert.equal(second.pending['deferred-by-batch'],8);
- assert.equal(second.counts.unknown,32);
+ assert.equal(second.counts.unknown,40);
  const third=runtime.update({source,coins,now:T+6*H+2*M});
  assert.equal(third.attempted,8);
  assert.equal(third.counts.unknown,40);
