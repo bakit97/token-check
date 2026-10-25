@@ -1338,7 +1338,7 @@ async function exportResearchV2(now) {
   const runtime=RESEARCH_V2,epochSnapshot=RESEARCH_ONE_EPOCH.summary();
   syncResearchEpochBanks();
   // All read-only observations originate from the accepted main source.
-  const result=runtime.update({source:SOURCE,coins:researchCoins(),passes:PASS_V2,now});
+  const result=await runtime.updateAsync({source:SOURCE,coins:researchCoins(),passes:PASS_V2,now});
   // A settings change does NOT abandon previously admitted cohorts.
   // Earlier raw cohorts remain on disk; current labels must not be overwritten by old criteria.
   RESEARCH_BANKS?.removeRevoked(SOURCE.revokedManual);RESEARCH_BANKS?.removeRevoked(activeMigrationRevocations(),'after');RESEARCH_BANKS?.relabelOne(runtime.config);

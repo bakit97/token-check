@@ -138,12 +138,13 @@ class ResearchRuntime {
     this.processed.delete(row.mint);const admission={mint:row.mint,phase:row.phase,p:pool,pair:pool,phaseEpoch:row.proof?.poolEpoch?.id||null,eventAt:eventAnchor(row),acceptedAt:row.acceptedAt,admittedAt:now,intakeFeatures:features,intakeMode:'discovery-v3',features:{},via:gate.via};this.admitted.set(row.mint,admission);return admission;
   }
   pruneRevoked(revoked,phase='before'){let n=0;for(const [mint,row] of this.admitted)if(row.phase===phase&&revoked?.has(mint)){this.admitted.delete(mint);this.processed.delete(mint);this.lastAttemptAt.delete(mint);const d=this.intakeDecisions.get(mint);if(d){const bank=d.ok?this.intakeAccepted:this.intakeRejected,key=d.ok?d.via:d.why;if(bank[key]>0)bank[key]--;if(!bank[key])delete bank[key];this.intakeDecisions.delete(mint);}n++;}this.rows=this.rows.filter(r=>r.phase!==phase||!revoked?.has(r.mint));return n;}
-  reanchor({source,coins,now,limit=32}) {
+  *reanchorSteps({source,coins,now,limit=32}) {
     const candidates=this.rows.filter(r=>{const admission=source.get?.(r.mint)||source.records.get(r.mint);return admission&&admission.phase===r.phase&&Number.isSafeInteger(admission.eventAt)&&admission.eventAt>0&&admission.eventAt<=admission.acceptedAt&&(r.featureSnapshotVersion!==1||r.eventAt!==admission.eventAt||r.windowStart!==admission.eventAt||r.marketScopeVersion!==2);});
     this.eventMigration={remaining:candidates.length,rawMissing:0,changed:this.eventMigration?.changed||0};
     if(!candidates.length)return;
     const cursor=(this.eventMigrationCursor||0)%candidates.length;
     for(let i=0;i<Math.min(limit,candidates.length);i++){
+      yield;
       const old=candidates[(cursor+i)%candidates.length],admission=source.get?.(old.mint)||source.records.get(old.mint),coin=coins.get(old.mint),pool=admission.proof?.pool||old.p;
       if(!coin||(pool&&coin.p!==pool)){this.eventMigration.rawMissing++;continue;}
       const cfg=phaseSettings(this.config,old.phase),at=admission.eventAt,decisionAt=admission.acceptedAt+cfg.decisionMinutes*MIN;
@@ -164,10 +165,13 @@ class ResearchRuntime {
     }
     this.eventMigrationCursor=cursor+limit;
   }
-  update({source,coins,passes=null,now=Date.now()}={}) {
+  reanchor(options){const work=this.reanchorSteps(options);let step;do{step=work.next();}while(!step.done);return step.value;}
+  update(options){const work=this.updateSteps(options);let step;do{step=work.next();}while(!step.done);return step.value;}
+  async updateAsync(options){const work=this.updateSteps(options);let step,at=Date.now();for(;;){step=work.next();if(step.done)return step.value;if(Date.now()-at>=8){await new Promise(resolve=>setImmediate(resolve));at=Date.now();}}}
+  *updateSteps({source,coins,passes=null,now=Date.now()}={}) {
     this.pruneRevoked(source?.revokedManual);this.pruneRevoked(new Map([...(source?.revokedMigrations||[])].filter(([mint])=>!source.records.has(mint))),'after');
     if(!source?.records || !coins?.get)throw new TypeError('Need source ledger and coin map');
-    this.reanchor({source,coins,now});
+    yield* this.reanchorSteps({source,coins,now});
     let added=0,considered=0,attempted=0,gateChecks=0;
     const pending={},byPhase={before:{live:0,dead:0},after:{live:0,dead:0}};
     // Newest first, avoid scanning the entire multi-month ledger.
@@ -175,6 +179,7 @@ class ResearchRuntime {
       source.recentAdmissions(now-FRESH_WINDOW,now):source.records.values();
     const diag={recent:0,beforeCohort:0,afterEnd:0,tooOld:0,future:0,processed:0,processedSize:this.processed.size};
     for(const row of recent){
+      yield;
       const age=now-eventAnchor(row);
       if(this.processed.has(row.mint)&&!this.admitted.has(row.mint)&&row.acceptedAt<this.admissionUpgradeAt)this.processed.delete(row.mint);
       diag.recent++;if(row.acceptedAt<this.cohortStart)diag.beforeCohort++;else if(row.acceptedAt>=this.cohortEnd)diag.afterEnd++;else if(age<0)diag.future++;else if(age>FRESH_WINDOW)diag.tooOld++;else if(this.processed.has(row.mint))diag.processed++;

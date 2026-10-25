@@ -1,1 +1,1 @@
-{"id": "update-after-verified-checkpoint-oct26", "allowedFromGeneration": "1792962078039522", "enabled": true, "maxWaitMs": 1000, "maxStateBytes": 64000000, "allowExistingCheckpoint": true, "maxCheckpointAgeMs": 1800000}
+{"id": "apply-cooperative-research-oct26", "allowedFromGeneration": "1792964010928492", "enabled": true, "maxWaitMs": 1000, "maxStateBytes": 64000000, "allowExistingCheckpoint": true, "maxCheckpointAgeMs": 1800000}
