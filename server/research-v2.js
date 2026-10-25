@@ -170,7 +170,7 @@ function activityEvidence(coin,start,end,decisionMinutes){
  for(const r of minutes){if(r[1]){seen++;gap=0;if(r[2]===1){active++;idle=0}else if(r[2]===0){idle++;maxIdleObserved=Math.max(maxIdleObserved,idle)}else idle=0}else{maxGap=Math.max(maxGap,++gap);idle=0}}
  for(const r of require('./activity-slices').unpack(coin?.activityTapePacked)?.minuteActivity||[]){const i=Math.round((r[0]-start)/MIN)-1;if(i>=0&&i<minutes.length){minutes[i][1]=1;minutes[i][2]=minutes[i][2]===1?1:r[2];}}
  const recovered=require('./observation-recovery').applyMinutes(minutes,coin?.recoveryEvidence||[]);for(let i=0;i<minutes.length;i++)minutes[i]=recovered[i];({seen,active,maxGap,maxIdleObserved}=(()=>{const x=require('./observation-recovery').minuteStats(minutes);return {...x,seen:Math.round(x.coverage*bins),active:Math.round((x.activePct||0)*bins/100)};})());
- const priceAt=t=>latestBefore(history,t,7*MIN,x=>x.at)?.price??latestBefore(candles(coin),t,7*MIN,x=>x[0])?.[1]??null;
+ const pricePoints=candles(coin),priceAt=t=>latestBefore(history,t,7*MIN,x=>x.at)?.price??latestBefore(pricePoints,t,7*MIN,x=>x[0])?.[1]??null;
  for(const r of minutes)r[3]=r[3]??priceAt(r[0]);
  const p0=priceAt(start+decisionMinutes*MIN),pe=priceAt(end);
  let recent=history.filter(x=>x.at>end-60*MIN);let rolling=0,rollingSeen=0;for(let t=end;t>end-60*MIN;t-=FIVE){const d=latestBefore(recent,t,2*MIN,x=>x.at);if(d&&d.at>=t-2*MIN&&d.buys!=null&&d.sells!=null){rolling+=d.buys+d.sells;rollingSeen++}}
