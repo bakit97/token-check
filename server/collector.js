@@ -618,7 +618,9 @@ async function initPathsV2(){
     'Уровень 2',RESEARCH_TWO.rows.length,'включено',PASS_V2.config.enabled);
 }
 function syncResearchEpochBanks(){for(const [level,epoch] of [['1',RESEARCH_ONE_EPOCH?.current],['2',RESEARCH_TWO_EPOCH?.current]])if(epoch?.resetId)RESEARCH_BANKS?.setEpoch(level,epoch.resetId,epoch.resetAt);}
+let RESEARCH_CONFIG_BUSY=false;
 async function reloadResearchConfig(){
+  if(RESEARCH_CONFIG_BUSY)return;RESEARCH_CONFIG_BUSY=true;
   try{
     if(RESEARCH_ONE_EPOCH&&RESEARCH_V2){
       const cfg=await getObj('config/research-one.json');
@@ -653,7 +655,7 @@ async function reloadResearchConfig(){
   }catch(e){
     RESEARCH_CONFIG_ERR=e.message;
     err('research config '+e.message);
-  }
+  }finally{RESEARCH_CONFIG_BUSY=false}
 }
 async function refreshLibrary(raw){
  const lib=require(DIR+'/module-library.js');LIBRARY_CONFIG=lib.catalog(await getObj('config/modules.json')||{schema:1,modules:[],deleted:[]});
@@ -1305,7 +1307,7 @@ function initObservationRecovery(){
  const api=require(DIR+'/observation-recovery.js');
  RECOVERY_RPC=new api.RecoveryRPC({fallback:(m,p)=>rpc(m,p,{priority:'recovery',context:'дозагрузка',source:'recovery',urgent:true,maxBytes:2*1024*1024})});
  OBS_RECOVERY=new api.ObservationRecovery({dir:DIR,gt,preferChain:()=>true,rpc:(m,p)=>RECOVERY_RPC.call(m,p),resolveCoin:mint=>C.get(mint)||COMPLETED?.readCoin(mint),onUpdated:(job,payload)=>{
-  const row=RESEARCH_V2?.rows.find(r=>r.mint===job.mint&&(!r.p||r.p===job.pool));if(row){const cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase),next=api.relabel(row,OBS_RECOVERY.evidence(job.mint,job.pool),cfg);Object.assign(row,next,{recoveryJobId:job.id,recoveredAt:Date.now(),outcomeAt:Date.now()});job.recoveredMinutes=next.backfilledMinutes||0;RESEARCH_BANKS?.upsert([row]);}
+  const row=RESEARCH_V2?.rows.find(r=>r.mint===job.mint&&(!r.p||r.p===job.pool));if(row){const cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase),next=api.relabel(row,OBS_RECOVERY.evidence(job.mint,job.pool),cfg);Object.assign(row,next,{...(job.reason==='backfill-deadline-exceeded'?{recoveryPending:false,recoveryWhy:job.reason}:{}),recoveryJobId:job.id,recoveredAt:Date.now(),outcomeAt:Date.now()});job.recoveredMinutes=next.backfilledMinutes||0;RESEARCH_BANKS?.upsert([row]);}
   if(job.kind.startsWith('two')){RESEARCH_TWO?.retry.delete(job.mint);RESEARCH_TWO?.processed.delete(job.mint);}
   const name='observations-v2/backfill/'+dayKey(job.start)+'/'+job.mint+'-'+job.id+'.json';if(!payload.mirrored){uploadLater(name,{...payload,backfilled:true});payload.mirrored=true;OBS_RECOVERY.store(job,payload);}const c=C.get(job.mint);if(c)c.recoveryRef={name,at:Date.now(),start:job.start,end:job.end};
  }});
@@ -1516,7 +1518,7 @@ const LAST_DAY_EXPORT=new Map();
 let DAY_EXPORT_BUSY=false;
 async function exportDays(){if(DAY_EXPORT_BUSY)return;DAY_EXPORT_BUSY=true;try{await exportDaysBody()}finally{DAY_EXPORT_BUSY=false}}
 async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayKey(now-864e5);
-  await reloadSourceAgeConfig();await reloadResearchConfig();
+  await reloadSourceAgeConfig();
   if(ACTIVE_HISTORY&&await ACTIVE_HISTORY.compact({coins:C,publish:upload,read:getObj,now}))save();
   await seedCompletedDays(now);await stageCompleted(now);
   const {rowStream}=require(DIR+'/stream-json.js'),days=[...new Set([today,yest,...(COMPLETED?.days()||[])])],completedDays=[];
@@ -1605,6 +1607,7 @@ const STARTED=Date.now();
   try{await initPathsV2()}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('серверные пути не запустились: '+e.message)}
   chainWatch();
   captureFeatureSnapshots().catch(e=>err('feature snapshots '+e.message));setInterval(()=>repairBuyerSnapshots(),10000);setInterval(()=>captureFeatureSnapshots().catch(e=>err('feature snapshots '+e.message)),30000);
+  setInterval(()=>reloadResearchConfig(),30000);
   initObservationRecovery();setTimeout(()=>recoveryTick(),20000);setInterval(()=>{try{recoveryTick()}catch(e){err('recovery '+e.message)}},15000);
   setInterval(()=>freeIdentityTick(),10000);OPENING_PROOFS=new (require(DIR+'/opening-evidence.js').OpeningEvidence)({});setInterval(()=>openingTick().catch(e=>err('opening proof '+e.message)),2000);PROFILES=new (require(DIR+'/coin-profile.js').CoinProfiles)();HOLDER_CENSUS=new (require(DIR+'/holder-census.js').HolderCensus)({});setInterval(()=>censusTick().catch(e=>err('holder census '+e.message)),10000);LP_PROOFS=new (require(DIR+'/liquidity-proof.js').LiquidityProofs)({});setInterval(()=>liquidityTick().catch(e=>err('liquidity proof '+e.message)),10000);
   GRADUATION_RPC=new (require(DIR+'/pool-balance-reader.js').PublicPoolRPC)({fallback:(m,p,o)=>rpc(m,p,o)});setTimeout(()=>auditGraduations(),5000);setInterval(()=>auditGraduations(),10000);

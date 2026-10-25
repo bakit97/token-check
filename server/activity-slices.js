@@ -32,10 +32,10 @@ function classify(row,{minActive=60,minTradeSol=.05,minWallets=2,minCoverage=.8}
  let active=0,observed=0;for(const s of slices){const enough=Object.values(s.walletMax||{}).filter(v=>typeof v==='number'&&v>=minTradeSol).length>=minWallets;if(enough){active++;observed++;}else if(s.coverageProof==='pool-trades-range-v2'&&(s.complete||s.silent))observed++;}
  const total=slices.length,coverage=observed/total,pct=active/total*100,unknown=total-observed;
  const metrics={activeSlices:active,totalSlices:total,activityCoverage:coverage,activePct:pct};
- if(coverage<minCoverage)return {...metrics,label:'unknown',why:'trade-coverage-gap'};
+ if(coverage<minCoverage)return {...metrics,label:'unknown',why:row.recoveryWhy==='backfill-deadline-exceeded'?'backfill-deadline-exceeded':'trade-coverage-gap'};
  if(pct>=minActive)return {...metrics,label:'live',why:null};
  if((active+unknown)/total*100<minActive)return {...metrics,label:'dead',why:'inactive-slices'};
- return {...metrics,label:'unknown',why:'trade-coverage-gap'};
+ return {...metrics,label:'unknown',why:row.recoveryWhy==='backfill-deadline-exceeded'?'backfill-deadline-exceeded':'trade-coverage-gap'};
 }
 function merge(a,b){if(!a?.slices)return b;if(!b?.slices)return a;const minuteActivity=new Map((a.minuteActivity||[]).map(r=>[r[0],r]));for(const r of b.minuteActivity||[]){const old=minuteActivity.get(r[0]);minuteActivity.set(r[0],old?.[2]===1?old:r);}return {...b,minuteActivity:[...minuteActivity.values()].sort((a,b)=>a[0]-b[0]),slices:b.slices.map(s=>{const old=a.slices.find(x=>x.at===s.at&&x.end===s.end);if(!old)return s;const walletMax={...old.walletMax};for(const [w,n] of Object.entries(s.walletMax||{}))walletMax[w]=Math.max(walletMax[w]??0,n);const hasTrades=old.hasTrades||s.hasTrades;return {...s,walletMax,buyerWallets:[...new Set([...(old.buyerWallets||[]),...(s.buyerWallets||[])])],buyersComplete:old.buyersComplete||s.buyersComplete,buyerIdentityMissing:old.buyerIdentityMissing||s.buyerIdentityMissing,hasTrades,silent:!hasTrades&&(old.coverageProof==='pool-trades-range-v2'&&old.silent||s.silent),coverageProof:'pool-trades-range-v2',complete:old.coverageProof==='pool-trades-range-v2'&&old.complete&&!old.silent||s.complete&&!s.silent||!hasTrades&&(old.coverageProof==='pool-trades-range-v2'&&old.complete||s.complete),identityMissing:old.identityMissing||s.identityMissing};})};}
 function unpack(value){if(!value)return null;return JSON.parse(require('node:zlib').inflateSync(Buffer.from(value,'base64'),{maxOutputLength:2*1024*1024}).toString());}
