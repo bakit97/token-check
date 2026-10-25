@@ -108,7 +108,20 @@ function legacyActivityOutcome(coin,entryAt,{hours=5,minActive=70,maxIdle=60,min
   const label=activePct>=minActive&&longest<=maxIdle?'live':'dead';
   return {label,coverage,activePct,maxIdleObserved:longest,seen,blocks};
 }
+let verdictCache=new WeakMap(),verdictCacheEntries=0;
+// Memoize only packed immutable v3 evidence. Mutable raw arrays keep the
+// uncached path; thresholds and deadline state are explicit dependencies.
 function classifyActivity(m,cfg={}){
+ if(!m||cfg.activityRuleVersion!==3||typeof m.activitySlicesPacked!=='string'||m.activitySlices||m.minutes)return classifyActivityUncached(m,cfg);
+ const parameters=[cfg.minActive===undefined?60:cfg.minActive,cfg.minTradeSol===undefined?.05:cfg.minTradeSol,cfg.minWallets===undefined?2:cfg.minWallets,cfg.minCoverage===undefined?.8:cfg.minCoverage];
+ if(parameters.some(x=>typeof x!=='number'||!Number.isFinite(x)))return classifyActivityUncached(m,cfg);
+ const bucket=!m.recoveryPending?'settled':!Number.isFinite(cfg.now)||!Number.isFinite(m.windowEnd)?'unknown-time':cfg.now<m.windowEnd?'unfinished':cfg.now<m.windowEnd+3600000?'recovering':'expired';
+ const signature=JSON.stringify([...parameters,m.recoveryPending,m.recoveryWhy,m.windowStart,m.windowEnd,bucket]),cached=verdictCache.get(m);
+ if(cached&&cached.packed===m.activitySlicesPacked&&cached.outcome===m.outcomePacked&&cached.signature===signature)return {...cached.value};
+ const result=classifyActivityUncached(m,cfg);if(!cached&&++verdictCacheEntries>20000){verdictCache=new WeakMap();verdictCacheEntries=1;}
+ verdictCache.set(m,{packed:m.activitySlicesPacked,outcome:m.outcomePacked,signature,value:{...result}});return result;
+}
+function classifyActivityUncached(m,cfg={}){
  if(m?.recoveryPending&&Number.isFinite(cfg.now)&&Number.isFinite(m.windowEnd)&&cfg.now>=m.windowEnd+3600000)m={...m,recoveryPending:false,recoveryWhy:'backfill-deadline-exceeded'};
  if(m?.recoveryPending&&Number.isFinite(cfg.now)&&Number.isFinite(m.windowEnd)&&cfg.now>=m.windowEnd+3600000)m={...m,recoveryPending:false,recoveryWhy:'backfill-deadline-exceeded'};
  if(cfg.activityRuleVersion===3){let evidence=m?.activitySlices||require('./activity-slices').unpack(m?.activitySlicesPacked);if(!evidence){let minutes=m?.minutes||[];try{if(!minutes.length&&m?.outcomePacked)minutes=JSON.parse(require('node:zlib').inflateSync(Buffer.from(m.outcomePacked,'base64'),{maxOutputLength:2000000}).toString())}catch{}evidence=require('./activity-slices').evidence({start:m?.windowStart??minutes[0]?.[0]-MIN,end:m?.windowEnd??minutes.at(-1)?.[0],minutes});}const result=require('./activity-slices').classify({...m,recoveryPending:false,activitySlices:evidence},cfg);if(m?.recoveryPending&&(result.label==='unknown'||!Number.isFinite(m.windowEnd)||!Number.isFinite(cfg.now)||cfg.now<m.windowEnd))return {label:'pending',why:'backfill-pending'};return result.label==='unknown'&&m?.recoveryWhy==='backfill-deadline-exceeded'?{...result,why:m.recoveryWhy}:result;}

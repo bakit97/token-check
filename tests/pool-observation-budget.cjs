@@ -4,7 +4,7 @@ const code=fs.readFileSync(process.env.SOLSCAN_TEST_COLLECTOR||path.join(__dirna
 function setup({count=33,failVault=false,missingVault=false}={}){
  const coins=Array.from({length:count},(_,i)=>({a:'1',p:'pool'+i,t:0,raw:{}})),calls=[];let time=100000;
  const enc=b=>[b.toString('base64'),'base64'];
- const ctx={Date:{now:()=>time},C:new Map(coins.map((c,i)=>[i,c])),ageMin:(c,n)=>(n-c.t)/60000,isOk:()=>true,
+ const ctx={WSOL:'2',SOURCE:null,Date:{now:()=>time},C:new Map(coins.map((c,i)=>[i,c])),ageMin:(c,n)=>(n-c.t)/60000,isOk:()=>true,
   b64:s=>Buffer.from(s||'','base64'),pk:(u,o)=>String(u[o]),VAULT_OFF:{program:[139,171]},u64:(u,o)=>Number(u.readBigUInt64LE(o)),
   rpc:async(method,[keys],options)=>{calls.push({keys,options});assert.equal(options.priority,'pools');assert.equal(options.context,'пулы');time+=1000;
    if(failVault&&calls.length===2)throw Object.assign(Error('quota'),{code:'BUDGET_DEFERRED'});

@@ -248,8 +248,8 @@ class SourceRuntime {
     const seenAt=joinUniqueTimes(c,c.mg.mT);
     if(!seenAt)return {admitted:false,reason:'no-post-observation'};
     return this._admit({
-      mint:c.a,phase:'after',migrationAt:c.mg.mT,migrationVerified:true
-    },seenAt,{...require('./venue-identity').identity(c,'after',Date.now()),dexProgram:c.mg.owner||null,family:c.mg.k,signature:c.mg.sig,pool:c.mg.pool,creator:c.creatorAddress||null,creatorObservedAt:c.creatorObservedAt||null,graduation:c.graduation||null,curve:c.mg.watch||null,slot:c.migrationSlot||null,verifiedAt:c.admissionVerifiedAt||null,openingMetrics:c.openingMetrics||null});
+      mint:c.a,phase:'after',migrationAt:c.mg.mT,migrationVerified:true,caughtUpAfterDowntime:c.caughtUpAfterDowntime===true
+    },seenAt,{...require('./venue-identity').identity(c,'after',Date.now()),dexProgram:c.mg.owner||null,family:c.mg.k,signature:c.mg.sig,pool:c.mg.pool,caughtUpAfterDowntime:c.caughtUpAfterDowntime===true,catchupStartedAt:c.catchupStartedAt||null,creator:c.creatorAddress||null,creatorObservedAt:c.creatorObservedAt||null,graduation:c.graduation||null,curve:c.mg.watch||null,slot:c.migrationSlot||null,verifiedAt:c.admissionVerifiedAt||null,openingMetrics:c.openingMetrics||null});
   }
 
   day(date) {

@@ -78,11 +78,11 @@ class AdmissionGate {
     if (!validTimestamp(eventAt) || eventAt > now) return { admitted: false, reason: 'invalid-event-time' };
     const ageMs = now - eventAt;
     const allowedMs = (before ? this.beforeMinutes : this.afterMinutes) * MS_MINUTE;
-    if (ageMs > allowedMs) {
+    if (ageMs > allowedMs && !(event.phase==='after'&&event.caughtUpAfterDowntime===true)) {
       // Не входит в главный источник. Вторая попытка после будущей миграции допустима.
       return { admitted: false, reason: 'too-old', ageMs, allowedMs };
     }
-    const record = Object.freeze({ mint, phase: event.phase, eventAt, acceptedAt: now });
+    const record = Object.freeze({ mint, phase: event.phase, eventAt, acceptedAt: now,...(event.caughtUpAfterDowntime===true?{caughtUpAfterDowntime:true,lateByMs:Math.max(0,ageMs-allowedMs)}:{}) });
     this.accepted.set(mint, record);
     return { admitted: true, reason: 'accepted', record };
   }

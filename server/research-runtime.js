@@ -128,7 +128,7 @@ class ResearchRuntime {
     const existing=this.admitted.get(row.mint);
     if((row.acceptedAt<this.cohortStart&&!existing?.transferred)||row.acceptedAt>=this.cohortEnd)return null;if(existing&&!existing.intakePending)return existing;
     const cfg=phaseSettings(this.config,row.phase),pool=row.proof?.pool||coin?.p||null;
-    const initial=row.proof?.openingMetrics||coin?.openingMetrics;
+    const initial=Number.isFinite(row.proof?.openingMetrics?.liquiditySol)?row.proof.openingMetrics:coin?.openingMetrics||row.proof?.openingMetrics;
     let quoteSol=null;
     if(initial&&initial.quoteMint==='So11111111111111111111111111111111111111112'&&(!initial.pool||initial.pool===pool)&&Number.isFinite(initial.liquiditySol)&&initial.liquiditySol>=0)quoteSol=initial.liquiditySol;
     if(quoteSol==null&&coin){const first=[...(coin.lq||[])].sort((a,b)=>a[0]-b[0]).find(r=>r[0]*1000<=row.acceptedAt);if(first){const qi=coin.vmint?.indexOf('So11111111111111111111111111111111111111112');if(qi>=0&&coin.vmint[1-qi]===coin.a&&Number.isFinite(first[2+qi])&&first[2+qi]>=0)quoteSol=first[2+qi]/1e9;}}
