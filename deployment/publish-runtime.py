@@ -32,5 +32,6 @@ def main():
     result={'collectorGeneration':generation,'changed':changed,'unchanged':len(files)-len(changed)}
     if a.result:pathlib.Path(a.result).write_text(json.dumps(result),encoding='utf-8')
     runpy.run_path(str(ROOT/'deployment/recover-checkpoint.py'))['dispatch'](ROOT,a.bucket,generation,run)
+    runpy.run_path(str(ROOT/'deployment/recover-vm.py'))['apply'](ROOT,a.bucket,generation,run)
     print(json.dumps(result))
 if __name__=='__main__':main()
