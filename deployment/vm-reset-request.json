@@ -1,1 +1,1 @@
-{"id": "owner-stalled-solscan-20261026", "enabled": true, "allowedFromGeneration": "1792636239831388", "expiresAt": 1792964848915, "ownerAcceptsCheckpointGap": true}
+{"id": "owner-stalled-solscan-20261026", "enabled": false, "allowedFromGeneration": "1792636239831388", "expiresAt": 1792964848915, "ownerAcceptsCheckpointGap": true}
