@@ -1,1 +1,1 @@
-{"id": "apply-rpc-diagnostics-small-batches-oct26", "allowedFromGeneration": "1792964763629467", "enabled": true, "maxWaitMs": 1000, "maxStateBytes": 64000000, "allowExistingCheckpoint": true, "maxCheckpointAgeMs": 1800000}
+{"id": "apply-frozen-feature-fastpath-oct26", "allowedFromGeneration": "1792965963672533", "enabled": true, "maxWaitMs": 1000, "maxStateBytes": 64000000, "allowExistingCheckpoint": true, "maxCheckpointAgeMs": 1800000}
