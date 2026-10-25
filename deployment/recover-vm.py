@@ -16,7 +16,7 @@ def apply(root,bucket,target,run,read=None):
     s=read()
     if str(s.get('version'))!=req['allowedFromGeneration']:return {'action':'other-version-left-running'}
     completed=s.get('memory',{}).get('phases',{}).get('save:complete',{});age=time.time()*1000-completed.get('at',0)
-    if not 0<=age<=1800000 or not completed.get('rows',0)>0 or not 0<s.get('retention',{}).get('stateBytes',0)<=64000000:raise RuntimeError('No recent complete bounded checkpoint; VM left running')
+    if not (age>=0 and (age<=1800000 or req.get('ownerAcceptsCheckpointGap') is True)) or not completed.get('rows',0)>0 or not 0<s.get('retention',{}).get('stateBytes',0)<=64000000:raise RuntimeError('No owner-accepted complete bounded checkpoint; VM left running')
     if str(target)==req['allowedFromGeneration']:raise ValueError('New runtime required before reset')
     scope=['--project=sol-scan-511718','--zone=us-central1-a']
     status=run(['compute','instances','describe','solscan',*scope,'--format=value(status)']).strip()
