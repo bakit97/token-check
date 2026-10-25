@@ -13,7 +13,7 @@ const HOURS=3_600_000;
 const MAX_BANK_PER_CLASS=5000;
 const FRESH_WINDOW=48*HOURS;
 const RETRY_INCOMPLETE_MS=15*MIN;
-const MAX_CLASSIFICATION_CHECKS=250; // per two-minute collector export
+const MAX_CLASSIFICATION_CHECKS=16; // per two-minute collector export
 
 /* Вход в Исследование 1: два пути, каждый можно включить/выключить.
    manual — немедленный входной фильтр (поток, стартовый SOL в пуле, случайная доля) — каждый параметр со своим переключателем;
@@ -138,7 +138,7 @@ class ResearchRuntime {
     this.processed.delete(row.mint);const admission={mint:row.mint,phase:row.phase,p:pool,pair:pool,phaseEpoch:row.proof?.poolEpoch?.id||null,eventAt:eventAnchor(row),acceptedAt:row.acceptedAt,admittedAt:now,intakeFeatures:features,intakeMode:'discovery-v3',features:{},via:gate.via};this.admitted.set(row.mint,admission);return admission;
   }
   pruneRevoked(revoked,phase='before'){let n=0;for(const [mint,row] of this.admitted)if(row.phase===phase&&revoked?.has(mint)){this.admitted.delete(mint);this.processed.delete(mint);this.lastAttemptAt.delete(mint);const d=this.intakeDecisions.get(mint);if(d){const bank=d.ok?this.intakeAccepted:this.intakeRejected,key=d.ok?d.via:d.why;if(bank[key]>0)bank[key]--;if(!bank[key])delete bank[key];this.intakeDecisions.delete(mint);}n++;}this.rows=this.rows.filter(r=>r.phase!==phase||!revoked?.has(r.mint));return n;}
-  *reanchorSteps({source,coins,now,limit=32}) {
+  *reanchorSteps({source,coins,now,limit=4}) {
     const candidates=this.rows.filter(r=>{const admission=source.get?.(r.mint)||source.records.get(r.mint);return admission&&admission.phase===r.phase&&Number.isSafeInteger(admission.eventAt)&&admission.eventAt>0&&admission.eventAt<=admission.acceptedAt&&(r.featureSnapshotVersion!==1||r.eventAt!==admission.eventAt||r.windowStart!==admission.eventAt||r.marketScopeVersion!==2);});
     this.eventMigration={remaining:candidates.length,rawMissing:0,changed:this.eventMigration?.changed||0};
     if(!candidates.length)return;

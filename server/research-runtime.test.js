@@ -95,21 +95,21 @@ test('requires 5000-per-class maximum and validates configuration',t=>{
 test('continuous research limits CPU work and retries missing data every fifteen minutes',t=>{
  const dir=workingDir(t),runtime=new ResearchRuntime({dir});
  const entries=[];
- for(let i=0;i<600;i++)entries.push(['mint-'+i,
+ for(let i=0;i<40;i++)entries.push(['mint-'+i,
    {mint:'mint-'+i,phase:'before',acceptedAt:T}]);
  const source={records:new Map(entries)};
  const coins=new Map(entries.map(([mint])=>[mint,{ds:[]}]));
  const first=runtime.update({source,coins,now:T+6*H});
- assert.equal(first.attempted,250);
- assert.equal(first.pending['deferred-by-batch'],350);
- assert.equal(first.counts.unknown,250);
+ assert.equal(first.attempted,16);
+ assert.equal(first.pending['deferred-by-batch'],24);
+ assert.equal(first.counts.unknown,16);
  const second=runtime.update({source,coins,now:T+6*H+M});
- assert.equal(second.attempted,250);
- assert.equal(second.pending['deferred-by-batch'],100);
- assert.equal(second.counts.unknown,500);
+ assert.equal(second.attempted,16);
+ assert.equal(second.pending['deferred-by-batch'],8);
+ assert.equal(second.counts.unknown,32);
  const third=runtime.update({source,coins,now:T+6*H+2*M});
- assert.equal(third.attempted,100);
- assert.equal(third.counts.unknown,600);
+ assert.equal(third.attempted,8);
+ assert.equal(third.counts.unknown,40);
  assert.equal(third.pending['deferred-by-batch']||0,0);
  const soon=runtime.update({source,coins,now:T+6*H+3*M});
  assert.equal(soon.attempted,0);
