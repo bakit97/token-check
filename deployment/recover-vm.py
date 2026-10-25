@@ -9,7 +9,7 @@ def apply(root,bucket,target,run,read=None):
     if req.get('id')!='owner-stalled-solscan-20261026' or req.get('allowedFromGeneration')!='1792636239831388':raise ValueError('Unreviewed VM reset')
     if time.time()*1000>req['expiresAt']:return {'action':'expired'}
     marker='gs://'+bucket+'/config/applied-vm-recovery-20261026.json'
-    if run(['storage','cat',marker],allow_missing=True):return {'action':'already-applied'}
+    if run(['storage','objects','describe',marker,'--format=value(generation)'],allow_missing=True):return {'action':'already-applied'}
     if read is None:
         def read():
             with urllib.request.urlopen('https://storage.googleapis.com/'+bucket+'/status.json?x='+str(time.time_ns()),timeout=20) as response:return json.load(response)
