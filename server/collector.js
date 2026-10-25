@@ -851,7 +851,7 @@ let PUBLIC_POOL_TRADES=null;
 function publicPoolTradeTick(now=Date.now()){
  if(!RESEARCH_V2||!SOURCE||resourcePressure())return;
  if(!PUBLIC_POOL_TRADES)PUBLIC_POOL_TRADES=new (require(DIR+'/public-pool-trades.js').PublicPoolTrades)({decode58:b58dec,onEvidence:(c,r)=>{RESEARCH_V2.processed.delete(r.mint);RESEARCH_V2.lastAttemptAt.delete(r.mint);}});
- const items=[];for(const r of RESEARCH_V2.admitted.values()){if(r.intakePending)continue;const c=C.get(r.mint);if(!c||c.p!==SOURCE.get(r.mint)?.proof?.pool||r.phase!==SOURCE.get(r.mint)?.phase||r.proof?.pool&&r.proof.pool!==c.p)continue;const cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,r.phase),start=require(DIR+'/event-clock.js').eventAnchor(r);if(now>=start&&now<start+(cfg.hours+1)*3600000)items.push({coin:c,record:SOURCE.get(r.mint),cfg});}
+ const clock=require(DIR+'/event-clock.js'),config=RESEARCH_V2.config,items=[];for(const r of RESEARCH_V2.admitted.values()){if(r.intakePending)continue;const cfg=config.phases?.[r.phase]||config,start=clock.eventAnchor(r);if(now<start||now>=start+(cfg.hours+1)*3600000)continue;const record=SOURCE.get(r.mint),c=C.get(r.mint);if(!c||c.p!==record?.proof?.pool||r.phase!==record.phase||r.proof?.pool&&r.proof.pool!==c.p)continue;items.push({coin:c,record,cfg});}
  PUBLIC_POOL_TRADES.tick(items);
 }
 const POOL_TRADE_STATS={responses:0,nativeTrades:0,unusableRows:0,earlyResponses:0,lastAt:0,heliusCredits:0};
