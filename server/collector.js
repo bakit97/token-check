@@ -1314,7 +1314,7 @@ function initObservationRecovery(){
  const api=require(DIR+'/observation-recovery.js');
  RECOVERY_RPC=new api.RecoveryRPC({fallback:(m,p)=>rpc(m,p,{priority:'recovery',context:'дозагрузка',source:'recovery',urgent:true,maxBytes:2*1024*1024})});
  OBS_RECOVERY=new api.ObservationRecovery({dir:DIR,gt,preferChain:()=>true,rpc:(m,p)=>RECOVERY_RPC.call(m,p),resolveCoin:mint=>C.get(mint)||COMPLETED?.readCoin(mint),onUpdated:(job,payload)=>{
-  const row=RESEARCH_V2?.rows.find(r=>r.mint===job.mint&&(!r.p||r.p===job.pool));if(row){const cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase),next=api.relabel(row,OBS_RECOVERY.evidence(job.mint,job.pool),cfg);Object.assign(row,next,{...(job.reason==='backfill-deadline-exceeded'?{recoveryPending:false,recoveryWhy:job.reason}:{}),recoveryJobId:job.id,recoveredAt:Date.now(),outcomeAt:Date.now()});job.recoveredMinutes=next.backfilledMinutes||0;RESEARCH_BANKS?.upsert([row]);}
+  const row=RESEARCH_V2?.rows.find(r=>r.mint===job.mint&&(!r.p||r.p===job.pool));if(row){const cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase),next=api.relabel(row,OBS_RECOVERY.evidence(job.mint,job.pool),cfg);Object.assign(row,next,{...(job.reason==='backfill-deadline-exceeded'?{recoveryPending:false,recoveryWhy:job.reason}:{}),recoveryJobId:job.id,recoveredAt:Date.now(),outcomeAt:Date.now()});job.recoveredMinutes=next.backfilledMinutes||0;/* Persist the bank once in exportResearchV2, not a full rewrite per recovered coin. */}
   if(job.kind.startsWith('two')){RESEARCH_TWO?.retry.delete(job.mint);RESEARCH_TWO?.processed.delete(job.mint);}
   const name='observations-v2/backfill/'+dayKey(job.start)+'/'+job.mint+'-'+job.id+'.json';if(!payload.mirrored){uploadLater(name,{...payload,backfilled:true});payload.mirrored=true;OBS_RECOVERY.store(job,payload);}const c=C.get(job.mint);if(c)c.recoveryRef={name,at:Date.now(),start:job.start,end:job.end};
  }});
@@ -1332,20 +1332,21 @@ function recoveryTick(){if(resourcePressure())return;if(!OBS_RECOVERY||!RESEARCH
  const reset=RESEARCH_ONE_EPOCH?.current;if(reset?.resetId)OBS_RECOVERY.archiveJobs(reset.resetAt,j=>j.kind.startsWith('one')&&(SOURCE.get(j.mint)?.acceptedAt??0)<reset.resetAt);
  OBS_RECOVERY.tick();
 }
-function researchCoins(){const contract=require(DIR+'/observation-contract.js');return {get:mint=>{const c=C.get(mint)||(typeof COMPLETED!=='undefined'&&COMPLETED?COMPLETED.readCoin(mint):null);const row=c?contract.toLegacy(contract.project(fullCoin(c),{metadata:fullCoin(c),admission:SOURCE?.get(mint)||null})):null;return OBS_RECOVERY?OBS_RECOVERY.attach(row):row}}}
+function researchCoins(){const contract=require(DIR+'/observation-contract.js');return {get:mint=>{const c=C.get(mint)||(typeof COMPLETED!=='undefined'&&COMPLETED?COMPLETED.readCoin(mint):null);const full=c?fullCoin(c):null,row=full?contract.toLegacy(contract.project(full,{metadata:full,admission:SOURCE?.get(mint)||null})):null;return OBS_RECOVERY?OBS_RECOVERY.attach(row):row}}}
 async function exportResearchV2(now) {
   if(!RESEARCH_V2||!SOURCE)return;
+  const runtime=RESEARCH_V2,epochSnapshot=RESEARCH_ONE_EPOCH.summary();
   syncResearchEpochBanks();
   // All read-only observations originate from the accepted main source.
-  const result=RESEARCH_V2.update({source:SOURCE,coins:researchCoins(),passes:PASS_V2,now});
+  const result=runtime.update({source:SOURCE,coins:researchCoins(),passes:PASS_V2,now});
   // A settings change does NOT abandon previously admitted cohorts.
   // Earlier raw cohorts remain on disk; current labels must not be overwritten by old criteria.
-  RESEARCH_BANKS?.removeRevoked(SOURCE.revokedManual);RESEARCH_BANKS?.removeRevoked(activeMigrationRevocations(),'after');RESEARCH_BANKS?.relabelOne(RESEARCH_V2.config);
-  RESEARCH_BANKS?.upsert(RESEARCH_V2.select({limit:20000}));
+  RESEARCH_BANKS?.removeRevoked(SOURCE.revokedManual);RESEARCH_BANKS?.removeRevoked(activeMigrationRevocations(),'after');RESEARCH_BANKS?.relabelOne(runtime.config);
+  RESEARCH_BANKS?.upsert(runtime.select({limit:20000}));
   AI_SNAP.r1=result;
-  const population=RESEARCH_V2.view().map(r=>withPoolReference({mint:r.mint,phase:r.phase,acceptedAt:r.acceptedAt,label:r.label,why:r.why||null,activePct:r.activePct??null,maxIdleObserved:r.maxIdleObserved??null,features:r.features||{}}));
-  await upload('research-v2/status.json',{...result,epoch:RESEARCH_ONE_EPOCH.summary(),firstMinuteEvidence:require(DIR+'/pool-trade-observer.js').coverage([...SOURCE.records.values()].filter(r=>r.acceptedAt>=RESEARCH_V2.cohortStart),C,now),snapshotId:String(now),population});
-  const debug={epochStart:result.cohortStart,selection:'sha256-order-independent-sample',auditSelection:'named-mints-then-sha256',audit:RESEARCH_V2.debugSample(10,{coins:researchCoins(),now,pinnedMints:['fpam8wyNiDSHtwx1znYeipGgRNnBcBTcN1iechcpump','8ikdGCtt5gcc3Lf9eQrwMgQqRmg24Py5abrzDovopump','3LTox4ciobeuUivZRueYbyuXjeTga4CA1w8JjqhQpump']}),coins:RESEARCH_V2.debugSample(20,{coins:researchCoins(),now})},debugSig=JSON.stringify(debug);if(debugSig!==RESEARCH_DEBUG_SIG){await upload('research-v2/debug-sample.json',{updated:now,...debug});RESEARCH_DEBUG_SIG=debugSig;}
+  const population=runtime.view().map(r=>withPoolReference({mint:r.mint,phase:r.phase,acceptedAt:r.acceptedAt,label:r.label,why:r.why||null,activePct:r.activePct??null,maxIdleObserved:r.maxIdleObserved??null,features:r.features||{}}));
+  await upload('research-v2/status.json',{...result,epoch:epochSnapshot,firstMinuteEvidence:require(DIR+'/pool-trade-observer.js').coverage([...SOURCE.records.values()].filter(r=>r.acceptedAt>=runtime.cohortStart),C,now),snapshotId:String(now),population});
+  const debug={epochStart:result.cohortStart,selection:'sha256-order-independent-sample',auditSelection:'named-mints-then-sha256',audit:runtime.debugSample(10,{coins:researchCoins(),now,pinnedMints:['fpam8wyNiDSHtwx1znYeipGgRNnBcBTcN1iechcpump','8ikdGCtt5gcc3Lf9eQrwMgQqRmg24Py5abrzDovopump','3LTox4ciobeuUivZRueYbyuXjeTga4CA1w8JjqhQpump']}),coins:runtime.debugSample(20,{coins:researchCoins(),now})},debugSig=JSON.stringify(debug);if(debugSig!==RESEARCH_DEBUG_SIG){await upload('research-v2/debug-sample.json',{updated:now,...debug});RESEARCH_DEBUG_SIG=debugSig;}
   {
     await upload('research-v2/polygon-1.json',{
       updated:now,epochStart:result.cohortStart,settings:result.settings,counts:result.counts,

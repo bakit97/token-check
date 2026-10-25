@@ -1,1 +1,1 @@
-{"id": "inspect-checkpoint-progress-20261026", "allowedFromGeneration": "1792962078039522", "enabled": true, "inspectOnly": true, "maxWaitMs": 1000, "maxStateBytes": 64000000}
+{"id": "update-after-verified-checkpoint-oct26", "allowedFromGeneration": "1792962078039522", "enabled": true, "maxWaitMs": 1000, "maxStateBytes": 64000000, "allowExistingCheckpoint": true, "maxCheckpointAgeMs": 1800000}
