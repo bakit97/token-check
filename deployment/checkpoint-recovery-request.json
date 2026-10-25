@@ -1,1 +1,1 @@
-{"id": "owner-oct26-stalled-update-recovery", "allowedFromGeneration": "1792636239831388", "maxWaitMs": 1000, "maxStateBytes": 64000000, "enabled": true, "allowExistingCheckpoint": true, "maxCheckpointAgeMs": 1800000}
+{"id": "owner-oct26-stalled-update-recovery", "allowedFromGeneration": "1792636239831388", "maxWaitMs": 1000, "maxStateBytes": 64000000, "enabled": false, "allowExistingCheckpoint": true, "maxCheckpointAgeMs": 1800000}

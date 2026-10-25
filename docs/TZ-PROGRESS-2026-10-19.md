@@ -1072,3 +1072,8 @@ Actions 40232708280: точный marker-check прошёл, отказ на com
 | Остатки 27/34/37 | Существующие источники и unknown=null сохранены | Никаких обещаний новых процентов по старому status | first-minute, buyers10, dev/sniper/bundle и migration latency перепроверить на свежем потоке после reset |
 
 Дальше: однократный reset solscan с последним целым checkpoint через аккаунт с Compute-доступом → дождаться generation 1792962078039522 или новее → короткая проверка health, RSS<450, Helius≤17, DBC/LL и свежести всех экспортов → применить SOL 0.5 с сохранением прочих настроек → ещё 5–10 минут и сверка списков/счётчиков. Часовые проверки не запускались. UI не менялся. Тип VM и диск не менялись; ключи/токены/owner hash/IP/email SA в отчёт не включены.
+
+
+### 26.10: владелец перезапустил VM, продолжаем SOL 0.5
+Подтверждено по живому status: runtime **1792962078039522**, RSS 326 МБ, Helius 13.10832/мин, DBC/LL включены. Source/library свежие, research во время замера обновлялся. Public pool sampler: requests 160, polls 38, swaps 10, silentSlices 837, errors 63, rateLimited 5, Helius 0; кэш ~0.71 МБ. Recovery: completed 180, recovered 15, expired 165 с момента старта, one expired unavailable 466. Пока stateBytes 33 083 248 (старый checkpoint), save:complete в новом процессе ещё нет — проверить отдельно.
+Включён уже проверенный одноразовый патч quoteSol.min 5 → 0.5 для root/before/after с lease по generation. Остальные настройки/эпохи сохраняются; несовместимая новая правка владельца не перезаписывается. Устаревший диагностический recovery-request выключен; повторный reset не планируется.
