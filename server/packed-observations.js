@@ -44,4 +44,26 @@ const STATE_FIELDS=['raw','mg','ct','intelligenceSnapshots','discoveryFeatures',
 function packStateFields(p){const fields=Object.fromEntries(STATE_FIELDS.filter(k=>p[k]!=null).map(k=>[k,p[k]])),text=JSON.stringify(fields);if(Buffer.byteLength(text)<1024||Buffer.byteLength(text)>2*1024*1024)return p;const packed={v:1,data:require('node:zlib').deflateSync(Buffer.from(text),{level:6}).toString('base64'),hash:require('node:crypto').createHash('sha256').update(text).digest('hex')};if(JSON.stringify(packed).length>=text.length)return p;const out={...p,stateFieldsPacked:packed};for(const k of Object.keys(fields))delete out[k];return out;}
 function stateCoin(c){const encode=original=>{const p=packStateFields(original);return encodeRefs(p);};const encodeRefs=p=>{if(!p.archiveRefs)return p;const text=JSON.stringify(p.archiveRefs);if(Buffer.byteLength(text)<512)return p;const z=require('node:zlib'),crypto=require('node:crypto'),packed={v:1,data:z.deflateSync(Buffer.from(text),{level:6}).toString('base64'),hash:crypto.createHash('sha256').update(text).digest('hex')};if(JSON.stringify(packed).length>=text.length)return p;const out={...p,archiveRefsPacked:packed};delete out.archiveRefs;return out;};const root=encode(c);return c.origs?.length?{...root,origs:c.origs.map(encode)}:root;}
 function restoreStateCoin(c){for(const p of [c,...(c.origs||[])])if(p.stateFieldsPacked){const packed=p.stateFieldsPacked;if(packed.v!==1||typeof packed.data!=='string'||!/^[a-f0-9]{64}$/.test(packed.hash||''))throw Error('Invalid packed state fields');const text=require('node:zlib').inflateSync(Buffer.from(packed.data,'base64'),{maxOutputLength:2*1024*1024}).toString('utf8');if(require('node:crypto').createHash('sha256').update(text).digest('hex')!==packed.hash)throw Error('State fields checksum mismatch');const fields=JSON.parse(text);if(!fields||typeof fields!=='object'||Array.isArray(fields)||Object.keys(fields).some(k=>!STATE_FIELDS.includes(k)||p[k]!==undefined))throw Error('Invalid state fields');Object.assign(p,fields);delete p.stateFieldsPacked;}for(const p of [c,...(c.origs||[])])if(p.archiveRefsPacked){const packed=p.archiveRefsPacked;if(packed.v!==1||typeof packed.data!=='string'||!/^[a-f0-9]{64}$/.test(packed.hash||''))throw Error('Invalid packed archive references');const text=require('node:zlib').inflateSync(Buffer.from(packed.data,'base64'),{maxOutputLength:2*1024*1024}).toString('utf8');if(require('node:crypto').createHash('sha256').update(text).digest('hex')!==packed.hash)throw Error('Archive reference checksum mismatch');const refs=JSON.parse(text);if(!refs||typeof refs!=='object'||Array.isArray(refs))throw Error('Invalid archive reference object');p.archiveRefs=refs;delete p.archiveRefsPacked;}return c;}
-module.exports={packRows,compactCoin,packedStats,stateCoin,restoreStateCoin};
+// Checkpoints compress one pool at a time outside the event loop. No census-wide
+// compressed cache: retention remains responsible for bounding resident coins.
+async function stateCoinAsync(c){
+ const deflate=require('node:util').promisify(require('node:zlib').deflate),crypto=require('node:crypto');
+ const encode=async original=>{
+  let p={...original};
+  for(const [keys,target,minimum] of [[STATE_FIELDS,'stateFieldsPacked',1024],[['archiveRefs'],'archiveRefsPacked',512]]){
+   const fields=Object.fromEntries(keys.filter(k=>p[k]!=null).map(k=>[k,p[k]]));
+   if(!Object.keys(fields).length)continue;
+   const text=JSON.stringify(target==='archiveRefsPacked'?p.archiveRefs:fields),bytes=Buffer.byteLength(text);
+   if(bytes<minimum||bytes>2*1024*1024)continue;
+   const data=(await deflate(Buffer.from(text),{level:6})).toString('base64');
+   const packed={v:1,data,hash:crypto.createHash('sha256').update(text).digest('hex')};
+   if(JSON.stringify(packed).length>=text.length)continue;
+   p[target]=packed;for(const k of Object.keys(fields))delete p[k];
+  }
+  return p;
+ };
+ const root=await encode(c);
+ if(c.origs?.length){root.origs=[];for(const original of c.origs)root.origs.push(await encode(original));}
+ return root;
+}
+module.exports={packRows,compactCoin,packedStats,stateCoin,stateCoinAsync,restoreStateCoin};

@@ -16,7 +16,9 @@ def main():
         r=subprocess.run([a.gcloud,*args],capture_output=True,text=True)
         if r.returncode:
             if allow_missing and re.search(r'404|not found|does not exist|no urls matched',r.stderr,re.I):return None
-            category=next((code for code in ['PERMISSION_DENIED','ACCESS_TOKEN_SCOPE_INSUFFICIENT','403','404','NOT_FOUND'] if code in r.stderr),'unspecified')
+            category=next((code for code in ['permission','forbidden','unauthorized','invalid choice','not found','not have an active account','disabled','403','404'] if code in r.stderr.lower()),'unspecified')
+            permissions=','.join(sorted(set(re.findall(r'compute\.[a-zA-Z.]+',r.stderr))))
+            if permissions:category+=':'+permissions
             raise RuntimeError('Cloud operation failed: '+args[1]+' ['+category+'] (no credentials logged)')
         return r.stdout
     runpy.run_path(str(ROOT/'deployment/apply-research-epoch.py'))['apply'](ROOT,a.bucket,run)
