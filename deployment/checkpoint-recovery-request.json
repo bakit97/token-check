@@ -1,1 +1,1 @@
-{"id": "apply-resumable-migration-proof-oct26", "allowedFromGeneration": "1792969244167131", "enabled": true, "maxWaitMs": 1000, "maxStateBytes": 64000000, "allowExistingCheckpoint": true, "maxCheckpointAgeMs": 1800000}
+{"id": "apply-opening-liquidity-and-busy-pools-oct26", "allowedFromGeneration": "1793007193861654", "enabled": true, "maxWaitMs": 1000, "maxStateBytes": 64000000, "allowExistingCheckpoint": true, "maxCheckpointAgeMs": 1800000}

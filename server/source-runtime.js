@@ -245,7 +245,7 @@ class SourceRuntime {
     if(!c||!c.a||c.mg?.st!=='ok'||!c.mg.sig||!c.mg.pool||!goodTime(c.mg.mT)){
       return {admitted:false,reason:'not-verified'};
     }
-    const seenAt=joinUniqueTimes(c,c.mg.mT);
+    const seenAt=c.caughtUpAfterDowntime===true?this.clock():joinUniqueTimes(c,c.mg.mT);
     if(!seenAt)return {admitted:false,reason:'no-post-observation'};
     return this._admit({
       mint:c.a,phase:'after',migrationAt:c.mg.mT,migrationVerified:true,caughtUpAfterDowntime:c.caughtUpAfterDowntime===true
