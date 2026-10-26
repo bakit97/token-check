@@ -277,9 +277,10 @@ class SourceRuntime {
     if(typeof predicate!=='function')throw new TypeError('Нужен фильтр пути');
     return this.gate.selectPath(c=>(!at||c.acceptedAt<=at)&&predicate(c),{phase});
   }
+  catchupSummary(at=this.clock()) {const starts=new Map();let total=0,today=0;for(const r of this.records.values())if(r.caughtUpAfterDowntime===true){total++;if(kzDay(r.acceptedAt)===kzDay(at))today++;const start=r.proof?.catchupStartedAt;if(goodTime(start))starts.set(start,(starts.get(start)||0)+1);}return {total,today,starts:[...starts].sort((a,b)=>b[0]-a[0]).slice(0,16).map(([startedAt,accepted])=>({startedAt,accepted}))};}
   summary(at=Date.now()) {
     const d=kzDay(at),today=this.day(d),before=today.filter(x=>x.phase==='before').length;
-    return {updated:at,graduations:this.graduationSummary(at),day:d,total:this.records.size,
+    return {updated:at,catchup:this.catchupSummary(at),graduations:this.graduationSummary(at),day:d,total:this.records.size,
       today:today.length,todayBefore:before,todayAfter:today.length-before,
       capacity:{maxRecords:this.maxRecords,rejected:this.capacityRejected,full:this.records.size>=this.maxRecords},settings:this.settings(),stats:{...this.stats,acceptedPool:this.stats.acceptedBefore,tooOldPool:this.stats.tooOldBefore},daily:this.dailySummary(at)};
   }

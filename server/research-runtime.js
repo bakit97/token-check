@@ -177,8 +177,9 @@ class ResearchRuntime {
     const recent=Array.from(typeof source.recentAdmissions==='function'?
       source.recentAdmissions(now-FRESH_WINDOW,now):source.records.values());
     // Unclassified windows still inside their deadline precede old repeat work.
-    const terminal=new Map(this.rows.map(r=>[r.mint,r]));
-    const rank=row=>{const cfg=phaseSettings(this.config,row.phase),age=now-eventAnchor(row);return age>=cfg.hours*HOURS+3*MIN&&age<(cfg.hours+1)*HOURS&&!terminal.has(row.mint)?0:!terminal.has(row.mint)?1:2;};
+    const terminal=new Map(this.rows.map(r=>[r.mint,r])),phaseRanks={},ranks=new Map();
+    for(const row of recent){const cfg=phaseRanks[row.phase]||(phaseRanks[row.phase]=phaseSettings(this.config,row.phase)),age=now-eventAnchor(row);ranks.set(row.mint,age>=cfg.hours*HOURS+3*MIN&&age<(cfg.hours+1)*HOURS&&!terminal.has(row.mint)?0:!terminal.has(row.mint)?1:2);}
+    const rank=row=>ranks.get(row.mint);
     recent.sort((a,b)=>rank(a)-rank(b)||(this.lastAttemptAt.get(a.mint)?.at||terminal.get(a.mint)?.outcomeAt||0)-(this.lastAttemptAt.get(b.mint)?.at||terminal.get(b.mint)?.outcomeAt||0)||a.acceptedAt-b.acceptedAt);
     const diag={recent:0,beforeCohort:0,afterEnd:0,tooOld:0,future:0,processed:0,processedSize:this.processed.size};
     for(const row of recent){
