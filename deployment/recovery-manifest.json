@@ -44,7 +44,7 @@
     "legacy-data-redaction.js": "041cf44f6bc92db632c9cef9c1d19bb39c1d182738a653f2fa42ac7d2cf012cb",
     "side-pools.js": "c4550ee578dfe8e42f52542c6628f074ff81a420e5911ea56c386485a4670d43",
     "observation-recovery.js": "aafb8840b6f8231b92a2a2a8bfdc79dbe451b8bfe143e932ed2012823097d836",
-    "public-pool-trades.js": "1ca6cd50b7a8be10054599fc957ee6bb1c2c19cb9f1c81da5f4814c2b29aa375",
+    "public-pool-trades.js": "d2f549704c0b0819244e9eab234caf3dd4b3de89b38bf4ff0bfe8285c9053ac7",
     "migration-catchup.js": "bee888ef2e112b261bd0617c9bc306ac5f70f1939b04283f0e1915f05c124018",
     "opening-liquidity.js": "ba492742594098d2c20d3bbc441d80b5ecbf9dd8c7a34a664a2440735558539b",
     "manual-recovery-request.js": "6a91a00bbe01eb2543fbd41607ecabcefdd9a2dc9dafde62fc71e59d048e509a"

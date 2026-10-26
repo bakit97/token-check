@@ -1,1 +1,1 @@
-{"id": "apply-bounded-trade-worker-memory-oct26", "allowedFromGeneration": "1793015311921705", "enabled": true, "maxWaitMs": 1000, "maxStateBytes": 64000000, "allowExistingCheckpoint": true, "maxCheckpointAgeMs": 180000}
+{"id": "apply-partial-trade-proof-retention-oct26", "allowedFromGeneration": "1793016230004441", "enabled": true, "maxWaitMs": 1000, "maxStateBytes": 64000000, "allowExistingCheckpoint": true, "maxCheckpointAgeMs": 180000}
