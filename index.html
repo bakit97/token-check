@@ -114,7 +114,7 @@
 <div class="chips seg" id="r1Ph"><button class="active" data-r1p="all">Все</button><button data-r1p="before">🧪 Ручной пул</button><button data-r1p="after">🎓 После</button></div>
 <details class="frow" id="r1Fold"><summary><span class="fname">Фильтр <span class="hint" id="r1Sum"></span></span></summary>
 <div class="prow"><label for="r1Hours">Окно наблюдения <b id="r1HoursValue">5 ч</b></label><input id="r1Hours" type="range" min="1" max="12" step="1"></div>
-<div class="prow"><label for="r1Activity">Активность — торговали в <b id="r1ActivityValue">60%</b> кусочков по 10 мин</label><input id="r1Activity" type="range" min="10" max="100" step="5"></div><details class="subfold" id="r1ActGear"><summary class="hint">⚙ что считается торговлей: сделка ≥ <b id="r1MinSolV2">0.05</b> SOL от ≥ <b id="r1MinWalV2">2</b> кошельков</summary><div class="prow"><label for="r1MinSol">Мин. сделка <b id="r1MinSolV">0.05 SOL</b></label><input id="r1MinSol" type="range" min="0.01" max="1" step="0.01" value="0.05"></div><div class="prow"><label for="r1MinWal">Разных кошельков в кусочке <b id="r1MinWalV">2</b></label><input id="r1MinWal" type="range" min="2" max="10" step="1" value="2"></div></details>
+<div class="prow"><label for="r1Activity">Активность — живых <b id="r1ActivityValue">60%</b> кусочков по 10 мин</label><input id="r1Activity" type="range" min="10" max="100" step="5"></div><details class="subfold" id="r1ActGear"><summary class="hint">⚙ кусочек живой, если объём в нём ≥ <b id="r1MinVolV2">0.5</b> SOL</summary><div class="prow"><label for="r1MinVol">Объём в кусочке ≥ <b id="r1MinVolV">0.5 SOL</b></label><input id="r1MinVol" type="range" min="0.1" max="5" step="0.1" value="0.5"></div><span class="hide"><input id="r1MinSol" type="range" min="0.01" max="1" step="0.01" value="0.05"><input id="r1MinWal" type="range" min="2" max="10" step="1" value="2"><b id="r1MinSolV"></b><b id="r1MinWalV"></b><b id="r1MinSolV2"></b><b id="r1MinWalV2"></b></span></details>
 <div hidden><div class="prow"><label><input id="r1UseActivity" type="checkbox"> Учитывать активность</label></div><div class="prow"><label for="r1Activity">Сделки не меньше <b id="r1ActivityValueOld">70%</b> времени</label><input id="r1ActivityOld" type="range" min="0" max="100" step="5"></div>
 <div class="prow"><label><input id="r1UseIdle" type="checkbox"> Учитывать простой</label></div><div class="prow"><label for="r1Idle">Простой не больше <b id="r1IdleValue">60 мин</b></label><input id="r1Idle" type="range" min="5" max="120" step="5"></div>
 <div class="prow"><label>Сделок за последний час ≥ <b id="r1LastTradesV">1</b></label><input id="r1LastTrades" type="range" min="0" max="1000" step="1" value="1"></div><div class="prow"><label>Разных кошельков за последний час ≥ <b id="r1LastWalletsV">1</b></label><input id="r1LastWallets" type="range" min="0" max="200" step="1" value="1"></div><div class="prow"><label for="r1Drop">Цена упала не больше <b id="r1DropV">70%</b> к концу наблюдения</label><input id="r1Drop" type="range" min="10" max="100" step="5" value="70"></div>
@@ -129,7 +129,7 @@
 <details class="frow" id="r1ResFold"><summary><span class="fname">Исследование <span class="hint" id="r1ResSum"></span></span></summary>
 <div class="prow"><label for="r1TL">Нужно 🟢 живых <b id="r1TLv">100</b></label><input id="r1TL" type="range" min="20" max="500" step="10" value="100"></div>
 <div class="prow"><label for="r1TD">Нужно 🔴 мёртвых <b id="r1TDv">40</b></label><input id="r1TD" type="range" min="10" max="300" step="10" value="40"></div>
-<div class="prow"><label for="r1Dec">Время поиска сходства <b id="r1DecV">15 мин</b> от обнаружения</label><input id="r1Dec" type="range" min="2" max="15" step="1" value="15"></div>
+<div class="prow"><label for="r1Dec">Время поиска сходства <b id="r1DecV">15 мин</b> от обнаружения</label><input id="r1Dec" type="range" min="1" max="15" step="1" value="15"></div>
 <div class="prow"><label for="r1Pen">Цена ошибки <b id="r1PenV">×3</b> — во сколько раз пропустить раг хуже, чем потерять хорошую монету</label><input id="r1Pen" type="range" min="1" max="5" step="1" value="3"></div>
 <div class="row applyrow hide" id="r1ResApplyRow"><button type="button" class="primary pbtn" id="r1ResApply" style="margin-left:auto">Применить</button></div><p class="hint" id="r1ResMsg" style="margin:4px 0 0"></p></details>
 <div class="meter" style="margin:8px 0"><div id="r1Meter" style="width:0"></div></div>
@@ -205,7 +205,7 @@
 
 </main>
 <script src="./server/observation-contract.js?v=20261018-admission-3" defer></script>
-<script src="./v2.js?v=20261021-intake-2" defer></script>
+<script src="./v2.js?v=20261027-candles-1" defer></script>
 <noscript>Текстовая сводка для ИИ: https://storage.googleapis.com/sol-scan-511718-data/ai/summary.md (JSON: ai/summary.json)</noscript>
 </body></html>
 
