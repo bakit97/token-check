@@ -1,7 +1,7 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "d96c4f099e04f3c3a14dcf4dd6b33099d56ecf57d0adc9624b18edff9d6f6bee",
+    "collector.js": "b0898bb658d16c4efdb776731c018db6d3e7c5a5701796f05820388ebb6ae082",
     "pool-balance-reader.js": "b4279be051aa5203779b723e96568665da43b3d7d7b4e3a31c60ec0f1e8100af",
     "bounded-cache.js": "71245b543751fc32faaf3e05951200df28fc725585001500853a2f35ef18d13b",
     "pool-trade-observer.js": "9e16d097cc96fc381e9e31c13a9c4dc0effaf34d9140f209860ee7594275842a",
@@ -12,8 +12,8 @@
     "feature-snapshots.js": "10a6d2917d132e9cf8a41d02031fbe61417a22ebade2bf0a77c15ee93a193c10",
     "activity-slices.js": "4d99c7eb329820fd679e24330adb05791c66a12bb59ce40809c3f65a5d16683b",
     "event-clock.js": "9ee43c0e943da1147a3ec0e1274a577bdd4d8870603285fdf04c2c6253713c2c",
-    "admission.js": "df8c0ae234256943e85dbd87fd148d1081f8089e60020310fbfc936cc41df448",
-    "source-runtime.js": "484db1f36074d94b61797f747ddc46cff5edc937662a1102588196b830d80ccf",
+    "admission.js": "bf38bc60e662b0942ccde8bb4694113284d16d25146e13ee382ca2d94465c9d3",
+    "source-runtime.js": "fb648edf964af648d9c7e719ece628116e08937756890a4753c59b2188addbe1",
     "pump-pre.js": "8f01365922819d7900219eb316213f044e331c146f4cb71db9f1f398bbddac06",
     "pre-watcher.js": "72879fa8a144c40ec5c3bca90c64a0276ffb1582b39c1960fdc5ad7721e41dd3",
     "research-v2.js": "653c067706cc6f318ea8034d6102761994971bff84dd331e48ef0458331237d1",
@@ -44,8 +44,9 @@
     "legacy-data-redaction.js": "041cf44f6bc92db632c9cef9c1d19bb39c1d182738a653f2fa42ac7d2cf012cb",
     "side-pools.js": "c4550ee578dfe8e42f52542c6628f074ff81a420e5911ea56c386485a4670d43",
     "observation-recovery.js": "aafb8840b6f8231b92a2a2a8bfdc79dbe451b8bfe143e932ed2012823097d836",
-    "public-pool-trades.js": "63ad1661e12b4129f51a9ac73b200cba70c365a3fdaa442fbbb334ebc6d936e5",
-    "migration-catchup.js": "2c22afc7e02023c693fe5670e6a2441b6984cf6e768e90590e7920dc663fa3c8",
-    "opening-liquidity.js": "ba492742594098d2c20d3bbc441d80b5ecbf9dd8c7a34a664a2440735558539b"
+    "public-pool-trades.js": "8c919eb963bbc8b8c29d03fea6f3c0f3f2db7740e3ddda462ed677ed436bfb7e",
+    "migration-catchup.js": "bee888ef2e112b261bd0617c9bc306ac5f70f1939b04283f0e1915f05c124018",
+    "opening-liquidity.js": "ba492742594098d2c20d3bbc441d80b5ecbf9dd8c7a34a664a2440735558539b",
+    "manual-recovery-request.js": "6a91a00bbe01eb2543fbd41607ecabcefdd9a2dc9dafde62fc71e59d048e509a"
   }
 }

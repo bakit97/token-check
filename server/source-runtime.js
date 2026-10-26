@@ -227,10 +227,10 @@ class SourceRuntime {
    * tradingAt — момент появления в публичной покупке, а не создания mint.
    * observedAt — момент, когда НАШ сканер впервые заметил публичную торговлю.
    */
-  before({mint,publicTradingAt,observedAt,verified=false,proof=null}) {
+  before({mint,publicTradingAt,observedAt,verified=false,proof=null,caughtUpAfterDowntime=false}) {
     return this._admit({
       mint,phase:'before',publicTradingAt,
-      publicTradingVerified:verified===true
+      publicTradingVerified:verified===true,caughtUpAfterDowntime:caughtUpAfterDowntime===true,manualPoolCatchupVerified:caughtUpAfterDowntime===true&&proof?.kind==='manual-pool-open-v1'&&!!proof.pool&&!!proof.signature
     },observedAt,proof);
   }
 
@@ -277,7 +277,7 @@ class SourceRuntime {
     if(typeof predicate!=='function')throw new TypeError('Нужен фильтр пути');
     return this.gate.selectPath(c=>(!at||c.acceptedAt<=at)&&predicate(c),{phase});
   }
-  catchupSummary(at=this.clock()) {const starts=new Map();let total=0,today=0;for(const r of this.records.values())if(r.caughtUpAfterDowntime===true){total++;if(kzDay(r.acceptedAt)===kzDay(at))today++;const start=r.proof?.catchupStartedAt;if(goodTime(start))starts.set(start,(starts.get(start)||0)+1);}return {total,today,starts:[...starts].sort((a,b)=>b[0]-a[0]).slice(0,16).map(([startedAt,accepted])=>({startedAt,accepted}))};}
+  catchupSummary(at=this.clock()) {const starts=new Map(),byPhase={before:0,after:0};let total=0,today=0;for(const r of this.records.values())if(r.caughtUpAfterDowntime===true){total++;byPhase[r.phase]++;if(kzDay(r.acceptedAt)===kzDay(at))today++;const start=r.proof?.catchupStartedAt;if(goodTime(start))starts.set(start,(starts.get(start)||0)+1);}return {total,today,byPhase,starts:[...starts].sort((a,b)=>b[0]-a[0]).slice(0,16).map(([startedAt,accepted])=>({startedAt,accepted}))};}
   summary(at=Date.now()) {
     const d=kzDay(at),today=this.day(d),before=today.filter(x=>x.phase==='before').length;
     return {updated:at,catchup:this.catchupSummary(at),graduations:this.graduationSummary(at),day:d,total:this.records.size,

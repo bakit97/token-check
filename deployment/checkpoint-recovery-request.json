@@ -1,1 +1,1 @@
-{"id": "apply-fast-history-seek-and-live-source-oct26", "allowedFromGeneration": "1793009219597881", "enabled": true, "maxWaitMs": 1000, "maxStateBytes": 64000000, "allowExistingCheckpoint": true, "maxCheckpointAgeMs": 180000}
+{"id": "apply-durable-volume-and-manual-replay-oct26", "allowedFromGeneration": "1793010272852592", "enabled": true, "maxWaitMs": 1000, "maxStateBytes": 64000000, "allowExistingCheckpoint": true, "maxCheckpointAgeMs": 180000}

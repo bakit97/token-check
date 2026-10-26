@@ -78,7 +78,7 @@ class AdmissionGate {
     if (!validTimestamp(eventAt) || eventAt > now) return { admitted: false, reason: 'invalid-event-time' };
     const ageMs = now - eventAt;
     const allowedMs = (before ? this.beforeMinutes : this.afterMinutes) * MS_MINUTE;
-    if (ageMs > allowedMs && !(event.phase==='after'&&event.caughtUpAfterDowntime===true)) {
+    if (ageMs > allowedMs && !(event.caughtUpAfterDowntime===true&&(event.phase==='after'||event.phase==='before'&&event.manualPoolCatchupVerified===true))) {
       // Не входит в главный источник. Вторая попытка после будущей миграции допустима.
       return { admitted: false, reason: 'too-old', ageMs, allowedMs };
     }

@@ -29,10 +29,10 @@ test('collector exports separate source status, live and day data',()=>{
 
 
 test('slow discovery bootstrap does not block live processing after startup',async()=>{
- const vm=require('node:vm');let release,requested=0,added=0;const pending=new Promise(r=>release=r),ctx={gt:()=>{requested++;return pending},addFromGT:async()=>{added++},err:()=>{}};
+ const vm=require('node:vm');let release,requested=0,added=0,catalogued=0;const pending=new Promise(r=>release=r),ctx={offerManualCatalogue:()=>{catalogued++},gt:()=>{requested++;return pending},addFromGT:async()=>{added++},err:()=>{}};
  vm.createContext(ctx);vm.runInContext(body.slice(body.indexOf('function startDiscoveryBootstrap()'),body.indexOf('const STARTED='))+';this.start=startDiscoveryBootstrap;',ctx);
  assert.equal(ctx.start(),undefined);assert.equal(requested,1);assert.equal(added,0);
- release({});await new Promise(r=>setImmediate(r));assert.equal(added,3);
+ release({});await new Promise(r=>setImmediate(r));assert.equal(added,3);assert.equal(catalogued,6);assert.equal(requested,6);
 });
 
 test('canonical collector retains the shared authenticated configuration loader',async()=>{
