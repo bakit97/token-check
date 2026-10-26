@@ -1,7 +1,7 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "c43d04df20ffa3cc176a18f38ae47529e985b0375c64662bb2b8b0fa6255c94f",
+    "collector.js": "2d5e900a82988fd143399908d870ed2c27969145e9375109df566830671d6951",
     "pool-balance-reader.js": "b4279be051aa5203779b723e96568665da43b3d7d7b4e3a31c60ec0f1e8100af",
     "bounded-cache.js": "71245b543751fc32faaf3e05951200df28fc725585001500853a2f35ef18d13b",
     "pool-trade-observer.js": "9e16d097cc96fc381e9e31c13a9c4dc0effaf34d9140f209860ee7594275842a",
@@ -30,7 +30,7 @@
     "packed-observations.js": "cfbe0c13e4402cfd13aa2bb27740b20b2ac66afe835ba9947951b273a3ca39cd",
     "completed-coins.js": "d16146b51da4478a00d848879f3e73f553cebce20467c606f729c949136b23dc",
     "seed-completed.js": "d1bfe44875a6e52062f6e2daceeff4ea4530889bb0a4dcd33c98f49c1dbf4a4b",
-    "coin-profile.js": "ec90fc5f5e55f2b21a4d522fac7b87abb59969989132c5cb63bcdae91be7b13f",
+    "coin-profile.js": "02ef7caa556296dc8e1576fa1db600a70e3c532bc55b156dd50b6f9e60c0e86f",
     "durable-json.js": "a042526c285613abc0935b43db8dffb98502054b1b9d43a8355438620dc8f192",
     "research-banks.js": "f277261b26be649e51e57da7755705c8e42cbf73193fb423a5d76c6f9877ce2f",
     "module-library.js": "a850c18e16296730d8388c7be5427300dc3558e7c0f829666343b3856775a549",
@@ -45,6 +45,6 @@
     "side-pools.js": "c4550ee578dfe8e42f52542c6628f074ff81a420e5911ea56c386485a4670d43",
     "observation-recovery.js": "aafb8840b6f8231b92a2a2a8bfdc79dbe451b8bfe143e932ed2012823097d836",
     "public-pool-trades.js": "ce42706dfaa2f96b4a8db3dccf61014a3ae78bd5a96c7cda6592629a601ae3dd",
-    "migration-catchup.js": "30609dcf87040bfc4901ef6f549d62145d2b8ba7e12f8d40cf9d5b16bde45c4e"
+    "migration-catchup.js": "2c22afc7e02023c693fe5670e6a2441b6984cf6e768e90590e7920dc663fa3c8"
   }
 }
