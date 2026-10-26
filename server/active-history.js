@@ -23,7 +23,7 @@ function trim(pool,fields,reference){for(const key of ['ds','gx','lq','curveSol'
  for(const [key,row] of Object.entries(fields.raw||{}))if(same(pool.raw?.[key],row)){if(row.miss)pool.raw[key]={miss:row.miss,...(row.reason?{reason:row.reason}:{})};else{const {b,...metadata}=row;pool.raw[key]={...metadata,historyArchived:true}}}
  for(const key of ['k10','path'])if(fields[key]&&same(fields[key],pool[key])){const {c,...metadata}=pool[key];pool[key]={...metadata,historyArchived:true}}
  if(fields.bx&&same(pool.bx,fields.bx)){const {at,cov,payers}=pool.bx;pool.bx={at,cov,payers};}if(fields.tr&&same(pool.tr,fields.tr))pool.tr={};
- for(const key of ['featureSnapshotsPacked','intelligenceSnapshots','earlyWallets','openingMetrics','buyerPrefixes','activityTapePacked'])if(fields[key]!=null&&same(pool[key],fields[key]))delete pool[key];
+ for(const key of ['featureSnapshotsPacked','intelligenceSnapshots','earlyWallets','buyerPrefixes','activityTapePacked'])if(fields[key]!=null&&same(pool[key],fields[key]))delete pool[key];
  pool.archiveRefs={...pool.archiveRefs,activeHistory:[...(pool.archiveRefs?.activeHistory||[]),reference]};delete pool.historyHydrated;
 }
 class ActiveHistory{
@@ -40,6 +40,7 @@ class ActiveHistory{
   let value={featureSnapshotsPacked:null};for(let i=refs.length-1;i>=0;i--){const row=this._read(refs[i]);if(row.a!==c.a||row.p!==c.p||row.t!==c.t)throw Error('Active-history identity mismatch');if(row.fields.featureSnapshotsPacked!=null){value={featureSnapshotsPacked:row.fields.featureSnapshotsPacked};break;}}
   this.featureCache.set(key,value);return value;
  }
+ openingView(c){if(!c)return null;if(c.openingMetrics)return c.openingMetrics;const refs=c.archiveRefs?.activeHistory||[];if(!refs.length)return null;const key=['opening',c.a,c.p,c.t,refs.length,refs.at(-1).hash].join('|'),cached=this.featureCache.get(key);if(cached)return cached.openingMetrics;let openingMetrics=null;for(let i=refs.length-1;i>=0;i--){const row=this._read(refs[i]);if(row.a!==c.a||row.p!==c.p||row.t!==c.t)throw Error('Active-history identity mismatch');if(row.fields.openingMetrics){openingMetrics=row.fields.openingMetrics;break;}}this.featureCache.set(key,{openingMetrics});return openingMetrics;}
  references(coins){const refs=[];for(const c of coins.values())if(!c.historyHydrated)for(const pool of [c,...(c.origs||[])])for(const ref of pool.archiveRefs?.activeHistory||[])refs.push(ref);return refs}
  async restore(coins,read){const grouped=new Map();for(const ref of this.references(coins))if(!fs.existsSync(this.file(ref.base))){if(!grouped.has(ref.base))grouped.set(ref.base,[]);grouped.get(ref.base).push(ref)}
   for(const [base,refs] of grouped){const object=await read(refs[0].remote);if(object?.schema!==1||object.base!==base||!Array.isArray(object.rows)||object.rows.length>LIMIT)throw Error('Missing active-history mirror');const tmp=this.file(base)+'.restore',fd=fs.openSync(tmp,'w',0o600);let bytes=0;try{for(const row of object.rows){if(digest(JSON.stringify(row.fields))!==row.hash)throw Error('Bad active-history mirror');const b=Buffer.from(JSON.stringify(row)+'\n');bytes+=b.length;if(bytes>MAX)throw Error('Active-history mirror too large');write(fd,b)}fs.fsyncSync(fd)}finally{fs.closeSync(fd)}fs.renameSync(tmp,this.file(base));for(const ref of refs)this._read(ref);this.stats.restoredChunks++}

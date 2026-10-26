@@ -1301,7 +1301,7 @@ async function exportSource(now) {
   const d=dayKey(now),cardCache=new Map(),card=(mint,c)=>{if(!cardCache.has(mint))cardCache.set(mint,require(DIR+'/coin-profile.js').cardAt(c,now));return cardCache.get(mint);};
   const enrich=x=>{
     const c=C.get(x.mint)||COMPLETED?.metadata(x.mint);
-    return {...card(x.mint,c),p:x.proof?.pool||null,pair:x.proof?.pool||null,openingMetrics:Number.isFinite(x.proof?.openingMetrics?.liquiditySol)?x.proof.openingMetrics:c?.openingMetrics||x.proof?.openingMetrics||null,caughtUpAfterDowntime:x.caughtUpAfterDowntime===true,lateByMs:x.lateByMs||0,a:x.mint,phase:x.phase,phaseKey:x.phase==='before'?'pool':x.phase,...require(DIR+'/venue-identity.js').identity(c,x.phase,now,x),eventAt:x.eventAt,acceptedAt:x.acceptedAt,
+    return {...card(x.mint,c),p:x.proof?.pool||null,pair:x.proof?.pool||null,openingMetrics:Number.isFinite(x.proof?.openingMetrics?.liquiditySol)?x.proof.openingMetrics:c?.openingMetrics||(typeof ACTIVE_HISTORY!=='undefined'?ACTIVE_HISTORY?.openingView?.(c):null)||x.proof?.openingMetrics||null,caughtUpAfterDowntime:x.caughtUpAfterDowntime===true,lateByMs:x.lateByMs||0,a:x.mint,phase:x.phase,phaseKey:x.phase==='before'?'pool':x.phase,...require(DIR+'/venue-identity.js').identity(c,x.phase,now,x),eventAt:x.eventAt,acceptedAt:x.acceptedAt,
       ageAtMigrationMin:c?.createdAt&&c.createdAt<=x.eventAt?(x.eventAt-c.createdAt)/60000:null,n:c?.n||'',s:c?.s||'',i:c?.i||'',family:x.proof?.family||null,curve:x.proof?.curve||c?.mg?.watch||null,
       proofSig:x.proof?.signature||null,uri:c?.uri||x.proof?.uri||null,migrationPool:x.proof?.pool||null,proofKind:x.proof?.kind||null,eventSlot:x.proof?.slot||null,eventTimeSource:x.proof?.timeSource||null};
   };

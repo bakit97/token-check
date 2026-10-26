@@ -1,7 +1,7 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "caf27d5935adedce35e71da499119d5c0b0ec26f3a3691ca6a99c7c1875ca9fd",
+    "collector.js": "9d3f32634b446b2780a84db272b16c5d62eeee762aa414100d4398a1d09522e6",
     "pool-balance-reader.js": "b4279be051aa5203779b723e96568665da43b3d7d7b4e3a31c60ec0f1e8100af",
     "bounded-cache.js": "71245b543751fc32faaf3e05951200df28fc725585001500853a2f35ef18d13b",
     "pool-trade-observer.js": "9e16d097cc96fc381e9e31c13a9c4dc0effaf34d9140f209860ee7594275842a",
@@ -34,7 +34,7 @@
     "durable-json.js": "a042526c285613abc0935b43db8dffb98502054b1b9d43a8355438620dc8f192",
     "research-banks.js": "ef1efb694eb95d359689df7f80f24533b39fb0882459f8b3301fc4d66f91c331",
     "module-library.js": "a850c18e16296730d8388c7be5427300dc3558e7c0f829666343b3856775a549",
-    "active-history.js": "e42c213af8febf55d4715ea4038db061c32eb2fc91d08dc85a71badd103cf44f",
+    "active-history.js": "be3247cad9ab6a425cfeb0ff6756b31b4d1680a92f0a98f008b5ac1b268ae0af",
     "launch-history.js": "fce3b45fcd513c24673ceaafe31f747cb01c7e77f264a559414ce235b0905c49",
     "early-intelligence.js": "7847f9e26d70a8949cb962e456d084b43f3394e06b57d4a47378722483dc3b2c",
     "migration-fast.js": "ea9fb4013c436259578dc6df31094209882ad24f7c71499c9ccf61921d62e740",
