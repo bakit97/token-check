@@ -12,7 +12,7 @@ class FeatureProbe{
  summary(minute=12){const all=this.evaluate();return {...all,selectedMinute:minute,features:all.minutes[minute]?.features||{},retainedCoins:this.rows.size};}
 }
 class TaskQuota{
- constructor({now=Date.now,limits={discovery:2,early:3,outcome:6}}={}){this.now=now;this.limits=limits;this.used={};this.deferred={};}
+ constructor({now=Date.now,limits={discovery:1,early:1,outcome:3}}={}){this.now=now;this.limits=limits;this.used={};this.deferred={};}
  lane(key){return key?.startsWith('outcome:')?'outcome':key?.startsWith('p43-early:')?'early':'discovery';}
  available(key){const lane=this.lane(key),now=this.now();this.used[lane]=(this.used[lane]||[]).filter(t=>t>now-MIN);return this.used[lane].length<this.limits[lane];}
  charge(key){if(!this.available(key)){const l=this.lane(key);this.deferred[l]=(this.deferred[l]||0)+1;return false;}this.used[this.lane(key)].push(this.now());return true;}

@@ -1,9 +1,9 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "7bba95ae6816d492456c99560e86d4bbd073bc013ed61e2b3a4322a6ca8f8ea7",
-    "terminal-candles.js": "e6d28c0c477107cf71651b75f28b07115a2ad2db8c2d2c0826f51c46f28d3bc4",
-    "early-window.js": "d9c7291b99eda46ea5fbbf2350e750ccd20c02cd0fd72db92a611f9dd4bf2e50",
+    "collector.js": "7fb0ad99be31d4b9caec835da751fdf99f47222d2216678fb0970e4052c17683",
+    "terminal-candles.js": "acabd1d5151f466ca0d0b1cb22720064d054e667384a3616aef189e3ddb57847",
+    "early-window.js": "95866b2c4bd4ef674c0db2e46d50c903b447430382f128685e7013498ceb6877",
     "pool-balance-reader.js": "b4279be051aa5203779b723e96568665da43b3d7d7b4e3a31c60ec0f1e8100af",
     "bounded-cache.js": "71245b543751fc32faaf3e05951200df28fc725585001500853a2f35ef18d13b",
     "pool-trade-observer.js": "9e16d097cc96fc381e9e31c13a9c4dc0effaf34d9140f209860ee7594275842a",

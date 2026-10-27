@@ -588,7 +588,7 @@ async function initResearchV2() {
     config,adoptLegacy:JSON.stringify(config)===JSON.stringify(baseline)});
   RESEARCH_ONE_EPOCH.apply(config,require(DIR+'/early-window.js').reset(await getObj('config/research-epoch-one.json')));
   const epoch=RESEARCH_ONE_EPOCH.current;
-  GT_TASKS=new (require(DIR+'/early-window.js').TaskQuota)();FREE_TASKS=new (require(DIR+'/early-window.js').RPCQuota)();TERMINAL_CHARTS=new (require(DIR+'/terminal-candles.js').TerminalCandles)({dir:DIR,gt,onReady:j=>{RESEARCH_V2?.processed.delete(j.mint);RESEARCH_V2?.lastAttemptAt.delete(j.mint);RESEARCH_TWO?.retry.delete(j.mint);}});FEATURE_TRIAL=new (require(DIR+'/early-window.js').FeatureProbe)({dir:DIR,startedAt:epoch.activeAt});
+  GT_TASKS=new (require(DIR+'/early-window.js').TaskQuota)();FREE_TASKS=new (require(DIR+'/early-window.js').RPCQuota)();TERMINAL_CHARTS=new (require(DIR+'/terminal-candles.js').TerminalCandles)({dir:DIR,gt,cohortStart:epoch.activeAt,onReady:j=>{RESEARCH_V2?.processed.delete(j.mint);RESEARCH_V2?.lastAttemptAt.delete(j.mint);RESEARCH_TWO?.retry.delete(j.mint);}});FEATURE_TRIAL=new (require(DIR+'/early-window.js').FeatureProbe)({dir:DIR,startedAt:epoch.activeAt});
   RESEARCH_V2=new ResearchRuntime({
     dir:DIR,config:epoch.config,cohortStart:epoch.activeAt,
     bankName:oneResearchBankName(epoch)
@@ -877,7 +877,7 @@ async function earlyWindowTick(){
  }
  TERMINAL_CHARTS.tick().catch(()=>{});
  for(const row of active){const c=C.get(row.mint);if(c)c.observationMethod=windowAPI.METHOD;}
- const trade=active.filter(r=>{const c=C.get(r.mint);return c?.p&&!c.earlyGTAttempted&&now>=r.acceptedAt+10*60000&&now<r.acceptedAt+19*60000;}).sort((a,b)=>a.acceptedAt-b.acceptedAt)[0];
+ const trial=FEATURE_TRIAL?.summary(one.config.decisionMinutes)?.features?.buyers10;const failedTrial=trial?.total>=50&&trial.reason==='coverage-below-90';EARLY_WINDOW_STATS.earlyTradesDisabledReason=failedTrial?'failed-50-coin-coverage-probe':null;const trade=!failedTrial&&active.filter(r=>{const c=C.get(r.mint);return c?.p&&!c.earlyGTAttempted&&now>=r.acceptedAt+10*60000&&now<r.acceptedAt+19*60000;}).sort((a,b)=>a.acceptedAt-b.acceptedAt)[0];
  if(trade){const c=C.get(trade.mint),pool=c.p;c.earlyGTAttempted=now;EARLY_WINDOW_STATS.tradesRequests++;
   gt('/pools/'+pool+'/trades',1,'p43-early:trades:'+trade.mint,trade.acceptedAt+20*60000).then(response=>{if(c.p!==pool||!Array.isArray(response.data))return;const at=Date.now(),rows=require(DIR+'/activity-slices.js').tradeRows(response.data,c.a,at);c.tr={f:[[at,response.data.length,null,null]],x:Object.fromEntries(rows.map((r,i)=>[r[7]||String(i),[...r,at]]))};c.buyerPrefixes=require(DIR+'/research-v2.js').recordedBuyerPrefixes(c,trade.acceptedAt,at);const wallets=[...new Set(rows.filter(r=>r[1]===1&&r[0]*1000>=trade.acceptedAt&&r[0]*1000<=trade.acceptedAt+10*60000).map(r=>r[3]))];c.earlyWallets=wallets;c.earlyWalletsAt=at;c.earlyWalletsComplete=false;c.trDone=1;
    if(SMART_WALLETS){const smart=SMART_WALLETS.features(c,trade.acceptedAt,at);if(smart)appendIntelligence(c,smart);}
