@@ -116,11 +116,11 @@ class SourceRuntime {
   }
 
   async classifyLate(coins,{readCoin=()=>null,limit=256}={}) {
-    let checked=0;
-    for(const [key,row] of this.dailyRows){if(row.outcome!=='tooOld'||row.lateKind)continue;const mint=key.split(':').at(-1);if(++checked>limit)break;const c=coins.get(mint)||readCoin(mint);if(checked%4===0)await new Promise(r=>setImmediate(r));if(!c){row.lateAuditReason='candidate-not-retained';continue;}
+    let checked=0;const pending=[...this.dailyRows].filter(([,row])=>row.outcome==='tooOld'&&!row.lateKind),offset=this.lateAuditCursor||0;
+    for(let i=0;i<Math.min(limit,pending.length);i++){const [key,row]=pending[(offset+i)%pending.length];const mint=key.split(':').at(-1);if(++checked>limit)break;const c=coins.get(mint)||readCoin(mint);if(checked%4===0)await new Promise(r=>setImmediate(r));if(!c){row.lateAuditReason='candidate-not-retained';continue;}
       const source=c.proofAgeEstimate?.source,real=Number.isSafeInteger(c.migrationSlot)||!!c.mg?.sig||c.discoverySource==='migration-fast',notNew=source==='gt-pool-created'||c.tSrc==='gt'&&!real||!!c.rcSeen&&!real;
-      if(!real&&!notNew)continue;this.dailyRows.set(key,{...row,lateKind:real?'real':'not-new',reason:real?'late-confirmed-migration':'old-catalogue-pool',origin:row.origin==='legacy-unattributed'?(real?'migration-signal':'catalogue'):row.origin});this.dailyDirty=true;
-    }
+      if(!real&&!notNew){row.lateAuditReason='event-kind-not-proven';continue;}this.dailyRows.set(key,{...row,lateKind:real?'real':'not-new',reason:real?'late-confirmed-migration':'old-catalogue-pool',origin:row.origin==='legacy-unattributed'?(real?'migration-signal':'catalogue'):row.origin});this.dailyDirty=true;
+    }this.lateAuditCursor=pending.length?(offset+checked)%pending.length:0;
   }
   dailyDecisions(at=this.clock()){const day=kzDay(at);return [...this.dailyRows].filter(([,r])=>r.day===day&&r.outcome!=='accepted').map(([k,r])=>({mint:k.split(':').at(-1),...r}));}
 
