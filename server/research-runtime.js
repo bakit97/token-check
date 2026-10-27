@@ -123,6 +123,7 @@ class ResearchRuntime {
       // Compatible with older snapshots that did not store the processed index.
       for(const r of this.rows)if(r.outcomeVersion===2)this.processed.set(r.mint,r.acceptedAt);else this.processed.delete(r.mint);
     }
+    if(this.config.outcomeMethod==='gt-ohlcv-20m-v1')for(const r of this.rows)if(r.label==='unknown'&&!r.terminalCandlesPacked)this.processed.delete(r.mint);
     this.carryFrom(carry);
   }
   carryFrom(previous){if(!previous)return;for(const row of previous.admitted.values())if(!this.admitted.has(row.mint))this.admitted.set(row.mint,{...row,intakePending:true,transferred:true});}
