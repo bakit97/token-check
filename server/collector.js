@@ -66,18 +66,28 @@ async function getJSON(url,timeoutMs=15000){const controller=new AbortController
   if(!r.ok){const error=new Error('HTTP '+r.status+' '+url.split('?')[0].slice(-60));error.status=r.status;throw error;}return await networkDeadline(r.json(),timeoutMs);
  }finally{clearTimeout(timer);controller.abort();}}
 // приоритеты: 0 новые пулы, 1 сделки первых минут, 2 свечи первых 10 минут, 3 график цены
-const gtQ=[],gtActive=new Map();let gtCoalesced=0,gtPause=0,gtOK=0,gtFail=0,gtSp=6500,gtRun=0;
+const gtQ=[],gtActive=new Map();let gtCoalesced=0,gtPause=0,gtOK=0,gtFail=0,gtSp=5000,gtRun=0;
 const GT_BACKGROUND_LIMIT=24; // keep slow multi-hour charts from burying early trading evidence
 const gtBackgroundBusy=()=>gtQ.filter(x=>x.prio===3).length>=GT_BACKGROUND_LIMIT;const gtLog=[]; // gtLog: [время, 1=ок/0=429/2=ошибка, задержка в очереди мс]
 function gtPending(key){return [...gtQ,...gtActive.values()].some(x=>x.key===key||x.aliases?.has(key))}
 function gt(path,prio,key,windowEnd){key=key||path;const ex=[...gtQ,...gtActive.values()].find(x=>x.key===key||x.path===path);if(ex){gtCoalesced++;(ex.aliases=ex.aliases||new Set([ex.key])).add(key);ex.prio=Math.min(ex.prio,prio);ex.windowEnd=ex.windowEnd&&windowEnd?Math.max(ex.windowEnd,windowEnd):0;return ex.p;}
   let res,rej;const p=new Promise((a,b)=>{res=a;rej=b});gtQ.push({path,prio,res,rej,t:Date.now(),key,p,windowEnd});gtQ.sort((a,b)=>a.prio-b.prio||a.t-b.t);return p}
-(async function gtLoop(){for(;;){if(gtQ.length&&Date.now()>gtPause){for(let i=gtQ.length-1;i>=0;i--){const q=gtQ[i];if(q.key.startsWith('p43-early:')&&q.windowEnd&&Date.now()>=q.windowEnd){gtQ.splice(i,1);q.rej(Object.assign(Error('20-minute window ended'),{code:'OBSERVATION_COMPLETE'}));}}for(const q of gtQ){if(q.windowEnd&&Date.now()>q.windowEnd)q.prio=3;if(q.urgentUntil&&Date.now()>q.urgentUntil){q.prio=Math.max(q.prio,1);delete q.urgentUntil;}}gtQ.sort((a,b)=>a.prio-b.prio||(a.urgentUntil||Infinity)-(b.urgentUntil||Infinity)||a.t-b.t);const eligible=(typeof GT_TASKS!=='undefined'&&GT_TASKS)?gtQ.findIndex(q=>GT_TASKS.available(q.key)):0;if(eligible<0){await sleep(1000);continue;}const t=gtQ.splice(eligible,1)[0];if(typeof GT_TASKS!=='undefined'&&GT_TASKS)GT_TASKS.charge(t.key);gtActive.set(t.path,t);
-    try{const j=await getJSON(GT+t.path);gtOK++;gtLog.push([Date.now(),1,Date.now()-t.t]);if(++gtRun>=20){gtRun=0;gtSp=Math.max(6000,gtSp-250)}t.res(j)}
-    catch(e){gtFail++;gtLog.push([Date.now(),e.rl?0:2,Date.now()-t.t]);if(e.rl){gtPause=Date.now()+30e3;gtSp=Math.min(15000,gtSp+500);gtRun=0;
-        if(t.prio<=2&&!t.retry&&!t.key.startsWith('outcome:')&&!t.key.startsWith('p43-early:')){t.retry=1;gtQ.unshift(t);continue}}t.rej(e)}finally{gtActive.delete(t.path);}
-    while(gtLog.length&&gtLog[0][0]<Date.now()-3600e3)gtLog.shift()}
-  await sleep(gtSp)}})();
+async function runGT(t){
+ try{const j=await getJSON(GT+t.path);gtOK++;gtLog.push([Date.now(),1,Date.now()-t.t]);if(++gtRun>=20){gtRun=0;gtSp=Math.max(5000,gtSp-250)}t.res(j)}
+ catch(e){gtFail++;gtLog.push([Date.now(),e.rl?0:2,Date.now()-t.t]);if(e.rl){gtPause=Date.now()+30000;gtSp=Math.min(15000,gtSp+500);gtRun=0;
+  if(t.prio<=2&&!t.retry&&!t.key.startsWith('outcome:')&&!t.key.startsWith('p43-early:')){t.retry=1;gtQ.unshift(t);return;}}t.rej(e)}
+ finally{gtActive.delete(t.path);while(gtLog.length&&gtLog[0][0]<Date.now()-3600000)gtLog.shift();}
+}
+(async function gtLoop(){let nextStart=0;for(;;){const now=Date.now();
+ if(gtQ.length&&now>gtPause&&now>=nextStart&&gtActive.size<2){
+  for(let i=gtQ.length-1;i>=0;i--){const q=gtQ[i];if(q.key.startsWith('p43-early:')&&q.windowEnd&&now>=q.windowEnd){gtQ.splice(i,1);q.rej(Object.assign(Error('20-minute window ended'),{code:'OBSERVATION_COMPLETE'}));}}
+  for(const q of gtQ){if(q.windowEnd&&now>q.windowEnd)q.prio=3;if(q.urgentUntil&&now>q.urgentUntil){q.prio=Math.max(q.prio,1);delete q.urgentUntil;}}
+  gtQ.sort((a,b)=>a.prio-b.prio||a.t-b.t);
+  const eligible=typeof GT_TASKS!=='undefined'&&GT_TASKS?gtQ.findIndex(q=>GT_TASKS.available(q.key)):0;
+  if(eligible>=0&&gtQ.length){const t=gtQ.splice(eligible,1)[0];if(typeof GT_TASKS!=='undefined'&&GT_TASKS)GT_TASKS.charge(t.key);gtActive.set(t.path,t);nextStart=now+gtSp;runGT(t).catch(e=>t.rej(e));}
+ }
+ await sleep(250);
+}})();
 function gtStats(){const ok=gtLog.filter(x=>x[1]===1),rl=gtLog.filter(x=>x[1]===0).length,lat=ok.map(x=>x[2]).sort((a,b)=>a-b);
   return{taskQuotas:GT_TASKS?.summary()||null,buyersDeadlinePriority:true,queue:gtQ.length,inFlight:gtActive.size,coalesced:gtCoalesced,backgroundLimit:GT_BACKGROUND_LIMIT,oldestSec:gtQ.length?Math.round((Date.now()-Math.min(...gtQ.map(x=>x.t)))/1000):0,okHour:ok.length,r429Hour:rl,errHour:gtLog.filter(x=>x[1]===2).length,
     spacingMs:gtSp,waitMedSec:lat.length?Math.round(lat[lat.length>>1]/1000):null,waitMaxSec:lat.length?Math.round(lat[lat.length-1]/1000):null,
@@ -384,7 +394,7 @@ function rejectOldProof(c,now=Date.now()){
   const age=proofEventAge(c,now),limit=(SOURCE?.settings().afterMinutes||2)*60000;
   if(!age||age.ageMs<=limit+30000)return false;
   c.proofAgeRejectedAt=now;c.proofAgeEstimate=age;c.proofExpiredAt=now;
-  SOURCE?.observe({mint:c.a,phase:'after',outcome:'tooOld',lateMs:age.ageMs-limit});
+  SOURCE?.observe({mint:c.a,phase:'after',outcome:'tooOld',lateMs:age.ageMs-limit,reason:age.source==='gt-pool-created'?'old-catalogue-pool':'late-signal',origin:age.source,lateKind:age.source==='gt-pool-created'?'not-new':Number.isSafeInteger(c.migrationSlot)?'real':null,eventAt:age.at});
   setMg(c,'unk','unk-age','опоздал (предварительная оценка возраста)',{final:1});
   return true;
 }
@@ -869,14 +879,14 @@ async function earlyWindowTick(){
  for(const row of active){const c=C.get(row.mint);if(c)c.observationMethod=windowAPI.METHOD;}
  const trade=active.filter(r=>{const c=C.get(r.mint);return c?.p&&!c.earlyGTAttempted&&now>=r.acceptedAt+10*60000&&now<r.acceptedAt+19*60000;}).sort((a,b)=>a.acceptedAt-b.acceptedAt)[0];
  if(trade){const c=C.get(trade.mint),pool=c.p;c.earlyGTAttempted=now;EARLY_WINDOW_STATS.tradesRequests++;
-  gt('/pools/'+pool+'/trades',1,'p43-early:trades:'+trade.mint,trade.acceptedAt+20*60000).then(response=>{if(c.p!==pool||!Array.isArray(response.data))return;const at=Date.now(),rows=require(DIR+'/activity-slices.js').tradeRows(response.data,c.a,at);c.tr={f:[[at,response.data.length,null,null]],x:Object.fromEntries(rows.map((r,i)=>[r[7]||String(i),[...r,at]]))};c.buyerPrefixes=require(DIR+'/research-v2.js').recordedBuyerPrefixes(c,trade.acceptedAt,at);const wallets=[...new Set(rows.filter(r=>r[1]===1&&r[0]*1000>=trade.acceptedAt&&r[0]*1000<=trade.acceptedAt+10*60000).map(r=>r[3]))];c.earlyWallets=wallets;c.earlyWalletsAt=at;c.earlyWalletsComplete=false;
+  gt('/pools/'+pool+'/trades',1,'p43-early:trades:'+trade.mint,trade.acceptedAt+20*60000).then(response=>{if(c.p!==pool||!Array.isArray(response.data))return;const at=Date.now(),rows=require(DIR+'/activity-slices.js').tradeRows(response.data,c.a,at);c.tr={f:[[at,response.data.length,null,null]],x:Object.fromEntries(rows.map((r,i)=>[r[7]||String(i),[...r,at]]))};c.buyerPrefixes=require(DIR+'/research-v2.js').recordedBuyerPrefixes(c,trade.acceptedAt,at);const wallets=[...new Set(rows.filter(r=>r[1]===1&&r[0]*1000>=trade.acceptedAt&&r[0]*1000<=trade.acceptedAt+10*60000).map(r=>r[3]))];c.earlyWallets=wallets;c.earlyWalletsAt=at;c.earlyWalletsComplete=false;c.trDone=1;
    if(SMART_WALLETS){const smart=SMART_WALLETS.features(c,trade.acceptedAt,at);if(smart)appendIntelligence(c,smart);}
   }).catch(()=>{EARLY_WINDOW_STATS.tradesErrors++;c.earlyGTUnavailable='one-query-provider-unavailable';});
  }
  if(!earlyWindowTick.openingBusy){const pick=active.filter(r=>{const c=C.get(r.mint),cfg=one.config.phases?.[r.phase]||one.config,n=Math.min(cfg.decisionMinutes,...(PASS_V2?.config.filters||[]).filter(f=>f.phase===r.phase).map(f=>f.verdictMinutes||cfg.decisionMinutes));return c?.p&&r.proof?.slot&&!c.earlyOpeningAttempted&&now>=r.acceptedAt+n*60000-15000&&now<r.acceptedAt+n*60000;}).sort((a,b)=>a.acceptedAt-b.acceptedAt)[0];
   if(pick){const c=C.get(pick.mint),cfg=one.config.phases?.[pick.phase]||one.config,n=Math.min(cfg.decisionMinutes,...(PASS_V2?.config.filters||[]).filter(f=>f.phase===pick.phase).map(f=>f.verdictMinutes||cfg.decisionMinutes)),cutoff=pick.acceptedAt+n*60000,probe=FEATURE_TRIAL.summary(n);c.earlyOpeningAttempted=now;
    if(probe.minutes[n].samples>=50&&now-probe.startedAt>=3600000&&!probe.features.sniperShare.enabled)c.earlyOpeningUnavailable='probe-coverage-below-90';
-   else if(FREE_TASKS.take('opening')){earlyWindowTick.openingBusy=true;EARLY_WINDOW_STATS.openingRequests++;freeFastRPC('getBlock',[pick.proof.slot,{encoding:'json',transactionDetails:'full',rewards:false,maxSupportedTransactionVersion:1,commitment:'confirmed'}],{maxBytes:3*1024*1024}).then(raw=>{const at=Date.now();if(at>cutoff){c.earlyOpeningUnavailable='received-after-verdict';return;}const api=require(DIR+'/early-intelligence.js'),block=api.blockEvidence(raw,pick.proof.slot,at,b58dec);if(!block)return;const snap=api.openingFeatures({mint:c.a,creator:c.creatorAddress,supplyRaw:c.supplyRaw,slot:pick.proof.slot,blocks:[block],at});appendIntelligence(c,snap);c.earlyWallets=snap.earlyWallets;c.earlyWalletsAt=at;c.earlyWalletsComplete=false;
+   else if(FREE_TASKS.take('opening')){earlyWindowTick.openingBusy=true;EARLY_WINDOW_STATS.openingRequests++;freeFastRPC('getBlock',[pick.proof.slot,{encoding:'json',transactionDetails:'full',rewards:false,maxSupportedTransactionVersion:1,commitment:'confirmed'}],{maxBytes:3*1024*1024}).then(raw=>{const at=Date.now();if(at>cutoff){c.earlyOpeningUnavailable='received-after-verdict';return;}const api=require(DIR+'/early-intelligence.js'),block=api.blockEvidence(raw,pick.proof.slot,at,b58dec);if(!block)return;const snap=api.openingFeatures({mint:c.a,creator:c.creatorAddress,supplyRaw:c.supplyRaw,slot:pick.proof.slot,blocks:[block],at});appendIntelligence(c,snap);c.earlyWallets=snap.earlyWallets;c.earlyWalletsAt=at;c.earlyWalletsComplete=false;c.trDone=1;
     if(SMART_WALLETS){const smart=SMART_WALLETS.features(c,pick.acceptedAt,at);if(smart)appendIntelligence(c,smart);}
    }).catch(()=>{EARLY_WINDOW_STATS.openingErrors++;c.earlyOpeningUnavailable='one-query-provider-unavailable';}).finally(()=>earlyWindowTick.openingBusy=false);}
   }
@@ -1134,7 +1144,7 @@ async function processFastMigration(task){
  if(task.mint&&SOURCE.get(task.mint)?.phase==='after')return {outcome:'already-admitted'};
  const api=require(DIR+'/migration-fast.js'),options={priority:task.caughtUpAfterDowntime?'background':'migration-fast',context:'миграция:быстро',source:task.caughtUpAfterDowntime?'migration-catchup':'migration-fast',urgent:!task.caughtUpAfterDowntime,publicFirst:task.caughtUpAfterDowntime===true,maxBytes:3*1024*1024};
  let signatures=task.signature?[task.signature]:Object.keys(task.proofs||{}).filter(sig=>task.proofs[sig].some(v=>v.curve===task.curve));let outcome=null,proofSeen=false;
- if(!signatures.length){const rows=await rpc('getSignaturesForAddress',[task.curve,{limit:6,commitment:'confirmed'}],{...options,cache:false});signatures=(rows||[]).filter(r=>r.err===null&&(!task.slot||Math.abs(r.slot-task.slot)<=2)).map(r=>r.signature).slice(0,6);}
+ if(!signatures.length){const rows=await rpc('getSignaturesForAddress',[task.curve,{limit:64,commitment:'confirmed'}],{...options,cache:false});signatures=(rows||[]).filter(r=>r.err===null&&(!task.slot||Math.abs(r.slot-task.slot)<=2)).map(r=>r.signature).slice(0,6);}
  if(!signatures.length)throw Object.assign(Error('migration transaction pending'),{code:'TX_PENDING'});
  task.proofs=task.proofs||{};
  for(const signature of signatures){if(task.mint&&SOURCE.get(task.mint)?.phase==='after')return {outcome:'already-admitted'};const tx=task.proofs[signature]?null:await rpc('getTransaction',[signature,{encoding:'json',maxSupportedTransactionVersion:1,commitment:'confirmed'}],options);if(!tx&&!task.proofs[signature])throw Object.assign(Error('migration transaction pending'),{code:'TX_PENDING'});
@@ -1147,7 +1157,7 @@ async function processFastMigration(task){
    else if(v.family==='dbc-v1'){const [a,b]=orderKeys(v.mint,v.quote);official=await findPDA([a,b,b58dec(v.config)],DAMM1)===v.pool;}
    else if(v.family==='dbc'){if(v.poolInit==='initialize_pool'&&v.poolConfig&&v.poolCreator===DBC_AUTH){const [a,b]=orderKeys(v.mint,v.quote);official=await findPDA([new TextEncoder().encode('pool'),b58dec(v.poolConfig),a,b],DAMM2)===v.pool;if(!official)continue;}else official=(await officialPools('dbc',v.mint,v.quote)).includes(v.pool);if(!official){const account=(await rpc('getAccountInfo',[v.pool,{encoding:'base64',commitment:'confirmed'}],options))?.value;if(!account)throw Object.assign(Error('confirmed migration pool account pending'),{code:'TX_PENDING'});const u=b64(account?.data?.[0]);official=account?.owner===DAMM2&&u?.length>=680&&pk(u,648)===DBC_AUTH&&pair2(u,168,200,v.mint)===v.quote;}}
    if(!official)continue;const graduation=await readCurveGraduation(v,options);if(!graduation.graduated){SOURCE.observe({mint:v.mint,phase:'after',outcome:'unverified',reason:'rejectedNotGraduated',origin:'fast-'+task.kind});outcome='rejected-not-graduated';continue;}SOURCE.observe({mint:v.mint,phase:'after',at:task.receivedAt,origin:'fast-'+task.kind});if(SOURCE.get(v.mint)?.phase==='after'){outcome='already-admitted';if(task.curve)return {outcome};continue;}
-   const now=Date.now(),limit=SOURCE.settings().afterMinutes*60000;if(v.eventAt>now)throw Object.assign(Error('migration block clock pending'),{code:'TX_PENDING'});if(now-v.eventAt>limit&&!task.caughtUpAfterDowntime){SOURCE.observe({mint:v.mint,phase:'after',outcome:'tooOld',lateMs:now-v.eventAt-limit});outcome='too-old';if(task.curve)return {outcome};continue;}
+   const now=Date.now(),limit=SOURCE.settings().afterMinutes*60000;if(v.eventAt>now)throw Object.assign(Error('migration block clock pending'),{code:'TX_PENDING'});if((task.receivedAt||now)-v.eventAt>limit&&!task.caughtUpAfterDowntime){SOURCE.observe({mint:v.mint,phase:'after',outcome:'tooOld',lateMs:(task.receivedAt||now)-v.eventAt-limit,lateKind:'real',reason:'late-confirmed-migration',origin:'fast-'+task.kind,eventAt:v.eventAt});outcome='too-old';if(task.curve)return {outcome};continue;}
    const family=v.family==='dbc-v1'?'dbc':v.family;let c=C.get(v.mint);if(!c){c={a:v.mint,n:'',s:'',i:'',p:v.pool,d:DEXOF[family],q:v.quote,t:v.eventAt,seen:task.receivedAt,firstPostSeenAt:Math.max(task.receivedAt,v.eventAt),disc:'migration-signature',discoverySource:'migration-fast',pools:[v.pool],fv:FV};C.set(v.mint,c)}else moveTo(c,v.pool,family,{t:v.eventAt});
    if(graduation.creator){c.creatorAddress=graduation.creator;c.creatorObservedAt=graduation.creatorAt;c.creatorIdentitySource='verified-launch-curve-state';}
    c.openingMetrics={pool:v.pool,quoteMint:v.quote,at:now,eventAt:v.eventAt,scope:'creation-transaction-end',liquiditySol:v.openingQuoteSol,liquidityUsd:null,marketCapUsd:null,liquidityToMarketCap:null,creatorAddress:c.creatorAddress||null,creatorDepositSol:null,lpEvidence:null};c.q=v.quote;if(v.baseVault&&v.quoteVault&&Number.isFinite(v.openingQuoteSol)){c.vaults=[v.baseVault,v.quoteVault];c.vmint=[v.mint,v.quote];c.vaultIdentityAt=now;c.lq=c.lq||[];c.lq.push([Math.floor(now/1000),v.slot,null,Math.round(v.openingQuoteSol*1e9)]);c.lqAt=now;}c.admissionVerifiedAt=now;c.t=v.eventAt;c.migrationSlot=v.slot;c.migrationSignalAt=task.receivedAt;c.wsSeen=Math.max(task.receivedAt,v.eventAt);c.firstPostSeenAt=c.wsSeen;c.preCurve=0;
@@ -1173,7 +1183,7 @@ async function processManualPool(task){
  if(task.expectedPool)task.candidates=task.candidates.filter(v=>v.pool===task.expectedPool);if(!task.candidates.length)return {outcome:'not-direct-sol-pool'};
  let outcome='not-direct-sol-pool';
  for(const v of task.candidates){task.mint=v.mint;if(task.caughtUpAfterDowntime&&!v.funded){outcome='creation-not-funded';continue;}if(SOURCE.has(v.mint)){outcome=SOURCE.get(v.mint)?.proof?.pool===v.pool?'already-admitted':'rejected-side-pool';continue;}SOURCE.observe({mint:v.mint,phase:'before',origin:'manual-pool'});
-  const now=Date.now(),limit=SOURCE.settings().beforeMinutes*60000;if(task.caughtUpAfterDowntime&&!task.explicitRecovery&&now-v.eventAt>24*3600000){outcome='outside-catchup-window';continue;}if(now-v.eventAt>limit&&!task.caughtUpAfterDowntime){SOURCE.observe({mint:v.mint,phase:'before',outcome:'tooOld',lateMs:now-v.eventAt-limit,origin:'manual-pool'});outcome='too-old';continue;}
+  const now=Date.now(),limit=SOURCE.settings().beforeMinutes*60000;if(task.caughtUpAfterDowntime&&!task.explicitRecovery&&now-v.eventAt>24*3600000){outcome='outside-catchup-window';continue;}if((task.receivedAt||now)-v.eventAt>limit&&!task.caughtUpAfterDowntime){SOURCE.observe({mint:v.mint,phase:'before',outcome:'tooOld',lateMs:now-v.eventAt-limit,origin:'manual-pool'});outcome='too-old';continue;}
   const guard=require(DIR+'/side-pools.js');if(task.catalogueCheckedMint!==v.mint){try{task.earlierPair=!!(await guard.catalogue(v));task.catalogueCheckedMint=v.mint;}catch{throw Object.assign(Error('pool catalogue pending'),{code:'TX_PENDING',retryAfterMs:5000});}}if(task.earlierPair){SOURCE.observe({mint:v.mint,phase:'before',outcome:'rejectedSidePool',origin:'manual-pool',reason:'earlier-pool'});outcome='rejected-side-pool';continue;}
   const curve=await bondingCurveOf(v.mint),llCurve=await launchPoolOf(v.mint,WSOL);
   const r=await call('getMultipleAccounts',[[v.pool,v.mint,v.baseVault,v.quoteVault,curve,llCurve],{encoding:'jsonParsed',commitment:'confirmed'}],options),at=Date.now();if(!r?.value?.[0])throw Object.assign(Error('manual pool account pending'),{code:'TX_PENDING'});
@@ -1340,9 +1350,9 @@ async function exportSource(now) {
     const c=C.get(x.mint)||COMPLETED?.metadata(x.mint);
     return {...card(x.mint,c),p:x.proof?.pool||null,pair:x.proof?.pool||null,openingMetrics:Number.isFinite(x.proof?.openingMetrics?.liquiditySol)?x.proof.openingMetrics:c?.openingMetrics||(typeof ACTIVE_HISTORY!=='undefined'?ACTIVE_HISTORY?.openingView?.(c):null)||x.proof?.openingMetrics||null,caughtUpAfterDowntime:x.caughtUpAfterDowntime===true,lateByMs:x.lateByMs||0,a:x.mint,phase:x.phase,phaseKey:x.phase==='before'?'pool':x.phase,...require(DIR+'/venue-identity.js').identity(c,x.phase,now,x),eventAt:x.eventAt,acceptedAt:x.acceptedAt,
       ageAtMigrationMin:c?.createdAt&&c.createdAt<=x.eventAt?(x.eventAt-c.createdAt)/60000:null,n:c?.n||'',s:c?.s||'',i:c?.i||'',family:x.proof?.family||null,curve:x.proof?.curve||c?.mg?.watch||null,
-      proofSig:x.proof?.signature||null,uri:c?.uri||x.proof?.uri||null,migrationPool:x.proof?.pool||null,proofKind:x.proof?.kind||null,eventSlot:x.proof?.slot||null,eventTimeSource:x.proof?.timeSource||null};
+      observedPools:c?.pools||[x.proof?.pool].filter(Boolean),proofSig:x.proof?.signature||null,uri:c?.uri||x.proof?.uri||null,migrationPool:x.proof?.pool||null,proofKind:x.proof?.kind||null,eventSlot:x.proof?.slot||null,eventTimeSource:x.proof?.timeSource||null};
   };
-  const summary=SOURCE.summary(now);
+  await SOURCE.classifyLate?.(C,{readCoin:m=>COMPLETED?.readCoin(m)});const summary=SOURCE.summary(now);
   const projectCards=async rows=>{const out=[];for(const row of rows){out.push(enrich(row));if(out.length%4===0)await new Promise(resolve=>setImmediate(resolve));}return out;};
   const solReasons={};let projected=0;for(const x of SOURCE.latest(200)){if(++projected%4===0)await new Promise(resolve=>setImmediate(resolve));const c=C.get(x.mint),projectedCard=card(x.mint,c);if(projectedCard.sol!=null)continue;const reason=!c?'missing-candidate':x.phase!=='before'?'post-no-native-vault':c.q&&c.q!==WSOL?'non-native-quote':!c.curveSol?.length?'curve-not-read':'curve-stale';solReasons[reason]=(solReasons[reason]||0)+1;}
 
@@ -1358,7 +1368,7 @@ async function exportSource(now) {
   if(!dayWork.busy&&(dayWork.day!==d||now-SOURCE_DAY_PUBLISHED_AT>=5*60e3)){dayWork.busy=true;dayWork.day=d;dayWork.startedAt=Date.now();
     (async()=>{const today=await projectCards(todayRows),active=[];for(const c of Array.from(C.values())){if(SOURCE.has(c.a))active.push(card(c.a,c));if(++projected%4===0)await new Promise(resolve=>setImmediate(resolve));}
       if(PROFILES)PROFILES.stats.solCoverage={...(PROFILES.stats.solCoverage||{}),active:{...coverage(active),updated:now},day:{...coverage(today),updated:now}};
-      await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});SOURCE_DAY_PUBLISHED_AT=Date.now();dayWork.updated=now;dayWork.count=today.length;dayWork.error=null;
+      await upload('source/day/'+d+'.json',{day:d,updated:now,count:today.length,coins:today});if(d===dayKey(now))await upload('source/decisions/'+d+'.json',{day:d,updated:now,coins:SOURCE.dailyDecisions?.(now)||[]});SOURCE_DAY_PUBLISHED_AT=Date.now();dayWork.updated=now;dayWork.count=today.length;dayWork.error=null;
     })().catch(()=>{dayWork.error='source-day-export-failed';err('source day publication failed');}).finally(()=>dayWork.busy=false);
   }
 }
@@ -1664,14 +1674,14 @@ const STARTED=Date.now();
   RESOURCE=new (require(DIR+'/resource-budget.js').ResourceBudget)({dir:DIR,env:{...process.env,HELIUS_USED_CREDITS:process.env.HELIUS_USED_CREDITS||'185000'}});
   HEALTH=new (require(DIR+'/runtime-health.js').RuntimeHealth)();let expected=Date.now()+1000;setInterval(()=>{const at=Date.now();HEALTH.lagMs=Math.max(0,at-expected);HEALTH.maxLagMs=Math.max(HEALTH.maxLagMs,HEALTH.lagMs);expected=at+1000;HEALTH.capture()},1000).unref();
   COMPLETED=new (require(DIR+'/completed-coins.js').CompletedCoins)(DIR);UPQ.push(...COMPLETED.rawQueue());
-  load();ACTIVE_HISTORY=new (require(DIR+'/active-history.js').ActiveHistory)(DIR);await ACTIVE_HISTORY.restore(C,getObj);if(fs.existsSync(DIR+'/state.json'))RETENTION.stateBytes=fs.statSync(DIR+'/state.json').size;HEALTH.capture('load:complete');log('старт, версия',VERSION);
+  load();for(const c of C.values())if(c.earlyGTAttempted&&c.tr)c.trDone=1;ACTIVE_HISTORY=new (require(DIR+'/active-history.js').ActiveHistory)(DIR);await ACTIVE_HISTORY.restore(C,getObj);if(fs.existsSync(DIR+'/state.json'))RETENTION.stateBytes=fs.statSync(DIR+'/state.json').size;HEALTH.capture('load:complete');log('старт, версия',VERSION);
   try{await initSource();await reloadSourceAgeConfig()}catch(e){SOURCE_ERR=e.message;err('главный источник не запустился: '+e.message)}
   samplePoolBalances();setInterval(()=>samplePoolBalances(),10000);
   try{await initResearchV2()}catch(e){RESEARCH_V2_ERR=e.message;err('исследование v2 не запустилось: '+e.message)}
   try{await initPathsV2()}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('серверные пути не запустились: '+e.message)}
   chainWatch();
   const knownMigrationSignatures=new Set(SOURCE.latest(4000).filter(r=>r.phase==='after').map(r=>r.proof?.signature).filter(Boolean));
-  MIGRATION_CATCHUP=new (require(DIR+'/migration-catchup.js').MigrationCatchup)({dir:DIR,addresses:[{kind:'pump',address:require(DIR+'/migration-fast.js').PUMP_WITHDRAW_AUTH},{kind:'dbc',address:DBC_AUTH},{kind:'ll',address:LL_AUTH}],decode58:b58dec,knownSignature:sig=>knownMigrationSignatures.has(sig),process:processFastMigration,processManual:processManualPool,seeds:require(DIR+'/manual-recovery-request.js').pools,rpc:async(m,p)=>{const opt={priority:'background',context:'догон миграций',source:'migration-catchup',cache:false,maxBytes:3*1024*1024};try{return await freeFastRPC(m,p,opt)}catch{return rpc(m,p,opt)}}});
+  MIGRATION_CATCHUP=new (require(DIR+'/migration-catchup.js').MigrationCatchup)({dir:DIR,addresses:[{kind:'pump',address:require(DIR+'/migration-fast.js').PUMP_WITHDRAW_AUTH},{kind:'dbc',address:DBC_AUTH},{kind:'ll',address:LL_AUTH}],decode58:b58dec,knownSignature:sig=>knownMigrationSignatures.has(sig),process:processFastMigration,processManual:processManualPool,seeds:[...require(DIR+'/manual-recovery-request.js').pools,...(require(DIR+'/manual-recovery-request.js').migrations||[])],rpc:async(m,p)=>{const opt={priority:'background',context:'догон миграций',source:'migration-catchup',cache:false,maxBytes:3*1024*1024};try{return await freeFastRPC(m,p,opt)}catch{return rpc(m,p,opt)}}});
   MIGRATION_CATCHUP.tick();setInterval(()=>MIGRATION_CATCHUP.tick(),2000);setInterval(()=>{try{MIGRATION_CATCHUP.heartbeat()}catch(e){err('migration replay heartbeat failed')}},30000);
 
   captureFeatureSnapshots().catch(e=>err('feature snapshots '+e.message));setInterval(()=>{if(!(typeof twentyMinuteMode==='function'&&twentyMinuteMode()))repairBuyerSnapshots()},10000);setInterval(()=>captureFeatureSnapshots().catch(e=>err('feature snapshots '+e.message)),30000);

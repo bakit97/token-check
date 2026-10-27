@@ -1,1 +1,1 @@
-{"id": "tz43-apply-terminal-restart-recheck", "allowedFromGeneration": "1793097050510482", "enabled": true, "maxWaitMs": 1000, "maxStateBytes": 64000000, "allowExistingCheckpoint": true, "maxCheckpointAgeMs": 1800000}
+{"id": "tz44-batched-turbulence-retention", "allowedFromGeneration": "1793097761713445", "enabled": true, "maxWaitMs": 1000, "maxStateBytes": 64000000, "allowExistingCheckpoint": true, "maxCheckpointAgeMs": 1800000}

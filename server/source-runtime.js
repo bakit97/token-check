@@ -73,7 +73,7 @@ class SourceRuntime {
       this.observe({mint:row.mint,phase:row.phase,at:row.acceptedAt,outcome:'accepted'});
   }
 
-  observe({mint,phase,at=this.clock(),outcome='unverified',lateMs=0,origin=null,reason=null}={}) {
+  observe({mint,phase,at=this.clock(),outcome='unverified',lateMs=0,origin=null,reason=null,lateKind=null,eventAt=null}={}) {
     if(!['before','after'].includes(phase)||typeof mint!=='string'||!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(mint)||!goodTime(at))return;
     const today=kzDay(this.clock()),date=kzDay(at);
     // Keep only today's and yesterday's detection identities, never lifetime sets.
@@ -87,7 +87,7 @@ class SourceRuntime {
     if(old?.outcome==='accepted'||(old?.outcome==='tooOld'&&outcome!=='accepted'))return;
     if(outcome==='unverified'&&this.records?.has(mint))outcome='alreadyAdmitted';
     if(!old&&this.dailyRows.size>=this.maxRecords*2){this.dailyOverflow=date;this.dailyDirty=true;return}
-    const row={day:date,phase,outcome,origin:origin||old?.origin||'legacy-unattributed',reason:reason||(outcome==='unverified'?old?.reason||'awaiting-proof':outcome),lateMs:outcome==='tooOld'?Math.max(0,lateMs):0,startedAt:this.dailyStartedAt};
+    const row={day:date,phase,outcome,origin:origin||old?.origin||'legacy-unattributed',reason:reason||(outcome==='unverified'?old?.reason||'awaiting-proof':outcome),lateMs:outcome==='tooOld'?Math.max(0,lateMs):0,...(lateKind?{lateKind}:old?.lateKind?{lateKind:old.lateKind}:{}),...(goodTime(eventAt)?{eventAt}:{}),observedAt:old?.observedAt||at,startedAt:this.dailyStartedAt};
     if(old&&JSON.stringify(old)===JSON.stringify(row))return;
     const fd=fs.openSync(this.dailyLogPath,'a');
     try{
@@ -97,14 +97,14 @@ class SourceRuntime {
     this.dailyRows.set(key,row);this.dailyDirty=true;
   }
   dailySummary(at=this.clock()) {
-    const day=kzDay(at),empty=()=>({seen:0,accepted:0,tooOld:0,unverified:0,unverifiedByOrigin:{},unverifiedByReason:{},alreadyAdmitted:0,other:0,lateTotalMs:0,averageLateMs:null});
+    const day=kzDay(at),empty=()=>({seen:0,accepted:0,tooOld:0,unverified:0,unverifiedByOrigin:{},unverifiedByReason:{},alreadyAdmitted:0,other:0,otherByReason:{},rejectedByReason:{},tooOldReal:0,tooOldNotNew:0,tooOldUnclassified:0,withoutReason:0,lateTotalMs:0,averageLateMs:null});
     const phases={before:empty(),after:empty()};
-    for(const row of this.dailyRows.values())if(row.day===day){const p=phases[row.phase];p.seen++;
+    for(const row of this.dailyRows.values())if(row.day===day){const p=phases[row.phase];p.seen++;if(row.outcome!=='accepted'){const why=row.reason||'legacy-unattributed';p.rejectedByReason[why]=(p.rejectedByReason[why]||0)+1;if(!row.reason)p.withoutReason++;}
       if(row.outcome==='accepted')p.accepted++;
-      else if(row.outcome==='tooOld'){p.tooOld++;p.lateTotalMs+=row.lateMs}
+      else if(row.outcome==='tooOld'){p.tooOld++;p.lateTotalMs+=row.lateMs;p[row.lateKind==='real'?'tooOldReal':row.lateKind==='not-new'?'tooOldNotNew':'tooOldUnclassified']++}
       else if(row.outcome==='unverified'){p.unverified++;const origin=row.origin||'legacy-unattributed',reason=row.reason||'legacy-unattributed';p.unverifiedByOrigin[origin]=(p.unverifiedByOrigin[origin]||0)+1;p.unverifiedByReason[reason]=(p.unverifiedByReason[reason]||0)+1;}
       else if(row.outcome==='alreadyAdmitted')p.alreadyAdmitted++;
-      else p.other++;
+      else {p.other++;const why=row.reason||row.outcome||'legacy-unattributed';p.otherByReason[why]=(p.otherByReason[why]||0)+1;}
     }
     for(const p of Object.values(phases)){p.averageLateMs=p.tooOld?p.lateTotalMs/p.tooOld:null;delete p.lateTotalMs}
     if(this.dailyDirty&&at-this.dailySavedAt>=60000){
@@ -114,6 +114,15 @@ class SourceRuntime {
     }
     return {schema:1,day,timezone:'UTC+5',startedAt:this.dailyStartedAt,partialDay:kzDay(this.dailyStartedAt)===day,complete:this.dailyOverflow!==day,...phases,pool:{...phases.before}};
   }
+
+  async classifyLate(coins,{readCoin=()=>null,limit=256}={}) {
+    let checked=0;
+    for(const [key,row] of this.dailyRows){if(row.outcome!=='tooOld'||row.lateKind)continue;const mint=key.split(':').at(-1);if(++checked>limit)break;const c=coins.get(mint)||readCoin(mint);if(checked%4===0)await new Promise(r=>setImmediate(r));if(!c){row.lateAuditReason='candidate-not-retained';continue;}
+      const source=c.proofAgeEstimate?.source,real=Number.isSafeInteger(c.migrationSlot)||!!c.mg?.sig||c.discoverySource==='migration-fast',notNew=source==='gt-pool-created'||c.tSrc==='gt'&&!real||!!c.rcSeen&&!real;
+      if(!real&&!notNew)continue;this.dailyRows.set(key,{...row,lateKind:real?'real':'not-new',reason:real?'late-confirmed-migration':'old-catalogue-pool',origin:row.origin==='legacy-unattributed'?(real?'migration-signal':'catalogue'):row.origin});this.dailyDirty=true;
+    }
+  }
+  dailyDecisions(at=this.clock()){const day=kzDay(at);return [...this.dailyRows].filter(([,r])=>r.day===day&&r.outcome!=='accepted').map(([k,r])=>({mint:k.split(':').at(-1),...r}));}
 
   _replay() {
     if(fs.statSync(this.logPath).size>this.maxJournalBytes)throw Error('Source journal exceeds memory-safe replay limit; disk index required');
@@ -188,7 +197,7 @@ class SourceRuntime {
     if(!this.has(event.mint)&&this.records.size>=this.maxRecords){this.capacityRejected++;return {admitted:false,reason:'resource-capacity'}}
     const decision=this.gate.offer(event, detectedAt);
     if(!decision.admitted){
-      this.observe({mint:event.mint,phase:event.phase,outcome:decision.reason==='too-old'?'tooOld':decision.reason==='already-admitted'?'alreadyAdmitted':decision.reason==='not-verified'?'unverified':'other',lateMs:(decision.ageMs||0)-(decision.allowedMs||0)});
+      this.observe({mint:event.mint,phase:event.phase,outcome:decision.reason==='too-old'?'tooOld':decision.reason==='already-admitted'?'alreadyAdmitted':decision.reason==='not-verified'?'unverified':'other',lateMs:(decision.ageMs||0)-(decision.allowedMs||0),reason:decision.reason,origin:'verified-admission',lateKind:decision.reason==='too-old'?'real':null,eventAt:event.migrationAt||event.publicTradingAt});
       if(decision.reason==='already-admitted')this.stats.duplicate++;
       else if(decision.reason==='too-old')this.stats[event.phase==='before'?'tooOldBefore':'tooOldAfter']++;
       else if(decision.reason==='not-verified')this.stats.rejectedUnverified++;

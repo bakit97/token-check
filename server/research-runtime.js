@@ -48,7 +48,7 @@ function intakeDecision(intake,row,features,passes){
 function settings(cfg={}) {
   const result={
     outcomeVersion:2,missPenalty:cfg.missPenalty??3,
-    outcomeMethod:cfg.outcomeMethod??'legacy-trade-v3',minSliceVolumeSol:cfg.minSliceVolumeSol??.5,
+    outcomeMethod:cfg.outcomeMethod??'legacy-trade-v3',minSliceVolumeSol:cfg.minSliceVolumeSol??.5,sliceRuleVersion:cfg.sliceRuleVersion??1,minSliceRangePct:cfg.minSliceRangePct??3,minGreenCandles:cfg.minGreenCandles??2,minRedCandles:cfg.minRedCandles??2,
     activityRuleVersion:cfg.outcomeMethod==='gt-ohlcv-20m-v1'?4:3,minTradeSol:cfg.minTradeSol??.05,minWallets:cfg.minWallets??2,
     hours:cfg.hours??5,
     decisionMinutes:cfg.decisionMinutes??10,
@@ -64,6 +64,7 @@ function settings(cfg={}) {
     throw new RangeError('Invalid first-level observation settings');
   }
   if(!Number.isFinite(result.minSliceVolumeSol)||result.minSliceVolumeSol<.1||result.minSliceVolumeSol>5)throw RangeError('Invalid slice volume');
+  if(![1,2].includes(result.sliceRuleVersion)||!Number.isFinite(result.minSliceRangePct)||result.minSliceRangePct<.5||result.minSliceRangePct>20||['minGreenCandles','minRedCandles'].some(k=>!Number.isInteger(result[k])||result[k]<0||result[k]>10))throw RangeError('Invalid slice turbulence settings');
   for(const key of ['targetLive','targetDead'])if(!Number.isInteger(result[key])||result[key]<10||result[key]>5000)throw RangeError('Invalid research target');
   if(!Number.isFinite(result.missPenalty)||result.missPenalty<1||result.missPenalty>5)throw RangeError('Invalid miss penalty');
   if(!Number.isFinite(result.minTradeSol)||result.minTradeSol<.01||result.minTradeSol>1||!Number.isInteger(result.minWallets)||result.minWallets<2||result.minWallets>10)throw RangeError('Invalid single-swap activity settings');

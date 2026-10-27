@@ -2,8 +2,8 @@
 const fs=require('node:fs'),path=require('node:path');
 const METHOD='gt-ohlcv-20m-v1',MIN=60000;
 function active(row,now){return !!row&&now>=row.acceptedAt&&now-row.acceptedAt<20*MIN;}
-function config(raw={}){return {...raw,outcomeMethod:METHOD,...(raw.phases?{phases:Object.fromEntries(Object.entries(raw.phases).map(([k,v])=>[k,{...v,outcomeMethod:METHOD}]))}:{})};}
-function reset(raw){return raw?{...raw,id:('ohlcv1-'+(raw.id.length<=72?raw.id:require('node:crypto').createHash('sha256').update(raw.id).digest('hex')))}:{id:'ohlcv1-initial-method',requestedAt:Date.now()};}
+function config(raw={}){return {...raw,outcomeMethod:METHOD,sliceRuleVersion:2,...(raw.phases?{phases:Object.fromEntries(Object.entries(raw.phases).map(([k,v])=>[k,{...v,outcomeMethod:METHOD,sliceRuleVersion:2}]))}:{})};}
+function reset(raw){return raw?{...raw,id:('ohlcv2-'+(raw.id.length<=72?raw.id:require('node:crypto').createHash('sha256').update(raw.id).digest('hex')))}:{id:'ohlcv2-initial-method',requestedAt:Date.now()};}
 function mask(features,approvedAt,cutoff){const out={...features};for(const key of require('./research-v2').RULE_KEYS)if(!(approvedAt?.[key]>0&&approvedAt[key]<=cutoff))out[key]=null;return out;}
 class FeatureProbe{
  constructor({dir,startedAt,now=Date.now}={}){this.file=path.join(dir,'feature-probe-p43.json');this.now=now;let saved;try{saved=JSON.parse(fs.readFileSync(this.file,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}this.startedAt=saved?.startedAt||startedAt;this.rows=new Map(saved?.rows||[]);this.approvals=saved?.approvals||{};this.lastSave=0;}
@@ -12,7 +12,7 @@ class FeatureProbe{
  summary(minute=12){const all=this.evaluate();return {...all,selectedMinute:minute,features:all.minutes[minute]?.features||{},retainedCoins:this.rows.size};}
 }
 class TaskQuota{
- constructor({now=Date.now,limits={discovery:2,early:3,outcome:3}}={}){this.now=now;this.limits=limits;this.used={};this.deferred={};}
+ constructor({now=Date.now,limits={discovery:2,early:3,outcome:6}}={}){this.now=now;this.limits=limits;this.used={};this.deferred={};}
  lane(key){return key?.startsWith('outcome:')?'outcome':key?.startsWith('p43-early:')?'early':'discovery';}
  available(key){const lane=this.lane(key),now=this.now();this.used[lane]=(this.used[lane]||[]).filter(t=>t>now-MIN);return this.used[lane].length<this.limits[lane];}
  charge(key){if(!this.available(key)){const l=this.lane(key);this.deferred[l]=(this.deferred[l]||0)+1;return false;}this.used[this.lane(key)].push(this.now());return true;}
