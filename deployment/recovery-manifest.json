@@ -1,7 +1,7 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "e9ebd53f85682d4d56be0cba4e82d2e52d1f6846e9caedf6898e074dd3949e9a",
+    "collector.js": "7bba95ae6816d492456c99560e86d4bbd073bc013ed61e2b3a4322a6ca8f8ea7",
     "terminal-candles.js": "e6d28c0c477107cf71651b75f28b07115a2ad2db8c2d2c0826f51c46f28d3bc4",
     "early-window.js": "d9c7291b99eda46ea5fbbf2350e750ccd20c02cd0fd72db92a611f9dd4bf2e50",
     "pool-balance-reader.js": "b4279be051aa5203779b723e96568665da43b3d7d7b4e3a31c60ec0f1e8100af",
@@ -15,7 +15,7 @@
     "activity-slices.js": "4d99c7eb329820fd679e24330adb05791c66a12bb59ce40809c3f65a5d16683b",
     "event-clock.js": "9ee43c0e943da1147a3ec0e1274a577bdd4d8870603285fdf04c2c6253713c2c",
     "admission.js": "bf38bc60e662b0942ccde8bb4694113284d16d25146e13ee382ca2d94465c9d3",
-    "source-runtime.js": "9d622207a02a52a36c3a7a959b8236f4959a2e32eef9a9c42ff731e5d1e64aa7",
+    "source-runtime.js": "4d48902143c6798c372b2cdc6abb3ad5439ce06f6bd5258fa443ef16c4df7528",
     "pump-pre.js": "8f01365922819d7900219eb316213f044e331c146f4cb71db9f1f398bbddac06",
     "pre-watcher.js": "72879fa8a144c40ec5c3bca90c64a0276ffb1582b39c1960fdc5ad7721e41dd3",
     "research-v2.js": "e76bf10be08d8b7eaa23e335173c2a3d9466b35a903187c44994857c6e8a831f",
@@ -32,7 +32,7 @@
     "packed-observations.js": "cfbe0c13e4402cfd13aa2bb27740b20b2ac66afe835ba9947951b273a3ca39cd",
     "completed-coins.js": "d16146b51da4478a00d848879f3e73f553cebce20467c606f729c949136b23dc",
     "seed-completed.js": "d1bfe44875a6e52062f6e2daceeff4ea4530889bb0a4dcd33c98f49c1dbf4a4b",
-    "coin-profile.js": "122bc0138cabb4739b3fb8e18ea66ab73a117a16ee121c89353e1533f3e4881b",
+    "coin-profile.js": "4f1e744d18068ed8de883f8a1380d8c0771cb3c5d75d79dca0854a3587332af9",
     "durable-json.js": "a042526c285613abc0935b43db8dffb98502054b1b9d43a8355438620dc8f192",
     "research-banks.js": "9f4a6dcf9b26e0aa428a28b0c242c69b10d5721c716bcf211ea83f89e5c873ae",
     "module-library.js": "d7668a561c5e7500e97b91443e66650711a224fcdd42e4c8b754a3b434d17e6a",

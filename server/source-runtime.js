@@ -116,10 +116,10 @@ class SourceRuntime {
   }
 
   async classifyLate(coins,{readCoin=()=>null,limit=256}={}) {
-    let checked=0;const pending=[...this.dailyRows].filter(([,row])=>row.outcome==='tooOld'&&!row.lateKind),offset=this.lateAuditCursor||0;
-    for(let i=0;i<Math.min(limit,pending.length);i++){const [key,row]=pending[(offset+i)%pending.length];const mint=key.split(':').at(-1);if(++checked>limit)break;const c=coins.get(mint)||readCoin(mint);if(checked%4===0)await new Promise(r=>setImmediate(r));if(!c){row.lateAuditReason='candidate-not-retained';continue;}
-      const source=c.proofAgeEstimate?.source,real=Number.isSafeInteger(c.migrationSlot)||!!c.mg?.sig||c.discoverySource==='migration-fast',notNew=source==='gt-pool-created'||c.tSrc==='gt'&&!real||!!c.rcSeen&&!real;
-      if(!real&&!notNew){row.lateAuditReason='event-kind-not-proven';continue;}this.dailyRows.set(key,{...row,lateKind:real?'real':'not-new',reason:real?'late-confirmed-migration':'old-catalogue-pool',origin:row.origin==='legacy-unattributed'?(real?'migration-signal':'catalogue'):row.origin});this.dailyDirty=true;
+    let checked=0;const pending=[...this.dailyRows].filter(([,row])=>row.outcome==='tooOld'&&row.lateEvidenceVersion!==2),offset=this.lateAuditCursor||0;
+    for(let i=0;i<Math.min(limit,pending.length);i++){const [key,row]=pending[(offset+i)%pending.length];const mint=key.split(':').at(-1);if(++checked>limit)break;const c=coins.get(mint)||readCoin(mint);if(checked%4===0)await new Promise(r=>setImmediate(r));if(!c){row.lateAuditReason='candidate-not-retained';row.reason='late-kind-not-retained';row.lateEvidenceVersion=2;delete row.lateKind;this.dailyDirty=true;continue;}
+      const source=c.proofAgeEstimate?.source,real=!!(c.mg?.st==='ok'&&c.mg.sig&&c.graduation?.graduated)||row.origin==='verified-admission'||goodTime(row.eventAt)&&row.reason==='late-confirmed-migration'&&['fast-pump','fast-dbc','fast-ll','fast-launch'].includes(row.origin),notNew=!real&&(source==='gt-pool-created'||c.tSrc==='gt'||['manual','other'].includes(c.mg?.st));row.lateEvidenceVersion=2;row.lateEvidence={ageSource:source||null,pool:c.mg?.pool||c.p,signature:c.mg?.sig||null,verifiedGraduation:c.graduation?.graduated===true,signalSlot:c.migrationSlot||null,discoverySource:c.discoverySource||c.disc||null};
+      if(!real&&!notNew){delete row.lateKind;row.reason='late-unverified-event';row.lateAuditReason='event-kind-not-proven';this.dailyDirty=true;continue;}this.dailyRows.set(key,{...row,lateKind:real?'real':'not-new',reason:real?'late-confirmed-migration':'old-catalogue-pool',origin:row.origin==='legacy-unattributed'?(real?'migration-signal':'catalogue'):row.origin});this.dailyDirty=true;
     }this.lateAuditCursor=pending.length?(offset+checked)%pending.length:0;
   }
   dailyDecisions(at=this.clock()){const day=kzDay(at);return [...this.dailyRows].filter(([,r])=>r.day===day&&r.outcome!=='accepted').map(([k,r])=>({mint:k.split(':').at(-1),...r}));}
