@@ -28,7 +28,7 @@ function configOf(raw={}){
     ...(raw.r1&&typeof raw.r1==='object'?{r1:{before:raw.r1.before===true,after:raw.r1.after===true}}:{})
   };
   if(!Number.isSafeInteger(cfg.activatedAt)||cfg.activatedAt<0||
-     !Number.isInteger(cfg.decisionMinutes)||cfg.decisionMinutes<1||cfg.decisionMinutes>30||
+     !Number.isInteger(cfg.decisionMinutes)||cfg.decisionMinutes<1||cfg.decisionMinutes>20||
      !Array.isArray(cfg.filters)||cfg.filters.length>200||
      !Array.isArray(cfg.modules)||cfg.modules.length>200)
     throw new RangeError('Invalid pass configuration');
@@ -44,7 +44,7 @@ function configOf(raw={}){
       throw new TypeError('Invalid filter in pass configuration');
     if(f.op==='between'&&(!Number.isFinite(f.value2)||f.value2<f.value||f.value2>1e12))throw TypeError('Invalid interval bounds');
     if(f.conditions!=null&&(!Array.isArray(f.conditions)||f.conditions.length>8||f.conditions.some(c=>!require('./research-v2').validCondition(c)||c.conditions!=null)))throw new TypeError('Invalid compound filter');
-    if(f.verdictMinutes!=null&&(!Number.isInteger(f.verdictMinutes)||f.verdictMinutes<1||f.verdictMinutes>30))throw new TypeError('Invalid module verdictMinutes');
+    if(f.verdictMinutes!=null&&(!Number.isInteger(f.verdictMinutes)||f.verdictMinutes<1||f.verdictMinutes>20))throw new TypeError('Invalid module verdictMinutes');
     if(f.phase!=null&&!PHASES.has(f.phase))throw new TypeError('Invalid filter phase');
     ids.add(f.id);
   }
@@ -188,15 +188,16 @@ class PassRuntime {
         phase:m.phase,filter:available.get(m.filterId)
       })).filter(x=>x.filter);
       const recent=typeof source.recentAdmissions==='function'?
-        source.recentAdmissions(now-cfg.decisionMinutes*MIN,now):
+        source.recentAdmissions(now-(cfg.decisionMinutes+2)*MIN,now):
         source.records.values();
       for(const row of recent){
         if(!PHASES.has(row.phase)||this.records.has(row.mint)||row.acceptedAt<cfg.activatedAt||
-           row.acceptedAt>now||now-row.acceptedAt>cfg.decisionMinutes*MIN)continue;
+           row.acceptedAt>now||now-row.acceptedAt>(cfg.decisionMinutes+2)*MIN)continue;
         considered++;
         const coin=coins.get(row.mint);
         if(!coin)continue;
-        const F=featuresAt(coin,now,{eventAt:row.eventAt,phase:row.phase});
+        const modern=coin.observationMethod==='gt-ohlcv-20m-v1';if(modern&&now<row.acceptedAt+cfg.decisionMinutes*MIN)continue;
+        const F=modern?require('./feature-snapshots').read(coin,row.acceptedAt,cfg.decisionMinutes,row.phase):featuresAt(coin,now,{eventAt:row.eventAt,phase:row.phase});
         const matches=[];
         for(const r of rules){
           if(r.phase!==row.phase)continue;

@@ -9,13 +9,13 @@ const {strengthOutcome,capBank,evaluation,featuresAt,levelTwoFeaturesAt}=require
 const MIN=60000,HOUR=60*MIN,FRESH=48*HOUR,RETRY=15*MIN;
 const MAX_PER_CLASS=5000,MAX_CHECKS=200;
 function configOf(raw={}){
-  const cfg={lineVersion:2,passWindowMinutes:raw.passWindowMinutes??5,minAboveMarginPct:raw.minAboveMarginPct??10,hours:raw.hours??5,missPenalty:raw.missPenalty??3,minAbove:raw.minAbove??70,minCoverage:raw.minCoverage??.9,decisionMinutes:raw.decisionMinutes??5,targetStrong:raw.targetStrong??40,targetWeak:raw.targetWeak??40};
+  const cfg={outcomeMethod:raw.outcomeMethod??'legacy-trade-v3',lineVersion:2,passWindowMinutes:raw.passWindowMinutes??5,minAboveMarginPct:raw.minAboveMarginPct??10,hours:raw.hours??5,missPenalty:raw.missPenalty??3,minAbove:raw.minAbove??70,minCoverage:raw.minCoverage??.9,decisionMinutes:raw.decisionMinutes??5,targetStrong:raw.targetStrong??40,targetWeak:raw.targetWeak??40};
   if(!Number.isInteger(cfg.passWindowMinutes)||cfg.passWindowMinutes<1||cfg.passWindowMinutes>30||!Number.isFinite(cfg.minAboveMarginPct)||cfg.minAboveMarginPct<0||cfg.minAboveMarginPct>100||!Number.isInteger(cfg.hours)||cfg.hours<1||cfg.hours>12)throw RangeError('Invalid level-two line settings');
   if(!Number.isFinite(cfg.minAbove)||cfg.minAbove<0||cfg.minAbove>100||
      !Number.isFinite(cfg.minCoverage)||cfg.minCoverage<.5||cfg.minCoverage>1)
     throw RangeError('Invalid level-two research config');
   if(!Number.isFinite(cfg.missPenalty)||cfg.missPenalty<1||cfg.missPenalty>5)throw RangeError('Invalid miss penalty');
-  if(!Number.isInteger(cfg.decisionMinutes)||cfg.decisionMinutes<1||cfg.decisionMinutes>15)throw RangeError('Invalid similarity time');
+  if(!Number.isInteger(cfg.decisionMinutes)||cfg.decisionMinutes<1||cfg.decisionMinutes>20)throw RangeError('Invalid similarity time');
   for(const k of ['targetStrong','targetWeak'])if(!Number.isInteger(cfg[k])||cfg[k]<10||cfg[k]>5000)throw RangeError('Invalid research target');
   if(raw.phases){cfg.phases={};for(const phase of ['before','after'])cfg.phases[phase]=configOf({...cfg,...raw.phases[phase],phases:null})}
   return cfg;
@@ -196,7 +196,7 @@ class ResearchTwoRuntime {
   update({passes,coins,source=null,now=Date.now()}={}){
     if(!passes?.records||!coins?.get)throw TypeError('Need verified pass journal and candidate map');
     this.pruneRevoked(new Map([...(source?.revokedMigrations||[])].filter(([mint])=>!source.records.has(mint))),'after');
-    this.reanchor({source,coins,now});
+    if(this.config.outcomeMethod!=='gt-ohlcv-20m-v1')this.reanchor({source,coins,now});
     this.relabel();
     let added=0,attempted=0,considered=0;
     const pending={},newRows=[];
@@ -244,7 +244,7 @@ class ResearchTwoRuntime {
         configHash:pass.configHash,sourceFilterVersions:pass.matches.map(f=>({
           id:f.id,version:f.version,level:f.level
         })),
-        label:result.label,secondLevelMatches,secondLevelRules:(pass.secondLevelRules||[]).map(f=>({...f})),
+        terminalMethod:result.terminalMethod||null,label:result.label,secondLevelMatches,secondLevelRules:(pass.secondLevelRules||[]).map(f=>({...f})),
         pctAbove:result.pctAbove,covered:result.covered,
         p0:result.p0,curve:[[0,0],...result.curve],minuteCurveEncoding:'float64',minuteCurvePacked:packMinuteCurve(result.minuteCurve),features:F,
         firstPassFeatures:{...pass.features},

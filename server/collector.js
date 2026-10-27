@@ -11,7 +11,7 @@ let COMPLETED=null,ACTIVE_HISTORY=null,OBS_RECOVERY=null,RECOVERY_RPC=null;
 const fullCoin=c=>ACTIVE_HISTORY?ACTIVE_HISTORY.hydrate(c):c;
 const PUBLIC_FEEDS={busy:false,sourceAt:0,libraryAt:0,storageAt:0,error:''},RESEARCH_EXPORTS={busy:false,oneAt:0,twoAt:0,error:''};let SOURCE_DAY_PUBLISHED_AT=0;
 const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:30000000,stateArchiveTriggerBytes:27000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0,pendingWork:0,cancelledGT:0};
-let MIGRATION_CATCHUP=null;let RESOURCE=null,FAST_DISCOVERY=null,POOL_DISCOVERY=null,POOL_LOGS=null;const POOL_TRANSITION={mode:'pools-v1',legacySourceRemoved:0,legacyDataCleanupPending:true};
+let TERMINAL_CHARTS=null,FEATURE_TRIAL=null,GT_TASKS=null,FREE_TASKS=null;let MIGRATION_CATCHUP=null;let RESOURCE=null,FAST_DISCOVERY=null,POOL_DISCOVERY=null,POOL_LOGS=null;const POOL_TRANSITION={mode:'pools-v1',legacySourceRemoved:0,legacyDataCleanupPending:true};
 const resourcePressure=()=>process.memoryUsage().rss>=360*1024*1024;
 const BUCKET='sol-scan-511718-data',DIR=process.env.SOLSCAN_DIR||'/var/solscan',TZ=5*3600e3;
 const GT='https://api.geckoterminal.com/api/v2/networks/solana',DS='https://api.dexscreener.com';
@@ -63,7 +63,7 @@ const T22='TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
 /* ---------- сеть: GeckoTerminal (бесплатно ≈10/мин, на деле меньше) — общая очередь с подстройкой скорости ---------- */
 async function getJSON(url,timeoutMs=15000){const controller=new AbortController();let timer=setTimeout(()=>controller.abort(),timeoutMs);try{
   const r=await networkDeadline(fetch(url,{headers:{accept:'application/json'},signal:controller.signal}),timeoutMs);if(r.status===429){const e=new Error('429');e.rl=1;throw e}
-  if(!r.ok)throw new Error('HTTP '+r.status+' '+url.split('?')[0].slice(-60));return await networkDeadline(r.json(),timeoutMs);
+  if(!r.ok){const error=new Error('HTTP '+r.status+' '+url.split('?')[0].slice(-60));error.status=r.status;throw error;}return await networkDeadline(r.json(),timeoutMs);
  }finally{clearTimeout(timer);controller.abort();}}
 // приоритеты: 0 новые пулы, 1 сделки первых минут, 2 свечи первых 10 минут, 3 график цены
 const gtQ=[],gtActive=new Map();let gtCoalesced=0,gtPause=0,gtOK=0,gtFail=0,gtSp=6500,gtRun=0;
@@ -72,14 +72,14 @@ const gtBackgroundBusy=()=>gtQ.filter(x=>x.prio===3).length>=GT_BACKGROUND_LIMIT
 function gtPending(key){return [...gtQ,...gtActive.values()].some(x=>x.key===key||x.aliases?.has(key))}
 function gt(path,prio,key,windowEnd){key=key||path;const ex=[...gtQ,...gtActive.values()].find(x=>x.key===key||x.path===path);if(ex){gtCoalesced++;(ex.aliases=ex.aliases||new Set([ex.key])).add(key);ex.prio=Math.min(ex.prio,prio);ex.windowEnd=ex.windowEnd&&windowEnd?Math.max(ex.windowEnd,windowEnd):0;return ex.p;}
   let res,rej;const p=new Promise((a,b)=>{res=a;rej=b});gtQ.push({path,prio,res,rej,t:Date.now(),key,p,windowEnd});gtQ.sort((a,b)=>a.prio-b.prio||a.t-b.t);return p}
-(async function gtLoop(){for(;;){if(gtQ.length&&Date.now()>gtPause){for(const q of gtQ){if(q.windowEnd&&Date.now()>q.windowEnd)q.prio=3;if(q.urgentUntil&&Date.now()>q.urgentUntil){q.prio=Math.max(q.prio,1);delete q.urgentUntil;}}gtQ.sort((a,b)=>a.prio-b.prio||(a.urgentUntil||Infinity)-(b.urgentUntil||Infinity)||a.t-b.t);const t=gtQ.shift();gtActive.set(t.path,t);
+(async function gtLoop(){for(;;){if(gtQ.length&&Date.now()>gtPause){for(let i=gtQ.length-1;i>=0;i--){const q=gtQ[i];if(q.key.startsWith('p43-early:')&&q.windowEnd&&Date.now()>=q.windowEnd){gtQ.splice(i,1);q.rej(Object.assign(Error('20-minute window ended'),{code:'OBSERVATION_COMPLETE'}));}}for(const q of gtQ){if(q.windowEnd&&Date.now()>q.windowEnd)q.prio=3;if(q.urgentUntil&&Date.now()>q.urgentUntil){q.prio=Math.max(q.prio,1);delete q.urgentUntil;}}gtQ.sort((a,b)=>a.prio-b.prio||(a.urgentUntil||Infinity)-(b.urgentUntil||Infinity)||a.t-b.t);const eligible=(typeof GT_TASKS!=='undefined'&&GT_TASKS)?gtQ.findIndex(q=>GT_TASKS.available(q.key)):0;if(eligible<0){await sleep(1000);continue;}const t=gtQ.splice(eligible,1)[0];if(typeof GT_TASKS!=='undefined'&&GT_TASKS)GT_TASKS.charge(t.key);gtActive.set(t.path,t);
     try{const j=await getJSON(GT+t.path);gtOK++;gtLog.push([Date.now(),1,Date.now()-t.t]);if(++gtRun>=20){gtRun=0;gtSp=Math.max(6000,gtSp-250)}t.res(j)}
     catch(e){gtFail++;gtLog.push([Date.now(),e.rl?0:2,Date.now()-t.t]);if(e.rl){gtPause=Date.now()+30e3;gtSp=Math.min(15000,gtSp+500);gtRun=0;
-        if(t.prio<=2&&!t.retry){t.retry=1;gtQ.unshift(t);continue}}t.rej(e)}finally{gtActive.delete(t.path);}
+        if(t.prio<=2&&!t.retry&&!t.key.startsWith('outcome:')&&!t.key.startsWith('p43-early:')){t.retry=1;gtQ.unshift(t);continue}}t.rej(e)}finally{gtActive.delete(t.path);}
     while(gtLog.length&&gtLog[0][0]<Date.now()-3600e3)gtLog.shift()}
   await sleep(gtSp)}})();
 function gtStats(){const ok=gtLog.filter(x=>x[1]===1),rl=gtLog.filter(x=>x[1]===0).length,lat=ok.map(x=>x[2]).sort((a,b)=>a-b);
-  return{buyersDeadlinePriority:true,queue:gtQ.length,inFlight:gtActive.size,coalesced:gtCoalesced,backgroundLimit:GT_BACKGROUND_LIMIT,oldestSec:gtQ.length?Math.round((Date.now()-Math.min(...gtQ.map(x=>x.t)))/1000):0,okHour:ok.length,r429Hour:rl,errHour:gtLog.filter(x=>x[1]===2).length,
+  return{taskQuotas:GT_TASKS?.summary()||null,buyersDeadlinePriority:true,queue:gtQ.length,inFlight:gtActive.size,coalesced:gtCoalesced,backgroundLimit:GT_BACKGROUND_LIMIT,oldestSec:gtQ.length?Math.round((Date.now()-Math.min(...gtQ.map(x=>x.t)))/1000):0,okHour:ok.length,r429Hour:rl,errHour:gtLog.filter(x=>x[1]===2).length,
     spacingMs:gtSp,waitMedSec:lat.length?Math.round(lat[lat.length>>1]/1000):null,waitMaxSec:lat.length?Math.round(lat[lat.length-1]/1000):null,
     byPrio:[0,1,2,3].map(p=>gtQ.filter(x=>x.prio===p).length)}}
 
@@ -154,12 +154,12 @@ function applyIdentityPlan(plan,values,at){
     }
 }
 let FREE_IDENTITY_BUSY=false;const FREE_IDENTITY_STATS={requests:0,coins:0,errors:0,lastAt:0,nextAt:0,heliusCredits:0};
-async function freeIdentityTick(now=Date.now()){if(FREE_IDENTITY_BUSY||!SOURCE||now<FREE_IDENTITY_STATS.nextAt||resourcePressure())return;FREE_IDENTITY_BUSY=true;FREE_IDENTITY_STATS.nextAt=now+10000;try{const coins=[...C.values()].filter(c=>{const r=SOURCE.get(c.a);return r&&now-r.acceptedAt<21*60000;}),plan=await require(DIR+'/holder-census.js').identityPlan(coins,{getRecord:a=>SOURCE.get(a),now,curveOf:bondingCurveOf,metadataOf});if(!plan.addresses.length)return;FREE_IDENTITY_STATS.requests++;const result=await require(DIR+'/pool-balance-reader.js').deadline(async signal=>{const response=await fetch('https://api.mainnet-beta.solana.com',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'getMultipleAccounts',params:[plan.addresses,{encoding:'jsonParsed',commitment:'confirmed'}]}),signal});if(!response.ok)throw Error('identity-public-unavailable');return require(DIR+'/early-intelligence.js').readBoundedJSON(response,1024*1024);},8000);if(result.error||!Array.isArray(result.result?.value)||result.result.value.length!==plan.addresses.length)throw Error('identity-public-unavailable');const at=Date.now();applyIdentityPlan(plan,result.result.value,at);FREE_IDENTITY_STATS.coins+=plan.tasks.length;FREE_IDENTITY_STATS.lastAt=at;}catch{FREE_IDENTITY_STATS.errors++;FREE_IDENTITY_STATS.nextAt=Date.now()+30000;}finally{FREE_IDENTITY_BUSY=false;}}
+async function freeIdentityTick(now=Date.now()){if(FREE_IDENTITY_BUSY||!SOURCE||now<FREE_IDENTITY_STATS.nextAt||resourcePressure())return;FREE_IDENTITY_BUSY=true;FREE_IDENTITY_STATS.nextAt=now+10000;try{const coins=[...C.values()].filter(c=>{const r=SOURCE.get(c.a);return r&&now-r.acceptedAt<20*60000;}),plan=await require(DIR+'/holder-census.js').identityPlan(coins,{getRecord:a=>SOURCE.get(a),now,curveOf:bondingCurveOf,metadataOf});if(!plan.addresses.length)return;if(typeof FREE_TASKS!=='undefined'&&FREE_TASKS&&!FREE_TASKS.take('identity'))return;FREE_IDENTITY_STATS.requests++;const result=await require(DIR+'/pool-balance-reader.js').deadline(async signal=>{const response=await fetch('https://api.mainnet-beta.solana.com',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'getMultipleAccounts',params:[plan.addresses,{encoding:'jsonParsed',commitment:'confirmed'}]}),signal});if(!response.ok)throw Error('identity-public-unavailable');return require(DIR+'/early-intelligence.js').readBoundedJSON(response,1024*1024);},8000);if(result.error||!Array.isArray(result.result?.value)||result.result.value.length!==plan.addresses.length)throw Error('identity-public-unavailable');const at=Date.now();applyIdentityPlan(plan,result.result.value,at);FREE_IDENTITY_STATS.coins+=plan.tasks.length;FREE_IDENTITY_STATS.lastAt=at;}catch{FREE_IDENTITY_STATS.errors++;FREE_IDENTITY_STATS.nextAt=Date.now()+30000;}finally{FREE_IDENTITY_BUSY=false;}}
 async function preChainSweep(){if(PRE_SWEEP_BUSY)return;PRE_SWEEP_BUSY=true;try{await preChainSweepBody()}finally{PRE_SWEEP_BUSY=false}}
 async function preChainSweepBody(){const now=Date.now(),dec=(PASS_V2?.config?.decisionMinutes||15)*60e3;
   const visible=new Set(SOURCE?.latest(200).map(r=>r.mint)||[]);
-  const pre=[...C.values()].filter(c=>isRecordedPre(c)&&isCurve(c.d)&&now-(SOURCE.get(c.a)?.acceptedAt||now)<Math.max(dec+5*60e3,(require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2?.config||{},'before').hours||5)*3600e3));
-  const admitted=[...C.values()].filter(c=>SOURCE?.has(c.a)&&now-c.t<2*3600e3);
+  const pre=[...C.values()].filter(c=>(!(typeof twentyMinuteMode==='function'&&twentyMinuteMode())||earlyActive(c,now))&&isRecordedPre(c)&&isCurve(c.d)&&now-(SOURCE.get(c.a)?.acceptedAt||now)<Math.max(dec+5*60e3,(require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2?.config||{},'before').hours||5)*3600e3));
+  const admitted=[...C.values()].filter(c=>SOURCE?.has(c.a)&&((typeof twentyMinuteMode==='function'&&twentyMinuteMode())?earlyActive(c,now):now-c.t<2*3600e3));
   const needCurve=pre.filter(c=>c.p&&(!c.q||c.q===WSOL)&&now-(c.curveSol?.at(-1)?.[0]||0)>=(now-(SOURCE.get(c.a)?.acceptedAt||now)<dec+5*60e3?120e3:now-(SOURCE.get(c.a)?.acceptedAt||now)<2*3600e3?5*60e3:30*60e3)).sort((a,b)=>Number(visible.has(b.a))-Number(visible.has(a.a))||(a.curveSol?.at(-1)?.[0]||0)-(b.curveSol?.at(-1)?.[0]||0)||(SOURCE.get(b.a)?.acceptedAt||0)-(SOURCE.get(a.a)?.acceptedAt||0)).slice(0,200);
   const call=async(list,enc)=>{PRE_STATS.calls++;return (await rpc('getMultipleAccounts',[list,enc],{priority:'identity',context:'до миграции',source:'pump-card'}))?.value||[]};
   try{for(let i=0;i<needCurve.length;i+=100){const part=needCurve.slice(i,i+100),pools=part.map(c=>c.p),v=await call(pools,{encoding:'base64',dataSlice:{offset:0,length:115}}),at=Date.now();
@@ -444,7 +444,7 @@ async function admitVerifiedPublicLaunch(launch,record) {
     mg:{v:MGV,st:'curve',k:'curve-pump',final:1,lastAt:record.acceptedAt}});seedLaunchEvidence(C.get(record.mint),launch,record);
 }
 let OPENING_PROOFS=null;
-async function openingTick(now=Date.now()){
+async function openingTick(now=Date.now()){if(typeof twentyMinuteMode==='function'&&twentyMinuteMode())return;
  if(!OPENING_PROOFS||OPENING_PROOFS.busy||!SOURCE||resourcePressure())return;if((HEALTH?.lagMs||0)>1000){OPENING_PROOFS.stats.cpuDeferred=(OPENING_PROOFS.stats.cpuDeferred||0)+1;return;}
  const api=require(DIR+'/opening-evidence.js'),rows=[...C.values()].filter(c=>{const r=SOURCE.get(c.a);return r&&!c.openingDone&&!c.openingUnavailable&&c.supplyRaw&&now-r.acceptedAt<20*60000&&api.openingTarget(c,r);}).sort((a,b)=>SOURCE.get(b.a).acceptedAt-SOURCE.get(a.a).acceptedAt);
  const c=rows.find(c=>c.a===OPENING_PROOFS.job?.mint)||rows[0];if(!c){if(OPENING_PROOFS.job&&now-OPENING_PROOFS.job.startedAt>3*60000){OPENING_PROOFS.job=null;OPENING_PROOFS.stats.expired++;}return;}const r=SOURCE.get(c.a),snapshot=await OPENING_PROOFS.step(c,r,{decode58:b58dec});if(!snapshot)return;
@@ -458,6 +458,7 @@ async function collectIntelligence(){const now=Date.now();if(INTEL_BUSY||now-INT
  const byCreator=new Map();for(const r of records){if(!r.creator)continue;if(!byCreator.has(r.creator))byCreator.set(r.creator,[]);byCreator.get(r.creator).push(r);}
  const fields=['devBuySol','devHold','devHoldPct','devSold','devLaunches','devRugShare','sniperShare','bundleShare','bundledWallets','smartBuyers','smartShare'],coverage={sampledAt:now,scope:'latest-200-admissions-as-of-decision-or-now',coins:0,known:Object.fromEntries(fields.map(k=>[k,0]))};for(const r of SOURCE.latest(200)){const c=C.get(r.mint);if(!c)continue;const cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2?.config||{},r.phase),f=require(DIR+'/research-v2.js').featuresAt(c,Math.min(now,r.acceptedAt+(cfg.decisionMinutes||10)*60000),{eventAt:require(DIR+'/event-clock.js').eventAnchor(r),phase:r.phase});coverage.coins++;for(const key of fields)if(Number.isFinite(f[key]))coverage.known[key]++;}coverage.percent=Object.fromEntries(fields.map(key=>[key,coverage.coins?coverage.known[key]/coverage.coins*100:null]));coverage.targetPercent=90;INTEL_STATS.coverage=coverage;
  for(const c of candidates.slice(0,150)){const r=SOURCE.get(c.a);if(c.creatorAddress&&!c.creatorHistoryAt){appendIntelligence(c,{at:now,features:api.creatorFeatures(c.creatorAddress,r.acceptedAt,byCreator.get(c.creatorAddress)||[],outcomes),lowerBoundKeys:['devLaunches'],creatorScope:'observed-prior-launches'});c.creatorHistoryAt=now;INTEL_STATS.history++;}if(!c.smartAt||c.bx?.at>c.smartAt||c.earlyWalletsAt>c.smartAt){const smart=SMART_WALLETS.features(c,r.acceptedAt,now);if(smart){appendIntelligence(c,smart);c.smartAt=now;}}}
+ if((typeof twentyMinuteMode==='function'&&twentyMinuteMode()))return;
  if(now-INTEL_RPC_LAST<60000)return;if(process.memoryUsage().rss>330e6){INTEL_STATS.memoryDeferred=(INTEL_STATS.memoryDeferred||0)+1;return;}if(!RESOURCE.allow(require(DIR+'/resource-budget.js').rpcCost('getBlock'),'metadata')){INTEL_STATS.headroomDeferred=(INTEL_STATS.headroomDeferred||0)+1;return;}
  const opt={priority:'metadata',context:'ранние признаки',source:'intelligence',maxBytes:6*1024*1024};INTEL_RPC_LAST=now;
  // Alternate a bounded creator-account batch with one immutable opening block.
@@ -470,7 +471,7 @@ async function collectIntelligence(){const now=Date.now();if(INTEL_BUSY||now-INT
  }catch(e){if(e.code==='BUDGET_DEFERRED')INTEL_STATS.deferred++;else INTEL_STATS.errors++;}finally{INTEL_BUSY=false;}}
 // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
 // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
-const MODULES=['pool-balance-reader.js','bounded-cache.js','pool-trade-observer.js','opening-evidence.js','holder-census.js','liquidity-proof.js','venue-identity.js','feature-snapshots.js','activity-slices.js','event-clock.js','admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
+const MODULES=['terminal-candles.js','early-window.js','pool-balance-reader.js','bounded-cache.js','pool-trade-observer.js','opening-evidence.js','holder-census.js','liquidity-proof.js','venue-identity.js','feature-snapshots.js','activity-slices.js','event-clock.js','admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
   'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js','module-library.js','active-history.js','launch-history.js','early-intelligence.js','migration-fast.js','legacy-birth-cleanup.js','manual-pools.js','pool-logs.js','legacy-data-redaction.js','side-pools.js','observation-recovery.js','public-pool-trades.js','migration-catchup.js','opening-liquidity.js','manual-recovery-request.js'];
 let MODULES_OK=null;
 function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
@@ -562,7 +563,7 @@ function recoverSupersededStudies(now=Date.now()){
       })}));
   }
 }
-function admitResearchImmediately(row){try{RESEARCH_V2?.admit(row,C.get(row.mint),PASS_V2,Date.now());}catch(e){err('research admission '+e.message)}}
+function admitResearchImmediately(row){try{if((typeof twentyMinuteMode==='function'&&twentyMinuteMode())&&C.get(row.mint))C.get(row.mint).observationMethod='gt-ohlcv-20m-v1';RESEARCH_V2?.admit(row,C.get(row.mint),PASS_V2,Date.now());}catch(e){err('research admission '+e.message)}}
 async function initResearchV2() {
   await ensureModules();
   // Separate initialization: invalid research settings must never stop
@@ -571,12 +572,13 @@ async function initResearchV2() {
   const {ResearchRuntime,settings}=require(DIR+'/research-runtime.js');
   const {ResearchEpoch}=require(DIR+'/research-config.js');
   const requested=await getObj('config/research-one.json')||settings();
-  const config=settings(requested);
+  const config=settings(require(DIR+'/early-window.js').config(requested));
   const baseline=settings();
   RESEARCH_ONE_EPOCH=new ResearchEpoch({dir:DIR,key:'one',validate:settings,
     config,adoptLegacy:JSON.stringify(config)===JSON.stringify(baseline)});
-  RESEARCH_ONE_EPOCH.apply(config,await getObj('config/research-epoch-one.json'));
+  RESEARCH_ONE_EPOCH.apply(config,require(DIR+'/early-window.js').reset(await getObj('config/research-epoch-one.json')));
   const epoch=RESEARCH_ONE_EPOCH.current;
+  GT_TASKS=new (require(DIR+'/early-window.js').TaskQuota)();FREE_TASKS=new (require(DIR+'/early-window.js').RPCQuota)();TERMINAL_CHARTS=new (require(DIR+'/terminal-candles.js').TerminalCandles)({dir:DIR,gt,onReady:j=>{RESEARCH_V2?.processed.delete(j.mint);RESEARCH_V2?.lastAttemptAt.delete(j.mint);RESEARCH_TWO?.retry.delete(j.mint);}});FEATURE_TRIAL=new (require(DIR+'/early-window.js').FeatureProbe)({dir:DIR,startedAt:epoch.activeAt});
   RESEARCH_V2=new ResearchRuntime({
     dir:DIR,config:epoch.config,cohortStart:epoch.activeAt,
     bankName:oneResearchBankName(epoch)
@@ -596,10 +598,10 @@ async function initPathsV2(){
   PASS_V2=new (require(DIR+'/pass-runtime.js').PassRuntime)({dir:DIR,config:require(DIR+'/pass-runtime.js').verdictConfig(require(DIR+'/module-library.js').windowConfig(config,LIBRARY_CONFIG.modules,LIBRARY_CONFIG.deleted))});
   const {ResearchTwoRuntime,configOf}=require(DIR+'/research-two-runtime.js');
   const {ResearchEpoch}=require(DIR+'/research-config.js');
-  const requested=await getObj('config/research-two.json')||configOf();
+  const requested=require(DIR+'/early-window.js').config(await getObj('config/research-two.json')||configOf());
   RESEARCH_TWO_EPOCH=new ResearchEpoch({dir:DIR,key:'two',validate:configOf,
     config:requested});
-  RESEARCH_TWO_EPOCH.apply(requested,await getObj('config/research-epoch-two.json'));
+  RESEARCH_TWO_EPOCH.apply(requested,require(DIR+'/early-window.js').reset(await getObj('config/research-epoch-two.json')));
   const two=RESEARCH_TWO_EPOCH.current;
   RESEARCH_TWO=new ResearchTwoRuntime({
     dir:DIR,config:two.config,cohortStart:two.activeAt,
@@ -626,7 +628,7 @@ async function reloadResearchConfig(){
     if(RESEARCH_ONE_EPOCH&&RESEARCH_V2){
       const cfg=await getObj('config/research-one.json');
       if(!cfg)throw Error('First research config missing');
-      if(RESEARCH_ONE_EPOCH.apply(cfg,await getObj('config/research-epoch-one.json'))){
+      if(RESEARCH_ONE_EPOCH.apply(require(DIR+'/early-window.js').config(cfg),require(DIR+'/early-window.js').reset(await getObj('config/research-epoch-one.json')))){
         const x=RESEARCH_ONE_EPOCH.current;
         const {ResearchRuntime}=require(DIR+'/research-runtime.js');
         RESEARCH_V2=new ResearchRuntime({dir:DIR,config:x.config,carry:x.resetAt===x.activeAt?null:RESEARCH_V2,
@@ -639,7 +641,7 @@ async function reloadResearchConfig(){
     if(RESEARCH_TWO_EPOCH&&RESEARCH_TWO){
       const cfg=await getObj('config/research-two.json');
       if(!cfg)throw Error('Second research config missing');
-      if(RESEARCH_TWO_EPOCH.apply(cfg,await getObj('config/research-epoch-two.json'))){
+      if(RESEARCH_TWO_EPOCH.apply(require(DIR+'/early-window.js').config(cfg),require(DIR+'/early-window.js').reset(await getObj('config/research-epoch-two.json')))){
         const x=RESEARCH_TWO_EPOCH.current;
         const {ResearchTwoRuntime}=require(DIR+'/research-two-runtime.js');
         RESEARCH_TWO=new ResearchTwoRuntime({dir:DIR,config:x.config,
@@ -752,6 +754,7 @@ function chooseDue(coins,{now=Date.now(),limit=1200,earlyShare=.3}={}){
   return a.concat(b,early,long).slice(0,limit);
 }
 function dsDue(c,now){
+ if(typeof twentyMinuteMode==='function'&&(typeof twentyMinuteMode==='function'&&twentyMinuteMode()))return earlyActive(c,now)&&now-Math.max(c.dsAt||0,c.dsTryAt||0)>=55000;
   const a=ageMin(c,now),last=Math.max(c.dsAt||0,c.dsTryAt||0);
   if(observedEligible(c)){
     if(a<-1||a>24*60+10)return false;
@@ -777,7 +780,7 @@ function schedulePassOnObservation(){
 }
 let QUOTE_VALUATION=null;
 function retryOpeningIntake(c){const row=SOURCE?.get(c.a);if(row&&RESEARCH_V2&&!RESEARCH_V2.admitted.has(c.a)){RESEARCH_V2.processed.delete(c.a);RESEARCH_V2.admit(row,c,PASS_V2,Date.now());}}
-function dsApply(c,p,at){const e=dsEntry(p,at);
+function dsApply(c,p,at){const e=dsEntry(p,at);if(TERMINAL_CHARTS){const rate=p.quoteToken?.address===WSOL&&Number(p.priceNative)>0?Number(p.priceUsd)/Number(p.priceNative):p.baseToken?.address===WSOL?Number(p.priceUsd):null;TERMINAL_CHARTS.observeRate(rate,at);}
   QUOTE_VALUATION=QUOTE_VALUATION||new (require(DIR+'/opening-liquidity.js').QuoteValuation)();if(QUOTE_VALUATION.observe(c,p,at))retryOpeningIntake(c);
   if(observedEligible(c)){(c.ds=c.ds||[]).push(e);if(c.ds.length>520)c.ds.splice(130,1)}else c.ds=[e];
   if((e[4]||0)+(e[5]||0)>0)c.lastTrade=at;else if((e[7]||0)+(e[8]||0)>0&&!c.lastTrade)c.lastTrade=at-30*60e3;
@@ -815,7 +818,7 @@ async function pollDS(){const now=Date.now(),pins=collectionPins(now);
 const kRow=x=>[x[0],+(+x[1]).toPrecision(6),+(+x[2]).toPrecision(6),+(+x[3]).toPrecision(6),+(+x[4]).toPrecision(6),Math.round(+x[5])];
 const kList=r=>(r.data?.attributes?.ohlcv_list||[]).map(kRow).sort((a,b)=>a[0]-b[0]);
 function mergeK(a,b){const m=new Map();for(const x of [...(a||[]),...b])m.set(x[0],x);return [...m.values()].sort((x,y)=>x[0]-y[0])}
-function candleTasks(){const now=Date.now(),pins=collectionPins(now);
+function candleTasks(){if((typeof twentyMinuteMode==='function'&&twentyMinuteMode()))return;const now=Date.now(),pins=collectionPins(now);
   for(const c of C.values()){if(!observedEligible(c)||!collectionActive(c,now,pins))continue;const a=ageMin(c,now),pool=c.p,ts=Math.floor;
     // первые 10 минут: запрос на 11-й минуте, чтобы минута с 10-й отметкой была закрыта
     if(!c.k10&&!c.kTry&&c.trDone&&!gtBackgroundBusy()&&a>=11&&a<6*60){c.kTry=1;gt(`/pools/${pool}/ohlcv/minute?aggregate=1&limit=15&before_timestamp=${ts((c.t+11*60e3)/1000)}&currency=usd`,3,'k10:'+pool)
@@ -832,27 +835,60 @@ function candleTasks(){const now=Date.now(),pins=collectionPins(now);
   birthBackfill(now);researchTradeTail(now);tradeTasks(now,pins)}
 async function censusTick(now=Date.now()){
  if(!HOLDER_CENSUS||!SOURCE||resourcePressure())return;const choices=[];
- for(const c of C.values()){const row=SOURCE.get(c.a);if(!row||now-row.acceptedAt>21*60000||!c.vaults||!c.supplyRaw||!c.ct)continue;const age=(now-row.acceptedAt)/60000;
-  const target=[1,5,15].find(m=>!c.hold?.[m]?.holdersComplete&&age>=m-1&&age<(m===15?21:m+2));if(!target||now-(c.censusAttemptAt||0)<30000)continue;choices.push({c,row,target});}
+ for(const c of C.values()){const row=SOURCE.get(c.a);if(!row||now-row.acceptedAt>20*60000||!c.vaults||!c.supplyRaw||!c.ct)continue;const age=(now-row.acceptedAt)/60000;
+  const target=((typeof twentyMinuteMode==='function'&&twentyMinuteMode())?[10]:[1,5,15]).find(m=>!c.hold?.[m]?.holdersComplete&&age>=m-1&&age<(m===15?21:m+2));if(!target||now-(c.censusAttemptAt||0)<30000||((typeof twentyMinuteMode==='function'&&twentyMinuteMode())&&(age<10||c.censusAttemptAt)))continue;choices.push({c,row,target});}
  choices.sort((a,b)=>(a.c.censusAttemptAt||0)-(b.c.censusAttemptAt||0)||b.row.acceptedAt-a.row.acceptedAt);const pick=choices[0];if(!pick)return;const {c,target}=pick;c.censusAttemptAt=now;
  const sample=await HOLDER_CENSUS.query({mint:c.a,program:c.tokenProgram||(c.ct.prog==='token2022'?T22:'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),supplyRaw:c.supplyRaw,vaults:c.vaults,creator:c.creatorAddress,decode58:b58dec,encode58:b58enc});if(sample){c.hold=c.hold||{};c.hold[target]=sample;if(sample.creatorBalanceRaw!=null){appendIntelligence(c,{at:sample.at,features:{devHold:Number(sample.creatorBalanceRaw)/10**c.ct.dec,devHoldPct:sample.creatorHoldPct},lowerBoundKeys:[],creatorHoldingScope:sample.scope});c.creatorBalanceAt=sample.at;}}
 }
 async function liquidityTick(now=Date.now()){
  if(!LP_PROOFS||LP_PROOFS.busy||!SOURCE||resourcePressure())return;
- const candidates=[...C.values()].filter(c=>{const r=SOURCE.get(c.a);return r&&c.p&&now-r.acceptedAt<21*60000&&[DAMM2,'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA','CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C'].includes(c.mg?.owner)&&now-(c.lpAttemptAt||0)>(c.lpEvidence?.verified?5*60000:60000);}).sort((a,b)=>(a.lpAttemptAt||0)-(b.lpAttemptAt||0)||SOURCE.get(b.a).acceptedAt-SOURCE.get(a.a).acceptedAt);
- const c=candidates[0];if(!c)return;const pool=c.p;c.lpAttemptAt=now;const result=await LP_PROOFS.query({pool,mint:c.a,decode58:b58dec,encode58:b58enc,onCurve});if(result&&c.p===pool)c.lpEvidence=result;
+ const candidates=[...C.values()].filter(c=>{const r=SOURCE.get(c.a);return r&&c.p&&(!(typeof twentyMinuteMode==='function'&&twentyMinuteMode())||!c.lpAttemptAt)&&now-r.acceptedAt<20*60000&&[DAMM2,'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA','CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C'].includes(c.mg?.owner)&&now-(c.lpAttemptAt||0)>(c.lpEvidence?.verified?5*60000:60000);}).sort((a,b)=>(a.lpAttemptAt||0)-(b.lpAttemptAt||0)||SOURCE.get(b.a).acceptedAt-SOURCE.get(a.a).acceptedAt);
+ const c=candidates[0];if(!c)return;if((typeof twentyMinuteMode==='function'&&twentyMinuteMode())&&c.lpAttemptAt)return;const pool=c.p;c.lpAttemptAt=now;const result=await LP_PROOFS.query({pool,mint:c.a,decode58:b58dec,encode58:b58enc,onCurve});if(result&&c.p===pool)c.lpEvidence=result;
 }
 async function captureFeatureSnapshots(now=Date.now()){
  if(captureFeatureSnapshots.busy||!SOURCE||resourcePressure())return;captureFeatureSnapshots.busy=true;try{const api=require(DIR+'/feature-snapshots.js');let batch=0;
- for(const c of C.values()){const row=SOURCE.get(c.a);if(!row||now-row.acceptedAt>21*60000||now<row.acceptedAt+60000)continue;const complete=fullCoin(c);api.capture(complete,row,now);if(complete.featureSnapshotsPacked)c.featureSnapshotsPacked=complete.featureSnapshotsPacked;if(++batch%4===0)await new Promise(resolve=>setImmediate(resolve));}
+ for(const c of C.values()){const row=SOURCE.get(c.a);if(!row||now-row.acceptedAt>21*60000||now<row.acceptedAt+60000)continue;const complete=fullCoin(c);api.capture(complete,row,now,(typeof twentyMinuteMode==='function'&&twentyMinuteMode())?FEATURE_TRIAL:null);if(complete.featureSnapshotsPacked)c.featureSnapshotsPacked=complete.featureSnapshotsPacked;if(++batch%4===0)await new Promise(resolve=>setImmediate(resolve));}
  }finally{captureFeatureSnapshots.busy=false;}
 }
 const BUYER_REPAIR={busy:false,checked:0,repairedCoins:0,repairedSnapshots:0,missingArchive:0,errors:0,lastAt:0};
 async function repairBuyerSnapshots(){if(BUYER_REPAIR.busy||!SOURCE||!RESEARCH_V2||resourcePressure())return;const now=Date.now(),api=require(DIR+'/feature-snapshots.js');const row=[...SOURCE.records.values()].filter(r=>(r.acceptedAt>=RESEARCH_V2.cohortStart||RESEARCH_V2.admitted.has(r.mint))&&now-r.acceptedAt>Math.min(20,require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,r.phase).decisionMinutes)*60000&&C.has(r.mint)&&C.get(r.mint).buyerRepairVersion!==2&&now-(C.get(r.mint).buyerRepairTryAt||0)>60000).sort((a,b)=>b.acceptedAt-a.acceptedAt)[0];if(!row)return;const c=C.get(row.mint);BUYER_REPAIR.busy=true;c.buyerRepairTryAt=now;try{const hydrated=fullCoin(c),complete={...hydrated,tr:hydrated.tr?{...hydrated.tr}:undefined},name=complete.archiveRefs?.trades;if(!complete.tr?.x&&name){const raw=await getObj(name);if(raw?.a===row.mint&&raw.p===complete.p&&raw.t===complete.t&&raw.x&&Object.keys(raw.x).length<=10000)complete.tr={...(complete.tr||{}),x:raw.x};else BUYER_REPAIR.missingArchive++;}if(!name&&!complete.tr?.x&&!complete.buyerPrefixes?.length&&now-row.acceptedAt<21*60000){BUYER_REPAIR.missingArchive++;return;}complete.buyerPrefixes=require(DIR+'/research-v2.js').recordedBuyerPrefixes(complete,row.acceptedAt,now);c.buyerPrefixes=complete.buyerPrefixes;const result=api.repairBuyers(complete,row.acceptedAt);if(result.changed){c.featureSnapshotsPacked=complete.featureSnapshotsPacked;const admission=RESEARCH_V2.admitted.get(row.mint);if(admission)delete admission.decisionAt;BUYER_REPAIR.repairedCoins++;BUYER_REPAIR.repairedSnapshots+=result.repaired;}c.buyerRepairVersion=2;BUYER_REPAIR.checked++;BUYER_REPAIR.lastAt=Date.now();}catch{BUYER_REPAIR.errors++;}finally{BUYER_REPAIR.busy=false;}}
-function birthBackfill(now){if(!SOURCE||gtPending('birth-curve'))return;const c=[...C.values()].filter(c=>!c.createdAt&&(c.creatorCurveCandidate||c.mg?.watch||SOURCE.get(c.a)?.proof?.curve)&&SOURCE.has(c.a)&&now-(c.birthAttemptAt||0)>30*60000).sort((a,b)=>(a.birthAttemptAt||0)-(b.birthAttemptAt||0))[0];if(!c)return;c.birthAttemptAt=now;const curve=c.creatorCurveCandidate||c.mg?.watch||SOURCE.get(c.a)?.proof?.curve;gt('/pools/'+curve,2,'birth-curve').then(response=>require(DIR+'/coin-profile.js').birthFromGT(c,response,SOURCE.get(c.a),Date.now())).catch(()=>{});}
+function birthBackfill(now){if((typeof twentyMinuteMode==='function'&&twentyMinuteMode()))return;if(!SOURCE||gtPending('birth-curve'))return;const c=[...C.values()].filter(c=>!c.createdAt&&(c.creatorCurveCandidate||c.mg?.watch||SOURCE.get(c.a)?.proof?.curve)&&SOURCE.has(c.a)&&now-(c.birthAttemptAt||0)>30*60000).sort((a,b)=>(a.birthAttemptAt||0)-(b.birthAttemptAt||0))[0];if(!c)return;c.birthAttemptAt=now;const curve=c.creatorCurveCandidate||c.mg?.watch||SOURCE.get(c.a)?.proof?.curve;gt('/pools/'+curve,2,'birth-curve').then(response=>require(DIR+'/coin-profile.js').birthFromGT(c,response,SOURCE.get(c.a),Date.now())).catch(()=>{});}
+
+function twentyMinuteMode(){return typeof RESEARCH_V2!=='undefined'&&RESEARCH_V2?.config?.outcomeMethod==='gt-ohlcv-20m-v1';}
+function freeTaskFetch(lane){return (...args)=>{if(FREE_TASKS&&!FREE_TASKS.take(lane))throw Object.assign(Error('optional public task quota'),{code:'BUDGET_DEFERRED'});return fetch(...args);};}
+function earlyActive(c,now=Date.now()){return !(typeof twentyMinuteMode==='function'&&twentyMinuteMode())||require(DIR+'/early-window.js').active(SOURCE?.get(c.a),now);}
+const EARLY_WINDOW_STATS={tradesRequests:0,tradesErrors:0,openingRequests:0,openingErrors:0,lastAt:0,active:0};
+async function earlyWindowTick(){
+ if(earlyWindowTick.busy||!(typeof twentyMinuteMode==='function'&&twentyMinuteMode())||!SOURCE||!TERMINAL_CHARTS)return;earlyWindowTick.busy=true;
+ try{const now=Date.now(),windowAPI=require(DIR+'/early-window.js'),one=RESEARCH_V2,active=[...SOURCE.recentAdmissions(now-21*60000,now)].filter(r=>windowAPI.active(r,now));EARLY_WINDOW_STATS.active=active.length;FEATURE_TRIAL?.evaluate();
+ if(now-(earlyWindowTick.offeredAt||0)>10000){earlyWindowTick.offeredAt=now;const watched=new Map(one.admitted);for(const pass of PASS_V2?.records.values()||[])if(pass.firstSeenAt>=RESEARCH_TWO.cohortStart&&!watched.has(pass.mint))watched.set(pass.mint,pass);
+  for(const row of watched.values()){if(row.intakePending)continue;const c=C.get(row.mint),record=SOURCE.get(row.mint);if(!record||!c)continue;const cfg=one.config.phases?.[row.phase]||one.config,pass=PASS_V2?.records.get(row.mint),two=RESEARCH_TWO?.config.phases?.[row.phase]||RESEARCH_TWO?.config;const lineEnd=pass&&two?require(DIR+'/research-two-runtime.js').lineClock(pass,two).windowEnd:0;
+   TERMINAL_CHARTS.offer({mint:row.mint,pool:record.proof?.pool||c.p,anchor:record.acceptedAt,quote:record.proof?.openingMetrics?.quoteMint||c.q,hours:cfg.hours,lineEnd});}
+ }
+ TERMINAL_CHARTS.tick().catch(()=>{});
+ for(const row of active){const c=C.get(row.mint);if(c)c.observationMethod=windowAPI.METHOD;}
+ const trade=active.filter(r=>{const c=C.get(r.mint);return c?.p&&!c.earlyGTAttempted&&now>=r.acceptedAt+10*60000&&now<r.acceptedAt+19*60000;}).sort((a,b)=>a.acceptedAt-b.acceptedAt)[0];
+ if(trade){const c=C.get(trade.mint),pool=c.p;c.earlyGTAttempted=now;EARLY_WINDOW_STATS.tradesRequests++;
+  gt('/pools/'+pool+'/trades',1,'p43-early:trades:'+trade.mint,trade.acceptedAt+20*60000).then(response=>{if(c.p!==pool||!Array.isArray(response.data))return;const at=Date.now(),rows=require(DIR+'/activity-slices.js').tradeRows(response.data,c.a,at);c.tr={f:[[at,response.data.length,null,null]],x:Object.fromEntries(rows.map((r,i)=>[r[7]||String(i),[...r,at]]))};c.buyerPrefixes=require(DIR+'/research-v2.js').recordedBuyerPrefixes(c,trade.acceptedAt,at);const wallets=[...new Set(rows.filter(r=>r[1]===1&&r[0]*1000>=trade.acceptedAt&&r[0]*1000<=trade.acceptedAt+10*60000).map(r=>r[3]))];c.earlyWallets=wallets;c.earlyWalletsAt=at;c.earlyWalletsComplete=false;
+   if(SMART_WALLETS){const smart=SMART_WALLETS.features(c,trade.acceptedAt,at);if(smart)appendIntelligence(c,smart);}
+  }).catch(()=>{EARLY_WINDOW_STATS.tradesErrors++;c.earlyGTUnavailable='one-query-provider-unavailable';});
+ }
+ if(!earlyWindowTick.openingBusy){const pick=active.filter(r=>{const c=C.get(r.mint),cfg=one.config.phases?.[r.phase]||one.config,n=Math.min(cfg.decisionMinutes,...(PASS_V2?.config.filters||[]).filter(f=>f.phase===r.phase).map(f=>f.verdictMinutes||cfg.decisionMinutes));return c?.p&&r.proof?.slot&&!c.earlyOpeningAttempted&&now>=r.acceptedAt+n*60000-15000&&now<r.acceptedAt+n*60000;}).sort((a,b)=>a.acceptedAt-b.acceptedAt)[0];
+  if(pick){const c=C.get(pick.mint),cfg=one.config.phases?.[pick.phase]||one.config,n=Math.min(cfg.decisionMinutes,...(PASS_V2?.config.filters||[]).filter(f=>f.phase===pick.phase).map(f=>f.verdictMinutes||cfg.decisionMinutes)),cutoff=pick.acceptedAt+n*60000,probe=FEATURE_TRIAL.summary(n);c.earlyOpeningAttempted=now;
+   if(probe.minutes[n].samples>=50&&now-probe.startedAt>=3600000&&!probe.features.sniperShare.enabled)c.earlyOpeningUnavailable='probe-coverage-below-90';
+   else if(FREE_TASKS.take('opening')){earlyWindowTick.openingBusy=true;EARLY_WINDOW_STATS.openingRequests++;freeFastRPC('getBlock',[pick.proof.slot,{encoding:'json',transactionDetails:'full',rewards:false,maxSupportedTransactionVersion:1,commitment:'confirmed'}],{maxBytes:3*1024*1024}).then(raw=>{const at=Date.now();if(at>cutoff){c.earlyOpeningUnavailable='received-after-verdict';return;}const api=require(DIR+'/early-intelligence.js'),block=api.blockEvidence(raw,pick.proof.slot,at,b58dec);if(!block)return;const snap=api.openingFeatures({mint:c.a,creator:c.creatorAddress,supplyRaw:c.supplyRaw,slot:pick.proof.slot,blocks:[block],at});appendIntelligence(c,snap);c.earlyWallets=snap.earlyWallets;c.earlyWalletsAt=at;c.earlyWalletsComplete=false;
+    if(SMART_WALLETS){const smart=SMART_WALLETS.features(c,pick.acceptedAt,at);if(smart)appendIntelligence(c,smart);}
+   }).catch(()=>{EARLY_WINDOW_STATS.openingErrors++;c.earlyOpeningUnavailable='one-query-provider-unavailable';}).finally(()=>earlyWindowTick.openingBusy=false);}
+  }
+ }
+ EARLY_WINDOW_STATS.lastAt=now;
+ }finally{earlyWindowTick.busy=false;}
+}
+
 const POOL_TRADE_RECEIPTS=new WeakMap();
 let PUBLIC_POOL_TRADES=null;
 function publicPoolTradeTick(now=Date.now()){
+ if(typeof twentyMinuteMode==='function'&&(typeof twentyMinuteMode==='function'&&twentyMinuteMode()))return;
  const rss=process.memoryUsage().rss;if(!RESEARCH_V2||!SOURCE||rss>=420000000)return;
  if(!PUBLIC_POOL_TRADES)PUBLIC_POOL_TRADES=new (require(DIR+'/public-pool-trades.js').PublicPoolTrades)({dir:DIR,decode58:b58dec,onEvidence:(c,r)=>{RESEARCH_V2.processed.delete(r.mint);RESEARCH_V2.lastAttemptAt.delete(r.mint);}});
  const clock=require(DIR+'/event-clock.js'),config=RESEARCH_V2.config,items=[];for(const r of RESEARCH_V2.admitted.values()){if(r.intakePending)continue;const cfg=config.phases?.[r.phase]||config,start=clock.eventAnchor(r);if(now<start)continue;const c=C.get(r.mint),expired=now>=start+(cfg.hours+1)*3600000,d=c?.ds?.at(-1),volume=Number.isFinite(d?.[6])?Math.max(0,d[6]):0,heavy=(d?.[4]||0)+(d?.[5]||0)>=100||volume>=25000;if(expired&&(!heavy||now>=start+(cfg.hours+24)*3600000))continue;const record=SOURCE.get(r.mint);if(!c||c.p!==record?.proof?.pool||r.phase!==record.phase||r.proof?.pool&&r.proof.pool!==c.p)continue;items.push({coin:c,record,cfg,replay:expired,heavy,volume,replayPriority:expired&&(d?.[2]||0)>=1000000});}
@@ -861,6 +897,7 @@ function publicPoolTradeTick(now=Date.now()){
 const POOL_TRADE_STATS={responses:0,nativeTrades:0,unusableRows:0,earlyResponses:0,lastAt:0,heliusCredits:0};
 function recordPoolTrades(c,row,data,at){if(!row)return null;const oldActivityTape=c.activityTapePacked,previous=Array.isArray(data)?POOL_TRADE_RECEIPTS.get(data):null;if(previous?.coin===c&&previous.pool===c.p)return previous.result;const cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2?.config||{},row.phase),result=require(DIR+'/pool-trade-observer.js').observe(c,row,data,at,{hours:cfg.hours,append:appendIntelligence});c.activityFirstAt=c.activityFirstAt||at;c.activityLastAt=at;delete c.activityError;if(result.nativeProofRows)c.activityFirstProofAt=c.activityFirstProofAt||at;const oldest=Math.min(...result.rows.map(r=>r[0]*1000)),span=at-oldest;c.activityPollMs=data.length>=250&&Number.isFinite(span)?Math.max(60000,Math.min(10*60000,span*.65)):10*60000;POOL_TRADE_STATS.responses++;POOL_TRADE_STATS.nativeTrades+=result.nativeProofRows;POOL_TRADE_STATS.unusableRows+=result.unusable+result.valid-result.nativeProofRows;POOL_TRADE_STATS.lastAt=at;if(at<=row.acceptedAt+20*60000)POOL_TRADE_STATS.earlyResponses++;POOL_TRADE_RECEIPTS.set(data,{coin:c,pool:c.p,result});if(oldActivityTape!==c.activityTapePacked&&RESEARCH_V2?.rows.some(r=>r.mint===row.mint)){RESEARCH_V2.processed.delete(row.mint);RESEARCH_V2.lastAttemptAt.delete(row.mint);}return result;}
 function researchActivityTape(now){
+ if((typeof twentyMinuteMode==='function'&&twentyMinuteMode()))return;
  if(!RESEARCH_V2)return;const queued=gtQ.filter(t=>t.key.startsWith('r1-activity:')).length;
  const api=require(DIR+'/research-runtime.js'),clock=require(DIR+'/event-clock.js'),phaseCache={},phase=row=>phaseCache[row.phase]||(phaseCache[row.phase]=api.phaseSettings(RESEARCH_V2.config,row.phase));
  const watched=new Map([...RESEARCH_V2.admitted]);for(const row of (SOURCE?.recentAdmissions?SOURCE.recentAdmissions(now-13*60000,now):SOURCE?.records.values()||[]))if(row.acceptedAt>=RESEARCH_V2.cohortStart&&now-row.acceptedAt<13*60000)watched.set(row.mint,row);
@@ -874,7 +911,7 @@ function researchActivityTape(now){
  response.then(response=>{if(c.p!==pool)return;recordPoolTrades(c,row,response.data,Date.now());}).catch(e=>{c.activityError=/HTTP (\d+)/.exec(e.message)?.[0]||'provider-unavailable';err('activity history '+e.message)});
 }
 // One bounded public GT request per tick; this uses no Helius credits.
-function researchTradeTail(now){if(!RESEARCH_V2||gtBackgroundBusy()||gtPending('r1-tail'))return;
+function researchTradeTail(now){if(typeof twentyMinuteMode==='function'&&twentyMinuteMode())return;if(!RESEARCH_V2||gtBackgroundBusy()||gtPending('r1-tail'))return;
  const entries=[...RESEARCH_V2.admitted.values()].filter(r=>{const c=C.get(r.mint),cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,r.phase),end=require(DIR+'/event-clock.js').eventAnchor(r)+cfg.hours*3600e3;return c?.p&&now>=end&&now-end<24*3600e3&&(c.outcomeTape?.windowEnd!==end||!c.outcomeTape?.activityEvidenceVersion)&&!c.outcomeTailBusy&&now-(c.outcomeTailTry||0)>15*60e3;}).sort((a,b)=>b.acceptedAt-a.acceptedAt);
  const row=entries[0];if(!row)return;const c=C.get(row.mint),cfg=require(DIR+'/research-runtime.js').phaseSettings(RESEARCH_V2.config,row.phase),end=require(DIR+'/event-clock.js').eventAnchor(row)+cfg.hours*3600e3;c.outcomeTailBusy=true;c.outcomeTailTry=now;
  gt(`/pools/${c.p}/trades`,2,'r1-tail').then(r=>{if(!Array.isArray(r.data))throw Error('Missing trade response');const at=Date.now(),rows=require(DIR+'/activity-slices.js').tradeRows(r.data,c.a,at);c.outcomeTape={activityEvidenceVersion:1,...require(DIR+'/research-v2.js').tradeOutcomeEvidence(rows,require(DIR+'/event-clock.js').eventAnchor(row),end,at)};if(RESEARCH_V2){RESEARCH_V2.processed.delete(row.mint);RESEARCH_V2.lastAttemptAt.delete(row.mint);}uploadLater(`observations-v2/research-trades/${dayKey(row.acceptedAt)}/${row.mint}-${end}.json`,{mint:row.mint,at,start:require(DIR+'/event-clock.js').eventAnchor(row),end,rows});}).catch(e=>err('research trade tail '+e.message)).finally(()=>{c.outcomeTailBusy=false;});
@@ -888,7 +925,7 @@ function gxTasks(now){if(gtPending('gx'))return;const list=[...C.values()].filte
   for(const c of list){if(c.p!==requested.get(c.a))continue;c.gxAt=at;const x=by[c.p];if(!x){c.gxMiss=(c.gxMiss||0)+1;continue}c.gxMiss=0;const T=x.transactions||{},V=x.volume_usd||{};
    const e=[Math.round(at/1000),T.m5?.buys??null,T.m5?.sells??null,T.m5?.buyers??null,T.m5?.sellers??null,T.m15?.buys??null,T.m15?.sells??null,T.m15?.buyers??null,T.m15?.sellers??null,
     V.m5!=null?Math.round(+V.m5):null,V.m15!=null?Math.round(+V.m15):null];(c.gx=c.gx||[]).push(e)}}).catch(e=>err('gx '+e.message))}
-function tradeTasks(now,pins=collectionPins(now)){gxTasks(now);for(const c of C.values()){if(!observedEligible(c)||!collectionActive(c,now,pins)||c.trDone||c.trTry)continue;const a=ageMin(c,now);if(a<.5)continue;
+function tradeTasks(now,pins=collectionPins(now)){if((typeof twentyMinuteMode==='function'&&twentyMinuteMode()))return;gxTasks(now);for(const c of C.values()){if(!observedEligible(c)||!collectionActive(c,now,pins)||c.trDone||c.trTry)continue;const a=ageMin(c,now);if(a<.5)continue;
     const tr=c.tr=c.tr||{f:[],x:{}},last=tr.f[tr.f.length-1];
     if(a>40){finishTrades(c,last?'окно завершено':'не успели (очередь)');continue}
     const busy=last&&last[1]>=250,since=last?(now-last[0])/1000:1e9;
@@ -948,7 +985,7 @@ function budgetEventSummary(now=Date.now()){
 }
 function poolCoverage(now=Date.now()){
   const out={eligible:0,withVaults:0,withBalances:0,current:0,due:0,budgetDeferred:0,rawWindowsMissed:0,oldestOverdueSec:0};
-  for(const c of C.values()){if(!isOk(c)||ageMin(c,now)<0||ageMin(c,now)>24*60+15)continue;out.eligible++;
+  for(const c of C.values()){if((typeof twentyMinuteMode==='function'&&twentyMinuteMode())&&!earlyActive(c,now))continue;if(!isOk(c)||ageMin(c,now)<0||ageMin(c,now)>24*60+15)continue;out.eligible++;
     if(c.vaults)out.withVaults++;if(c.lq?.length)out.withBalances++;
     const overdue=now-(c.lqAt||c.t)-poolInterval(c,now);
     if(c.lqAt&&overdue<0)out.current++;else{out.due++;out.oldestOverdueSec=Math.max(out.oldestOverdueSec,Math.max(0,Math.round(overdue/1000)))}
@@ -982,14 +1019,14 @@ async function collectPoolBatch(part){
   if(missing.length){const extra=await call(missing.flatMap(x=>x.vaults)),vat=Date.now(),vals=extra?.value||[];
     missing.forEach((row,i)=>{row.vs=vals.slice(i*2,i*2+2);row.at=vat;row.slot=extra?.context?.slot;commit(row)})}
 }
-function poolReserveNeeded(c,now){return !!SOURCE?.get(c.a)&&!c.poolUnsupported&&ageMin(c,now)<120&&(!c.lqAt||now-c.lqAt>=poolInterval(c,now));}
+function poolReserveNeeded(c,now){if((typeof twentyMinuteMode==='function'&&twentyMinuteMode())&&!earlyActive(c,now))return false;return !!SOURCE?.get(c.a)&&!c.poolUnsupported&&ageMin(c,now)<120&&(!c.lqAt||now-c.lqAt>=poolInterval(c,now));}
 function releaseManualReservation(){if(!RESOURCE)return;const before=RESOURCE.poolDiscoveryPending;RESOURCE.poolDiscoveryPending=false;if(before&&RESOURCE.allow(1,'migration-fast'))FAST_DISCOVERY?.resumeBudget?.();}
 function setPoolReservation(pending){const before=RESOURCE.poolsPending;RESOURCE.poolsPending=pending;if(before&&!pending&&RESOURCE.allow(1,'migration-fast'))FAST_DISCOVERY?.resumeBudget?.();}
 async function samplePoolBalances(now=Date.now()){
  if(globalThis.poolBalancesBusy)return;globalThis.poolBalancesBusy=true;POOL_BALANCES.stats.cycleStartedAt=now;
  try{
     if(now-(globalThis.lastPools||0)>=10000){globalThis.lastPools=now;if(now-(globalThis.lastPreUrgent||0)>=30000&&SOURCE?.latest(200).some(r=>{const c=C.get(r.mint);return c&&(!c.ct||!c.supplyRaw||!c.creatorAddress||!c.n||!c.s||(!c.i&&!c.uri));})){globalThis.lastPreUrgent=now;if(!globalThis.preUrgentBusy){globalThis.preUrgentBusy=true;preChainSweep().catch(e=>{if(e.code!=='BUDGET_DEFERRED')err('pre identity '+e.message)}).finally(()=>globalThis.preUrgentBusy=false);}}const jobs=[];
-      for(const c of C.values()){if(!isOk(c))continue;if(require(DIR+'/opening-liquidity.js').nativeOpening(c,now))retryOpeningIntake(c);const a=ageMin(c,now);if(a<0||a>24*60+15)continue;c.raw=c.raw||{};
+      for(const c of C.values()){if(!isOk(c)||(typeof twentyMinuteMode==='function'&&twentyMinuteMode())&&!earlyActive(c,now))continue;if(require(DIR+'/opening-liquidity.js').nativeOpening(c,now))retryOpeningIntake(c);const a=ageMin(c,now);if(a<0||a>24*60+15)continue;c.raw=c.raw||{};
         const rm=RAW_M.find(m=>!c.raw[m]&&a>=m&&a<m+Math.max(2,m*.1));
         for(const m of RAW_M)if(!c.raw[m]&&a>=m+Math.max(2,m*.1))c.raw[m]={at:now,miss:1,reason:c.poolBudgetDeferredAt?'budget':'not-observed'};
         if(rm!=null||!c.lqAt||now-c.lqAt>=poolInterval(c,now))jobs.push([c,rm])}
@@ -1007,11 +1044,11 @@ async function chainObsLoop(){for(;;){const now=Date.now();
   try{
     // Pool balances precede holders. Oldest due observations are served first.
     // Держатели — только у монет, допущенных в «Все» после миграции: опоздавшие нам не нужны, а бюджет ограничен.
-    for(const c of C.values()){if(!isOk(c)||!c.ct||Object.values(c.hold||{}).some(h=>h.holdersComplete===true)||SOURCE?.get(c.a)?.phase!=='after')continue;c.hold=c.hold||{};const a=ageMin(c,now);
+    for(const c of C.values()){if((typeof twentyMinuteMode==='function'&&twentyMinuteMode())&&!earlyActive(c,now))continue;if((typeof twentyMinuteMode==='function'&&twentyMinuteMode()))continue;if(!isOk(c)||!c.ct||Object.values(c.hold||{}).some(h=>h.holdersComplete===true)||SOURCE?.get(c.a)?.phase!=='after')continue;c.hold=c.hold||{};const a=ageMin(c,now);
       for(const m of HOLD_M){if(c.hold[m])continue;if(a>=m+2){c.hold[m]={at:now,miss:c.holderBudgetDeferredAt?'бюджет':'опоздали'};continue}
         if(a>=m)try{await holdersSnap(c,m);delete c.holderBudgetDeferredAt}catch(e){if(e.code==='BUDGET_DEFERRED'){c.holderBudgetDeferredAt=c.holderBudgetDeferredAt||Date.now();continue}
           c.hold[m]={at:Date.now(),miss:'ошибка'};err('hold '+e.message)}}}
-    for(const c of C.values())if(isOk(c)&&c.vmint&&!c.vdec){c.vdec=await Promise.all(c.vmint.map(async mt=>{if(mt===c.a)return c.ct?.dec??null;if(qDec.has(mt))return qDec.get(mt);
+    for(const c of C.values())if((!(typeof twentyMinuteMode==='function'&&twentyMinuteMode())||earlyActive(c,now))&&isOk(c)&&c.vmint&&!c.vdec){c.vdec=await Promise.all(c.vmint.map(async mt=>{if(mt===c.a)return c.ct?.dec??null;if(qDec.has(mt))return qDec.get(mt);
       const v=(await rpc('getAccountInfo',[mt,{encoding:'jsonParsed'}],{priority:'holders',context:'держатели'}))?.value;const d=v?.data?.parsed?.info?.decimals;if(d!=null)qDec.set(mt,+d);return d??null}))}
     for(const c of C.values())if(c.raw&&ageMin(c,now)>24*60+20&&!c.rawUp){const name=rawArchiveName(c,'state');c.archiveRefs={...(c.archiveRefs||{}),rawStates:name};uploadLater(name,{a:c.a,p:c.p,t:c.t,vaults:c.vaults,raw:c.raw});c.rawUp=1;
       c.raw=Object.fromEntries(Object.entries(c.raw).map(([m,x])=>[m,{at:x.at,slot:x.slot,miss:x.miss}]))}
@@ -1151,15 +1188,15 @@ async function processManualPool(task){
  return {outcome};
 }
 const MANUAL_AUDIT={checked:0,revoked:0,errors:0,busy:false,lastAt:0};const MANUAL_AUDITED=new Map();
-async function auditManualPools(){if(MANUAL_AUDIT.busy||!SOURCE)return;MANUAL_AUDIT.busy=true;try{for(let checked=0;checked<4;checked++){
- const row=[...SOURCE.records.values()].sort((a,b)=>(MANUAL_AUDITED.get(a.mint)||0)-(MANUAL_AUDITED.get(b.mint)||0)).find(r=>r.proof?.kind==='manual-pool-open-v1'&&Date.now()-r.acceptedAt<26*3600e3&&Date.now()-(MANUAL_AUDITED.get(r.mint)||0)>5*60e3);if(!row)return;
+async function auditManualPools(){if(MANUAL_AUDIT.busy||!SOURCE)return;const now=Date.now();MANUAL_AUDIT.busy=true;try{for(let checked=0;checked<4;checked++){
+ const row=[...SOURCE.records.values()].filter(r=>!(typeof twentyMinuteMode==='function'&&twentyMinuteMode())||require(DIR+'/early-window.js').active(r,now)).sort((a,b)=>(MANUAL_AUDITED.get(a.mint)||0)-(MANUAL_AUDITED.get(b.mint)||0)).find(r=>r.proof?.kind==='manual-pool-open-v1'&&Date.now()-r.acceptedAt<26*3600e3&&Date.now()-(MANUAL_AUDITED.get(r.mint)||0)>5*60e3);if(!row)return;
  const earlier=await require(DIR+'/side-pools.js').catalogue({mint:row.mint,pool:row.proof.pool,eventAt:row.eventAt});MANUAL_AUDIT.checked++;MANUAL_AUDITED.set(row.mint,Date.now());while(MANUAL_AUDITED.size>2000)MANUAL_AUDITED.delete(MANUAL_AUDITED.keys().next().value);MANUAL_AUDIT.lastAt=Date.now();
  if(earlier&&SOURCE.revokeManualPool(row.mint,'earlier-pool')){MANUAL_AUDIT.revoked++;C.delete(row.mint);RESEARCH_V2?.pruneRevoked(SOURCE.revokedManual);RESEARCH_TWO?.pruneRevoked(SOURCE.revokedManual);if(PASS_V2?.records.get(row.mint)?.phase==='before')PASS_V2.records.delete(row.mint);RESEARCH_BANKS?.removeRevoked(SOURCE.revokedManual);save();}
  }}catch{MANUAL_AUDIT.errors++;}finally{MANUAL_AUDIT.busy=false}}
 const GRADUATION_AUDIT={busy:false,checked:0,verified:0,revoked:0,unknown:0,errors:0,lastAt:0,remaining:0};let GRADUATION_RPC=null;const GRADUATION_ATTEMPTS=new Map();
 function activeMigrationRevocations(){return new Map([...(SOURCE?.revokedMigrations||[])].filter(([mint])=>!SOURCE.records.has(mint)));}
 async function auditGraduations(){if(GRADUATION_AUDIT.busy||!SOURCE||!GRADUATION_RPC||!RESEARCH_V2)return;GRADUATION_AUDIT.busy=true;const now=Date.now();try{
- const all=[...SOURCE.records.values()].filter(r=>r.phase==='after'&&!r.proof?.graduation?.graduated&&SOURCE.graduationReceipts.get(r.mint)?.signature!==r.proof?.signature);GRADUATION_AUDIT.remaining=all.length;
+ const all=[...SOURCE.records.values()].filter(r=>(!(typeof twentyMinuteMode==='function'&&twentyMinuteMode())||require(DIR+'/early-window.js').active(r,now))&&r.phase==='after'&&!r.proof?.graduation?.graduated&&SOURCE.graduationReceipts.get(r.mint)?.signature!==r.proof?.signature);GRADUATION_AUDIT.remaining=all.length;
  const rows=all.filter(r=>now-(GRADUATION_ATTEMPTS.get(r.mint)||0)>60000).sort((a,b)=>Number(b.acceptedAt>=RESEARCH_V2.cohortStart)-Number(a.acceptedAt>=RESEARCH_V2.cohortStart)||b.acceptedAt-a.acceptedAt).slice(0,32),ready=[];
  for(const row of rows){GRADUATION_ATTEMPTS.set(row.mint,now);let curve=row.proof?.curve||C.get(row.mint)?.mg?.watch;const family=row.proof?.family;if(!curve&&family==='pump')curve=await bondingCurveOf(row.mint);if(!curve&&family?.startsWith('launch'))curve=await launchPoolOf(row.mint,row.proof?.openingMetrics?.quoteMint||C.get(row.mint)?.q||WSOL);if(curve)ready.push({row,curve,family});else GRADUATION_AUDIT.unknown++;}
  while(GRADUATION_ATTEMPTS.size>10000)GRADUATION_ATTEMPTS.delete(GRADUATION_ATTEMPTS.keys().next().value);if(!ready.length)return;
@@ -1335,7 +1372,7 @@ function initObservationRecovery(){
  }});
 }
 let RECOVERY_SCAN_AT=0,RECOVERY_CURSOR=0;
-function recoveryTick(){if(resourcePressure())return;if(!OBS_RECOVERY||!RESEARCH_V2||!SOURCE)return;const now=Date.now(),api=require(DIR+'/research-v2.js'),one=RESEARCH_V2;
+function recoveryTick(){if((typeof twentyMinuteMode==='function'&&twentyMinuteMode()))return;if(resourcePressure())return;if(!OBS_RECOVERY||!RESEARCH_V2||!SOURCE)return;const now=Date.now(),api=require(DIR+'/research-v2.js'),one=RESEARCH_V2;
  const enqueue=(row,start,end,kind)=>{const source=SOURCE.get(row.mint);if(!source||source.phase!==row.phase)return;const pool=source.proof?.pool||row.p;if(!pool)return;const job=OBS_RECOVERY.enqueue({mint:row.mint,pool,start,end,kind,studyEnd:kind==='one-gap'?(row.eventAt??row.acceptedAt)+require(DIR+'/research-runtime.js').phaseSettings(one.config,row.phase).hours*3600e3:null});if(!job)return;
   const raw=one.rows.find(r=>r.mint===row.mint);if(raw&&kind==='one'){if(row.why==='trade-coverage-gap'&&job.state==='recovered'){const payload=OBS_RECOVERY.payload(job);if(payload&&!payload.tradesAttempted&&payload.candlesSkipped!=='chain-inactivity-complete'){job.state='queued';job.retryAt=now;OBS_RECOVERY.persist();}}raw.recoveryPending=['queued','fetching','waiting-budget'].includes(job.state);if(['recovered','unavailable'].includes(job.state)&&(raw.recoveryJobId!==job.id||raw.recoveryVersion!==2))OBS_RECOVERY.onUpdated(job,OBS_RECOVERY.payload(job)||{candles:[]});}
  };
@@ -1347,7 +1384,7 @@ function recoveryTick(){if(resourcePressure())return;if(!OBS_RECOVERY||!RESEARCH
  const reset=RESEARCH_ONE_EPOCH?.current;if(reset?.resetId)OBS_RECOVERY.archiveJobs(reset.resetAt,j=>j.kind.startsWith('one')&&(SOURCE.get(j.mint)?.acceptedAt??0)<reset.resetAt);
  OBS_RECOVERY.tick();
 }
-function researchCoins(){const contract=require(DIR+'/observation-contract.js');return {get:mint=>{const c=C.get(mint)||(typeof COMPLETED!=='undefined'&&COMPLETED?COMPLETED.readCoin(mint):null);const full=c?fullCoin(c):null,row=full?contract.toLegacy(contract.project(full,{metadata:full,admission:SOURCE?.get(mint)||null})):null;return OBS_RECOVERY?OBS_RECOVERY.attach(row):row}}}
+function researchCoins(){const contract=require(DIR+'/observation-contract.js');return {get:mint=>{const c=C.get(mint)||(typeof COMPLETED!=='undefined'&&COMPLETED?COMPLETED.readCoin(mint):null);const full=c?fullCoin(c):null,row=full?contract.toLegacy(contract.project(full,{metadata:full,admission:SOURCE?.get(mint)||null})):null;return (typeof twentyMinuteMode==='function'&&twentyMinuteMode())&&row?{...row,observationMethod:'gt-ohlcv-20m-v1',terminalCandles:TERMINAL_CHARTS?.read(SOURCE.get(mint),row.p)||null,terminalState:TERMINAL_CHARTS?.statusFor(SOURCE.get(mint),row.p)||null}:OBS_RECOVERY?OBS_RECOVERY.attach(row):row}}}
 async function exportResearchV2(now) {
   if(!RESEARCH_V2||!SOURCE)return;
   const runtime=RESEARCH_V2,epochSnapshot=RESEARCH_ONE_EPOCH.summary();
@@ -1586,7 +1623,7 @@ async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const n
   const featureSnapshots=globalThis.featureCoverage||{pending:true};
   if(!globalThis.stateShapeBusy&&now-(RETENTION.fieldBytes?.at||0)>15*60e3){globalThis.stateShapeBusy=true;require(DIR+'/runtime-health.js').stateFieldBytes(C.values()).then(x=>RETENTION.fieldBytes=x).catch(e=>RETENTION.fieldBytesError=e.name||'Error').finally(()=>globalThis.stateShapeBusy=false);}
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,buyers10Collection:{...BUYER_REPAIR,selectedMinutes:RESEARCH_V2?.config?{before:(RESEARCH_V2.config.phases?.before||RESEARCH_V2.config).decisionMinutes,after:(RESEARCH_V2.config.phases?.after||RESEARCH_V2.config).decisionMinutes}:null},migrationGraduation:{...SOURCE?.graduationSummary(now),audit:{...GRADUATION_AUDIT},rpc:GRADUATION_RPC?.stats||null},researchStorage:RESEARCH_BANKS?.summary(),rpcNetwork:RPC_NETWORK,publicProgramScans:PUBLIC_SCAN_RPC?.stats,poolProofReads:PUBLIC_POOL_RPC?.stats,poolBalanceReads:POOL_BALANCES?.summary(),caches:{migrationCurves:globalThis.migrationCurveSnapshots?.size||0,rpc:RPC_CACHE.summary(),recovery:OBS_RECOVERY?.cache.summary()||null,recoveryRpc:RECOVERY_RPC?.cache.summary()||null},featureSnapshots,poolTradeObservations:{...POOL_TRADE_STATS,publicRPC:PUBLIC_POOL_TRADES?.summary()||null},holderCensus:HOLDER_CENSUS?.stats||null,liquidityProofs:LP_PROOFS?.stats||null,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,openingLiquidity:QUOTE_VALUATION?.summary()||null,migrationCatchup:MIGRATION_CATCHUP?{...MIGRATION_CATCHUP.summary(),admissions:SOURCE?.catchupSummary?.(now)||null}:null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,observationRecovery:OBS_RECOVERY?{...OBS_RECOVERY.summary(),rpc:RECOVERY_RPC?.summary()||null,r1Unknown:RESEARCH_V2?.summary().counts.unknown??null}:null,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:discoveryStatus(),poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,identityPublic:{...FREE_IDENTITY_STATS},openingProofs:OPENING_PROOFS?{...OPENING_PROOFS.stats,active:OPENING_PROOFS.job?{mint:OPENING_PROOFS.job.mint,pages:OPENING_PROOFS.job.pages,blocks:OPENING_PROOFS.job.blocks.length}:null}:null,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,terminalCandles:TERMINAL_CHARTS?.summary()||null,featureProbe:FEATURE_TRIAL?.summary(RESEARCH_V2?.config?.decisionMinutes||12)||null,earlyWindow:{method:(typeof twentyMinuteMode==='function'&&twentyMinuteMode())?'gt-ohlcv-20m-v1':'legacy',activeMinutes:20,legacyR1TradeTracking:!(typeof twentyMinuteMode==='function'&&twentyMinuteMode()),gtQuotas:GT_TASKS?.summary()||null,freeRpcQuotas:FREE_TASKS?.summary()||null,...EARLY_WINDOW_STATS},buyers10Collection:{...BUYER_REPAIR,selectedMinutes:RESEARCH_V2?.config?{before:(RESEARCH_V2.config.phases?.before||RESEARCH_V2.config).decisionMinutes,after:(RESEARCH_V2.config.phases?.after||RESEARCH_V2.config).decisionMinutes}:null},migrationGraduation:{...SOURCE?.graduationSummary(now),audit:{...GRADUATION_AUDIT},rpc:GRADUATION_RPC?.stats||null},researchStorage:RESEARCH_BANKS?.summary(),rpcNetwork:RPC_NETWORK,publicProgramScans:PUBLIC_SCAN_RPC?.stats,poolProofReads:PUBLIC_POOL_RPC?.stats,poolBalanceReads:POOL_BALANCES?.summary(),caches:{migrationCurves:globalThis.migrationCurveSnapshots?.size||0,rpc:RPC_CACHE.summary(),recovery:OBS_RECOVERY?.cache.summary()||null,recoveryRpc:RECOVERY_RPC?.cache.summary()||null},featureSnapshots,poolTradeObservations:{...POOL_TRADE_STATS,publicRPC:PUBLIC_POOL_TRADES?.summary()||null},holderCensus:HOLDER_CENSUS?.stats||null,liquidityProofs:LP_PROOFS?.stats||null,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,openingLiquidity:QUOTE_VALUATION?.summary()||null,migrationCatchup:MIGRATION_CATCHUP?{...MIGRATION_CATCHUP.summary(),admissions:SOURCE?.catchupSummary?.(now)||null}:null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,observationRecovery:OBS_RECOVERY?{...OBS_RECOVERY.summary(),rpc:RECOVERY_RPC?.summary()||null,r1Unknown:RESEARCH_V2?.summary().counts.unknown??null}:null,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:discoveryStatus(),poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,identityPublic:{...FREE_IDENTITY_STATS},openingProofs:OPENING_PROOFS?{...OPENING_PROOFS.stats,active:OPENING_PROOFS.job?{mint:OPENING_PROOFS.job.mint,pages:OPENING_PROOFS.job.pages,blocks:OPENING_PROOFS.job.blocks.length}:null}:null,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,publishedAt:FAST_PASS_PUBLISH_AT},
@@ -1637,15 +1674,15 @@ const STARTED=Date.now();
   MIGRATION_CATCHUP=new (require(DIR+'/migration-catchup.js').MigrationCatchup)({dir:DIR,addresses:[{kind:'pump',address:require(DIR+'/migration-fast.js').PUMP_WITHDRAW_AUTH},{kind:'dbc',address:DBC_AUTH},{kind:'ll',address:LL_AUTH}],decode58:b58dec,knownSignature:sig=>knownMigrationSignatures.has(sig),process:processFastMigration,processManual:processManualPool,seeds:require(DIR+'/manual-recovery-request.js').pools,rpc:async(m,p)=>{const opt={priority:'background',context:'догон миграций',source:'migration-catchup',cache:false,maxBytes:3*1024*1024};try{return await freeFastRPC(m,p,opt)}catch{return rpc(m,p,opt)}}});
   MIGRATION_CATCHUP.tick();setInterval(()=>MIGRATION_CATCHUP.tick(),2000);setInterval(()=>{try{MIGRATION_CATCHUP.heartbeat()}catch(e){err('migration replay heartbeat failed')}},30000);
 
-  captureFeatureSnapshots().catch(e=>err('feature snapshots '+e.message));setInterval(()=>repairBuyerSnapshots(),10000);setInterval(()=>captureFeatureSnapshots().catch(e=>err('feature snapshots '+e.message)),30000);
+  captureFeatureSnapshots().catch(e=>err('feature snapshots '+e.message));setInterval(()=>{if(!(typeof twentyMinuteMode==='function'&&twentyMinuteMode()))repairBuyerSnapshots()},10000);setInterval(()=>captureFeatureSnapshots().catch(e=>err('feature snapshots '+e.message)),30000);
   setInterval(()=>reloadResearchConfig(),30000);
   setInterval(()=>{try{publicPoolTradeTick()}catch(e){err('public pool trades '+e.message)}},1000);
   initObservationRecovery();setTimeout(()=>recoveryTick(),20000);setInterval(()=>{try{recoveryTick()}catch(e){err('recovery '+e.message)}},15000);
-  setInterval(()=>freeIdentityTick(),10000);OPENING_PROOFS=new (require(DIR+'/opening-evidence.js').OpeningEvidence)({});setInterval(()=>openingTick().catch(e=>err('opening proof '+e.message)),2000);PROFILES=new (require(DIR+'/coin-profile.js').CoinProfiles)();HOLDER_CENSUS=new (require(DIR+'/holder-census.js').HolderCensus)({});setInterval(()=>censusTick().catch(e=>err('holder census '+e.message)),10000);LP_PROOFS=new (require(DIR+'/liquidity-proof.js').LiquidityProofs)({});setInterval(()=>liquidityTick().catch(e=>err('liquidity proof '+e.message)),10000);
+  setInterval(()=>freeIdentityTick(),10000);OPENING_PROOFS=new (require(DIR+'/opening-evidence.js').OpeningEvidence)({});setInterval(()=>openingTick().catch(e=>err('opening proof '+e.message)),2000);PROFILES=new (require(DIR+'/coin-profile.js').CoinProfiles)();HOLDER_CENSUS=new (require(DIR+'/holder-census.js').HolderCensus)({fetch:freeTaskFetch('holders')});setInterval(()=>censusTick().catch(e=>err('holder census '+e.message)),10000);LP_PROOFS=new (require(DIR+'/liquidity-proof.js').LiquidityProofs)({fetch:freeTaskFetch('lp')});setInterval(()=>liquidityTick().catch(e=>err('liquidity proof '+e.message)),10000);
   GRADUATION_RPC=new (require(DIR+'/pool-balance-reader.js').PublicPoolRPC)({fallback:(m,p,o)=>rpc(m,p,o)});setTimeout(()=>auditGraduations(),5000);setInterval(()=>auditGraduations(),10000);
   const LAUNCH_HISTORY=new (require(DIR+'/launch-history.js').LaunchHistory)();
   const updateLaunchHistory=()=>{try{LAUNCH_HISTORY.update({source:SOURCE,coins:C,metadata:mint=>COMPLETED?.metadata(mint),now:Date.now()})}catch(e){err('launch history '+e.message)}};updateLaunchHistory();setInterval(updateLaunchHistory,60000);
-  const updateProfiles=()=>PROFILES.update({coins:C,source:SOURCE,rpc:(m,p)=>rpc(m,p,{priority:'identity',context:'карточка',source:'coin-profile'})}).catch(e=>err('profiles '+e.message));
+  const updateProfiles=()=>PROFILES.update({coins:(typeof twentyMinuteMode==='function'&&twentyMinuteMode())?new Map([...C].filter(([,c])=>earlyActive(c,Date.now()))):C,source:SOURCE,rpc:(m,p)=>rpc(m,p,{priority:'identity',context:'карточка',source:'coin-profile'})}).catch(e=>err('profiles '+e.message));
   setInterval(updateProfiles,30000);updateProfiles();setTimeout(()=>collectIntelligence(),30000);setInterval(()=>collectIntelligence(),60000);
   setTimeout(()=>auditManualPools(),20000);setInterval(()=>auditManualPools(),30000);
   setInterval(()=>exportStatus().catch(e=>err('status '+e.message)),60000);exportStatus().catch(e=>err('status '+e.message));
@@ -1653,6 +1690,7 @@ const STARTED=Date.now();
   setTimeout(()=>researchExportsCycle().catch(e=>err('research exports '+e.message)),15000);setInterval(()=>researchExportsCycle().catch(e=>err('research exports '+e.message)),120000);
   startDiscoveryBootstrap();
   setInterval(pollNew,90000);
+  setInterval(()=>earlyWindowTick().catch(e=>err('early window '+(e.code||'unavailable'))),1000);
   (async()=>{for(;;){try{await pollDS()}catch(e){err('dsloop '+e.message)}await sleep(15000)}})();
   setInterval(()=>{try{candleTasks()}catch(e){err('candles '+e.message)}},15000);
   setInterval(()=>{try{researchActivityTape(Date.now())}catch(e){err('activity scheduler '+e.message)}},2000);

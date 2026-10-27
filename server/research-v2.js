@@ -112,6 +112,14 @@ let verdictCache=new WeakMap(),verdictCacheEntries=0;
 // Memoize only packed immutable v3 evidence. Mutable raw arrays keep the
 // uncached path; thresholds and deadline state are explicit dependencies.
 function classifyActivity(m,cfg={}){
+ if(m?.terminalCandlesPacked&&cfg.outcomeMethod==='gt-ohlcv-20m-v1'){
+ const signature=JSON.stringify([cfg.hours??5,cfg.minActive??60,cfg.minSliceVolumeSol??.5]),cached=verdictCache.get(m);
+ if(cached?.packed===m.terminalCandlesPacked&&cached.signature===signature)return {...cached.value};
+ const result=require('./terminal-candles').classify(require('./terminal-candles').unpack(m.terminalCandlesPacked),cfg);
+ if(!cached&&++verdictCacheEntries>20000){verdictCache=new WeakMap();verdictCacheEntries=1;}
+ verdictCache.set(m,{packed:m.terminalCandlesPacked,signature,value:result});return {...result};
+ }
+ if(cfg.outcomeMethod==='gt-ohlcv-20m-v1')return {label:'unknown',why:'terminal-chart-awaiting-retry'};
  if(!m||cfg.activityRuleVersion!==3||typeof m.activitySlicesPacked!=='string'||m.activitySlices||m.minutes)return classifyActivityUncached(m,cfg);
  const parameters=[cfg.minActive===undefined?60:cfg.minActive,cfg.minTradeSol===undefined?.05:cfg.minTradeSol,cfg.minWallets===undefined?2:cfg.minWallets,cfg.minCoverage===undefined?.8:cfg.minCoverage];
  if(parameters.some(x=>typeof x!=='number'||!Number.isFinite(x)))return classifyActivityUncached(m,cfg);
@@ -157,6 +165,7 @@ function extendedFeaturesAt(coin,t,context,F){
  out.intelligenceEvidenceVersion=2;return out;
 }
 function activityOutcome(coin,entryAt,cfg={},now=Date.now()){
+ if(cfg.outcomeMethod==='gt-ohlcv-20m-v1')return require('./terminal-candles').outcome(coin?.terminalCandles,entryAt,cfg,now,coin?.terminalState);
  if(cfg.outcomeVersion!==2)return legacyActivityOutcome(coin,entryAt,cfg,now);
  const end=entryAt+(cfg.hours??5)*60*MIN;
  if(now<end+3*MIN)return {label:'pending',why:'not-yet-finished'};
@@ -202,7 +211,8 @@ function tradeOutcomeEvidence(rows,start,end,at){
  const identities=clean.every(r=>typeof r[3]==='string'&&r[3].length>=32);
  return {at,windowStart:start,windowEnd:end,complete,trades:clean,minutes:[...minute.values()].sort((a,b)=>a[0]-b[0]),lastHourTrades:trades,lastHourWallets:identities?wallets.size:null,uniqueBuyers:identities?buyers.size:null,lowerBounds:[...(!tailComplete?['last-hour-trades','last-hour-wallets']:[]),...(!complete?['unique-buyers']:[])]};
 }
-function strengthOutcome(coin,zeroAt,{minAbove=70,minCoverage=.9,minAboveMarginPct=10,hours=5}={},now=Date.now()){
+function strengthOutcome(coin,zeroAt,{minAbove=70,minCoverage=.9,minAboveMarginPct=10,hours=5,outcomeMethod}={},now=Date.now()){
+ if(outcomeMethod==='gt-ohlcv-20m-v1')return require('./terminal-candles').strength(coin?.terminalCandles,zeroAt,{minAbove,minCoverage,minAboveMarginPct,hours},now);
   if(!inRange(minAbove,0,100)||!inRange(minAboveMarginPct,0,100)||!Number.isInteger(hours)||hours<1||hours>12)throw RangeError('Invalid level-two settings');
   const total=hours*60,end=zeroAt+total*MIN;
   if(now<end+MIN)return {label:'pending',why:'observation-window-not-finished'};

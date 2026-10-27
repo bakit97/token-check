@@ -48,7 +48,8 @@ function intakeDecision(intake,row,features,passes){
 function settings(cfg={}) {
   const result={
     outcomeVersion:2,missPenalty:cfg.missPenalty??3,
-    activityRuleVersion:3,minTradeSol:cfg.minTradeSol??.05,minWallets:cfg.minWallets??2,
+    outcomeMethod:cfg.outcomeMethod??'legacy-trade-v3',minSliceVolumeSol:cfg.minSliceVolumeSol??.5,
+    activityRuleVersion:cfg.outcomeMethod==='gt-ohlcv-20m-v1'?4:3,minTradeSol:cfg.minTradeSol??.05,minWallets:cfg.minWallets??2,
     hours:cfg.hours??5,
     decisionMinutes:cfg.decisionMinutes??10,
     minActive:cfg.minActive??60,
@@ -57,11 +58,12 @@ function settings(cfg={}) {
     ...(cfg.intake!=null?{intake:intakeSettings(cfg.intake)}:{})
   };
   if(!Number.isInteger(result.hours)||result.hours<1||result.hours>12 ||
-     !Number.isInteger(result.decisionMinutes)||result.decisionMinutes<1||result.decisionMinutes>15 ||
+     !Number.isInteger(result.decisionMinutes)||result.decisionMinutes<1||result.decisionMinutes>20 ||
      !Number.isFinite(result.minActive)||result.minActive<0||result.minActive>100 ||
      !Number.isFinite(result.minCoverage)||result.minCoverage<.5||result.minCoverage>1) {
     throw new RangeError('Invalid first-level observation settings');
   }
+  if(!Number.isFinite(result.minSliceVolumeSol)||result.minSliceVolumeSol<.1||result.minSliceVolumeSol>5)throw RangeError('Invalid slice volume');
   for(const key of ['targetLive','targetDead'])if(!Number.isInteger(result[key])||result[key]<10||result[key]>5000)throw RangeError('Invalid research target');
   if(!Number.isFinite(result.missPenalty)||result.missPenalty<1||result.missPenalty>5)throw RangeError('Invalid miss penalty');
   if(!Number.isFinite(result.minTradeSol)||result.minTradeSol<.01||result.minTradeSol>1||!Number.isInteger(result.minWallets)||result.minWallets<2||result.minWallets>10)throw RangeError('Invalid single-swap activity settings');
@@ -150,7 +152,7 @@ class ResearchRuntime {
       const result=activityOutcome(coin,at,cfg,now);if(result.label==='pending')continue;
       // Recompute from original receipt cutoffs. Relabelling old frozen values
       // with an earlier timestamp would leak observations from after the decision.
-      const fresh={...old,...result,activitySlices:undefined,activitySlicesPacked:require('./activity-slices').pack(result.activitySlices),eventAt:at,featureAnchor:'acceptedAt',featureSnapshotVersion:1,marketScopeVersion:2,decisionAt,
+      const fresh={...old,...result,activitySlices:undefined,activitySlicesPacked:result.activitySlices?require('./activity-slices').pack(result.activitySlices):undefined,eventAt:at,featureAnchor:'acceptedAt',featureSnapshotVersion:1,marketScopeVersion:2,decisionAt,
         features:require('./feature-snapshots').read(coin,admission.acceptedAt,cfg.decisionMinutes,old.phase),
         featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,admission.acceptedAt,'1',old.phase),
         earlyWallets:require('./early-intelligence').frozenWallets(coin,decisionAt),
@@ -170,7 +172,7 @@ class ResearchRuntime {
   *updateSteps({source,coins,passes=null,now=Date.now()}={}) {
     this.pruneRevoked(source?.revokedManual);this.pruneRevoked(new Map([...(source?.revokedMigrations||[])].filter(([mint])=>!source.records.has(mint))),'after');
     if(!source?.records || !coins?.get)throw new TypeError('Need source ledger and coin map');
-    yield* this.reanchorSteps({source,coins,now});
+    if(this.config.outcomeMethod!=='gt-ohlcv-20m-v1')yield* this.reanchorSteps({source,coins,now});
     let added=0,considered=0,attempted=0,gateChecks=0;
     const pending={},byPhase={before:{live:0,dead:0},after:{live:0,dead:0}};
     // Newest first, avoid scanning the entire multi-month ledger.
@@ -184,7 +186,7 @@ class ResearchRuntime {
     const diag={recent:0,beforeCohort:0,afterEnd:0,tooOld:0,future:0,processed:0,processedSize:this.processed.size};
     for(const row of recent){
       yield;
-      const age=now-eventAnchor(row);
+      const age=now-(this.config.outcomeMethod==='gt-ohlcv-20m-v1'?row.acceptedAt:eventAnchor(row));
       if(this.processed.has(row.mint)&&!this.admitted.has(row.mint)&&row.acceptedAt<this.admissionUpgradeAt)this.processed.delete(row.mint);
       diag.recent++;if(row.acceptedAt<this.cohortStart)diag.beforeCohort++;else if(row.acceptedAt>=this.cohortEnd)diag.afterEnd++;else if(age<0)diag.future++;else if(age>FRESH_WINDOW)diag.tooOld++;else if(this.processed.has(row.mint))diag.processed++;
       if((row.acceptedAt<this.cohortStart&&!this.admitted.has(row.mint))||row.acceptedAt>=this.cohortEnd||age<0||age>FRESH_WINDOW||this.processed.has(row.mint))continue;
@@ -217,7 +219,7 @@ class ResearchRuntime {
         continue;
       }
       const decisionAt=row.acceptedAt+cfg.decisionMinutes*MIN;
-      const result=activityOutcome(coin,eventAnchor(row),cfg,now);
+      const result=activityOutcome(coin,cfg.outcomeMethod==='gt-ohlcv-20m-v1'?row.acceptedAt:eventAnchor(row),cfg,now);
       if(result.label==='pending'){
         this.lastAttemptAt.set(row.mint,{at:now,acceptedAt:row.acceptedAt,why:result.why});
         pending[result.why]=(pending[result.why]||0)+1;
@@ -230,7 +232,7 @@ class ResearchRuntime {
       this.rows.push({via:gate.via,
         mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,featureAnchor:'acceptedAt',featureSnapshotVersion:1,marketScopeVersion:2,eventAt:eventAnchor(row),featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,row.acceptedAt,'1',row.phase),curve:observationCurve(coin,eventAnchor(row),cfg.hours),curveUnit:'price-usd',
         acceptedAt:row.acceptedAt,decisionAt,earlyWallets:require('./early-intelligence').frozenWallets(coin,decisionAt),
-        ...result,activitySlices:undefined,activitySlicesPacked:require('./activity-slices').pack(result.activitySlices),outcomeAt:now,minutes:undefined,outcomePacked:require('node:zlib').deflateSync(Buffer.from(JSON.stringify(result.minutes||[]))).toString('base64'),
+        ...result,activitySlices:undefined,activitySlicesPacked:result.activitySlices?require('./activity-slices').pack(result.activitySlices):undefined,outcomeAt:now,minutes:undefined,outcomePacked:require('node:zlib').deflateSync(Buffer.from(JSON.stringify(result.minutes||[]))).toString('base64'),
         hours:cfg.hours,label:result.label,
         activePct:result.activePct,
         maxIdleObserved:result.maxIdleObserved,
@@ -242,6 +244,7 @@ class ResearchRuntime {
       this.processed.set(row.mint,row.acceptedAt);
       added++;
     }
+    if(this.config.outcomeMethod==='gt-ohlcv-20m-v1'){this.rows=this.rows.filter(r=>now-r.acceptedAt<=FRESH_WINDOW);for(const [mint,r] of this.admitted)if(now-r.acceptedAt>FRESH_WINDOW)this.admitted.delete(mint);}
     for(const [mint,acceptedAt] of this.processed){
       if(now-acceptedAt>FRESH_WINDOW)this.processed.delete(mint);
     }
@@ -269,16 +272,16 @@ class ResearchRuntime {
     const view=this.view();for(const row of view){if(row.why==='backfill-pending')recovering++;if(row.label==='unknown')unknownReasons[row.why||'collector-gap']=(unknownReasons[row.why||'collector-gap']||0)+1;counts.entered++;counts[row.label]++;const p=byPhase[row.phase];if(p){p.entered++;p[row.label]++;}if(['live','dead'].includes(row.label))counts[row.phase==='before'?(row.label==='live'?'preLive':'preDead'):(row.label==='live'?'postLive':'postDead')]++;}
     return {schema:2,updated:this.lastAt,eventMigration:this.eventMigration||null,cohortStart:this.cohortStart,settings:{...this.config},intakeMode:'discovery-v3',intakeAccepted:this.intakeAccepted,intakeRejected:this.intakeRejected,intakePending:[...this.admitted.values()].filter(a=>a.intakePending).length,counts,byPhase,unknownReasons,distributions:this.distributions(view),pending:{...this.pending,'not-yet-finished':counts.pending-recovering,'backfill-pending':recovering,'collector-gap':counts.unknown},bankCapacityPerClass:MAX_BANK_PER_CLASS,status:'observational',secondLevel:'separate-server-verified-pass-stream'};
   }
-  view(){const complete=new Map(this.rows.map(r=>[r.mint,r]));return [...this.admitted.values()].filter(a=>!a.intakePending).map(a=>{const r=complete.get(a.mint);if(r){const v=r.outcomeVersion===2?classifyActivity(r,{...phaseSettings(this.config,r.phase),now:this.lastAt}):{label:'unknown',why:'legacy-observation-awaiting-recheck'};return {...r,...v,features:verifiedFeatures(r.features)};};const cfg=phaseSettings(this.config,a.phase),ended=this.lastAt>=eventAnchor(a)+cfg.hours*HOURS+3*MIN,expired=this.lastAt>=eventAnchor(a)+(cfg.hours+1)*HOURS,why=this.lastAttemptAt.get(a.mint)?.why;return {...a,label:expired||ended&&why&&why!=='deferred-by-batch'?'unknown':'pending',why:expired&&(!why||why==='deferred-by-batch')?'classification-deadline-exceeded':ended?why||'deferred-by-batch':'not-yet-finished'};}).sort((a,b)=>a.acceptedAt-b.acceptedAt);}
+  view(){const complete=new Map(this.rows.map(r=>[r.mint,r]));return [...this.admitted.values()].filter(a=>!a.intakePending).map(a=>{const r=complete.get(a.mint);if(r){const v=r.outcomeVersion===2?classifyActivity(r,{...phaseSettings(this.config,r.phase),now:this.lastAt}):{label:'unknown',why:'legacy-observation-awaiting-recheck'};return {...r,...v,features:verifiedFeatures(r.features)};};const cfg=phaseSettings(this.config,a.phase),ended=this.lastAt>=(this.config.outcomeMethod==='gt-ohlcv-20m-v1'?a.acceptedAt:eventAnchor(a))+cfg.hours*HOURS+3*MIN,expired=this.lastAt>=(this.config.outcomeMethod==='gt-ohlcv-20m-v1'?a.acceptedAt:eventAnchor(a))+(cfg.hours+1)*HOURS,why=this.lastAttemptAt.get(a.mint)?.why;return {...a,label:expired||ended&&why&&why!=='deferred-by-batch'?'unknown':'pending',why:expired&&(!why||why==='deferred-by-batch')?'classification-deadline-exceeded':ended?why||'deferred-by-batch':'not-yet-finished'};}).sort((a,b)=>a.acceptedAt-b.acceptedAt);}
   distributions(view=this.view()){const histogram=(rows,key,edges)=>{const bins=edges.map((lo,i)=>({from:lo,to:edges[i+1]??(key==='activePct'?100:null),count:0}));let unknown=0;for(const r of rows){const x=r[key];if(typeof x!=='number'||!Number.isFinite(x)){unknown++;continue;}let i=edges.findLastIndex(n=>x>=n);if(i<0)i=0;bins[i].count++;}return {bins,known:rows.length-unknown,unknown};};return Object.fromEntries(['before','after'].map(phase=>{const rows=view.filter(r=>r.phase===phase&&r.label!=='pending').map(r=>({...r,priceChangePct:r.priceKeep==null?null:r.priceKeep-100}));return [phase,{completed:rows.length,activePct:histogram(rows,'activePct',Array.from({length:10},(_,i)=>i*10)),maxIdleObserved:histogram(rows,'maxIdleObserved',[0,15,30,60,120]),priceChangePct:histogram(rows,'priceChangePct',[-100,-90,-70,-50,-30,-10,0,10,50,100]),uniqueBuyers:histogram(rows,'uniqueBuyers',[0,10,30,50,100,200]),lowerBounds:rows.filter(r=>r.lowerBounds?.includes('unique-buyers')).length}];}));}
-  debugSample(limit=20,{coins=null,now=this.lastAt,pinnedMints=[]}={}){const crypto=require('node:crypto'),zlib=require('node:zlib');return this.view().map(r=>({r,rank:crypto.createHash('sha256').update(String(this.cohortStart)+r.mint).digest('hex')})).sort((a,b)=>{const ai=pinnedMints.indexOf(a.r.mint),bi=pinnedMints.indexOf(b.r.mint);return (ai<0?Infinity:ai)-(bi<0?Infinity:bi)||a.rank.localeCompare(b.rank)}).slice(0,limit).map(({r})=>{const cfg={...phaseSettings(this.config,r.phase),now},plannedWindowEnd=eventAnchor(r)+cfg.hours*HOURS,observedUntil=Math.min(now,plannedWindowEnd);if(!r.outcomePacked&&coins?.get&&observedUntil>eventAnchor(r)){const c=coins.get(r.mint);if(c)r={...activityEvidence(c,eventAnchor(r),observedUntil,cfg.decisionMinutes),...r};}let minutes=r.minutes||[];try{if(r.outcomePacked)minutes=JSON.parse(zlib.inflateSync(Buffer.from(r.outcomePacked,'base64'),{maxOutputLength:2000000}).toString())}catch{}const sliceAPI=require('./activity-slices'),raw=r.activitySlices||sliceAPI.unpack(r.activitySlicesPacked),verdict=classifyActivity(r,cfg),c=coins?.get?.(r.mint);const audit={thresholds:{minActive:cfg.minActive,minWallets:cfg.minWallets,minTradeSol:cfg.minTradeSol,minCoverage:cfg.minCoverage},requiredActiveSlices:Math.ceil((verdict.totalSlices||0)*cfg.minActive/100),classification:verdict,slices:(raw?.slices||[]).map(s=>({at:s.at,end:s.end,wallets:Object.keys(s.walletMax||{}).length,qualifyingWallets:Object.values(s.walletMax||{}).filter(v=>typeof v==='number'&&v>=cfg.minTradeSol).length,complete:s.complete===true,silent:s.silent===true,hasTrades:s.hasTrades===true})),collectorMinutes:minutes.filter(r=>r[1]===1).length,activityMinutes:minutes.filter(r=>r[2]===1).length};return {audit,name:c?.n||null,pool:c?.p||r.proof?.pool||null,plannedWindowEnd,observedUntil,metricsProvisional:r.label==='pending',mint:r.mint,phase:r.phase,acceptedAt:r.acceptedAt,windowStart:r.windowStart,windowEnd:r.windowEnd,label:r.label,why:r.why,coverage:r.coverage,activePct:r.activePct,activeSlices:classifyActivity(r,cfg).activeSlices,totalSlices:classifyActivity(r,cfg).totalSlices,maxIdleObserved:r.maxIdleObserved,priceAtDecision:r.priceAtDecision,priceAtEnd:r.priceAtEnd,priceKeep:r.priceKeep,lastHourTrades:r.lastHourTrades,lastHourWallets:r.lastHourWallets,uniqueBuyers:r.uniqueBuyers,backfilledMinutes:r.backfilledMinutes||0,recoveryWhy:r.recoveryWhy||null,minuteColumns:['at','collectorObserved','activityObserved','price','recovery'],minutes};});}
+  debugSample(limit=20,{coins=null,now=this.lastAt,pinnedMints=[]}={}){if(this.config.outcomeMethod==='gt-ohlcv-20m-v1')return this.view().slice(0,limit).map(r=>({mint:r.mint,phase:r.phase,acceptedAt:r.acceptedAt,windowStart:r.windowStart,windowEnd:r.windowEnd,label:r.label,why:r.why,audit:{method:this.config.outcomeMethod,thresholds:{minActive:phaseSettings(this.config,r.phase).minActive,minSliceVolumeSol:phaseSettings(this.config,r.phase).minSliceVolumeSol},classification:classifyActivity(r,phaseSettings(this.config,r.phase))}}));const crypto=require('node:crypto'),zlib=require('node:zlib');return this.view().map(r=>({r,rank:crypto.createHash('sha256').update(String(this.cohortStart)+r.mint).digest('hex')})).sort((a,b)=>{const ai=pinnedMints.indexOf(a.r.mint),bi=pinnedMints.indexOf(b.r.mint);return (ai<0?Infinity:ai)-(bi<0?Infinity:bi)||a.rank.localeCompare(b.rank)}).slice(0,limit).map(({r})=>{const cfg={...phaseSettings(this.config,r.phase),now},plannedWindowEnd=eventAnchor(r)+cfg.hours*HOURS,observedUntil=Math.min(now,plannedWindowEnd);if(!r.outcomePacked&&coins?.get&&observedUntil>eventAnchor(r)){const c=coins.get(r.mint);if(c)r={...activityEvidence(c,eventAnchor(r),observedUntil,cfg.decisionMinutes),...r};}let minutes=r.minutes||[];try{if(r.outcomePacked)minutes=JSON.parse(zlib.inflateSync(Buffer.from(r.outcomePacked,'base64'),{maxOutputLength:2000000}).toString())}catch{}const sliceAPI=require('./activity-slices'),raw=r.activitySlices||sliceAPI.unpack(r.activitySlicesPacked),verdict=classifyActivity(r,cfg),c=coins?.get?.(r.mint);const audit={thresholds:{minActive:cfg.minActive,minWallets:cfg.minWallets,minTradeSol:cfg.minTradeSol,minCoverage:cfg.minCoverage},requiredActiveSlices:Math.ceil((verdict.totalSlices||0)*cfg.minActive/100),classification:verdict,slices:(raw?.slices||[]).map(s=>({at:s.at,end:s.end,wallets:Object.keys(s.walletMax||{}).length,qualifyingWallets:Object.values(s.walletMax||{}).filter(v=>typeof v==='number'&&v>=cfg.minTradeSol).length,complete:s.complete===true,silent:s.silent===true,hasTrades:s.hasTrades===true})),collectorMinutes:minutes.filter(r=>r[1]===1).length,activityMinutes:minutes.filter(r=>r[2]===1).length};return {audit,name:c?.n||null,pool:c?.p||r.proof?.pool||null,plannedWindowEnd,observedUntil,metricsProvisional:r.label==='pending',mint:r.mint,phase:r.phase,acceptedAt:r.acceptedAt,windowStart:r.windowStart,windowEnd:r.windowEnd,label:r.label,why:r.why,coverage:r.coverage,activePct:r.activePct,activeSlices:classifyActivity(r,cfg).activeSlices,totalSlices:classifyActivity(r,cfg).totalSlices,maxIdleObserved:r.maxIdleObserved,priceAtDecision:r.priceAtDecision,priceAtEnd:r.priceAtEnd,priceKeep:r.priceKeep,lastHourTrades:r.lastHourTrades,lastHourWallets:r.lastHourWallets,uniqueBuyers:r.uniqueBuyers,backfilledMinutes:r.backfilledMinutes||0,recoveryWhy:r.recoveryWhy||null,minuteColumns:['at','collectorObserved','activityObserved','price','recovery'],minutes};});}
   select({phase,label,limit=100}={}) {
     if(phase&&!['before','after'].includes(phase))throw TypeError('bad phase');
     if(label&&!['live','dead','pending','unknown'].includes(label))throw TypeError('bad label');
     if(!Number.isInteger(limit)||limit<1||limit>20000)throw RangeError('bad limit');
     return this.rows.filter(r=>(!phase||r.phase===phase) && (!label||classOf(r,this.config)===label))
       .sort((a,b)=>b.acceptedAt-a.acceptedAt).slice(0,limit)
-      .map(r=>({...r,label:classOf(r,this.config),features:verifiedFeatures(r.features)}));
+      .map(r=>({...r,...(this.config.outcomeMethod==='gt-ohlcv-20m-v1'?classifyActivity(r,phaseSettings(this.config,r.phase)):{label:classOf(r,this.config)}),features:verifiedFeatures(r.features)}));
   }
 }
 function observationCurve(coin,at,hours){const points=candles(coin);let j=-1;const curve=[];for(let m=0;m<=hours*60;m+=5){const t=at+m*MIN;while(j+1<points.length&&points[j+1][0]<=t)j++;curve.push([m,j>=0&&t-points[j][0]<=7*MIN?points[j][1]:null])}return curve}
