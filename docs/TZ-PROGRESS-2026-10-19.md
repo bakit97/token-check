@@ -1326,3 +1326,124 @@ Runtime 1792969244167131 применился. После прогрева healt
 Важно: первая публикация была одной основной пачкой, затем до контрольной выдержки потребовалось исправление восстановления сохранённых❓ (331e367). Произошли два штатных применения, а не обещанный один перезапуск; это ограничение начального перехода учтено. Одноразовая scoped recovery-команда433068b была подготовлена, но статус подтвердил естественный переход на новую генерацию; VM reset не выполнялся. После этого код не меняется ради контрольного окна.
 
 **Приёмка ещё НЕ завершена:** ноль❓ при нуле завершённых не означает0%. Итог после≥6ч от последнего применения: отложенная проверка в этом чате около16:50UTC /21:50UTC+5; туда же попадёт таблица всех признаков с фактическими процентами/причинами. Отдельная проба запланирована после часа. Автоматизация43-6 публикует только эти документы, не перезапускает сервер и приостанавливается после финального отчёта. Старое превышение state и сетевые ошибки остаются явно открытыми, не скрыты повышением health-порога.
+
+
+## §44 — итог работы 27.10.2026, срез 18:54:30 UTC / 23:54:30 UTC+5
+
+**Это отчёт с фактическими ограничениями, а не заявление «все цели достигнуты».** Автоматизация П43 `43-6` отменена (PAUSED), отложенных/ежечасных проверок нет. Интерфейс владельца не менялся. Код: `3cd1720` поверх `8edce2e`/`39447cc`; фактическая generation `1793126916832587`. Первая попытка `22e6a15` остановилась в CI до выкладки из-за пустого optional opening в карточке; исправлено и проверено до применения. Всего597 Node-тестов +8 Python publication; финальный deploy-server, source tests/smoke — success. VM/диск не менялись, VM reset не выполнялся. Серверные изменения выкладывались группами: правило/очередь/память/вход, затем доказательность исторического аудита и снятие лишней нагрузки.
+
+| Цель | Что изменено / факт проверки | Результат и предел вывода |
+|---|---|---|
+| Правило R1 | `sliceRuleVersion=2`; X0.5 SOL, Y3%, green≥2, red≥2; сжатые1m OHLCV + объём/open/close/high/low/green/red по каждому10m кусочку; пороги меняют метку без запросов | Лестницы NODF/USDP стали🔴; Sexy Lady🔴; DICTATOR🟢. MAO остаётся🟢 по буквальному правилу — противоречие разобрано ниже |
+| ❓ | Полностью повторно получены живые ответы GT для225 завершённых окон исходного среза18:00UTC, включая все84 его❓; проверены текущим серверным парсером и правилом | 2🟢 /223🔴 /0❓, то есть0/225 в историческом повторном расчёте. Это НЕ доля❓ ещё незавершённой новой эпохи |
+| Проверка глазами | Графики5 прежних🟢 +20 случайных🔴 построены из полученных GT OHLCV и просмотрены |20🔴:0 явных ошибок. Новых🟢 всего2, проверены обе; выборку20🟢 получить из этой когорты нельзя. Одна из двух — MAO с несовпадением ожидания ТЗ |
+| Неверный пул у🔴 |30 детерминированно случайных прежних🔴, seed `p44:` + SHA256 mint; каталог всех пулов DexScreener |30/30 точных торговых пулов;0 curve-пулов,0 случаев доминирующего другого подходящего пула. Это выборочная проверка, не доказательство по всем монетам |
+| Причины непринятия | `rejectedByReason`, `otherByReason`, `withoutReason`; полные решения в source/decisions/YYYY-MM-DD.json |без записанной причины0; сумма всех категорий совпадает с seen в обеих фазах |
+| Опоздания | Подтверждённая миграция отделена от старого каталога и события без доказанного типа; время обнаружения отделено от времени завершения доказательства |after: 1066=0 доказанных real +831 not-new +235 unclassified. Нельзя выдавать эти235 за «точно старые» или объявлять полный исторический real-rate<2% |
+| Пропуск OREO | В одной странице64подписей вместо6, без дополнительного RPC: у OREO19первых транзакций неуспешны,20-я — успешная миграция | OREO восстановлен, реальная подпись/официальныйCPMM/завершённая LaunchLab проверены; монета есть в source и И1, не-SOL котировка LAUNCH оценена в SOL |
+| DexScreener | Независимая страница Solana Trending6H с фильтром≤8ч в браузере, первые50строк, далее официальный pairs API | 48/50=96.0% строк имеют известный mint; 39/41=95.12% уникальных mint. Это цель≥95% по монетам. По точным основным/наблюдённым адресам пулов 39/50=78.0% — отдельные боковые рынки не равны новым монетам |
+| State / health | Ранние c.tr не были помечены завершёнными, поэтому не архивировались; теперь идут в существующий checksum+mirror архив перед снятием изRAM. Старые результаты не удалены | state 27,025,737байт (<30МБ); health green; RSS300МБ, peak329.8МБ; Helius7.267/мин; DBC/LaunchLab on; свежесть всех экспортов пройдена |
+| Карточки | Last-observed значения отдельно от правила свежести исследовательских признаков; сохранены marketObservedAt/solMeasuredAt/solAgeMs и marketDataMode | SOL и buy/sell5m возвращаются у всех5контрольных монет. Top10 у них не был собран: null +not-observed, не выдуманный процент. Резервные publicRPC проверены, 403/429; точный top10 не восстановлен |
+| Эпоха / согласованность | `ohlcv2-owner-i1-20261026-clean`; owner minActive70/N12/входSOL0.5 сохранены | 50уникальных=50⏳,0терминальных; status/polygon один snapshot; распределения завершённых0. В том же окне source71=50И1 +21отказ по quoteSol |
+
+### Почему прежние ❓ возникали и что снято с нагрузки
+
+Исходный живой срез:141готовый ответ,85 due-задач; лишь16из них имели записанную ошибку, остальные ещё не пытались запросить свечи. Восьми пулам мешали две части минуты запуска с одинаковым timestamp. GT возвращает фрагменты с точным close→open: такие части теперь объединяются с суммой объёмов, max high/min low; одинаковый ответ дедуплицируется; конфликт без цепочки остаётся ошибкой, не🔴. Проверено отдельными тестами и реальными ответами.
+
+GT выполняет максимум2запроса одновременно, интервал запуска отделён от времени ответа. Финальные независимые квоты: discovery1/min, optional early1/min, outcome3/min; общий адаптивный429-backoff сохранён. Провалившийся на50монетах признак buyers10 имел4% покрытия — лишние GT trades для него отключены, значение не объявляется надёжным. Это освободило квоту для итогов. Новая эпоха не должна считать старую:795 заданий прежней эпохи убраны из рабочего расписания; ledger и полученные данные сохранены архивом. В финальном срезе новая очередь50, due0, requests0/errors0/4290: её окна ещё не закончились. Ноль ошибок при отсутствии итоговых запросов не выдаётся за выполненную новую пятчасовую приёмку.
+
+### Проверяемое противоречие MAO, без подгонки под имя
+
+Для `3g7v747KCuXZt7WgnXP1K8SU9Jy3Tf7Ft8QkP2Kcpump`, пул `5Mgo3xZMz62Pc2DjJx6jXik43s8f6hrLLi9fz9aGrjuY`, текущий точный повтор GT даёт29/30живых кусочков (96.67%). Последний кусочек: объём **1.122785224 SOL**, green=2, red=4, range=6.120220%. Он проходит ВСЕ четыре порога ТЗ. Позднейшее умирание после конца сохранённого5ч окна не должно задним числом менять метку этого окна. Требование «MAO обязательно🔴» одновременно с заданным правилом2/2/3%/0.5 не выполнено: нет оснований тайно менять default, применять blacklist mint или подглядывать в будущие часы. Это реальное расхождение спецификации/контрольного ожидания, не скрытая «успешная» проверка.
+
+| Контроль | Активных кусочков | Результат нового правила |
+|---|---:|---|
+| NODF | 0.00% | 🔴 |
+| USDP | 0.00% | 🔴 |
+| Sexy Onchain Lady | 46.67% | 🔴 |
+| MAO MBAPPE | 96.67% | 🟢 |
+| Mbappe Zedong | 100.00% | 🟢 |
+
+### Все причины и исторические опоздания
+
+Исходный доступный срез дал966after-tooOld (в более раннем срезе владельца было940). Эти числа растут во времени, поэтому не смешиваются со свежим источником. «~70без причины» были alreadyAdmitted — повторное обнаружение уже принятого mint, не70потерянных монет. Вторая часть before-other8 — earlier-pool, отказ боковому пулу. Теперь обе категории подписаны и все записи имеют reason.
+
+Наличие WS-slot или флага «кривая завершена» само по себе НЕ доказывает новую миграцию: это может быть старое административное обновление. Real требует доказательства; не доказанный случай остаётся отдельной категорией. Старая дневная запись не всегда сохраняла первое observedAt/доказательство; у части удалённых кандидатов это не восстановлено из доступного локального архива. Новые решения хранят observedAt/eventAt/origin и lateEvidence. Исторические пробелы не превращены в выдуманную точную разбивку.
+
+- До: seen232 = accepted192 + tooOld26 + unverified6 + alreadyAdmitted0 + other8; withoutReason0.
+- После: seen4039 = accepted2888 + tooOld1066 + unverified9 + alreadyAdmitted76 + other0; withoutReason0.
+
+After-tooOld 1066: real0, catalogue-not-new831, insufficient-evidence235 (192 без доказанного типа +43 без сохранённого кандидата). Поэтому полный исторический критерий настоящих опозданий<2% **не подтверждён**; ноль доказанных real нельзя выдавать за ноль возможных real.
+
+### Контроль DexScreener по каждому из50пулов
+
+Знаменатель зафиксирован до сверки: первые50видимых строк независимой Trending6H/≤8ч, не выборка уже найденных нашим сервером монет. Дубликаты одного mint показаны отдельно, уникальный знаменатель41. «Наблюдённый пул» может быть боковым и не создаёт нового входа И1. Два отсутствующих mint — Malfoid/KNOTS: молодые вторичные пулы старых токенов; их основные пулы существуют с начала октября/сентября. Если приёмка требует95% именно отдельных адресов ВСЕХ боковых пулов, а не монет — этот критерий не достигнут; нельзя незаметно заменить его96%mint. OREO был реальным пропуском и исправлен.
+
+| № | DSсимвол | DSпул | Source / основной пул | И1 доП44 / проверка |
+|---:|---|---|---|---|
+| 1 | DICTATOR | GnicFd5WkN4uc3hiwHA77pMyYDkBNwaChjEiZqQqskNt | да; GnicFd5WkN4uc3hiwHA77pMyYDkBNwaChjEiZqQqskNt | live |
+| 2 | SI | 3KgVPft91E1E3YedModfn1gwcLDSMErFDFhLGHa65LCj | да; 3KgVPft91E1E3YedModfn1gwcLDSMErFDFhLGHa65LCj | pending |
+| 3 | Darla | tAyCN9K72CVnPW9heKg2y97Jpt1d7TUxjvT3GtRZ77m | да; tAyCN9K72CVnPW9heKg2y97Jpt1d7TUxjvT3GtRZ77m | pending |
+| 4 | Trump | EwVnEs1MPryg3eTiJxPXkRiCNPDkVf7jy5nnUSQ1iMsR | да; EwVnEs1MPryg3eTiJxPXkRiCNPDkVf7jy5nnUSQ1iMsR | pending |
+| 5 | MBAPPE | GcyDp8tck2y3y5eNDRwZtK5wG3e2N2venJJh83deU1MJ | да; GcyDp8tck2y3y5eNDRwZtK5wG3e2N2venJJh83deU1MJ | pending |
+| 6 | MACCA | H4GSLcV35YgixK7WVqVEW2ZbhzenZtJR5mGyXe2VyvaC | да; H4GSLcV35YgixK7WVqVEW2ZbhzenZtJR5mGyXe2VyvaC | pending |
+| 7 | MOGZ | 7j13CapqLC4dGaGYFCxgL8t31R7B1Gt93uBh8EdoRp9H | да; 7j13CapqLC4dGaGYFCxgL8t31R7B1Gt93uBh8EdoRp9H | pending |
+| 8 | MOONX | 4gw14P7MFKdeDh7kKeXaYDk28Sf7RDWan3Pmvt7C7gV2 | да; 4gw14P7MFKdeDh7kKeXaYDk28Sf7RDWan3Pmvt7C7gV2 | pending |
+| 9 | SWELL | Hmt2gCerdbmsDkaXrpxpNw6fs8RapUZL2xz6bgAtLFUV | да; Hmt2gCerdbmsDkaXrpxpNw6fs8RapUZL2xz6bgAtLFUV | pending |
+| 10 | ENVAR | nV7tofXZkybc9RpWG5ms3H4g3fr32VWCfPa6ZLZA5P4 | да; nV7tofXZkybc9RpWG5ms3H4g3fr32VWCfPa6ZLZA5P4 | pending |
+| 11 | MOGZ | 31pkb1MRGxRoAHYc9JhM3Lc7Kuammnk9fK4aaYFjtmmT | да; 7j13CapqLC4dGaGYFCxgL8t31R7B1Gt93uBh8EdoRp9H | pending |
+| 12 | Ai | 483Q7J54QdKcQYtAD5ucgHzo1jadcKBPEbJyhPzgjiVT | да; 483Q7J54QdKcQYtAD5ucgHzo1jadcKBPEbJyhPzgjiVT | pending |
+| 13 | ** | 8FqxtshHfFXkUVALA1BCkK3vJHwnV7ATFiWrLQTr3m1x | да; 8FqxtshHfFXkUVALA1BCkK3vJHwnV7ATFiWrLQTr3m1x | pending |
+| 14 | Maxxing | o1aBdQShB55PZbUJGAkX5yBiKdCMKcdaX84zAEoW3Lx | да; o1aBdQShB55PZbUJGAkX5yBiKdCMKcdaX84zAEoW3Lx | pending |
+| 15 | TON | 6ewGGiNEpb1KPyr2rpTLXZXrB325zr2boX5Gyg8yaYBz | да; 6ewGGiNEpb1KPyr2rpTLXZXrB325zr2boX5Gyg8yaYBz | pending |
+| 16 | OREO | CnDfXtogJ7xhwkJnbEybfhrpLauWEcMXg8JBh2pq7obN | да; CnDfXtogJ7xhwkJnbEybfhrpLauWEcMXg8JBh2pq7obN | нет; восстановлен, новаяэпоха⏳ |
+| 17 | NAGI | HZUE3x1wzVhrHZSkxWpbg9nkzFcUC1v6XzUvogg19Rch | да; HZUE3x1wzVhrHZSkxWpbg9nkzFcUC1v6XzUvogg19Rch | pending |
+| 18 | BPF | 2t2ufPhxRBQ2JReSeELhq4w6WoUjWMxEQNz3RNuPC3TG | да; 2t2ufPhxRBQ2JReSeELhq4w6WoUjWMxEQNz3RNuPC3TG | нет; проверить intake/время предыдущего среза |
+| 19 | COPY | EY454MWPg8woKSVyZ1g2xydMiVW6xpcWGDWfGpjosynS | да; EY454MWPg8woKSVyZ1g2xydMiVW6xpcWGDWfGpjosynS | pending |
+| 20 | Lumen | C3Tim4Vrf5JF9M9fmJyaFFnVtLrAnbSfvMsEQbwSxqkb | да; C3Tim4Vrf5JF9M9fmJyaFFnVtLrAnbSfvMsEQbwSxqkb | pending |
+| 21 | USDP | C61k1x1HF1YNaProneMFcy5eMSyLP5kJzLce2h6X2B7v | да; C61k1x1HF1YNaProneMFcy5eMSyLP5kJzLce2h6X2B7v | dead |
+| 22 | NODF | Bdv8sRvjbkBKzdfAimCTW1LpJtEB39ezmDEpiWLjDk1s | да; Bdv8sRvjbkBKzdfAimCTW1LpJtEB39ezmDEpiWLjDk1s | dead |
+| 23 | DICTATOR | 7heXNpexrSbrsV1GpU3zoSmJDhEoXFCPnMv3jTTVMEdZ | да; GnicFd5WkN4uc3hiwHA77pMyYDkBNwaChjEiZqQqskNt | live |
+| 24 | AI | 3xXgZHFiVUtVPBL1EYmd1PZVwjpjKR4zmW37EJL8ks5k | да; 3xXgZHFiVUtVPBL1EYmd1PZVwjpjKR4zmW37EJL8ks5k | pending |
+| 25 | USOE | 5EJiFvAQ4Mpo9qjSoTXsRJgX6UpYzhUNKQsrHqqX53FN | да; 5EJiFvAQ4Mpo9qjSoTXsRJgX6UpYzhUNKQsrHqqX53FN | pending |
+| 26 | MOGZ | 95sEzXtrb5kHwV61mRqtZyJ52GVbNfrM2omQ9R2PRxbq | да; 7j13CapqLC4dGaGYFCxgL8t31R7B1Gt93uBh8EdoRp9H | pending |
+| 27 | BEZOGE | 7aq1heNqRmin7LP5PZ7wbBnGtA2jGqQuELqbcfXcqddx | да; 7aq1heNqRmin7LP5PZ7wbBnGtA2jGqQuELqbcfXcqddx | pending |
+| 28 | GetFit | CkjD8BJV4ERZjEhGsLVuAkBCBVEyMvDFYBRHDNAbDLEJ | да; CkjD8BJV4ERZjEhGsLVuAkBCBVEyMvDFYBRHDNAbDLEJ | pending |
+| 29 | PEAK | 6HHjmQjEdTGJ4vZ6Z84bWiLiRUkJLsGqpTQCTrwvyhLh | да; H4sb6cH4bJ4G9vJG3cDA2h3gYAMgCfuzXu8h56RhkVnC | нет; принят до прежней эпохи |
+| 30 | Nothing | 12UB4gx9ykugH89jXgdTzgN2uCLwAJWMZTNNSAjDu1zy | да; GfgxhqZmKF1V2MfS94LdmK8Ckgf7rhzPJdZztTJjZKHQ | нет; принят до прежней эпохи |
+| 31 | USOE | GqXYCpsfnv88eQ49dHdUb5U57VTQsiqgLYvWxrVfPZG3 | да; GqXYCpsfnv88eQ49dHdUb5U57VTQsiqgLYvWxrVfPZG3 | pending |
+| 32 | SOL | DPCX664dnessJYmTXbuUMARjF635KnzygPtC5LahL6GS | да; EQaVQfBKjXzTdF69hAAw3qx9DAnFUZG6nj14K68aFkiA | dead |
+| 33 | MOGZ | HT1xeEdRwpMbPHDyd2XmAmubCJJ83fwtNm8rHibDMFg5 | да; 7j13CapqLC4dGaGYFCxgL8t31R7B1Gt93uBh8EdoRp9H | pending |
+| 34 | Nothing | 3PMFwaWsa2nLieWydFoXeyQ5VVkMmfmJsu5BXiU25ZBi | да; GfgxhqZmKF1V2MfS94LdmK8Ckgf7rhzPJdZztTJjZKHQ | нет; принят до прежней эпохи |
+| 35 | SCSF | 2ww5rf1fUe3L4eQxBJLU81uZddj3sEVDximm52sfzLie | да; 2ww5rf1fUe3L4eQxBJLU81uZddj3sEVDximm52sfzLie | pending |
+| 36 | BOGGO | 7KXRYw2H1JcuXDtXE9i1K1G8KkDpeciJDJgUgNbtANtJ | да; 7KXRYw2H1JcuXDtXE9i1K1G8KkDpeciJDJgUgNbtANtJ | pending |
+| 37 | WOW | 5eAHwAfVYZRRNmwk9NFvqNctjD1RYEw2rVE69HGdwndT | да; 5eAHwAfVYZRRNmwk9NFvqNctjD1RYEw2rVE69HGdwndT | pending |
+| 38 | Malfoid | 7UB3SjFMMLg79eR87UyARK2xWCisVV1ewwPUkTKMmieQ | нет; старый токен/вторичный пул | нет; не новое первичное событие |
+| 39 | Nothing | DZBwnYFQkjJY8x86RoRicFUQXsgRsLF4HFReYP5si1ft | да; GfgxhqZmKF1V2MfS94LdmK8Ckgf7rhzPJdZztTJjZKHQ | нет; принят до прежней эпохи |
+| 40 | AOP | 7PciJFYc3BKC8DokDCrothcWnbNm3jRrkFAjxGyfWdR1 | да; 7PciJFYc3BKC8DokDCrothcWnbNm3jRrkFAjxGyfWdR1 | pending |
+| 41 | Darla | 5mVKq3eS1bhX4iCytr4u7ETPSgEWQ2aWGodsxUtpYvW4 | да; tAyCN9K72CVnPW9heKg2y97Jpt1d7TUxjvT3GtRZ77m | pending |
+| 42 | LASTTRAD | EfbmrJzYvx2B1wPbh41Jnv189gQNfWu9NdeBNAfxtxFu | да; EfbmrJzYvx2B1wPbh41Jnv189gQNfWu9NdeBNAfxtxFu | dead |
+| 43 | KNOTS | 86V4JUkCdKYbhpES2vgkCPgwXnEQrUMEGGcwcMR6gkcE | нет; старый токен/вторичный пул | нет; не новое первичное событие |
+| 44 | CAKE | D43dmeTiA1M5HyUiUxjgUtj2poDns7pwRzBQsLpt6PZL | да; 8aKRd2zJnr1fkBpRpDBgvzPyWFBP2fwpzWNtRNy5xMvQ | нет; проверить intake/время предыдущего среза |
+| 45 | SOL | EQaVQfBKjXzTdF69hAAw3qx9DAnFUZG6nj14K68aFkiA | да; EQaVQfBKjXzTdF69hAAw3qx9DAnFUZG6nj14K68aFkiA | dead |
+| 46 | ETH | 49oBexBUTT83fSQzqko86iNko5s5xfZRMVMNUaS6Dks8 | да; 49oBexBUTT83fSQzqko86iNko5s5xfZRMVMNUaS6Dks8 | pending |
+| 47 | MIGRATE | FJDELRM5gRYNPxTTNfugisXx3UANgDiCoRd9tA3sKCom | да; FJDELRM5gRYNPxTTNfugisXx3UANgDiCoRd9tA3sKCom | pending |
+| 48 | DICTATOR | PkDJKmgs62ssNwg2TuL2Aq9GfMUHQesC5NN6ikyZK9V | да; GnicFd5WkN4uc3hiwHA77pMyYDkBNwaChjEiZqQqskNt | live |
+| 49 | FILET | 6K5AxrLv5KoXT42nmqYA6p62HUVHnFj5eXuwQDmYstfx | да; 6K5AxrLv5KoXT42nmqYA6p62HUVHnFj5eXuwQDmYstfx | pending |
+| 50 | OF | 9YVX3q4XCnWmtbdKcanwqakJfo8k1nRXfnDFCAYT9RaC | да; BGNzX5u411v6VWTZNYrPT4r59ntwgpDLUYpMoRTiF32d | нет; принят до прежней эпохи |
+
+### Данные карточек и пределы проверки
+
+Числа ниже — ПОСЛЕДНИЕ измеренные значения из раннего окна, не утверждение о текущем балансе через несколько часов. В live/day отдаются времена получения; исследование и модули по-прежнему читают только свой снимок receivedAt≤N. Новые значения карточки не подмешиваются в старое решение.
+
+| Монета | SOL | Пок/прод5m | Top10 |
+|---|---:|---:|---|
+| MAO MBAPPE | 73.439310684 | 398/356 | None (not-observed) |
+| Mbappe Zedong | 95.080587099 | 311/347 | None (not-observed) |
+| Sexy Onchain Lady | 56.427627652 | 4/5 | None (not-observed) |
+| USDP | 10342.841603101 | 222/6 | None (not-observed) |
+| NODF | 5032.731761378 | 209/5 | None (not-observed) |
+
+Для top10 проверены mainnet-beta (largest-accounts429, supply отвечает), PublicNode403, OnFinality429, dRPC400. Значение из несуществующего раннего census восстановить по DS OHLCV нельзя; API top20token accounts также не равно точным10держателям без группировки владельцев. Не подставлялись ни0, ни недоказанная оценка. Эта часть требования карточки остаётся открытой.
+
+**Итог приёмки:** код и операционное восстановление выложены, health/state/учёт/исторический parser-аудит и полнота по уникальным mint подтверждены цифрами. Полностью закрыть П44 нельзя заявить: MAO не соответствует ожидаемой🔴 при буквальных порогах;235исторических after-событий не имеют достаточного доказательства типа; top10контрольных монет отсутствует;20зелёных для независимой выборки нет, а у новой эпохи ещё нет завершённых5ч окон. Никаких новых автоматизаций, ожидания владельца между этапами или запланированной скрытой шестичасовой проверки не оставлено.
