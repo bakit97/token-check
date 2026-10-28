@@ -438,7 +438,7 @@ function renderAll(){
 function speedHtml(seen,passed){if(!Number.isSafeInteger(seen))return '';return fmt(seen)+(Number.isSafeInteger(passed)?' · <b class="pass">'+fmt(passed)+'</b>':'')}
 function renderSpeedCounters(){var d=sourceMeta&&sourceMeta.daily,ok=sourceActive&&d&&d.day===day(now()),b=ok&&d.before||{},a=ok&&d.after||{};
   // «замечено» без утреннего мусора: старые неатрибутированные записи и старые пулы из GeckoTerminal (tooOld) — не пропуски быстрого канала
-  function eff(x){if(!Number.isSafeInteger(x.seen))return x.seen;var lg=(x.unverifiedByReason||{})['legacy-unattributed']||0;return Math.max(x.accepted||0,x.seen-lg-(x.tooOld||0))}
+  function eff(x){if(!Number.isSafeInteger(x.seen))return x.seen;var lg=(x.unverifiedByReason||{})['legacy-unattributed']||0;return Math.max(x.accepted||0,x.seen-lg-(x.tooOld||0)-(x.alreadyAdmitted||0))}
   b=Object.assign({},b,{seen:eff(b)});a=Object.assign({},a,{seen:eff(a)});
   function sum(k){return Number.isSafeInteger(b[k])&&Number.isSafeInteger(a[k])?b[k]+a[k]:null}
   $('todayTab').innerHTML=ok?' '+speedHtml(sum('seen'),sum('accepted')):'';
