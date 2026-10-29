@@ -4,7 +4,7 @@ import json,pathlib,tempfile,time
 def apply(root,bucket,run):
     request=json.loads((pathlib.Path(root)/'deployment/p45-module-request.json').read_text(encoding='utf-8'))
     if not request.get('enabled') or time.time()*1000>request['expiresAt']:return {'action':'disabled-or-expired'}
-    if request['id']=='p45-observational-module-v2':return adjust_safe(bucket,run)
+    if request['id'] in ['p45-observational-module-v2','p45-observational-module-v3']:return adjust_safe(bucket,run,3 if request['id'].endswith('v3') else 2)
     if request['id']!='p45-observational-module-v1':raise ValueError('Unknown smoke request')
     base='gs://'+bucket+'/config/';marker=base+'applied-p45-module.json'
     if run(['storage','objects','describe',marker,'--format=value(generation)'],allow_missing=True):return {'action':'already-applied'}
@@ -28,8 +28,10 @@ def apply(root,bucket,run):
     return {'action':'applied'}
 
 
-def adjust_safe(bucket,run):
-    base='gs://'+bucket+'/config/';marker=base+'applied-p45-module-v2.json'
+def adjust_safe(bucket,run,version=2):
+    condition={'key':'quoteSol','op':'>=','value':.5} if version==2 else {'key':'safeContract','op':'>=','value':1}
+    replacement={'key':'safeContract','op':'>=','value':1} if version==2 else {'key':'dex','op':'in','values':['Meteora DAMM v2','PumpSwap','Raydium CPMM']}
+    base='gs://'+bucket+'/config/';marker=base+'applied-p45-module-v'+str(version)+'.json'
     if run(['storage','objects','describe',marker,'--format=value(generation)'],allow_missing=True):return {'action':'already-applied'}
     values={}
     for name in ['modules.json','pass-filters.json']:
@@ -37,17 +39,17 @@ def adjust_safe(bucket,run):
     ids={'p45-smoke-before','p45-smoke-after'}
     for name,(cfg,_) in values.items():
         rows=cfg['modules'] if name=='modules.json' else cfg['filters'];owned=[m for m in rows if m['id'] in ids]
-        if len(owned)!=2 or any(m.get('conds')!=[{'key':'quoteSol','op':'>=','value':.5}] or m.get('version')!=1 for m in owned):return {'action':'owner-edits-preserved'}
+        if len(owned)!=2 or any(m.get('conds')!=[condition] or m.get('version')!=version-1 for m in owned):return {'action':'owner-edits-preserved'}
     now=int(time.time()*1000)
     for name,(cfg,_) in values.items():
         for m in cfg['modules'] if name=='modules.json' else cfg['filters']:
             if m['id'] not in ids:continue
-            m.update(name='P45 safe contract '+m['phase'],conds=[{'key':'safeContract','op':'>=','value':1}],version=2,liveFrom=now)
-            if name=='pass-filters.json':m.update(key='safeContract',op='>=',value=1)
+            m.update(name='P45 '+replacement['key']+' '+m['phase'],conds=[replacement],version=version,liveFrom=now)
+            if name=='pass-filters.json':m.update(**replacement)
     with tempfile.TemporaryDirectory() as folder:
         file=pathlib.Path(folder)/'config.json'
         for name,(cfg,generation) in values.items():
             file.write_text(json.dumps(cfg),encoding='utf-8');run(['storage','cp',str(file),base+name,'--if-generation-match='+generation,'--quiet'])
-        file.write_text(json.dumps({'id':'p45-observational-module-v2','appliedAt':now}),encoding='utf-8');run(['storage','cp',str(file),marker,'--if-generation-match=0','--quiet'])
-    print('P45 smoke uses measured safeContract at N; owner modules preserved')
-    return {'action':'applied-safe-contract'}
+        file.write_text(json.dumps({'id':'p45-observational-module-v'+str(version),'appliedAt':now}),encoding='utf-8');run(['storage','cp',str(file),marker,'--if-generation-match=0','--quiet'])
+    print('P45 smoke uses measured '+replacement['key']+' at N; owner modules preserved')
+    return {'action':'applied-safe-contract' if version==2 else 'applied-dex'}

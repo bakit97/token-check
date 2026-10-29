@@ -24,4 +24,6 @@ class SmokeTests(unittest.TestCase):
  def test_v2_preserves_owner_edit_of_a_smoke_rule(self):
   root=self.fixture();state,writes,run=self.fake();apply(root,'bucket',run);state['modules.json']['modules'][0]['conds'][0]['value']=9
   file=root/'deployment/p45-module-request.json';request=json.loads(file.read_text());request['id']='p45-observational-module-v2';file.write_text(json.dumps(request));before=copy.deepcopy(state);self.assertEqual(apply(root,'bucket',run)['action'],'owner-edits-preserved');self.assertEqual(state,before)
+ def test_v3_uses_proven_dex_without_changing_minute_or_owner_rules(self):
+  root=self.fixture();state,writes,run=self.fake();apply(root,'bucket',run);file=root/'deployment/p45-module-request.json';request=json.loads(file.read_text());request['id']='p45-observational-module-v2';file.write_text(json.dumps(request));apply(root,'bucket',run);request['id']='p45-observational-module-v3';file.write_text(json.dumps(request));self.assertEqual(apply(root,'bucket',run)['action'],'applied-dex');module=state['modules.json']['modules'][0];self.assertEqual(module['verdictMinutes'],12);self.assertEqual(module['conds'][0]['key'],'dex');self.assertEqual(module['version'],3)
 if __name__=='__main__':unittest.main()
