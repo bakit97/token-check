@@ -1,6 +1,6 @@
 {
-  "id": "p45-scoped-update-after-recent-checkpoint",
-  "allowedFromGeneration": "1793126916832587",
+  "id": "p45-scoped-update-from-first-batch",
+  "allowedFromGeneration": "1793269306354368",
   "enabled": true,
   "maxWaitMs": 1000,
   "maxStateBytes": 64000000,
