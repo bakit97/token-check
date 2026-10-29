@@ -1,1 +1,9 @@
-{"id": "tz44-batched-turbulence-retention", "allowedFromGeneration": "1793097761713445", "enabled": true, "maxWaitMs": 1000, "maxStateBytes": 64000000, "allowExistingCheckpoint": true, "maxCheckpointAgeMs": 1800000}
+{
+  "id": "p45-scoped-update-after-recent-checkpoint",
+  "allowedFromGeneration": "1793126916832587",
+  "enabled": true,
+  "maxWaitMs": 1000,
+  "maxStateBytes": 64000000,
+  "allowExistingCheckpoint": true,
+  "maxCheckpointAgeMs": 1800000
+}
