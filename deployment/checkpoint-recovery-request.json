@@ -1,6 +1,6 @@
 {
-  "id": "p45-restore-stable-heap-from-verified-checkpoint",
-  "allowedFromGeneration": "1793270527997443",
+  "id": "p45-scoped-final-runtime-after-fresh-checkpoint",
+  "allowedFromGeneration": "1793271166381233",
   "enabled": true,
   "maxWaitMs": 1000,
   "maxStateBytes": 64000000,
