@@ -22,22 +22,25 @@ function validVersion(v){
   return v&&typeof v.key==='string'&&typeof v.id==='string'&&
     Number.isInteger(v.version)&&v.version>0&&
     ['1','2'].includes(v.level)&&['before','after'].includes(v.phase)&&
-    v.rule&&typeof v.rule.key==='string'&&['>=','<='].includes(v.rule.op)&&
-    typeof v.rule.value==='number'&&Number.isFinite(v.rule.value);
+    v.rule&&require('./research-v2').validCondition(v.rule)&&(!v.rule.conditions||Array.isArray(v.rule.conditions)&&v.rule.conditions.every(require('./research-v2').validCondition));
 }
 class FilterAudit{
   constructor({dir}={}){
     if(!dir)throw TypeError('Filter audit directory required');
     fs.mkdirSync(dir,{recursive:true});
     this.file=path.join(dir,'filter-audit-baselines.json');
-    this.versions=new Map();
+    this.versions=new Map();this.quarantinedLegacyVersions=0;
     if(fs.existsSync(this.file)){
       const data=JSON.parse(fs.readFileSync(this.file,'utf8'));
       if(data.schema===2&&Array.isArray(data.versions)){
         for(const v of data.versions){
-          if(!validVersion(v)||this.versions.has(v.key))
-            throw Error('Invalid stored filter version history');
-          this.versions.set(v.key,v);
+          if(!validVersion(v)){
+            const missing=v?.rule&&(v.rule.op==='in'&&['dex','launchpad'].includes(v.rule.key)&&v.rule.values===undefined||v.rule.op==='between'&&v.rule.value2===undefined),structure=validVersion({...v,rule:{key:'volume',op:'>=',value:1}});
+            if(!missing||!structure)throw Error('Invalid stored filter version history');
+            const file=this.file+'.incomplete-legacy.json',old=fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8')).versions:[];
+            if(!old.some(x=>x.key===v.key))old.push(v);atomic(file,{schema:1,reason:'legacy-writer-omitted-category-values-or-interval-bound',versions:old});this.quarantinedLegacyVersions++;continue;
+          }
+          if(this.versions.has(v.key))throw Error('Invalid stored filter version history');this.versions.set(v.key,v);
         }
       }else if(data.schema!==1||!Array.isArray(data.baselines))
         throw Error('Unknown filter audit history format');
@@ -57,13 +60,13 @@ class FilterAudit{
       const f=catalog.get(m.filterId);
       if(!f||f.level!==m.level||!['before','after'].includes(m.phase))continue;
       const base=[m.level,m.phase,f.id,f.version,f.key,f.op,f.value].join('|');
-      const key=f.conditions?.length?base+'|'+JSON.stringify(f.conditions):base;
+      const qualified=base+(f.op==='in'?'|'+JSON.stringify(f.values):f.op==='between'?'|'+f.value2:'');const key=f.conditions?.length?qualified+'|'+JSON.stringify(f.conditions):qualified;
       if(selected.has(key))continue;
       selected.set(key,!!config.enabled&&!!m.enabled);
       let row=this.versions.get(key);
       if(!row){
         row={key,id:f.id,name:f.name,version:f.version,level:m.level,phase:m.phase,
-          rule:{key:f.key,op:f.op,value:f.value,...(f.conditions?{conditions:f.conditions.map(c=>({...c}))}:{})},
+          rule:{key:f.key,op:f.op,value:f.value,...(f.op==='in'?{values:[...f.values]}:{}),...(f.op==='between'?{value2:f.value2}:{}),...(f.conditions?{conditions:f.conditions.map(c=>({...c}))}:{})},
           firstPublishedAt:activeAt>0?activeAt:null,
           firstSeenAt:now,original:null,background:null,backgroundUpdated:null};
         if(this.legacyBaselines.has(key))
@@ -118,7 +121,7 @@ class FilterAudit{
     }
     atomic(this.file,{schema:2,versions:[...this.versions.values()],updated:now});
     return {schema:2,updated:now,origin:'server-observational-analytics',
-      requiredOriginalPerClass:REQUIRED_PER_CLASS,
+      requiredOriginalPerClass:REQUIRED_PER_CLASS,quarantinedLegacyVersions:this.quarantinedLegacyVersions,
       configEnabled:!!config.enabled,activatedAt:activeAt,
       totalRules:rows.length,archivedRules:rows.filter(r=>r.archived).length,
       rules:rows.slice(-500).reverse(),
