@@ -198,7 +198,7 @@ class ResearchRuntime {
       if(!admission||admission.intakePending)admission=this.admit(row,coins.get(row.mint),passes,now);
       if(!admission)continue;
       const featureAt=row.acceptedAt+cfg.decisionMinutes*MIN;
-      if(now>=featureAt&&admission.decisionAt!==featureAt){const coin=coins.get(row.mint);if(coin){admission.features=require('./feature-snapshots').read(coin,row.acceptedAt,cfg.decisionMinutes,row.phase);admission.decisionAt=featureAt;}}
+      if(now>=featureAt&&(admission.decisionAt!==featureAt||this.config.outcomeMethod==='gt-ohlcv-20m-v1'&&!admission.snapshotSealed)){const coin=coins.get(row.mint);if(coin){const snapshots=require('./feature-snapshots'),modern=this.config.outcomeMethod==='gt-ohlcv-20m-v1',saved=modern?snapshots.unpack(coin.featureSnapshotsPacked):null;if(!modern||saved?.acceptedAt===row.acceptedAt&&saved.pool===coin.p&&saved.snapshots?.[cfg.decisionMinutes]){admission.features=snapshots.read(coin,row.acceptedAt,cfg.decisionMinutes,row.phase);admission.decisionAt=featureAt;if(modern)admission.snapshotSealed=true;}}}
 
       if(admission.intakePending||age<cfg.hours*HOURS+3*MIN){
         const why=age<cfg.hours*HOURS+3*MIN?'not-yet-finished':'deferred-by-batch';pending[why]=(pending[why]||0)+1;
