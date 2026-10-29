@@ -23,6 +23,7 @@ def main():
         return r.stdout
     runpy.run_path(str(ROOT/'deployment/apply-research-epoch.py'))['apply'](ROOT,a.bucket,run)
     runpy.run_path(str(ROOT/'deployment/apply-research-sol.py'))['apply'](ROOT,a.bucket,run)
+    runpy.run_path(str(ROOT/'deployment/apply-p45-module.py'))['apply'](ROOT,a.bucket,run)
     metadata={}
     for name in files:
         described=run(['storage','objects','describe','gs://'+a.bucket+'/code/'+name,'--format=json(generation,md5_hash)'],allow_missing=True)

@@ -17,12 +17,12 @@ function signature(rule){return (rule.conds||[rule].concat(rule.conditions||[]))
 const NAMES={launchpad:'Лаунчпад',dex:'Пул',ageAtMigrationMin:'Возраст к миграции, мин',buyers:'Покупатели',buyers10:'Ранние покупатели',quoteSol:'SOL в пуле',safeContract:'Безопасный контракт',top10:'Концентрация топ-10',top1:'Крупнейший держатель',trades:'Сделки',volume:'Объём',buySellRatio:'Баланс спроса',buys:'Покупки',sells:'Продажи',sellShare:'Доля продаж',averageTrade:'Средняя сделка',token2022:'Тип токена',hasImage:'Изображение',hasDescription:'Описание',liq:'Ликвидность',mc:'Капитализация'};
 class AutoStudies{
  constructor({dir}){this.file=path.join(dir,'auto-studies-v2.json');this.modules=new Map();if(fs.existsSync(this.file)){const x=JSON.parse(fs.readFileSync(this.file,'utf8'));if(x.schema!==1||!Array.isArray(x.modules)||x.modules.length>1000)throw Error('Invalid auto studies');for(const m of x.modules){if(!m.id||!['before','after'].includes(m.phase)||!m.createdAt)throw Error('Invalid auto module');this.modules.set(m.id,m)}}}
- report(rows,{level='1',settings={},now=Date.now(),parentId=null,inherited=[]}={}){
+ report(rows,{level='1',settings={},now=Date.now(),parentId=null,inherited=[],featureCoverage=null}={}){
   const phases={},rules=[];let changed=false;
   for(const phase of ['before','after']){
    const cfg=settings.phases?.[phase]||settings,dm=cfg.decisionMinutes||10;
    const compatible=(r,minutes)=>!r.decisionAt||Math.abs((r.decisionAt-(r.featureAnchor==='acceptedAt'?r.acceptedAt:require('./event-clock').eventAnchor(r)))/60000-minutes)<.01;
-   const bank=rows.filter(r=>r.phase===phase&&compatible(r,dm)&&r.acceptedAt<=now&&(r.outcomeAt==null||r.outcomeAt<=now)).map(r=>({...r,features:verifiedFeatures(r.features)}));
+   const bank=rows.filter(r=>r.phase===phase&&compatible(r,dm)&&r.acceptedAt<=now&&(r.outcomeAt==null||r.outcomeAt<=now)).map(r=>({...r,features:verifiedFeatures(featureCoverage?Object.fromEntries(Object.entries(r.features||{}).map(([k,v])=>[k,featureCoverage.features?.[k]?.available?v:null])):r.features)}));
    const report=discover(bank,{level,minTrainPositive:cfg.targetLive??cfg.targetStrong??(level==='1'?100:40),minTrainNegative:cfg.targetDead??cfg.targetWeak??40,missPenalty:cfg.missPenalty??3});phases[phase]=report;
    for(const proposal of report.rules){
     if(proposal.passesHoldout!==true)continue;
