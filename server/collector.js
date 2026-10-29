@@ -1476,10 +1476,10 @@ async function exportPathsV2(now){
     let levelOne=(RESEARCH_BANKS?RESEARCH_BANKS.select({level:'1',projection:'analysis'}):RESEARCH_V2.select({limit:20000})).filter(x=>x.outcomeVersion===2&&['live','dead'].includes(x.label)).map(x=>({
       ...x,time:x.acceptedAt
     }));
-    const one=AUTO_STUDIES.report(levelOne,{level:'1',settings:RESEARCH_V2.config,now,featureCoverage:globalThis.p45Coverage});
+    const one=AUTO_STUDIES.report(levelOne,{level:'1',settings:RESEARCH_V2.config,now,featureCoverage:globalThis.p45Coverage||{features:{}}});
     levelOne=null;
     let levelTwo=(RESEARCH_BANKS?RESEARCH_BANKS.select({level:'2',projection:'analysis'}):RESEARCH_TWO.select({limit:20000})).filter(r=>{const c=RESEARCH_TWO.config.phases?.[r.phase]||RESEARCH_TWO.config;return r.lineVersion===2&&r.hours===c.hours&&r.passWindowMinutes===c.passWindowMinutes;});
-    const two=AUTO_STUDIES.reportParents(levelTwo,{settings:RESEARCH_TWO.config,now,featureCoverage:globalThis.p45Coverage});
+    const two=AUTO_STUDIES.reportParents(levelTwo,{settings:RESEARCH_TWO.config,now,featureCoverage:globalThis.p45Coverage||{features:{}}});
     levelTwo=null;
     await refreshLibrary(PASS_V2.config);
     const visible=report=>({...report,rules:report.rules.map(r=>LIBRARY_ROWS.find(m=>m.id===r.id&&m.level===report.level)).filter(Boolean).map(m=>({...m,rule:{...m.conds[0],conditions:m.conds.slice(1),conds:m.conds,phase:m.phase,verdictMinutes:m.verdictMinutes},train:m.eval.train,holdout:m.eval.holdout,live:m.eval.live}))});
