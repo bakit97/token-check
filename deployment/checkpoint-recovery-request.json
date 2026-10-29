@@ -1,6 +1,6 @@
 {
-  "id": "p45-receipt-history-recovery-after-verified-checkpoint",
-  "allowedFromGeneration": "1793274814051577",
+  "id": "p45-cooperative-bank-writer-after-verified-checkpoint",
+  "allowedFromGeneration": "1793279158377906",
   "enabled": true,
   "maxWaitMs": 1000,
   "maxStateBytes": 64000000,

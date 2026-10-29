@@ -131,7 +131,7 @@ class ResearchRuntime {
     if(this.config.outcomeMethod!=='gt-ohlcv-20m-v1')return 0;const phases={before:phaseSettings(this.config,'before'),after:phaseSettings(this.config,'after')};let changed=0;
     for(const admission of this.admitted.values()){
       if(changed>=limit)break;if(admission.intakePending||now-admission.acceptedAt>=21*MIN)continue;const cfg=phases[admission.phase],at=admission.acceptedAt+cfg.decisionMinutes*MIN;
-      if(now<at||admission.featureReceiptVersion===2&&admission.decisionAt===at)continue;const coin=coins.get(admission.mint);if(!coin)continue;const f=require('./feature-snapshots').decision(coin,admission,cfg.decisionMinutes,passes);if(f.snapshotSealed){Object.assign(admission,f);changed++;}
+      if(now<at||admission.featureReceiptVersion===2&&admission.decisionAt===at)continue;const coin=coins.get(admission.mint,admission);if(!coin)continue;const f=require('./feature-snapshots').decision(coin,admission,cfg.decisionMinutes,passes);if(f.snapshotSealed){Object.assign(admission,f);changed++;}
     }return changed;
   }
   async repairFrozenFeatures({coins,passes=null,now=Date.now(),limit=4,canRun=()=>true}={}){
@@ -141,7 +141,7 @@ class ResearchRuntime {
       const phases={before:phaseSettings(this.config,'before'),after:phaseSettings(this.config,'after')};let checked=0;for(const admission of this.admitted.values()){
         if(!canRun()||checked>=limit)break;const cfg=phases[admission.phase];
         if(admission.intakePending||now-admission.acceptedAt<21*MIN||admission.featureReceiptVersion===2&&admission.featureCoverageMinute===cfg.decisionMinutes||admission.featureRepairRetryAt>now)continue;
-        checked++;const coinStart=Date.now();try{const coin=coins.get(admission.mint);if(!coin){this.featureRepair.missing++;admission.featureRepairRetryAt=now+HOURS;continue;}
+        checked++;const coinStart=Date.now();try{const coin=coins.get(admission.mint,admission);if(!coin){this.featureRepair.missing++;admission.featureRepairRetryAt=now+HOURS;continue;}
           const receipt=require('./feature-snapshots').decision(coin,admission,cfg.decisionMinutes,passes);if(!receipt.snapshotSealed){this.featureRepair.missing++;admission.featureRepairRetryAt=now+HOURS;continue;}
           const verdicts=passes?.records?.get(admission.mint)?.moduleVerdicts,times=require('./module-library').freezeFeatureTimes(coin,admission.acceptedAt,'1',admission.phase,verdicts);
           Object.assign(admission,receipt);delete admission.featureRepairRetryAt;const row=this.rows.find(r=>r.mint===admission.mint);if(row)Object.assign(row,receipt,{featureTimesPacked:times});
@@ -220,10 +220,10 @@ class ResearchRuntime {
       considered++;
       const cfg=phaseSettings(this.config,row.phase);
       let admission=this.admitted.get(row.mint);
-      if(!admission||admission.intakePending)admission=this.admit(row,coins.get(row.mint),passes,now);
+      if(!admission||admission.intakePending)admission=this.admit(row,coins.get(row.mint,row),passes,now);
       if(!admission)continue;
       const featureAt=row.acceptedAt+cfg.decisionMinutes*MIN;
-      if(now>=featureAt&&(admission.decisionAt!==featureAt||this.config.outcomeMethod==='gt-ohlcv-20m-v1'&&admission.featureReceiptVersion!==2)){const coin=coins.get(row.mint);if(coin){const snap=require('./feature-snapshots'),f=snap.decision(coin,row,cfg.decisionMinutes,passes);if(this.config.outcomeMethod!=='gt-ohlcv-20m-v1'||f.snapshotSealed)Object.assign(admission,f);}}
+      if(now>=featureAt&&(admission.decisionAt!==featureAt||this.config.outcomeMethod==='gt-ohlcv-20m-v1'&&admission.featureReceiptVersion!==2)){const coin=coins.get(row.mint,row);if(coin){const snap=require('./feature-snapshots'),f=snap.decision(coin,row,cfg.decisionMinutes,passes);if(this.config.outcomeMethod!=='gt-ohlcv-20m-v1'||f.snapshotSealed)Object.assign(admission,f);}}
 
 
       if(admission.intakePending||age<cfg.hours*HOURS+3*MIN){
@@ -240,7 +240,7 @@ class ResearchRuntime {
         continue;
       }
       attempted++;
-      const coin=coins.get(row.mint);
+      const coin=coins.get(row.mint,row);
       if(!coin){
         this.lastAttemptAt.set(row.mint,{at:now,acceptedAt:row.acceptedAt,why:'candidate-missing'});
         pending['candidate-missing']=(pending['candidate-missing']||0)+1;

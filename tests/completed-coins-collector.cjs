@@ -9,7 +9,7 @@ function setup(t,coins,{failMirror=false,saveOk=true}={}){
   dayKey:day,lastYest:0,lastObs:0,FV:2,OBS_CONTRACT:{days:{}},setImmediate,err:()=>{},coinMetadata:c=>({a:c.a,t:c.t,ds:c.ds,n:c.n}),observedEligible:c=>c.mg?.st==='ok',
   reloadSourceAgeConfig:async()=>{},reloadResearchConfig:async()=>{},flushUploads:async()=>{},exportSource:async()=>{},exportResearchV2:async()=>{},exportPathsV2:async()=>{},
   save:()=>{if(!saveOk)return false;fs.writeFileSync(path.join(dir,'state.json'),JSON.stringify([...C.values()]));return true},
-  require:p=>p.endsWith('completed-coins.js')?require('../server/completed-coins'):p.endsWith('observation-contract.js')?contract:stream,
+  require:p=>p.endsWith('completed-coins.js')?require('../server/completed-coins'):p.endsWith('observation-contract.js')?contract:p.endsWith('feature-snapshots.js')?require('../server/feature-snapshots'):stream,
   upload:async(name,obj)=>{if(failMirror&&name.startsWith('observations-v2/'))throw Error('injected mirror failure');let text='';for await(const chunk of stream.jsonChunks(obj))text+=chunk;sent.set(name,JSON.parse(text))}};
  vm.createContext(ctx);vm.runInContext(code.slice(code.indexOf('async function exportObservationContract('),code.indexOf('let STATUS_BUSY='))+'\nthis.run=exportDaysBody;',ctx);ctx.seedCompletedDays=async()=>{};return {ctx,store,sent,dir};
 }
@@ -64,3 +64,5 @@ test('closed archive dedup never removes new observations or an active research 
  await ctx.deduplicateClosedArchiveRows();assert.equal(ctx.C.has(a.a),false);assert.equal(ctx.C.has(b.a),true);assert.equal(ctx.C.has(c.a),true);
  assert.deepEqual(store.readCoin(a.a).ds,a.ds);assert.equal(ctx.SOURCE.records.size,3);assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'state.json'))).length,2);
 });
+
+test('research adapter accepts the frozen admission pool after this mint moves to a different pool',t=>{const c=coin('moved',1);c.ds=[[1001,999]];c.origs=[{p:'original',d:'pump-fun',q:'SOL',t:c.t-1000,ds:[[1000,10]],lq:[]}];const {ctx}=setup(t,[c]);ctx.SOURCE.get=()=>({mint:c.a,acceptedAt:clock-5000,phase:'after',proof:{pool:c.p}});vm.runInContext(code.slice(code.indexOf('function researchCoins()'),code.indexOf('async function exportResearchV2(')),ctx);const read=ctx.researchCoins().get(c.a,{mint:c.a,acceptedAt:c.t,phase:'before',p:'original'});assert.equal(read.p,'original');assert.deepEqual(read.ds,[[1000,10]]);assert.equal(read.lq.length,0);assert.equal(ctx.C.get(c.a).p,c.p);});

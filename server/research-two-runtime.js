@@ -219,7 +219,7 @@ class ResearchTwoRuntime {
         continue;
       }
       attempted++;
-      const coin=coins.get(pass.mint);
+      const coin=coins.get(pass.mint,Number.isSafeInteger(pass.acceptedAt)&&pass.p?pass:null);
       if(!coin){
         this.retry.set(pass.mint,{at:now,zeroAt:pass.zeroAt,reason:'candidate-missing'});
         pending['candidate-missing']=(pending['candidate-missing']||0)+1;
