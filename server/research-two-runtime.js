@@ -181,7 +181,7 @@ class ResearchTwoRuntime {
       const cfg=this.config.phases?.[old.phase]||this.config,anchor=admission.eventAt,zeroAt=old.lineVersion===2?old.lineAt:anchor+(old.zeroAt-eventAnchor(old));
       if(!Number.isSafeInteger(zeroAt)||zeroAt<anchor)continue;
       const result=strengthOutcome(coin,zeroAt,cfg,now);if(result.label==='pending')continue;
-      const at=admission.acceptedAt+cfg.decisionMinutes*MIN,F=require('./feature-snapshots').read(coin,admission.acceptedAt,cfg.decisionMinutes,old.phase,'2');
+      const at=admission.acceptedAt+cfg.decisionMinutes*MIN,F=require('./feature-snapshots').researchRead(coin,admission.acceptedAt,cfg.decisionMinutes,old.phase,'2');
       const fresh={...old,...result,eventAt:anchor,featureAnchor:'acceptedAt',featureSnapshotVersion:1,marketScopeVersion:2,zeroAt,decisionAt:at,features:F,
         featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,admission.acceptedAt,'2',old.phase),
         earlyWallets:require('./early-intelligence').frozenWallets(coin,at),
@@ -235,16 +235,17 @@ class ResearchTwoRuntime {
       // Level-two conditions and versions were frozen at first Passed.
       // Their metrics use only observations up to the fixed zeroAt.
       const featureAt=pass.acceptedAt+cfg.decisionMinutes*MIN;
-      const F=require('./feature-snapshots').read(coin,pass.acceptedAt,cfg.decisionMinutes,pass.phase,'2');
+      const at=pass.acceptedAt+cfg.decisionMinutes*MIN,actual=pass.moduleVerdicts?.find(v=>v.level==='2'&&v.at===at),F=actual?.features||require('./feature-snapshots').researchRead(coin,pass.acceptedAt,cfg.decisionMinutes,pass.phase,'2');
+      const availableAtN=actual?.features||require('./feature-snapshots').read(coin,pass.acceptedAt,cfg.decisionMinutes,pass.phase,'2');
       const secondLevelMatches=(pass.secondLevelRules||[])
-        .filter(f=>evaluation(F,f)==='pass').map(f=>({...f}));
+        .filter(f=>evaluation(availableAtN,f)==='pass').map(f=>({...f}));
       newRows.push({
         mint:pass.mint,phase:pass.phase,p:pass.p||coin.p||null,pair:pass.pair||coin.p||null,phaseEpoch:pass.phaseEpoch||null,acceptedAt:pass.acceptedAt,
-        firstSeenAt:pass.firstSeenAt,passZeroAt:pass.zeroAt,verdictAt,lineAt,linePrice:result.p0,lineVersion:2,hours:cfg.hours,passWindowMinutes:cfg.passWindowMinutes,minAboveMarginPct:cfg.minAboveMarginPct,zeroAt:lineAt,decisionAt:featureAt,outcomeAt:now,windowEnd,earlyWallets:require('./early-intelligence').frozenWallets(coin,featureAt),featureAnchor:'acceptedAt',featureSnapshotVersion:1,marketScopeVersion:2,eventAt:eventAnchor(pass),featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,pass.acceptedAt,'2',pass.phase),sourceFilterRules:pass.matches.map(f=>({...f})),
+        firstSeenAt:pass.firstSeenAt,passZeroAt:pass.zeroAt,verdictAt,lineAt,linePrice:result.p0,lineVersion:2,hours:cfg.hours,passWindowMinutes:cfg.passWindowMinutes,minAboveMarginPct:cfg.minAboveMarginPct,zeroAt:lineAt,decisionAt:featureAt,outcomeAt:now,windowEnd,earlyWallets:require('./early-intelligence').frozenWallets(coin,featureAt),featureAnchor:'acceptedAt',featureSnapshotVersion:1,marketScopeVersion:2,eventAt:eventAnchor(pass),featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,pass.acceptedAt,'2',pass.phase,pass.moduleVerdicts),sourceFilterRules:pass.matches.map(f=>({...f})),
         configHash:pass.configHash,sourceFilterVersions:pass.matches.map(f=>({
           id:f.id,version:f.version,level:f.level
         })),
-        terminalMethod:result.terminalMethod||null,label:result.label,secondLevelMatches,secondLevelRules:(pass.secondLevelRules||[]).map(f=>({...f})),
+        terminalMethod:result.terminalMethod||null,terminalEvidenceId:result.terminalEvidenceId||null,label:result.label,secondLevelMatches,secondLevelRules:(pass.secondLevelRules||[]).map(f=>({...f})),
         pctAbove:result.pctAbove,covered:result.covered,
         p0:result.p0,curve:[[0,0],...result.curve],minuteCurveEncoding:'float64',minuteCurvePacked:packMinuteCurve(result.minuteCurve),features:F,
         firstPassFeatures:{...pass.features},

@@ -42,7 +42,7 @@ function outcome(evidence,start,cfg,now,state=null){const end=startOf(start)+(cf
  if(now<end+MIN)return {label:'pending',why:'not-yet-finished'};
  if(!evidence&&state?.readyAt>now)return {label:'pending',why:'waiting-shared-terminal-window'};
  if(!evidence)return {label:'unknown',why:state?.reason||'terminal-chart-awaiting-retry',outcomeVersion:2,windowStart:startOf(start),windowEnd:end,terminalMethod:METHOD};
- const result=classify(evidence,cfg);return {...result,outcomeVersion:2,windowStart:evidence.start,windowEnd:end,terminalMethod:METHOD,terminalCandlesPacked:pack(evidence),curve:unpack(evidence.minutesPacked).filter(r=>(r[0]-evidence.start)/MIN%5===0).map(r=>[(r[0]-evidence.start)/MIN,r[2]]),minutes:[],priceKeep:null,lastHourTrades:null,lastHourWallets:null,uniqueBuyers:null};
+ const result=classify(evidence,cfg);return {...result,outcomeVersion:2,windowStart:evidence.start,windowEnd:end,terminalMethod:METHOD,terminalEvidenceId:state?.id||keyOf(evidence),terminalCandlesPacked:pack(evidence),curve:unpack(evidence.minutesPacked).filter(r=>(r[0]-evidence.start)/MIN%5===0).map(r=>[(r[0]-evidence.start)/MIN,r[2]]),minutes:[],priceKeep:null,lastHourTrades:null,lastHourWallets:null,uniqueBuyers:null};
 }
 function strength(evidence,lineAt,cfg,now){const end=lineAt+(cfg.hours??5)*60*MIN;if(now<end+MIN)return {label:'pending',why:'observation-window-not-finished'};
  if(!evidence?.knownPool)return {label:'pending',why:'terminal-chart-awaiting-retry'};
@@ -50,7 +50,7 @@ function strength(evidence,lineAt,cfg,now){const end=lineAt+(cfg.hours??5)*60*MI
  const rows=unpack(evidence.minutesPacked);let i=-1;while(i+1<rows.length&&rows[i+1][0]<=lineAt)i++;
  const p0=rows[i]?.[2];if(!(p0>0))return {label:'pending',why:evidence.empty?'known-pool-no-price':'terminal-price-conversion-missing'};
  const minuteCurve=[],curve=[];let above=0;for(let m=1;m<=(cfg.hours??5)*60;m++){const at=lineAt+m*MIN;while(i+1<rows.length&&rows[i+1][0]<=at)i++;const price=rows[i]?.[2];if(!(price>0))return {label:'pending',why:'terminal-price-conversion-missing'};const pct=100*(price/p0-1);minuteCurve.push(pct);if(pct+1e-9>=(cfg.minAboveMarginPct??10))above++;if(m%5===0)curve.push([m,pct]);}
- const covered=minuteCurve.length,pctAbove=above/covered*100;return {label:pctAbove>=(cfg.minAbove??70)?'strong':'weak',p0,above,covered,pctAbove,curve,minuteCurve,terminalMethod:METHOD};
+ const covered=minuteCurve.length,pctAbove=above/covered*100;return {label:pctAbove>=(cfg.minAbove??70)?'strong':'weak',p0,above,covered,pctAbove,curve,minuteCurve,terminalMethod:METHOD,terminalEvidenceId:keyOf(evidence)};
 }
 class TerminalCandles{
  constructor({dir,gt,onReady=()=>{},now=Date.now,cohortStart=0}={}){this.dir=path.join(dir,'terminal-candles-v1');fs.mkdirSync(this.dir,{recursive:true});this.file=path.join(this.dir,'ledger.json');this.gt=gt;this.onReady=onReady;this.now=now;this.busy=false;this.inFlight=new Set();this.cache=new BoundedCache({entries:256,bytes:4*1024*1024,itemBytes:256*1024,ttl:30*MIN,now});
@@ -64,7 +64,7 @@ class TerminalCandles{
  offer({mint,pool,anchor,quote=SOL,hours=5,lineEnd=0}){if(!mint||!pool||!Number.isSafeInteger(anchor))return;const key=keyOf({mint,pool,anchor}),start=startOf(anchor),end=Math.ceil(Math.max(start+hours*60*MIN,lineEnd)/MIN)*MIN,old=this.jobs.get(key);if(old){if(old.state!=='ready'&&end>old.end){old.end=end;old.limit=Math.ceil((end-start)/MIN)+1;}return;}
   for(const [k,j] of this.jobs)if(this.now()-j.anchor>48*3600000){this.jobs.delete(k);try{fs.unlinkSync(path.join(this.dir,k+'.json'));}catch{}}
   if(this.jobs.size>=10000)return;this.jobs.set(key,{key,mint,pool,anchor,quote,start,end,limit:Math.ceil((end-start)/MIN)+1,state:'waiting',attempts:0,nextAt:end+MIN});this.save();}
- statusFor(record,pool){if(!record)return null;const j=this.jobs.get(keyOf({mint:record.mint,pool:pool||record.proof?.pool,anchor:record.acceptedAt}));return j?{state:j.state,reason:j.reason||null,readyAt:j.end+MIN,nextAt:j.nextAt}:null;}
+ statusFor(record,pool){if(!record)return null;const j=this.jobs.get(keyOf({mint:record.mint,pool:pool||record.proof?.pool,anchor:record.acceptedAt}));return j?{id:j.key,state:j.state,dispatchAttempts:j.attempts,acceptedCharts:j.state==='ready'?1:0,reason:j.reason||null,readyAt:j.end+MIN,nextAt:j.nextAt}:null;}
  read(record,pool){if(!record)return null;const key=keyOf({mint:record.mint,pool:pool||record.proof?.pool,anchor:record.acceptedAt}),j=this.jobs.get(key);if(!j||j.state!=='ready')return null;this.stats.sharedReads++;const cached=this.cache.get(key);if(cached)return cached;const data=JSON.parse(fs.readFileSync(path.join(this.dir,key+'.json'),'utf8'));if(data.mint!==j.mint||data.pool!==j.pool||data.anchor!==j.anchor)throw Error('terminal-cache-identity');this.cache.set(key,data);return data;}
  async tick(){if(this.inFlight.size>=2)return;const j=[...this.jobs.values()].filter(j=>j.state!=='ready'&&!this.inFlight.has(j.key)&&j.nextAt<=this.now()).sort((a,b)=>a.nextAt-b.nextAt)[0];if(!j)return;this.inFlight.add(j.key);this.busy=true;try{j.attempts++;this.stats.requests++;
   const response=await this.gt('/pools/'+j.pool+'/ohlcv/minute?aggregate=1&limit='+j.limit+'&currency='+(j.quote===SOL?'token':'usd')+'&token='+j.mint+'&include_empty_intervals=true&before_timestamp='+Math.floor(j.end/1000),1,'outcome:'+j.key);

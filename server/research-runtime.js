@@ -101,7 +101,7 @@ class ResearchRuntime {
     this.lookup=new Set();
     this.processed=new Map();
     this.lastAttemptAt=new Map();
-    this.lastAt=null;
+    this.lastAt=null;this.featureRepair={repaired:0,missing:0,errors:0,bySource:{},busy:false,lastAt:0};
     this.pending={};
     if(fs.existsSync(this.file)){
       const state=JSON.parse(fs.readFileSync(this.file,'utf8'));
@@ -113,7 +113,7 @@ class ResearchRuntime {
           throw Error('Malformed saved research sample');
       }
       this.admissionUpgradeAt=state.admissionUpgradeAt||this.admissionUpgradeAt;this.intakeDecisions=new Map(state.intakeDecisions||[]);this.intakeAccepted=state.intakeAccepted||{};this.intakeRejected=state.intakeRejected||{};
-      this.rows=state.rows;this.admitted=new Map((state.admitted||state.rows).map(r=>[r.mint,r]));
+      this.featureRepair={...this.featureRepair,...state.featureRepair,busy:false};this.rows=state.rows;this.admitted=new Map((state.admitted||state.rows).map(r=>[r.mint,r]));
       this.lookup=new Set(this.rows.map(r=>r.mint));
       for(const pair of state.processed||[]) {
         if(Array.isArray(pair)&&typeof pair[0]==='string'&&Number.isSafeInteger(pair[1]))
@@ -126,6 +126,31 @@ class ResearchRuntime {
     }
     if(this.config.outcomeMethod==='gt-ohlcv-20m-v1')for(const r of this.rows)if(r.label==='unknown'&&!r.terminalCandlesPacked)this.processed.delete(r.mint);
     this.carryFrom(carry);
+  }
+  sealDecisionFeatures({coins,passes=null,now=Date.now(),limit=16}={}){
+    if(this.config.outcomeMethod!=='gt-ohlcv-20m-v1')return 0;const phases={before:phaseSettings(this.config,'before'),after:phaseSettings(this.config,'after')};let changed=0;
+    for(const admission of this.admitted.values()){
+      if(changed>=limit)break;if(admission.intakePending||now-admission.acceptedAt>=21*MIN)continue;const cfg=phases[admission.phase],at=admission.acceptedAt+cfg.decisionMinutes*MIN;
+      if(now<at||admission.featureReceiptVersion===2&&admission.decisionAt===at)continue;const coin=coins.get(admission.mint);if(!coin)continue;const f=require('./feature-snapshots').decision(coin,admission,cfg.decisionMinutes,passes);if(f.snapshotSealed){Object.assign(admission,f);changed++;}
+    }return changed;
+  }
+  async repairFrozenFeatures({coins,passes=null,now=Date.now(),limit=4,canRun=()=>true}={}){
+    if(this.featureRepair.busy||this.config.outcomeMethod!=='gt-ohlcv-20m-v1'||!canRun())return this.featureRepair;
+    this.featureRepair.busy=true;try{
+      const backup=this.file+'.before-feature-receipts-v2.json';if(fs.existsSync(this.file)&&!fs.existsSync(backup)){const temporary=backup+'.tmp';await fs.promises.copyFile(this.file,temporary);if(!(await fs.promises.stat(temporary)).size)throw Error('Empty receipt repair backup');if(!fs.existsSync(backup))await fs.promises.rename(temporary,backup);else await fs.promises.unlink(temporary);}
+      const phases={before:phaseSettings(this.config,'before'),after:phaseSettings(this.config,'after')};let checked=0;for(const admission of this.admitted.values()){
+        if(!canRun()||checked>=limit)break;const cfg=phases[admission.phase];
+        if(admission.intakePending||now-admission.acceptedAt<21*MIN||admission.featureReceiptVersion===2&&admission.featureCoverageMinute===cfg.decisionMinutes||admission.featureRepairRetryAt>now)continue;
+        checked++;const coinStart=Date.now();try{const coin=coins.get(admission.mint);if(!coin){this.featureRepair.missing++;admission.featureRepairRetryAt=now+HOURS;continue;}
+          const receipt=require('./feature-snapshots').decision(coin,admission,cfg.decisionMinutes,passes);if(!receipt.snapshotSealed){this.featureRepair.missing++;admission.featureRepairRetryAt=now+HOURS;continue;}
+          const verdicts=passes?.records?.get(admission.mint)?.moduleVerdicts,times=require('./module-library').freezeFeatureTimes(coin,admission.acceptedAt,'1',admission.phase,verdicts);
+          Object.assign(admission,receipt);delete admission.featureRepairRetryAt;const row=this.rows.find(r=>r.mint===admission.mint);if(row)Object.assign(row,receipt,{featureTimesPacked:times});
+          this.featureRepair.repaired++;this.featureRepair.bySource[receipt.featureCoverageSource]=(this.featureRepair.bySource[receipt.featureCoverageSource]||0)+1;
+        }catch(e){this.featureRepair.errors++;const reason=/^[A-Z0-9_]{1,32}$/.test(e.code||'')?e.code:'receipt-replay-invalid';this.featureRepair.errorReasons=this.featureRepair.errorReasons||{};this.featureRepair.errorReasons[reason]=(this.featureRepair.errorReasons[reason]||0)+1;admission.featureRepairRetryAt=now+HOURS;}finally{this.featureRepair.maxCoinMs=Math.max(this.featureRepair.maxCoinMs||0,Date.now()-coinStart);}
+        await new Promise(resolve=>setImmediate(resolve));
+      }
+      this.featureRepair.remaining=[...this.admitted.values()].filter(a=>!a.intakePending&&now-a.acceptedAt>=21*MIN&&(a.featureReceiptVersion!==2||a.featureCoverageMinute!==phases[a.phase].decisionMinutes)).length;this.featureRepair.lastAt=now;return this.featureRepair;
+    }finally{this.featureRepair.busy=false;}
   }
   carryFrom(previous){if(!previous)return;for(const row of previous.admitted.values())if(!this.admitted.has(row.mint))this.admitted.set(row.mint,{...row,intakePending:true,transferred:true});}
   admit(row,coin,passes=null,now=Date.now()){
@@ -198,7 +223,8 @@ class ResearchRuntime {
       if(!admission||admission.intakePending)admission=this.admit(row,coins.get(row.mint),passes,now);
       if(!admission)continue;
       const featureAt=row.acceptedAt+cfg.decisionMinutes*MIN;
-      if(now>=featureAt&&(admission.decisionAt!==featureAt||this.config.outcomeMethod==='gt-ohlcv-20m-v1'&&!admission.snapshotSealed)){const coin=coins.get(row.mint);if(coin){const snapshots=require('./feature-snapshots'),modern=this.config.outcomeMethod==='gt-ohlcv-20m-v1',saved=modern?snapshots.unpack(coin.featureSnapshotsPacked):null;if(!modern||saved?.acceptedAt===row.acceptedAt&&saved.pool===coin.p&&saved.snapshots?.[cfg.decisionMinutes]){admission.features=snapshots.read(coin,row.acceptedAt,cfg.decisionMinutes,row.phase);admission.decisionAt=featureAt;if(modern)admission.snapshotSealed=true;}}}
+      if(now>=featureAt&&(admission.decisionAt!==featureAt||this.config.outcomeMethod==='gt-ohlcv-20m-v1'&&admission.featureReceiptVersion!==2)){const coin=coins.get(row.mint);if(coin){const snap=require('./feature-snapshots'),f=snap.decision(coin,row,cfg.decisionMinutes,passes);if(this.config.outcomeMethod!=='gt-ohlcv-20m-v1'||f.snapshotSealed)Object.assign(admission,f);}}
+
 
       if(admission.intakePending||age<cfg.hours*HOURS+3*MIN){
         const why=age<cfg.hours*HOURS+3*MIN?'not-yet-finished':'deferred-by-batch';pending[why]=(pending[why]||0)+1;
@@ -228,11 +254,11 @@ class ResearchRuntime {
         continue;
       }
       this.lastAttemptAt.delete(row.mint);
-      const features=require('./feature-snapshots').read(coin,row.acceptedAt,cfg.decisionMinutes,row.phase);
+      const receipt=require('./feature-snapshots').decision(coin,row,cfg.decisionMinutes,passes),features=receipt.features;Object.assign(admission,receipt);
       const gate={via:admission.via||'all'};
       this.rows=this.rows.filter(x=>x.mint!==row.mint);
       this.rows.push({via:gate.via,
-        mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,featureAnchor:'acceptedAt',featureSnapshotVersion:1,marketScopeVersion:2,eventAt:eventAnchor(row),featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,row.acceptedAt,'1',row.phase),curve:observationCurve(coin,eventAnchor(row),cfg.hours),curveUnit:'price-usd',
+        mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,featureAnchor:'acceptedAt',featureSnapshotVersion:1,marketScopeVersion:2,eventAt:eventAnchor(row),...receipt,featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,row.acceptedAt,'1',row.phase,passes?.records?.get(row.mint)?.moduleVerdicts),curve:observationCurve(coin,eventAnchor(row),cfg.hours),curveUnit:'price-usd',
         acceptedAt:row.acceptedAt,decisionAt,earlyWallets:require('./early-intelligence').frozenWallets(coin,decisionAt),
         ...result,activitySlices:undefined,activitySlicesPacked:result.activitySlices?require('./activity-slices').pack(result.activitySlices):undefined,outcomeAt:now,minutes:undefined,outcomePacked:require('node:zlib').deflateSync(Buffer.from(JSON.stringify(result.minutes||[]))).toString('base64'),
         hours:cfg.hours,label:result.label,
@@ -257,7 +283,7 @@ class ResearchRuntime {
       this.rows=this.rows.sort((a,b)=>a.time-b.time);
       this.lookup=new Set(this.rows.map(r=>r.mint));
       atomicJSON(this.file,{schema:1,rows:this.rows,
-        admissionVersion:3,intakeDecisions:[...this.intakeDecisions],intakeAccepted:this.intakeAccepted,intakeRejected:this.intakeRejected,admissionUpgradeAt:this.admissionUpgradeAt,admitted:[...this.admitted.values()],processed:[...this.processed],savedAt:now});
+        featureRepair:{...this.featureRepair,busy:false},admissionVersion:3,intakeDecisions:[...this.intakeDecisions],intakeAccepted:this.intakeAccepted,intakeRejected:this.intakeRejected,admissionUpgradeAt:this.admissionUpgradeAt,admitted:[...this.admitted.values()],processed:[...this.processed],savedAt:now});
     }
     for(const row of this.rows){
       const name=classOf(row,this.config);

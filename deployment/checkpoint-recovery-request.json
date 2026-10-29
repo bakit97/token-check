@@ -1,6 +1,6 @@
 {
-  "id": "p45-finish-audit-compatibility-with-verified-checkpoint",
-  "allowedFromGeneration": "1793272318646022",
+  "id": "p45-receipt-history-recovery-after-verified-checkpoint",
+  "allowedFromGeneration": "1793274814051577",
   "enabled": true,
   "maxWaitMs": 1000,
   "maxStateBytes": 64000000,

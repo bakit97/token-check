@@ -248,15 +248,15 @@ class PassRuntime {
         const verdicts=rules.map(({filter:f})=>{
           const at=row.acceptedAt+(f.verdictMinutes||cfg.decisionMinutes)*MIN;
           const features=f.level==='2'?require('./feature-snapshots').read(coin,row.acceptedAt,f.verdictMinutes||cfg.decisionMinutes,row.phase,'2'):require('./feature-snapshots').read(coin,row.acceptedAt,f.verdictMinutes||cfg.decisionMinutes,row.phase,'1');
-          return {filter:f,at,features,result:evaluation(features,f)};
+          return {filter:f,at,features,rawFeatures:require('./feature-snapshots').researchRead(coin,row.acceptedAt,f.verdictMinutes||cfg.decisionMinutes,row.phase,f.level==='2'?'2':'1'),result:evaluation(features,f)};
         });
         if(verdicts.some(x=>x.result==='unknown')){missingFeatures++;continue}
         if(verdicts.some(x=>x.result!=='pass')){rejected++;continue}
         this._append({schema:2,mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,acceptedAt:row.acceptedAt,eventAt:row.eventAt,
           firstSeenAt:now,zeroAt,passMode:cfg.passMode[row.phase],verdictMinutes:minutes,configHash:this.configHash,
-          features:require('./feature-snapshots').read(coin,row.acceptedAt,Math.round((zeroAt-row.acceptedAt)/MIN),row.phase),
+          features:require('./feature-snapshots').researchRead(coin,row.acceptedAt,Math.round((zeroAt-row.acceptedAt)/MIN),row.phase),
           matches:verdicts.filter(x=>x.filter.level==='1').map(x=>({...x.filter})),
-          moduleVerdicts:verdicts.map(x=>({id:x.filter.id,level:x.filter.level,version:x.filter.version,at:x.at,features:x.features,result:x.result})),
+          moduleVerdicts:verdicts.map(x=>({id:x.filter.id,level:x.filter.level,version:x.filter.version,at:x.at,features:x.rawFeatures,availableKeys:Object.keys(x.features).filter(k=>x.features[k]!=null),result:x.result})),
           secondLevelRules:cfg.modules.filter(m=>m.enabled&&m.level==='2'&&m.phase===row.phase).map(m=>byId.get(m.filterId)).filter(Boolean).map(f=>({...f})),
           name:String(coin.n||coin.s||'').slice(0,64),kind:'completed-module-verdicts'});added++;
       }
