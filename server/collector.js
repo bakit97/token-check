@@ -858,7 +858,7 @@ async function liquidityTick(now=Date.now()){
 }
 async function captureFeatureSnapshots(now=Date.now()){
  if(captureFeatureSnapshots.busy||!SOURCE)return;captureFeatureSnapshots.busy=true;try{const api=require(DIR+'/feature-snapshots.js');let batch=0;
- for(const c of C.values()){const row=SOURCE.get(c.a);if(!row||now-row.acceptedAt>21*60000||now<row.acceptedAt+60000)continue;const complete=fullCoin(c);api.capture(complete,row,now,(typeof twentyMinuteMode==='function'&&twentyMinuteMode())?FEATURE_TRIAL:null);if(complete.featureSnapshotsPacked)c.featureSnapshotsPacked=complete.featureSnapshotsPacked;if(++batch%4===0)await new Promise(resolve=>setImmediate(resolve));}
+ for(const c of C.values()){const row=SOURCE.get(c.a);if(!row||now-row.acceptedAt>21*60000||now<row.acceptedAt+60000||c.featureNextAt>now)continue;const complete=fullCoin(c);api.capture(complete,row,now,(typeof twentyMinuteMode==='function'&&twentyMinuteMode())?FEATURE_TRIAL:null);if(complete.featureSnapshotsPacked)c.featureSnapshotsPacked=complete.featureSnapshotsPacked;c.featureNextAt=row.acceptedAt+(Math.floor((now-row.acceptedAt)/60000)+1)*60000;if(++batch%4===0)await new Promise(resolve=>setImmediate(resolve));}
  }finally{captureFeatureSnapshots.busy=false;}
 }
 const BUYER_REPAIR={busy:false,checked:0,repairedCoins:0,repairedSnapshots:0,missingArchive:0,errors:0,lastAt:0};
@@ -1507,7 +1507,8 @@ async function exportPathsV2(now){
 }
 // Critical path: durable first-level matches must not wait for the 120s
 // export cycle, especially when the decision timer is only one minute.
-let FAST_PASS_PUBLISH_AT=0,FAST_PASS_STATUS_AT=0,FAST_PASS_CONFIG_AT=0,FAST_PASS_ATTEMPTS=0,FAST_PASS_LAST_ADDED=0;
+let FAST_PASS_PUBLISH_AT=0,FAST_PASS_STATUS_AT=0,FAST_PASS_CONFIG_AT=0,FAST_PASS_ATTEMPTS=0,FAST_PASS_LAST_ADDED=0,FAST_PASS_QUEUED=0;let FAST_DECISION_BUSY=false;
+async function liveDecisionTick(now=Date.now()){if(FAST_DECISION_BUSY||!SOURCE||!PASS_V2||PASS_CFG_ERR||!twentyMinuteMode())return;FAST_DECISION_BUSY=true;try{await captureFeatureSnapshots(now);const result=PASS_V2.update({source:SOURCE,coins:researchCoins(),now:Date.now()});FAST_PASS_ATTEMPTS++;FAST_PASS_LAST_ADDED=result.added;FAST_PASS_QUEUED+=result.added;}catch(e){err('live decision '+e.message)}finally{FAST_DECISION_BUSY=false;}}
 async function fastPassedLoop(){
   for(;;){
     const now=Date.now();
@@ -1521,14 +1522,14 @@ async function fastPassedLoop(){
           const outcome=PASS_V2.update({source:SOURCE,coins:researchCoins(),now:Date.now()});
           FAST_PASS_ATTEMPTS++;
           FAST_PASS_LAST_ADDED=outcome.added;
-          if(outcome.added||now-FAST_PASS_PUBLISH_AT>=30000){
-            const publishAt=Date.now();
+          if(outcome.added||FAST_PASS_QUEUED||now-FAST_PASS_PUBLISH_AT>=30000){
+            const queued=FAST_PASS_QUEUED,publishAt=Date.now();
             if(publishAt-FAST_PASS_STATUS_AT>=60000){await upload('passed-v2/status.json',{...PASS_V2.summary(publishAt),controlError:PASS_CFG_ERR||null,serverConfig:PASS_V2.config,serverOnly:true});FAST_PASS_STATUS_AT=publishAt;}
             await upload('passed-v2/live.json',{
               updated:publishAt,origin:'server-journal',
               coins:PASS_V2.latest(1000).filter(x=>x.schema===2?publishAt-x.firstSeenAt<(RESEARCH_TWO?.config.phases?.[x.phase]?.passWindowMinutes??RESEARCH_TWO?.config.passWindowMinutes??5)*60e3:x.zeroAt>publishAt).map(withPoolReference)
             });
-            FAST_PASS_PUBLISH_AT=publishAt;
+            FAST_PASS_PUBLISH_AT=publishAt;FAST_PASS_QUEUED=Math.max(0,FAST_PASS_QUEUED-queued);
           }
         }else FAST_PASS_LAST_ADDED=0;
       }
@@ -1536,7 +1537,7 @@ async function fastPassedLoop(){
       PASS_ERR='быстрый журнал: '+e.message;
       err('fast pass '+e.message);
     }
-    await sleep(15000);
+    await sleep(2000);
   }
 }
 const OBS_CONTRACT={schema:2,mode:'primary',legacyWriters:false,historicalArchiveGaps:{raw:77,trades:65,scope:'already absent before cutover; no fabricated backfill'},days:{}};
@@ -1690,7 +1691,7 @@ const STARTED=Date.now();
   MIGRATION_CATCHUP=new (require(DIR+'/migration-catchup.js').MigrationCatchup)({dir:DIR,addresses:[{kind:'pump',address:require(DIR+'/migration-fast.js').PUMP_WITHDRAW_AUTH},{kind:'dbc',address:DBC_AUTH},{kind:'ll',address:LL_AUTH}],decode58:b58dec,knownSignature:sig=>knownMigrationSignatures.has(sig),process:processFastMigration,processManual:processManualPool,seeds:[...require(DIR+'/manual-recovery-request.js').pools,...(require(DIR+'/manual-recovery-request.js').migrations||[])],rpc:async(m,p)=>{const opt={priority:'background',context:'догон миграций',source:'migration-catchup',cache:false,maxBytes:3*1024*1024};try{return await freeFastRPC(m,p,opt)}catch{return rpc(m,p,opt)}}});
   MIGRATION_CATCHUP.tick();setInterval(()=>MIGRATION_CATCHUP.tick(),2000);setInterval(()=>{try{MIGRATION_CATCHUP.heartbeat()}catch(e){err('migration replay heartbeat failed')}},30000);
 
-  captureFeatureSnapshots().catch(e=>err('feature snapshots '+e.message));setInterval(()=>{if(!(typeof twentyMinuteMode==='function'&&twentyMinuteMode()))repairBuyerSnapshots()},10000);setInterval(()=>captureFeatureSnapshots().catch(e=>err('feature snapshots '+e.message)),30000);
+  captureFeatureSnapshots().catch(e=>err('feature snapshots '+e.message));setInterval(()=>{if(!(typeof twentyMinuteMode==='function'&&twentyMinuteMode()))repairBuyerSnapshots()},10000);setInterval(()=>captureFeatureSnapshots().catch(e=>err('feature snapshots '+e.message)),1000);
   setInterval(()=>reloadResearchConfig(),30000);
   setInterval(()=>{try{publicPoolTradeTick()}catch(e){err('public pool trades '+e.message)}},1000);
   initObservationRecovery();setTimeout(()=>recoveryTick(),20000);setInterval(()=>{try{recoveryTick()}catch(e){err('recovery '+e.message)}},15000);
@@ -1716,6 +1717,7 @@ const STARTED=Date.now();
   setTimeout(()=>deduplicateClosedArchiveRows().catch(e=>err('archive dedup '+e.message)),1000);
   setInterval(()=>{prune();save();deduplicateClosedArchiveRows().catch(e=>err('archive dedup '+e.message))},120000);
   setInterval(()=>{if(RETENTION.stateBytes>=RETENTION.stateArchiveTriggerBytes&&ACTIVE_HISTORY&&!ACTIVE_HISTORY.busy)ACTIVE_HISTORY.compact({coins:C,publish:upload,read:getObj,now:Date.now(),maxChunks:4}).then(changed=>{if(changed)save()}).catch(e=>err('state archive '+e.message));},60000);
+  setInterval(()=>liveDecisionTick().catch(e=>err('live decision '+e.message)),2000);
   fastPassedLoop().catch(e=>err('fast pass loop '+e.message));
   (async()=>{for(;;){await sleep(5*60e3);try{await exportDays()}catch(e){err('export '+e.message)}}})();
   (async()=>{await sleep(45000);for(;;){try{await exportLive()}catch(e){err('live '+e.message)}await sleep(30000)}})();
