@@ -13,7 +13,7 @@ const HOURS=3_600_000;
 const MAX_BANK_PER_CLASS=5000;
 const FRESH_WINDOW=48*HOURS;
 const RETRY_INCOMPLETE_MS=15*MIN;
-const MAX_CLASSIFICATION_CHECKS=16; // per two-minute collector export
+const MAX_CLASSIFICATION_CHECKS=32; // at most 8 s of classification per export
 
 /* Вход в Исследование 1: два пути, каждый можно включить/выключить.
    manual — немедленный входной фильтр (поток, стартовый SOL в пуле, случайная доля) — каждый параметр со своим переключателем;
@@ -195,12 +195,13 @@ class ResearchRuntime {
   }
   reanchor(options){const work=this.reanchorSteps(options);let step;do{step=work.next();}while(!step.done);return step.value;}
   update(options){const work=this.updateSteps(options);let step;do{step=work.next();}while(!step.done);return step.value;}
-  async updateAsync(options){const work=this.updateSteps({...options,deferSave:true});let step,at=Date.now();for(;;){step=work.next();if(step.done){await this.saveAsync(options?.now??Date.now());return step.value;}if(Date.now()-at>=8){await new Promise(resolve=>setImmediate(resolve));at=Date.now();}}}
+  async updateAsync(options){this.work={stage:'scan',startedAt:Date.now(),visited:0};const work=this.updateSteps({...options,deferSave:true});let step,at=Date.now();try{for(;;){step=work.next();if(step.done){this.work.stage='snapshot';this.work.scanMs=Date.now()-this.work.startedAt;this.work.snapshot=await this.saveAsync(options?.now??Date.now());this.work.stage='idle';this.work.finishedAt=Date.now();return {...step.value,work:{...this.work}};}if(Date.now()-at>=8){await new Promise(resolve=>setImmediate(resolve));at=Date.now();}}}catch(e){this.work.stage='failed';this.work.finishedAt=Date.now();throw e;}}
   *updateSteps({source,coins,passes=null,now=Date.now(),deferSave=false}={}) {
     this.pruneRevoked(source?.revokedManual);this.pruneRevoked(new Map([...(source?.revokedMigrations||[])].filter(([mint])=>!source.records.has(mint))),'after');
     if(!source?.records || !coins?.get)throw new TypeError('Need source ledger and coin map');
     if(this.config.outcomeMethod!=='gt-ohlcv-20m-v1')yield* this.reanchorSteps({source,coins,now});
-    let added=0,considered=0,attempted=0,gateChecks=0;
+    const maxChecks=this.config.outcomeMethod==='gt-ohlcv-20m-v1'?MAX_CLASSIFICATION_CHECKS:16;
+    let added=0,considered=0,attempted=0,gateChecks=0,classificationStarted=0;
     const pending={},byPhase={before:{live:0,dead:0},after:{live:0,dead:0}};
     // Newest first, avoid scanning the entire multi-month ledger.
     const recent=Array.from(typeof source.recentAdmissions==='function'?
@@ -212,7 +213,7 @@ class ResearchRuntime {
     recent.sort((a,b)=>rank(a)-rank(b)||(this.lastAttemptAt.get(a.mint)?.at||terminal.get(a.mint)?.outcomeAt||0)-(this.lastAttemptAt.get(b.mint)?.at||terminal.get(b.mint)?.outcomeAt||0)||a.acceptedAt-b.acceptedAt);
     const diag={recent:0,beforeCohort:0,afterEnd:0,tooOld:0,future:0,processed:0,processedSize:this.processed.size};
     for(const row of recent){
-      yield;
+      if(this.work?.stage==='scan')this.work.visited++;yield;
       const age=now-(this.config.outcomeMethod==='gt-ohlcv-20m-v1'?row.acceptedAt:eventAnchor(row));
       if(this.processed.has(row.mint)&&!this.admitted.has(row.mint)&&row.acceptedAt<this.admissionUpgradeAt)this.processed.delete(row.mint);
       diag.recent++;if(row.acceptedAt<this.cohortStart)diag.beforeCohort++;else if(row.acceptedAt>=this.cohortEnd)diag.afterEnd++;else if(age<0)diag.future++;else if(age>FRESH_WINDOW)diag.tooOld++;else if(this.processed.has(row.mint))diag.processed++;
@@ -235,11 +236,11 @@ class ResearchRuntime {
         pending[previous.why]=(pending[previous.why]||0)+1;
         continue;
       }
-      if(attempted>=MAX_CLASSIFICATION_CHECKS){
+      if(attempted>=maxChecks||classificationStarted&&Date.now()-classificationStarted>=8000){
         pending['deferred-by-batch']=(pending['deferred-by-batch']||0)+1;
         continue;
       }
-      attempted++;
+      classificationStarted=classificationStarted||Date.now();attempted++;
       const coin=coins.get(row.mint,row);
       if(!coin){
         this.lastAttemptAt.set(row.mint,{at:now,acceptedAt:row.acceptedAt,why:'candidate-missing'});
@@ -291,7 +292,7 @@ class ResearchRuntime {
     this.pending=pending;
     this.lastAt=now;
     return {added,considered,attempted,diag:{...diag,cohortStart:this.cohortStart,cohortEnd:String(this.cohortEnd),now},
-      maxChecksPerRun:MAX_CLASSIFICATION_CHECKS,intake:this.config.intake,intakeAccepted:this.intakeAccepted,intakeRejected:this.intakeRejected,...this.summary()};
+      maxChecksPerRun:maxChecks,intake:this.config.intake,intakeAccepted:this.intakeAccepted,intakeRejected:this.intakeRejected,...this.summary()};
   }
   snapshot(now){return {schema:1,rows:this.rows,
         featureRepair:{...this.featureRepair,busy:false},admissionVersion:3,intakeDecisions:[...this.intakeDecisions],intakeAccepted:this.intakeAccepted,intakeRejected:this.intakeRejected,admissionUpgradeAt:this.admissionUpgradeAt,admitted:[...this.admitted.values()],processed:[...this.processed],savedAt:now};}
@@ -300,7 +301,7 @@ class ResearchRuntime {
     const unknownReasons={};let recovering=0;
     const counts={live:0,dead:0,pending:0,unknown:0,entered:0,preLive:0,preDead:0,postLive:0,postDead:0},byPhase={before:{entered:0,live:0,dead:0,pending:0,unknown:0},after:{entered:0,live:0,dead:0,pending:0,unknown:0}};
     const view=this.view();for(const row of view){if(row.why==='backfill-pending')recovering++;if(row.label==='unknown')unknownReasons[row.why||'collector-gap']=(unknownReasons[row.why||'collector-gap']||0)+1;counts.entered++;counts[row.label]++;const p=byPhase[row.phase];if(p){p.entered++;p[row.label]++;}if(['live','dead'].includes(row.label))counts[row.phase==='before'?(row.label==='live'?'preLive':'preDead'):(row.label==='live'?'postLive':'postDead')]++;}
-    return {schema:2,updated:this.lastAt,eventMigration:this.eventMigration||null,cohortStart:this.cohortStart,settings:{...this.config},intakeMode:'discovery-v3',intakeAccepted:this.intakeAccepted,intakeRejected:this.intakeRejected,intakePending:[...this.admitted.values()].filter(a=>a.intakePending).length,counts,byPhase,unknownReasons,distributions:this.distributions(view),pending:{...this.pending,'not-yet-finished':counts.pending-recovering,'backfill-pending':recovering,'collector-gap':counts.unknown},bankCapacityPerClass:MAX_BANK_PER_CLASS,status:'observational',secondLevel:'separate-server-verified-pass-stream'};
+    return {schema:2,updated:this.lastAt,work:this.work?{...this.work}:null,eventMigration:this.eventMigration||null,cohortStart:this.cohortStart,settings:{...this.config},intakeMode:'discovery-v3',intakeAccepted:this.intakeAccepted,intakeRejected:this.intakeRejected,intakePending:[...this.admitted.values()].filter(a=>a.intakePending).length,counts,byPhase,unknownReasons,distributions:this.distributions(view),pending:{...this.pending,'not-yet-finished':counts.pending-recovering,'backfill-pending':recovering,'collector-gap':counts.unknown},bankCapacityPerClass:MAX_BANK_PER_CLASS,status:'observational',secondLevel:'separate-server-verified-pass-stream'};
   }
   view(){const complete=new Map(this.rows.map(r=>[r.mint,r]));return [...this.admitted.values()].filter(a=>!a.intakePending).map(a=>{const r=complete.get(a.mint);if(r){const v=r.outcomeVersion===2?classifyActivity(r,{...phaseSettings(this.config,r.phase),now:this.lastAt}):{label:'unknown',why:'legacy-observation-awaiting-recheck'};return {...r,...v,features:verifiedFeatures(r.features)};};const cfg=phaseSettings(this.config,a.phase),ended=this.lastAt>=(this.config.outcomeMethod==='gt-ohlcv-20m-v1'?a.acceptedAt:eventAnchor(a))+cfg.hours*HOURS+3*MIN,expired=this.lastAt>=(this.config.outcomeMethod==='gt-ohlcv-20m-v1'?a.acceptedAt:eventAnchor(a))+(cfg.hours+1)*HOURS,why=this.lastAttemptAt.get(a.mint)?.why;return {...a,label:expired||ended&&why&&why!=='deferred-by-batch'?'unknown':'pending',why:expired&&(!why||why==='deferred-by-batch')?'classification-deadline-exceeded':ended?why||'deferred-by-batch':'not-yet-finished'};}).sort((a,b)=>a.acceptedAt-b.acceptedAt);}
   distributions(view=this.view()){const histogram=(rows,key,edges)=>{const bins=edges.map((lo,i)=>({from:lo,to:edges[i+1]??(key==='activePct'?100:null),count:0}));let unknown=0;for(const r of rows){const x=r[key];if(typeof x!=='number'||!Number.isFinite(x)){unknown++;continue;}let i=edges.findLastIndex(n=>x>=n);if(i<0)i=0;bins[i].count++;}return {bins,known:rows.length-unknown,unknown};};return Object.fromEntries(['before','after'].map(phase=>{const rows=view.filter(r=>r.phase===phase&&r.label!=='pending').map(r=>({...r,priceChangePct:r.priceKeep==null?null:r.priceKeep-100}));return [phase,{completed:rows.length,activePct:histogram(rows,'activePct',Array.from({length:10},(_,i)=>i*10)),maxIdleObserved:histogram(rows,'maxIdleObserved',[0,15,30,60,120]),priceChangePct:histogram(rows,'priceChangePct',[-100,-90,-70,-50,-30,-10,0,10,50,100]),uniqueBuyers:histogram(rows,'uniqueBuyers',[0,10,30,50,100,200]),lowerBounds:rows.filter(r=>r.lowerBounds?.includes('unique-buyers')).length}];}));}
