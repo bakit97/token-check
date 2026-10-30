@@ -36,6 +36,8 @@ async function saveRowsAsync(file,rows,health){const tmp=file+'.async-'+process.
  try{fd=await fs.promises.open(tmp,'wx');let pending='[',pendingBytes=1;for await(const row of rows){const json=JSON.stringify(row),piece=(count?',':'')+json;pending+=piece;pendingBytes+=Buffer.byteLength(piece);count++;chars+=json.length;if(count%32===0)health?.capture('save:progress',{rows:count,chars,durationMs:Date.now()-started});if(pendingBytes>=65536){await write(pending);pending='';pendingBytes=0;}if(count%4===0)await new Promise(r=>setImmediate(r));}await write(pending+']');await fd.sync();await fd.close();fd=null;await fs.promises.rename(tmp,file);health?.capture('save:complete',{rows:count,chars,durationMs:Date.now()-started});return count;
  }catch(e){if(fd)await fd.close().catch(()=>{});await fs.promises.unlink(tmp).catch(()=>{});throw e;}
 }
+// Stream large runtime snapshots without retaining one full serialized bank string.
+async function saveObjectAsync(file,value){const tmp=file+'.object-'+process.pid+'-'+(++sequence);let fd;try{fd=await fs.promises.open(tmp,'wx',0o600);for await(const piece of jsonChunks(value)){const b=Buffer.from(piece);let offset=0;while(offset<b.length){const r=await fd.write(b,offset,b.length-offset,null);if(!r.bytesWritten)throw Error('Incomplete snapshot write');offset+=r.bytesWritten;}}await fd.sync();await fd.close();fd=null;await fs.promises.rename(tmp,file);require('./durable-json').syncDirectory(path.dirname(file));}catch(e){if(fd)await fd.close().catch(()=>{});await fs.promises.unlink(tmp).catch(()=>{});throw e;}}
 // Incremental replay keeps the file text and parsed array from coexisting with C.
 function* readRows(file,health,{field=null}={}){
  const {StringDecoder}=require('node:string_decoder'),decoder=new StringDecoder('utf8');
@@ -78,4 +80,4 @@ function multipartGzip(payload,name){
  const close=stream=>stream.closed?Promise.resolve():new Promise(resolve=>{stream.once('close',resolve);stream.once('error',()=>{});stream.destroy()});
  return {body,contentType:'multipart/related; boundary='+boundary,length:head.length+payload.bytes+tail.length,close:async()=>{await close(body);await close(file)}};
 }
-module.exports={jsonChunks,gzipJson,saveRows,saveRowsAsync,loadRows,multipartGzip,rowStream,readRows};
+module.exports={saveObjectAsync,jsonChunks,gzipJson,saveRows,saveRowsAsync,loadRows,multipartGzip,rowStream,readRows};

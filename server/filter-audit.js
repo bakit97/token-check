@@ -40,6 +40,7 @@ class FilterAudit{
             const file=this.file+'.incomplete-legacy.json',old=fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8')).versions:[];
             if(!old.some(x=>x.key===v.key))old.push(v);atomic(file,{schema:1,reason:'legacy-writer-omitted-category-values-or-interval-bound',versions:old});this.quarantinedLegacyVersions++;continue;
           }
+          if(require('./pass-runtime').isDiagnosticRule({...v,...v.rule})){require('./pass-runtime').archiveDiagnostic(dir,'filter-audit',v);continue;}
           if(this.versions.has(v.key))throw Error('Invalid stored filter version history');this.versions.set(v.key,v);
         }
       }else if(data.schema!==1||!Array.isArray(data.baselines))
@@ -48,7 +49,7 @@ class FilterAudit{
       // Never guess rules from keys; retain a matching frozen sample only if
       // that same explicit version returns to the published configuration.
       this.legacyBaselines=new Map(data.schema===1?data.baselines:[]);
-    }else this.legacyBaselines=new Map();
+    }else this.legacyBaselines=new Map();require('./pass-runtime').flushDiagnostics(dir);
   }
   report({config,one=[],two=[],oneHours=5,now=Date.now()}={}){
     if(!config||!Array.isArray(config.filters)||!Array.isArray(config.modules))

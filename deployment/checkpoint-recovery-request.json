@@ -1,6 +1,6 @@
 {
-  "id": "p45-bounded-probes-after-verified-checkpoint",
-  "allowedFromGeneration": "1793281542610262",
+  "id": "p46-streamed-bank-and-diagnostic-retirement",
+  "allowedFromGeneration": "1793282423513348",
   "enabled": true,
   "maxWaitMs": 1000,
   "maxStateBytes": 64000000,

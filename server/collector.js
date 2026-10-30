@@ -1431,6 +1431,7 @@ async function exportResearchV2(now) {
 }
 async function exportPathsV2(now){
   if(!PASS_V2||!RESEARCH_TWO||!SOURCE)return;
+  const diagnostic=require(DIR+'/pass-runtime.js'),archive=diagnostic.flushDiagnostics(DIR),signature=archive.records+':'+archive.bytes;if(archive.records&&signature!==globalThis.p45ArchiveUploaded){await upload('archive/p45-smoke/records.json',{schema:1,updated:now,records:archive.records,coins:require(DIR+'/stream-json.js').rowStream(()=>diagnostic.diagnosticRows(DIR))});globalThis.p45ArchiveUploaded=signature;}
   await reloadPassConfig();
   await publishLibrary(now);
   const p=PASS_CFG_ERR

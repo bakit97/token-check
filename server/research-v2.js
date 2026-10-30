@@ -115,7 +115,7 @@ function classifyActivity(m,cfg={}){
  if(m?.terminalCandlesPacked&&cfg.outcomeMethod==='gt-ohlcv-20m-v1'){
  const signature=JSON.stringify([cfg.hours??5,cfg.minActive??60,cfg.minSliceVolumeSol??.5,cfg.sliceRuleVersion??1,cfg.minSliceRangePct??3,cfg.minGreenCandles??2,cfg.minRedCandles??2]),cached=verdictCache.get(m);
  if(cached?.packed===m.terminalCandlesPacked&&cached.signature===signature)return {...cached.value};
- const result=require('./terminal-candles').classify(require('./terminal-candles').unpack(m.terminalCandlesPacked),cfg);
+ const {slices,sliceVolumes,...result}=require('./terminal-candles').classify(require('./terminal-candles').unpack(m.terminalCandlesPacked),cfg);
  if(!cached&&++verdictCacheEntries>20000){verdictCache=new WeakMap();verdictCacheEntries=1;}
  verdictCache.set(m,{packed:m.terminalCandlesPacked,signature,value:result});return {...result};
  }

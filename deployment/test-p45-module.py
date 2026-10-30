@@ -26,4 +26,35 @@ class SmokeTests(unittest.TestCase):
   file=root/'deployment/p45-module-request.json';request=json.loads(file.read_text());request['id']='p45-observational-module-v2';file.write_text(json.dumps(request));before=copy.deepcopy(state);self.assertEqual(apply(root,'bucket',run)['action'],'owner-edits-preserved');self.assertEqual(state,before)
  def test_v3_uses_proven_dex_without_changing_minute_or_owner_rules(self):
   root=self.fixture();state,writes,run=self.fake();apply(root,'bucket',run);file=root/'deployment/p45-module-request.json';request=json.loads(file.read_text());request['id']='p45-observational-module-v2';file.write_text(json.dumps(request));apply(root,'bucket',run);request['id']='p45-observational-module-v3';file.write_text(json.dumps(request));self.assertEqual(apply(root,'bucket',run)['action'],'applied-dex');module=state['modules.json']['modules'][0];self.assertEqual(module['verdictMinutes'],12);self.assertEqual(module['conds'][0]['key'],'dex');self.assertEqual(module['version'],3)
+
+class RetirementTests(unittest.TestCase):
+ def fixture(self,corrupt=False):
+  import hashlib,base64
+  temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup);root=pathlib.Path(temp.name);(root/'deployment').mkdir();(root/'deployment/p45-module-request.json').write_text(json.dumps({'enabled':True,'id':'p45-retire-diagnostics-v1','expiresAt':9999999999999}));rules=[{'id':'p45-smoke-'+phase,'name':'P45 dex '+phase,'level':'1','phase':phase,'version':3,'conds':[{'key':'dex','op':'in','values':['PumpSwap','Raydium CPMM','Meteora DAMM v2']}]}for phase in ['before','after']];owner={'id':'owner','name':'Owner','level':'1','version':1,'conds':[{'key':'volume','op':'>=','value':5}]};cfg={'schema':1,'enabled':True,'activatedAt':123,'decisionMinutes':12,'filters':copy.deepcopy(rules)+[owner],'modules':[{'filterId':r['id'],'phase':r['phase'],'level':'1','enabled':True}for r in rules]+[{'filterId':'owner','phase':'after','level':'1','enabled':True}]};objects={'config/modules.json':json.dumps({'schema':1,'modules':rules+[owner],'deleted':[]}).encode(),'config/pass-filters.json':json.dumps(cfg).encode(),'research-v2/polygon-2.json':b'{"coins":[{"test":true}]}'};generations={k:'1'for k in objects};writes=[]
+  def name(url):return url.removeprefix('gs://bucket/').split('#')[0]
+  def run(args,allow_missing=False):
+   if args[:3]==['storage','objects','describe']:
+    n=name(args[3])
+    if n not in objects:
+     if allow_missing:return None
+     raise AssertionError(n)
+    return json.dumps({'generation':generations[n],'md5_hash':base64.b64encode(hashlib.md5(objects[n]).digest()).decode()})
+   if args[:2]==['storage','cat']:return objects[name(args[2])].decode()
+   if args[:2]==['storage','cp']:
+    n=name(args[3]);match=next(x.split('=',1)[1]for x in args if x.startswith('--if-generation-match='));self.assertEqual(generations.get(n,'0'),match)
+    if args[2].startswith('gs://'):
+     objects[n]=objects[name(args[2])]+(b'x'if corrupt else b'')
+    else:objects[n]=pathlib.Path(args[2]).read_bytes();writes.append(n)
+    generations[n]=str(int(generations.get(n,'0'))+1);return ''
+   raise AssertionError(args)
+  return root,objects,writes,run,owner
+ def test_verified_backup_then_retirement_preserves_owner_and_is_idempotent(self):
+  root,objects,writes,run,owner=self.fixture();before=copy.deepcopy(objects);self.assertEqual(apply(root,'bucket',run)['action'],'diagnostics-retired');cfg=json.loads(objects['config/pass-filters.json']);self.assertEqual(cfg['filters'],[owner]);self.assertEqual(cfg['modules'],[{'filterId':'owner','phase':'after','level':'1','enabled':True}]);self.assertEqual(cfg['activatedAt'],123)
+  for name,value in before.items():self.assertEqual(objects['archive/p45-smoke/snapshots/'+name.replace('/','_')+'-1.json'],value)
+  self.assertEqual(apply(root,'bucket',run)['action'],'diagnostics-already-retired-or-owner-edited');self.assertEqual(len(writes),2)
+ def test_archive_checksum_failure_keeps_both_original_configurations(self):
+  root,objects,writes,run,_=self.fixture(True);before=copy.deepcopy(objects)
+  with self.assertRaisesRegex(RuntimeError,'checksum mismatch'):apply(root,'bucket',run)
+  self.assertEqual(objects['config/pass-filters.json'],before['config/pass-filters.json']);self.assertEqual(objects['config/modules.json'],before['config/modules.json']);self.assertFalse(writes)
+
 if __name__=='__main__':unittest.main()

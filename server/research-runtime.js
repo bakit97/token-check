@@ -106,7 +106,7 @@ class ResearchRuntime {
     if(fs.existsSync(this.file)){
       const state=JSON.parse(fs.readFileSync(this.file,'utf8'));
       if(state.schema!==1||!Array.isArray(state.rows))throw Error('Unknown stored research format');
-      for(const r of state.rows){
+      for(const r of state.rows){if(r.terminalCandlesPacked){delete r.slices;delete r.sliceVolumes;}
         if(typeof r.mint!=='string'||!Number.isSafeInteger(r.acceptedAt)||
            (r.activePct!=null&&!Number.isFinite(r.activePct))||(r.maxIdleObserved!=null&&!Number.isFinite(r.maxIdleObserved))||
            !r.features||typeof r.features!=='object')
@@ -179,7 +179,7 @@ class ResearchRuntime {
       const result=activityOutcome(coin,at,cfg,now);if(result.label==='pending')continue;
       // Recompute from original receipt cutoffs. Relabelling old frozen values
       // with an earlier timestamp would leak observations from after the decision.
-      const fresh={...old,...result,activitySlices:undefined,activitySlicesPacked:result.activitySlices?require('./activity-slices').pack(result.activitySlices):undefined,eventAt:at,featureAnchor:'acceptedAt',featureSnapshotVersion:1,marketScopeVersion:2,decisionAt,
+      const fresh={...old,...result,slices:undefined,sliceVolumes:undefined,activitySlices:undefined,activitySlicesPacked:result.activitySlices?require('./activity-slices').pack(result.activitySlices):undefined,eventAt:at,featureAnchor:'acceptedAt',featureSnapshotVersion:1,marketScopeVersion:2,decisionAt,
         features:require('./feature-snapshots').read(coin,admission.acceptedAt,cfg.decisionMinutes,old.phase),
         featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,admission.acceptedAt,'1',old.phase),
         earlyWallets:require('./early-intelligence').frozenWallets(coin,decisionAt),
@@ -195,8 +195,8 @@ class ResearchRuntime {
   }
   reanchor(options){const work=this.reanchorSteps(options);let step;do{step=work.next();}while(!step.done);return step.value;}
   update(options){const work=this.updateSteps(options);let step;do{step=work.next();}while(!step.done);return step.value;}
-  async updateAsync(options){const work=this.updateSteps(options);let step,at=Date.now();for(;;){step=work.next();if(step.done)return step.value;if(Date.now()-at>=8){await new Promise(resolve=>setImmediate(resolve));at=Date.now();}}}
-  *updateSteps({source,coins,passes=null,now=Date.now()}={}) {
+  async updateAsync(options){const work=this.updateSteps({...options,deferSave:true});let step,at=Date.now();for(;;){step=work.next();if(step.done){await this.saveAsync(options?.now??Date.now());return step.value;}if(Date.now()-at>=8){await new Promise(resolve=>setImmediate(resolve));at=Date.now();}}}
+  *updateSteps({source,coins,passes=null,now=Date.now(),deferSave=false}={}) {
     this.pruneRevoked(source?.revokedManual);this.pruneRevoked(new Map([...(source?.revokedMigrations||[])].filter(([mint])=>!source.records.has(mint))),'after');
     if(!source?.records || !coins?.get)throw new TypeError('Need source ledger and coin map');
     if(this.config.outcomeMethod!=='gt-ohlcv-20m-v1')yield* this.reanchorSteps({source,coins,now});
@@ -260,7 +260,7 @@ class ResearchRuntime {
       this.rows.push({via:gate.via,
         mint:row.mint,phase:row.phase,p:row.proof?.pool||null,pair:row.proof?.pool||null,phaseEpoch:row.proof?.poolEpoch?.id||null,featureAnchor:'acceptedAt',featureSnapshotVersion:1,marketScopeVersion:2,eventAt:eventAnchor(row),...receipt,featureTimesPacked:require('./module-library').freezeFeatureTimes(coin,row.acceptedAt,'1',row.phase,passes?.records?.get(row.mint)?.moduleVerdicts),curve:observationCurve(coin,eventAnchor(row),cfg.hours),curveUnit:'price-usd',
         acceptedAt:row.acceptedAt,decisionAt,earlyWallets:require('./early-intelligence').frozenWallets(coin,decisionAt),
-        ...result,activitySlices:undefined,activitySlicesPacked:result.activitySlices?require('./activity-slices').pack(result.activitySlices):undefined,outcomeAt:now,minutes:undefined,outcomePacked:require('node:zlib').deflateSync(Buffer.from(JSON.stringify(result.minutes||[]))).toString('base64'),
+        ...result,slices:undefined,sliceVolumes:undefined,activitySlices:undefined,activitySlicesPacked:result.activitySlices?require('./activity-slices').pack(result.activitySlices):undefined,outcomeAt:now,minutes:undefined,outcomePacked:require('node:zlib').deflateSync(Buffer.from(JSON.stringify(result.minutes||[]))).toString('base64'),
         hours:cfg.hours,label:result.label,
         activePct:result.activePct,
         maxIdleObserved:result.maxIdleObserved,
@@ -282,8 +282,7 @@ class ResearchRuntime {
     {
       this.rows=this.rows.sort((a,b)=>a.time-b.time);
       this.lookup=new Set(this.rows.map(r=>r.mint));
-      atomicJSON(this.file,{schema:1,rows:this.rows,
-        featureRepair:{...this.featureRepair,busy:false},admissionVersion:3,intakeDecisions:[...this.intakeDecisions],intakeAccepted:this.intakeAccepted,intakeRejected:this.intakeRejected,admissionUpgradeAt:this.admissionUpgradeAt,admitted:[...this.admitted.values()],processed:[...this.processed],savedAt:now});
+      if(!deferSave)atomicJSON(this.file,this.snapshot(now));
     }
     for(const row of this.rows){
       const name=classOf(row,this.config);
@@ -294,6 +293,9 @@ class ResearchRuntime {
     return {added,considered,attempted,diag:{...diag,cohortStart:this.cohortStart,cohortEnd:String(this.cohortEnd),now},
       maxChecksPerRun:MAX_CLASSIFICATION_CHECKS,intake:this.config.intake,intakeAccepted:this.intakeAccepted,intakeRejected:this.intakeRejected,...this.summary()};
   }
+  snapshot(now){return {schema:1,rows:this.rows,
+        featureRepair:{...this.featureRepair,busy:false},admissionVersion:3,intakeDecisions:[...this.intakeDecisions],intakeAccepted:this.intakeAccepted,intakeRejected:this.intakeRejected,admissionUpgradeAt:this.admissionUpgradeAt,admitted:[...this.admitted.values()],processed:[...this.processed],savedAt:now};}
+  async saveAsync(now){return require('./stream-json').saveObjectAsync(this.file,this.snapshot(now));}
   summary(){
     const unknownReasons={};let recovering=0;
     const counts={live:0,dead:0,pending:0,unknown:0,entered:0,preLive:0,preDead:0,postLive:0,postDead:0},byPhase={before:{entered:0,live:0,dead:0,pending:0,unknown:0},after:{entered:0,live:0,dead:0,pending:0,unknown:0}};

@@ -4,6 +4,7 @@ import json,pathlib,tempfile,time
 def apply(root,bucket,run):
     request=json.loads((pathlib.Path(root)/'deployment/p45-module-request.json').read_text(encoding='utf-8'))
     if not request.get('enabled') or time.time()*1000>request['expiresAt']:return {'action':'disabled-or-expired'}
+    if request['id']=='p45-retire-diagnostics-v1':return retire(bucket,run)
     if request['id'] in ['p45-observational-module-v2','p45-observational-module-v3']:return adjust_safe(bucket,run,3 if request['id'].endswith('v3') else 2)
     if request['id']!='p45-observational-module-v1':raise ValueError('Unknown smoke request')
     base='gs://'+bucket+'/config/';marker=base+'applied-p45-module.json'
@@ -53,3 +54,39 @@ def adjust_safe(bucket,run,version=2):
         file.write_text(json.dumps({'id':'p45-observational-module-v'+str(version),'appliedAt':now}),encoding='utf-8');run(['storage','cp',str(file),marker,'--if-generation-match=0','--quiet'])
     print('P45 smoke uses measured '+replacement['key']+' at N; owner modules preserved')
     return {'action':'applied-safe-contract' if version==2 else 'applied-dex'}
+
+
+def owned_diagnostic(rule):
+    if rule.get('id') not in ['p45-smoke-before','p45-smoke-after'] or rule.get('level')!='1' or not rule.get('name','').startswith('P45 '):return False
+    conds=rule.get('conds') or [{k:rule[k] for k in ['key','op','value','values'] if k in rule}]+rule.get('conditions',[])
+    if len(conds)!=1:return False
+    c=conds[0];version=rule.get('version')
+    return version==1 and c=={'key':'quoteSol','op':'>=','value':.5} or version==2 and c=={'key':'safeContract','op':'>=','value':1} or version==3 and c.get('key')=='dex' and c.get('op')=='in' and sorted(c.get('values',[]))==sorted(['Meteora DAMM v2','PumpSwap','Raydium CPMM'])
+
+def retire(bucket,run):
+    base='gs://'+bucket+'/';values={}
+    for name in ['modules.json','pass-filters.json']:
+        meta=json.loads(run(['storage','objects','describe',base+'config/'+name,'--format=json(generation,md5_hash)']))
+        values[name]=(json.loads(run(['storage','cat',base+'config/'+name+'#'+str(meta['generation'])])),meta)
+    all_rules=values['modules.json'][0].get('modules',[])+values['pass-filters.json'][0].get('filters',[])
+    ids={r['id'] for r in all_rules if owned_diagnostic(r)}
+    ids={i for i in ids if all(owned_diagnostic(r) for r in all_rules if r.get('id')==i)}
+    if not ids:return {'action':'diagnostics-already-retired-or-owner-edited'}
+    # Pin and verify the original object before any configuration is rewritten.
+    for name in ['config/modules.json','config/pass-filters.json','passed-v2/day/2026-10-29.json','passed-v2/day/2026-10-30.json','research-v2/polygon-2.json','research-v2/status-two.json']:
+        raw=run(['storage','objects','describe',base+name,'--format=json(generation,md5_hash)'],allow_missing=True)
+        if raw is None:continue
+        meta=json.loads(raw);generation=str(meta['generation']);checksum=meta.get('md5_hash')
+        if not checksum:raise RuntimeError('Diagnostic snapshot checksum unavailable; originals preserved')
+        dest=base+'archive/p45-smoke/snapshots/'+name.replace('/','_')+'-'+generation+'.json'
+        old=run(['storage','objects','describe',dest,'--format=json(generation,md5_hash)'],allow_missing=True)
+        if old is None:run(['storage','cp',base+name+'#'+generation,dest,'--if-generation-match=0','--quiet'])
+        saved=json.loads(run(['storage','objects','describe',dest,'--format=json(generation,md5_hash)']))
+        if saved.get('md5_hash')!=checksum:raise RuntimeError('Diagnostic archive checksum mismatch; originals preserved')
+    with tempfile.TemporaryDirectory() as folder:
+        file=pathlib.Path(folder)/'config.json'
+        for name,(cfg,meta) in values.items():
+            key='modules' if name=='modules.json' else 'filters';cfg[key]=[r for r in cfg.get(key,[]) if r.get('id') not in ids]
+            if name=='pass-filters.json':cfg['modules']=[r for r in cfg.get('modules',[]) if r.get('filterId') not in ids]
+            file.write_text(json.dumps(cfg),encoding='utf-8');run(['storage','cp',str(file),base+'config/'+name,'--if-generation-match='+str(meta['generation']),'--quiet'])
+    return {'action':'diagnostics-retired','ids':sorted(ids),'ownerRulesPreserved':True,'archive':'archive/p45-smoke/'}

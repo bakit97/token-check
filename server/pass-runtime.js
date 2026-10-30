@@ -69,13 +69,20 @@ function isEvent(x){
     typeof x.configHash==='string'&&Array.isArray(x.matches)&&x.matches.length>0&&
     x.features&&typeof x.features==='object';
 }
+const DIAGNOSTIC_IDS=new Set(['p45-smoke-before','p45-smoke-after']),diagnosticArchives=new Map();
+function isDiagnosticRule(r){if(!r||!DIAGNOSTIC_IDS.has(r.id)||r.level!=='1'||!/^P45 /.test(r.name||''))return false;const conds=r.conds||[{key:r.key,op:r.op,value:r.value,values:r.values},...(r.conditions||[])];if(conds.length!==1)return false;const c=conds[0];return r.version===1&&c.key==='quoteSol'&&c.op==='>='&&c.value===.5||r.version===2&&c.key==='safeContract'&&c.op==='>='&&c.value===1||r.version===3&&c.key==='dex'&&c.op==='in'&&JSON.stringify([...(c.values||[])].sort())===JSON.stringify(['Meteora DAMM v2','PumpSwap','Raydium CPMM'].sort());}
+function isDiagnosticPass(row){const rules=row?.matches||row?.sourceFilterRules;return Array.isArray(rules)&&rules.length>0&&rules.every(isDiagnosticRule);}
+function diagnosticArchive(dir){const folder=path.join(dir,'archive','p45-smoke');let a=diagnosticArchives.get(folder);if(a)return a;fs.mkdirSync(folder,{recursive:true});const index=path.join(folder,'index.json'),keys=fs.existsSync(index)?JSON.parse(fs.readFileSync(index,'utf8')):[];if(!Array.isArray(keys)||keys.length>50000)throw Error('Diagnostic archive index exceeds bound');a={folder,index,file:path.join(folder,'records.jsonl'),keys:new Set(keys),fd:null,dirty:false};diagnosticArchives.set(folder,a);return a;}
+function archiveDiagnostic(dir,kind,record){const a=diagnosticArchive(dir),json=JSON.stringify({kind,record}),hash=crypto.createHash('sha256').update(json).digest('hex');if(a.keys.has(hash))return false;if(a.keys.size>=50000)throw Error('Diagnostic archive full; records left in originals');if(a.fd===null)a.fd=fs.openSync(a.file,'a',0o600);fs.writeFileSync(a.fd,JSON.stringify({hash,kind,record})+'\n');a.keys.add(hash);a.dirty=true;return true;}
+function flushDiagnostics(dir){const a=diagnosticArchive(dir);if(a.fd!==null){fs.fsyncSync(a.fd);fs.closeSync(a.fd);a.fd=null;}if(a.dirty){const tmp=a.index+'.tmp',fd=fs.openSync(tmp,'w',0o600);try{fs.writeFileSync(fd,JSON.stringify([...a.keys]));fs.fsyncSync(fd);}finally{fs.closeSync(fd)}fs.renameSync(tmp,a.index);syncDirectory(a.folder);a.dirty=false;}return {records:a.keys.size,bytes:fs.existsSync(a.file)?fs.statSync(a.file).size:0,file:a.file};}
+function* diagnosticRows(dir){const a=diagnosticArchive(dir);if(!fs.existsSync(a.file))return;const fd=fs.openSync(a.file,'r'),b=Buffer.alloc(65536),decoder=new (require('node:string_decoder').StringDecoder)('utf8');let pending='';try{for(;;){const n=fs.readSync(fd,b,0,b.length,null);pending+=n?decoder.write(b.subarray(0,n)):decoder.end();let pos;while((pos=pending.indexOf('\n'))>=0){const line=pending.slice(0,pos);pending=pending.slice(pos+1);if(line)yield JSON.parse(line);}if(pending.length>512*1024)throw Error('Diagnostic archive row exceeds bound');if(!n)break;}if(pending)throw Error('Incomplete diagnostic archive');}finally{fs.closeSync(fd)}}
 class PassRuntime {
   constructor({dir,config}={}){
     if(!dir)throw new TypeError('Pass journal directory required');
     fs.mkdirSync(dir,{recursive:true});
     // One append-only file per Kazakhstan day: bounded startup replay while
     // retaining historical journals independently of the in-memory 72h view.
-    this.file=path.join(dir,'pass-v2.journal'); // legacy single-file format
+    this.dir=dir;this.file=path.join(dir,'pass-v2.journal'); // legacy single-file format
     this.journalDir=path.join(dir,'pass-v2-journal');
     fs.mkdirSync(this.journalDir,{recursive:true});
     this.activationFile=path.join(dir,'pass-v2-activation.json');
@@ -122,11 +129,12 @@ class PassRuntime {
       catch{throw Error('Malformed committed pass journal JSON: '+path.basename(file))}
       if(item.phase==='before'&&this.revokedManual.has(item.mint))continue;
       if(!isEvent(item))throw Error('Malformed committed pass journal row: '+path.basename(file));
+      if(isDiagnosticPass(item)){archiveDiagnostic(this.dir,'passed',item);continue;}
       const old=this.records.get(item.mint);
       if(old&&(old.acceptedAt!==item.acceptedAt||old.firstSeenAt!==item.firstSeenAt))
         throw Error('Conflicting duplicate mint in pass journal: '+item.mint);
       if(item.acceptedAt>=Date.now()-WINDOW)this.records.set(item.mint,Object.freeze(item));
-    }
+    }flushDiagnostics(this.dir);
   }
   applyConfig(raw){
     const cfg=configOf(raw),h=digest(cfg);
@@ -286,4 +294,4 @@ class PassRuntime {
   }
 }
 function verdictConfig(raw){return {...raw,passMode:raw.passMode||{before:'1',after:'1'},filters:(raw.filters||[]).map(f=>({...f,verdictMinutes:f.verdictMinutes||raw.decisionMinutes}))}}
-module.exports={PassRuntime,configOf,isEvent,verdictConfig};
+module.exports={isDiagnosticRule,isDiagnosticPass,archiveDiagnostic,flushDiagnostics,diagnosticRows,PassRuntime,configOf,isEvent,verdictConfig};

@@ -102,9 +102,9 @@ class ResearchTwoRuntime {
              (typeof row.minuteCurvePacked!=='string'||![...Array(12)].some((_,i)=>Buffer.from(row.minuteCurvePacked,'base64').length===(i+1)*60*(row.minuteCurveEncoding==='float64'?8:4)))))
           throw Error('Corrupted second-level research row');
       }
-      this.rows=capPhases(data.rows);
+      const diagnostics=require('./pass-runtime');const archived=new Set();this.rows=capPhases(data.rows.filter(r=>{if(!diagnostics.isDiagnosticPass(r))return true;diagnostics.archiveDiagnostic(dir,'research-two',r);archived.add(r.mint);return false;}));diagnostics.flushDiagnostics(dir);this.diagnosticMints=archived;
       for(const pair of data.processed||[])
-        if(Array.isArray(pair)&&typeof pair[0]==='string'&&Number.isSafeInteger(pair[1]))
+        if(Array.isArray(pair)&&typeof pair[0]==='string'&&Number.isSafeInteger(pair[1])&&!this.diagnosticMints?.has(pair[0]))
           this.processed.set(pair[0],pair[1]);
       for(const row of this.rows)this.processed.set(row.mint,row.zeroAt);
     }
@@ -135,6 +135,7 @@ class ResearchTwoRuntime {
          !['strong','weak'].includes(row.label)||!Number.isFinite(row.pctAbove)||
          !row.features||typeof row.features!=='object')
         throw Error('Malformed committed second-level journal row');
+      if(require('./pass-runtime').isDiagnosticPass(row)){require('./pass-runtime').archiveDiagnostic(path.dirname(this.file),'research-two',row);continue;}
       if(this.processed.has(row.mint)){
         if(this.processed.get(row.mint)!==row.zeroAt&&!this.rows.some(saved=>saved.mint===row.mint&&saved.previousZeroAt===row.zeroAt))
           throw Error('Conflicting duplicate second-level mint');
@@ -145,7 +146,7 @@ class ResearchTwoRuntime {
     }
     if(additions.length)
       this.rows=capPhases(this.rows.concat(additions));
-    this.journalCount=complete.toString('utf8').split('\n').length-1;
+    this.journalCount=complete.toString('utf8').split('\n').length-1;require('./pass-runtime').flushDiagnostics(path.dirname(this.file));
   }
   _appendJournal(rows){
     if(!rows.length)return;
