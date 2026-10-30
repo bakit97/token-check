@@ -134,12 +134,12 @@ class ResearchRuntime {
       if(now<at||admission.featureReceiptVersion===2&&admission.decisionAt===at)continue;const coin=coins.get(admission.mint,admission);if(!coin)continue;const f=require('./feature-snapshots').decision(coin,admission,cfg.decisionMinutes,passes);if(f.snapshotSealed){Object.assign(admission,f);changed++;}
     }return changed;
   }
-  async repairFrozenFeatures({coins,passes=null,now=Date.now(),limit=4,canRun=()=>true}={}){
+  async repairFrozenFeatures({coins,passes=null,now=Date.now(),limit=4,budgetMs=Infinity,canRun=()=>true}={}){
     if(this.featureRepair.busy||this.config.outcomeMethod!=='gt-ohlcv-20m-v1'||!canRun())return this.featureRepair;
-    this.featureRepair.busy=true;try{
+    this.featureRepair.busy=true;const startedAt=Date.now();try{
       const backup=this.file+'.before-feature-receipts-v2.json';if(fs.existsSync(this.file)&&!fs.existsSync(backup)){const temporary=backup+'.tmp';await fs.promises.copyFile(this.file,temporary);if(!(await fs.promises.stat(temporary)).size)throw Error('Empty receipt repair backup');if(!fs.existsSync(backup))await fs.promises.rename(temporary,backup);else await fs.promises.unlink(temporary);}
       const phases={before:phaseSettings(this.config,'before'),after:phaseSettings(this.config,'after')};let checked=0;for(const admission of this.admitted.values()){
-        if(!canRun()||checked>=limit)break;const cfg=phases[admission.phase];
+        if(!canRun()||checked>=limit||checked>0&&Date.now()-startedAt>=budgetMs)break;const cfg=phases[admission.phase];
         if(admission.intakePending||now-admission.acceptedAt<21*MIN||admission.featureReceiptVersion===2&&admission.featureCoverageMinute===cfg.decisionMinutes||admission.featureRepairRetryAt>now)continue;
         checked++;const coinStart=Date.now();try{const coin=coins.get(admission.mint,admission);if(!coin){this.featureRepair.missing++;admission.featureRepairRetryAt=now+HOURS;continue;}
           const receipt=require('./feature-snapshots').decision(coin,admission,cfg.decisionMinutes,passes);if(!receipt.snapshotSealed){this.featureRepair.missing++;admission.featureRepairRetryAt=now+HOURS;continue;}
@@ -201,17 +201,17 @@ class ResearchRuntime {
     if(!source?.records || !coins?.get)throw new TypeError('Need source ledger and coin map');
     if(this.config.outcomeMethod!=='gt-ohlcv-20m-v1')yield* this.reanchorSteps({source,coins,now});
     const maxChecks=this.config.outcomeMethod==='gt-ohlcv-20m-v1'?MAX_CLASSIFICATION_CHECKS:16;
-    let added=0,reclassified=0,considered=0,attempted=0,gateChecks=0,classificationStarted=0;
+    let added=0,reclassified=0,considered=0,attempted=0,gateChecks=0,classificationStarted=0,readyStarted=0;
     const pending={},byPhase={before:{live:0,dead:0},after:{live:0,dead:0}};
     // Retry already received immutable charts without reconstructing old coins.
-    // Keep half the batch for ordinary/new windows and never replace live vectors.
+    // Cached reads have their own bounded lane; ordinary/new windows keep their allowance.
     if(this.config.outcomeMethod==='gt-ohlcv-20m-v1'&&terminalFor)for(const old of this.rows){
-      yield;if(reclassified>=16||classificationStarted&&Date.now()-classificationStarted>=4000)break;
+      yield;if(reclassified>=64||readyStarted&&Date.now()-readyStarted>=4000)break;
       const admission=this.admitted.get(old.mint);if(!admission||admission.intakePending||admission.acceptedAt!==old.acceptedAt||admission.phase!==old.phase||admission.p&&admission.p!==(old.p||old.pair)||old.terminalCandlesPacked||old.label!=='unknown')continue;
-      const payload=terminalFor(old),evidence=payload?.evidence;if(!evidence||evidence.mint!==old.mint||evidence.pool!==(old.p||old.pair)||evidence.anchor!==old.acceptedAt)continue;
-      classificationStarted=classificationStarted||Date.now();const result=require('./terminal-candles').outcome(evidence,old.acceptedAt,phaseSettings(this.config,old.phase),now,payload.state);
+      readyStarted=readyStarted||Date.now();const payload=terminalFor(old),evidence=payload?.evidence;if(!evidence||evidence.mint!==old.mint||evidence.pool!==(old.p||old.pair)||evidence.anchor!==old.acceptedAt)continue;
+      const result=require('./terminal-candles').outcome(evidence,old.acceptedAt,phaseSettings(this.config,old.phase),now,payload.state);
       if(!['live','dead'].includes(result.label))continue;
-      Object.assign(old,result,{slices:undefined,sliceVolumes:undefined,outcomeAt:now});this.processed.set(old.mint,old.acceptedAt);this.lastAttemptAt.delete(old.mint);reclassified++;attempted++;if(this.work)this.work.readyOutcomes=reclassified;
+      Object.assign(old,result,{slices:undefined,sliceVolumes:undefined,outcomeAt:now});this.processed.set(old.mint,old.acceptedAt);this.lastAttemptAt.delete(old.mint);reclassified++;if(this.work)this.work.readyOutcomes=reclassified;
     }
     // Newest first, avoid scanning the entire multi-month ledger.
     const recent=Array.from(typeof source.recentAdmissions==='function'?

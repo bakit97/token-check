@@ -97,9 +97,25 @@ function gtStats(){const ok=gtLog.filter(x=>x[1]===1),rl=gtLog.filter(x=>x[1]===
 /* ---------- Solana RPC (Helius). Ключ лежит в метаданных сервера, не в коде ---------- */
 let HKEY='',HKEY_PENDING=null;async function heliusKey(){if(HKEY)return HKEY;if(!HKEY_PENDING)HKEY_PENDING=networkDeadline((async()=>{try{const r=await fetch('http://metadata.google.internal/computeMetadata/v1/instance/attributes/helius-key',{headers:{'Metadata-Flavor':'Google'},signal:AbortSignal.timeout(5000)});if(r.ok)HKEY=(await r.text()).trim()}catch{}return HKEY})(),6000).catch(()=>HKEY).finally(()=>HKEY_PENDING=null);return HKEY_PENDING}
 
-let rpcN=0,rpcFail=0,rpcCredits=0,rpcBusy=new Map();let PUBLIC_SCAN_RPC=null;let FREE_FAST_NEXT=0,FREE_FAST_PAUSE=0;const RPC_NETWORK={budgetFreeFallback:true,free:{calls:0,success:0,errors:0,rateDeferred:0,pacedWaits:0},calls:0,errors:0,byCode:{},byLane:{},hedge:{publicCalls:0,publicWins:0,heliusWins:0}};const crLog=[];const RPCCTX={};let CTX='?';
+let rpcN=0,rpcFail=0,rpcCredits=0,rpcBusy=new Map();let PUBLIC_SCAN_RPC=null;let FREE_FAST_NEXT=0;const FREE_FAST_COOLDOWN=new Map();const RPC_NETWORK={budgetFreeFallback:true,free:{calls:0,success:0,errors:0,rateDeferred:0,pacedWaits:0},calls:0,errors:0,byCode:{},byLane:{},hedge:{publicCalls:0,publicWins:0,heliusWins:0}};const crLog=[];const RPCCTX={};let CTX='?';
 let RPC_CACHE=new Map();
-async function freeFastRPC(method,params,options){const now=Date.now(),wait=Math.max(0,FREE_FAST_NEXT-now);if(now<FREE_FAST_PAUSE||wait>5000){RPC_NETWORK.free.rateDeferred++;throw Object.assign(Error('public migration retry pending'),{code:'RPC_TRANSIENT',retryAfterMs:Math.max(500,FREE_FAST_PAUSE-now,wait)});}FREE_FAST_NEXT=Math.max(now,FREE_FAST_NEXT)+500;if(wait){RPC_NETWORK.free.pacedWaits++;await sleep(wait);}if(Date.now()<FREE_FAST_PAUSE)throw Object.assign(Error('public migration provider cooling down'),{code:'RPC_TRANSIENT',retryAfterMs:FREE_FAST_PAUSE-Date.now()});RPC_NETWORK.free.calls++;try{const d=await require(DIR+'/pool-balance-reader.js').deadline(async signal=>{const response=await fetch('https://api.mainnet-beta.solana.com',{signal,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});if(!response.ok){if(response.status===429){const seconds=Number(response.headers?.get('retry-after'));FREE_FAST_PAUSE=Date.now()+Math.max(1000,Math.min(60000,Number.isFinite(seconds)&&seconds>0?seconds*1000:30000));}throw Object.assign(Error('public migration provider unavailable'),{code:'RPC_TRANSIENT',retryAfterMs:Math.max(1000,FREE_FAST_PAUSE-Date.now())});}return options.maxBytes?await require(DIR+'/early-intelligence.js').readBoundedJSON(response,options.maxBytes):await response.json();},5000);if(d.error||d.result==null||method==='getAccountInfo'&&!d.result.value||method==='getSignaturesForAddress'&&!d.result.length)throw Object.assign(Error('public confirmed migration data pending'),{code:'TX_PENDING'});RPC_NETWORK.free.success++;return d.result;}catch(e){RPC_NETWORK.free.errors++;if(!['RPC_TRANSIENT','TX_PENDING'].includes(e.code))throw Object.assign(Error('public migration request unavailable'),{code:'RPC_TRANSIENT',retryAfterMs:2000});throw e;}}
+function freeMethodReady(method){return Date.now()>=(FREE_FAST_COOLDOWN.get(method)||0);}
+async function freeFastRPC(method,params,options={}){
+ const now=Date.now(),wait=Math.max(0,FREE_FAST_NEXT-now),pause=FREE_FAST_COOLDOWN.get(method)||0;
+ if(now<pause||wait>5000){RPC_NETWORK.free.rateDeferred++;throw Object.assign(Error('public RPC retry pending'),{code:'RPC_TRANSIENT',providerReason:now<pause?'METHOD_COOLDOWN':'PACING',dispatched:false,retryAfterMs:Math.max(500,pause-now,wait)});}
+ FREE_FAST_NEXT=Math.max(now,FREE_FAST_NEXT)+500;if(wait){RPC_NETWORK.free.pacedWaits++;await sleep(wait);}
+ if(!freeMethodReady(method))throw Object.assign(Error('public RPC method cooling down'),{code:'RPC_TRANSIENT',providerReason:'METHOD_COOLDOWN',dispatched:false,retryAfterMs:FREE_FAST_COOLDOWN.get(method)-Date.now()});
+ RPC_NETWORK.free.calls++;try{
+  const d=await require(DIR+'/pool-balance-reader.js').deadline(async signal=>{const response=await fetch('https://api.mainnet-beta.solana.com',{signal,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
+   if(!response.ok){const status=response.status,reason=status===429?'HTTP_429':status===403?'HTTP_403':status>=500?'HTTP_5XX':'HTTP_OTHER';if(status===429){const seconds=Number(response.headers?.get('retry-after'));FREE_FAST_COOLDOWN.set(method,Date.now()+Math.max(1000,Math.min(60000,Number.isFinite(seconds)&&seconds>0?seconds*1000:30000)));while(FREE_FAST_COOLDOWN.size>16)FREE_FAST_COOLDOWN.delete(FREE_FAST_COOLDOWN.keys().next().value);}
+    throw Object.assign(Error('public RPC provider unavailable'),{code:'RPC_TRANSIENT',providerReason:reason,retryAfterMs:Math.max(1000,(FREE_FAST_COOLDOWN.get(method)||0)-Date.now())});}
+   return options.maxBytes?await require(DIR+'/early-intelligence.js').readBoundedJSON(response,options.maxBytes):await response.json();},5000);
+  if(d.error||d.result==null||method==='getAccountInfo'&&!d.result.value||method==='getSignaturesForAddress'&&!d.result.length)throw Object.assign(Error('public confirmed data pending'),{code:'TX_PENDING',providerReason:'DATA_PENDING'});RPC_NETWORK.free.success++;return d.result;
+ }catch(e){RPC_NETWORK.free.errors++;const reason=e.providerReason||(e.message==='optional-rpc-response-too-large'?'RESPONSE_TOO_LARGE':e.message==='pool-public-deadline'||['AbortError','TimeoutError'].includes(e.name)?'TIMEOUT':'NETWORK'),tag=['getBlock','getTransaction','getAccountInfo','getMultipleAccounts','getProgramAccounts','getTokenLargestAccounts','getTokenSupply','getSignaturesForAddress','getSlot','getBlockTime'].includes(method)?method:'other',all=RPC_NETWORK.free.errorsByMethod||(RPC_NETWORK.free.errorsByMethod={}),bin=all[tag]||(all[tag]={});bin[reason]=(bin[reason]||0)+1;RPC_NETWORK.free.lastFailure={method:tag,reason,at:Date.now()};
+  if(!['RPC_TRANSIENT','TX_PENDING'].includes(e.code))throw Object.assign(Error('public RPC request unavailable'),{code:'RPC_TRANSIENT',providerReason:reason,dispatched:true,retryAfterMs:2000});throw Object.assign(e,{providerReason:reason,dispatched:true});
+ }
+}
+
 async function rpc(method,params,options={}){
   if(options.publicFirst){try{return await freeFastRPC(method,params,options)}catch{options={...options,publicFirst:false}}}
   if(!RESOURCE)throw Object.assign(new Error('Helius accounting unavailable'),{code:'BUDGET_DEFERRED'});
@@ -887,11 +903,12 @@ async function earlyWindowTick(){
    if(SMART_WALLETS){const smart=SMART_WALLETS.features(c,trade.acceptedAt,at);if(smart)appendIntelligence(c,smart);}
   }).catch(e=>{if(e.code==='BUDGET_DEFERRED'||e.code==='GT_BUDGET_DEFERRED'||e.code==='OBSERVATION_COMPLETE'){delete c.earlyGTAttempted;EARLY_WINDOW_STATS.tradesRequests--;EARLY_WINDOW_STATS.tradesDeferred=(EARLY_WINDOW_STATS.tradesDeferred||0)+1;c.earlyGTUnavailable='early-task-quota-before-deadline';}else{EARLY_WINDOW_STATS.tradesErrors++;c.earlyGTUnavailable='one-query-provider-unavailable';}});
  }
- if(!earlyWindowTick.openingBusy){const pick=active.filter(r=>{const c=C.get(r.mint);return c?.p&&c.p===(r.proof?.pool||c.p)&&r.proof?.slot&&!c.earlyOpeningAttempted&&due(r);}).sort((a,b)=>deadline(a)-deadline(b))[0];
+ const openingReady=typeof freeMethodReady!=='function'||freeMethodReady('getBlock');if(!openingReady)EARLY_WINDOW_STATS.openingProviderDeferred=(EARLY_WINDOW_STATS.openingProviderDeferred||0)+1;
+ if(!earlyWindowTick.openingBusy&&openingReady){const pick=active.filter(r=>{const c=C.get(r.mint);return c?.p&&c.p===(r.proof?.pool||c.p)&&r.proof?.slot&&!c.earlyOpeningAttempted&&!(c.earlyOpeningRetryAt>now)&&due(r);}).sort((a,b)=>deadline(a)-deadline(b))[0];
   if(pick){const c=C.get(pick.mint),cutoff=deadline(pick);
    if(FREE_TASKS.take('opening')){c.earlyOpeningAttempted=now;earlyWindowTick.openingBusy=true;EARLY_WINDOW_STATS.openingRequests++;freeFastRPC('getBlock',[pick.proof.slot,{encoding:'json',transactionDetails:'full',rewards:false,maxSupportedTransactionVersion:1,commitment:'confirmed'}],{maxBytes:3*1024*1024}).then(raw=>{const at=Date.now();if(at>cutoff){c.earlyOpeningUnavailable='received-after-verdict';return;}const api=require(DIR+'/early-intelligence.js'),block=api.blockEvidence(raw,pick.proof.slot,at,b58dec);if(!block){c.earlyOpeningUnavailable='opening-block-not-provable';return;}const snap=api.openingFeatures({mint:c.a,creator:c.creatorAddress,supplyRaw:c.supplyRaw,slot:pick.proof.slot,blocks:[block],at});appendIntelligence(c,snap);c.earlyWallets=snap.earlyWallets;c.earlyWalletsAt=at;c.earlyWalletsComplete=false;c.trDone=1;
     if(SMART_WALLETS){const smart=SMART_WALLETS.features(c,pick.acceptedAt,at);if(smart)appendIntelligence(c,smart);}
-   }).catch(()=>{EARLY_WINDOW_STATS.openingErrors++;c.earlyOpeningUnavailable='one-query-provider-unavailable';}).finally(()=>earlyWindowTick.openingBusy=false);}
+   }).catch(e=>{const reason=['HTTP_429','HTTP_403','HTTP_5XX','HTTP_OTHER','DATA_PENDING','RESPONSE_TOO_LARGE','TIMEOUT','NETWORK','METHOD_COOLDOWN','PACING'].includes(e.providerReason)?e.providerReason:'PROVIDER_UNAVAILABLE';if(e.dispatched===false){delete c.earlyOpeningAttempted;EARLY_WINDOW_STATS.openingRequests--;c.earlyOpeningRetryAt=Date.now()+Math.max(1000,e.retryAfterMs||1000);EARLY_WINDOW_STATS.openingDeferred=(EARLY_WINDOW_STATS.openingDeferred||0)+1;}else EARLY_WINDOW_STATS.openingErrors++;const reasons=EARLY_WINDOW_STATS.openingErrorReasons||(EARLY_WINDOW_STATS.openingErrorReasons={});reasons[reason]=(reasons[reason]||0)+1;c.earlyOpeningUnavailable=reason;}).finally(()=>earlyWindowTick.openingBusy=false);}
    else{c.earlyOpeningUnavailable='opening-task-quota-before-deadline';EARLY_WINDOW_STATS.openingDeferred=(EARLY_WINDOW_STATS.openingDeferred||0)+1;}
   }
  }
@@ -1297,15 +1314,16 @@ async function token(){if(GOOGLE_AUTH.value&&Date.now()<GOOGLE_AUTH.until)return
 async function getObj(name){return networkDeadline((async()=>{const tk=await token();const r=await fetch(`https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/${encodeURIComponent(name)}?alt=media${name.startsWith('config/')?'&x='+Date.now():''}`,{headers:{Authorization:'Bearer '+tk},signal:AbortSignal.timeout(30000)});
   if(r.status===404){await r.arrayBuffer();return null;}if(!r.ok)throw new Error('get '+name+' '+r.status);return r.json()})(),35000)}
 async function upload(name,obj){
+  const timing={startedAt:Date.now(),stage:'compression',okay:false};
   if(HEALTH)HEALTH.activeUploads++;
   let payload,multipart;try{
-    const stream=require(DIR+'/stream-json.js');payload=await stream.gzipJson({dir:DIR,value:obj,health:HEALTH,name});
-    const tk=await token();multipart=stream.multipartGzip(payload,name);
+    const stream=require(DIR+'/stream-json.js');payload=await stream.gzipJson({dir:DIR,value:obj,health:HEALTH,name});timing.compressionMs=Date.now()-timing.startedAt;timing.stage='token';const tokenAt=Date.now();
+    const tk=await token();timing.tokenMs=Date.now()-tokenAt;timing.stage='upload';timing.uploadAt=Date.now();multipart=stream.multipartGzip(payload,name);
     const r=await fetch(`https://storage.googleapis.com/upload/storage/v1/b/${BUCKET}/o?uploadType=multipart`,
       {method:'POST',duplex:'half',signal:AbortSignal.timeout(60000),headers:{Authorization:'Bearer '+tk,'Content-Type':multipart.contentType,'Content-Length':String(multipart.length)},body:multipart.body});
-    if(!r.ok)throw new Error('upload '+r.status+' '+(await r.text()).slice(0,120));await r.arrayBuffer();
+    if(!r.ok)throw new Error('upload '+r.status+' '+(await r.text()).slice(0,120));await r.arrayBuffer();timing.networkMs=Date.now()-timing.uploadAt;timing.okay=true;timing.stage='complete';
     HEALTH?.uploadsHour.push(Date.now());
-  }finally{await multipart?.close();await payload?.dispose();if(HEALTH)HEALTH.activeUploads--;HEALTH?.capture('upload:complete',{name})}
+  }finally{await multipart?.close();await payload?.dispose();if(HEALTH)HEALTH.activeUploads--;timing.totalMs=Date.now()-timing.startedAt;if(['research-v2/status.json','research-v2/polygon-1.json','research-v2/status-two.json','research-v2/polygon-2.json','source/live.json','source/status.json','passed-v2/live.json','passed-v2/status.json','status.json'].includes(name))HEALTH?.capture('publish:'+name,timing);HEALTH?.capture('upload:complete',{name})}
 }
 
 let lastYest=0,lastObs=0;
@@ -1726,7 +1744,7 @@ const STARTED=Date.now();
   setTimeout(()=>deduplicateClosedArchiveRows().catch(e=>err('archive dedup '+e.message)),1000);
   setInterval(()=>{prune();save();deduplicateClosedArchiveRows().catch(e=>err('archive dedup '+e.message))},120000);
   setInterval(()=>{if(RETENTION.stateBytes>=RETENTION.stateArchiveTriggerBytes&&ACTIVE_HISTORY&&!ACTIVE_HISTORY.busy)ACTIVE_HISTORY.compact({coins:C,publish:upload,read:getObj,now:Date.now(),maxChunks:4}).then(changed=>{if(changed)save()}).catch(e=>err('state archive '+e.message));},60000);
-  setInterval(()=>{const canRun=()=>!resourcePressure()&&(HEALTH?.lagMs||0)<250&&(!RESEARCH_EXPORTS.busy||!['r1-update','r2-update','auto-research'].includes(RESEARCH_EXPORTS.stage));if(RESEARCH_V2&&canRun())RESEARCH_V2.repairFrozenFeatures({coins:researchCoins(),passes:PASS_V2,now:Date.now(),limit:4,canRun}).catch(()=>err('feature receipt repair failed'));},5000);
+  setInterval(()=>{const canRun=()=>!resourcePressure()&&(HEALTH?.lagMs||0)<250&&(!RESEARCH_EXPORTS.busy||!['r1-update','r2-update','auto-research'].includes(RESEARCH_EXPORTS.stage));if(RESEARCH_V2&&canRun())RESEARCH_V2.repairFrozenFeatures({coins:researchCoins(),passes:PASS_V2,now:Date.now(),limit:12,budgetMs:250,canRun}).catch(()=>err('feature receipt repair failed'));},5000);
   setInterval(()=>liveDecisionTick().catch(e=>err('live decision '+e.message)),2000);
   fastPassedLoop().catch(e=>err('fast pass loop '+e.message));
   (async()=>{for(;;){await sleep(5*60e3);try{await exportDays()}catch(e){err('export '+e.message)}}})();
