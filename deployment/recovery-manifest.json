@@ -1,7 +1,7 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "e41ccdd60353d02612ab9e729e67b9ba2a5295f074ebecf20cd30488c2c52ae6",
+    "collector.js": "191b4b083a0457540b6db2fda97e798906c592ec87e97a125e56e89c28b01d0d",
     "feature-coverage.js": "05cb73f959eaa4d1e7f4972f2617a3f6604618b6528c9c1ef356806ae3e962e3",
     "terminal-candles.js": "9e6c2dd9881ba70bfff50325c58ee87ddbae5376142d63db0bc6a3269ccb6cd5",
     "early-window.js": "d697dfee6dec3f89df610fe7f98161cadbb7ec4fc80f74681b2885c702719996",
@@ -19,8 +19,8 @@
     "source-runtime.js": "4d48902143c6798c372b2cdc6abb3ad5439ce06f6bd5258fa443ef16c4df7528",
     "pump-pre.js": "8f01365922819d7900219eb316213f044e331c146f4cb71db9f1f398bbddac06",
     "pre-watcher.js": "72879fa8a144c40ec5c3bca90c64a0276ffb1582b39c1960fdc5ad7721e41dd3",
-    "research-v2.js": "abd3908a30104ee315bf064cb90c40af33c1889e96d4a1f7fa2fed719434fc22",
-    "research-runtime.js": "6e7f28bc4a12aad9838c784a6c65f6c0c3632a6edbd8bfb2a81be86c153b6a3a",
+    "research-v2.js": "f9b7d868abe46263bc067d21122510b3dd9a4b1bb23c47353e79e94fbdc6ddba",
+    "research-runtime.js": "7ff7d8e744ce943dbe0fa0d6055cce8338d1be67aba06a751c7e72e8444d9363",
     "research-config.js": "eba92bd89b4b87bb65f76ec5b3452d2cdd657e13c2cefc0523d97aa0ddca4ca7",
     "pass-runtime.js": "b48e8ac48e3701afd11b55882b665238e082472ed8356521f91c34379f258fe8",
     "research-two-runtime.js": "f8bb0114168a054a07384914853a18c6a3ed9bcb8e38d1df01afe80e616c03ac",
@@ -35,7 +35,7 @@
     "seed-completed.js": "d1bfe44875a6e52062f6e2daceeff4ea4530889bb0a4dcd33c98f49c1dbf4a4b",
     "coin-profile.js": "4f1e744d18068ed8de883f8a1380d8c0771cb3c5d75d79dca0854a3587332af9",
     "durable-json.js": "a042526c285613abc0935b43db8dffb98502054b1b9d43a8355438620dc8f192",
-    "research-banks.js": "993a01567183f58d4db7aacc142113db0e5bc8f380ac85614781bf637c7aef07",
+    "research-banks.js": "0ea2b9c976ba80ef4b7da1171e65999d1fc652a500a2e1b4ad819430d60f5307",
     "module-library.js": "a0a4882d81e43f0e5f231747d20a30ab16062e76af851abf70ddfa288d9b9cee",
     "active-history.js": "6ac52c3c685727180cadd25252572c1ff486ba5c97f9e4aa269bd6572c7901b9",
     "launch-history.js": "fce3b45fcd513c24673ceaafe31f747cb01c7e77f264a559414ce235b0905c49",

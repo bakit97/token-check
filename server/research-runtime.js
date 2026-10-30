@@ -134,12 +134,12 @@ class ResearchRuntime {
       if(now<at||admission.featureReceiptVersion===2&&admission.decisionAt===at)continue;const coin=coins.get(admission.mint,admission);if(!coin)continue;const f=require('./feature-snapshots').decision(coin,admission,cfg.decisionMinutes,passes);if(f.snapshotSealed){Object.assign(admission,f);changed++;}
     }return changed;
   }
-  async repairFrozenFeatures({coins,passes=null,now=Date.now(),limit=4,budgetMs=Infinity,canRun=()=>true}={}){
+  async repairFrozenFeatures({coins,passes=null,now=Date.now(),limit=4,budgetMs=Infinity,cpuBudgetMs=Infinity,canRun=()=>true}={}){
     if(this.featureRepair.busy||this.config.outcomeMethod!=='gt-ohlcv-20m-v1'||!canRun())return this.featureRepair;
-    this.featureRepair.busy=true;const startedAt=Date.now();try{
+    this.featureRepair.busy=true;const startedAt=Date.now(),cpuAt=process.cpuUsage();try{
       const backup=this.file+'.before-feature-receipts-v2.json';if(fs.existsSync(this.file)&&!fs.existsSync(backup)){const temporary=backup+'.tmp';await fs.promises.copyFile(this.file,temporary);if(!(await fs.promises.stat(temporary)).size)throw Error('Empty receipt repair backup');if(!fs.existsSync(backup))await fs.promises.rename(temporary,backup);else await fs.promises.unlink(temporary);}
       const phases={before:phaseSettings(this.config,'before'),after:phaseSettings(this.config,'after')};let checked=0;for(const admission of this.admitted.values()){
-        if(!canRun()||checked>=limit||checked>0&&Date.now()-startedAt>=budgetMs)break;const cfg=phases[admission.phase];
+        if(!canRun()||checked>=limit||checked>0&&(Date.now()-startedAt>=budgetMs||(process.cpuUsage(cpuAt).user+process.cpuUsage(cpuAt).system)/1000>=cpuBudgetMs))break;const cfg=phases[admission.phase];
         if(admission.intakePending||now-admission.acceptedAt<21*MIN||admission.featureReceiptVersion===2&&admission.featureCoverageMinute===cfg.decisionMinutes||admission.featureRepairRetryAt>now)continue;
         checked++;const coinStart=Date.now();try{const coin=coins.get(admission.mint,admission);if(!coin){this.featureRepair.missing++;admission.featureRepairRetryAt=now+HOURS;continue;}
           const receipt=require('./feature-snapshots').decision(coin,admission,cfg.decisionMinutes,passes);if(!receipt.snapshotSealed){this.featureRepair.missing++;admission.featureRepairRetryAt=now+HOURS;continue;}

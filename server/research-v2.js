@@ -108,7 +108,7 @@ function legacyActivityOutcome(coin,entryAt,{hours=5,minActive=70,maxIdle=60,min
   const label=activePct>=minActive&&longest<=maxIdle?'live':'dead';
   return {label,coverage,activePct,maxIdleObserved:longest,seen,blocks};
 }
-let verdictCache=new WeakMap(),verdictCacheEntries=0;
+const verdictCache=new WeakMap(); // Lifetime is bounded by the live rows, not total historical scans.
 // Memoize only packed immutable v3 evidence. Mutable raw arrays keep the
 // uncached path; thresholds and deadline state are explicit dependencies.
 function classifyActivity(m,cfg={}){
@@ -116,7 +116,6 @@ function classifyActivity(m,cfg={}){
  const signature=JSON.stringify([cfg.hours??5,cfg.minActive??60,cfg.minSliceVolumeSol??.5,cfg.sliceRuleVersion??1,cfg.minSliceRangePct??3,cfg.minGreenCandles??2,cfg.minRedCandles??2]),cached=verdictCache.get(m);
  if(cached?.packed===m.terminalCandlesPacked&&cached.signature===signature)return {...cached.value};
  const {slices,sliceVolumes,...result}=require('./terminal-candles').classify(require('./terminal-candles').unpack(m.terminalCandlesPacked),cfg);
- if(!cached&&++verdictCacheEntries>20000){verdictCache=new WeakMap();verdictCacheEntries=1;}
  verdictCache.set(m,{packed:m.terminalCandlesPacked,signature,value:result});return {...result};
  }
  if(cfg.outcomeMethod==='gt-ohlcv-20m-v1')return {label:'unknown',why:'terminal-chart-awaiting-retry'};
@@ -126,7 +125,7 @@ function classifyActivity(m,cfg={}){
  const bucket=!m.recoveryPending?'settled':!Number.isFinite(cfg.now)||!Number.isFinite(m.windowEnd)?'unknown-time':cfg.now<m.windowEnd?'unfinished':cfg.now<m.windowEnd+3600000?'recovering':'expired';
  const signature=JSON.stringify([...parameters,m.recoveryPending,m.recoveryWhy,m.windowStart,m.windowEnd,bucket]),cached=verdictCache.get(m);
  if(cached&&cached.packed===m.activitySlicesPacked&&cached.outcome===m.outcomePacked&&cached.signature===signature)return {...cached.value};
- const result=classifyActivityUncached(m,cfg);if(!cached&&++verdictCacheEntries>20000){verdictCache=new WeakMap();verdictCacheEntries=1;}
+ const result=classifyActivityUncached(m,cfg);
  verdictCache.set(m,{packed:m.activitySlicesPacked,outcome:m.outcomePacked,signature,value:{...result}});return result;
 }
 function classifyActivityUncached(m,cfg={}){

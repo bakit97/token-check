@@ -1744,7 +1744,7 @@ const STARTED=Date.now();
   setTimeout(()=>deduplicateClosedArchiveRows().catch(e=>err('archive dedup '+e.message)),1000);
   setInterval(()=>{prune();save();deduplicateClosedArchiveRows().catch(e=>err('archive dedup '+e.message))},120000);
   setInterval(()=>{if(RETENTION.stateBytes>=RETENTION.stateArchiveTriggerBytes&&ACTIVE_HISTORY&&!ACTIVE_HISTORY.busy)ACTIVE_HISTORY.compact({coins:C,publish:upload,read:getObj,now:Date.now(),maxChunks:4}).then(changed=>{if(changed)save()}).catch(e=>err('state archive '+e.message));},60000);
-  setInterval(()=>{const canRun=()=>!resourcePressure()&&(HEALTH?.lagMs||0)<250&&(!RESEARCH_EXPORTS.busy||!['r1-update','r2-update','auto-research'].includes(RESEARCH_EXPORTS.stage));if(RESEARCH_V2&&canRun())RESEARCH_V2.repairFrozenFeatures({coins:researchCoins(),passes:PASS_V2,now:Date.now(),limit:12,budgetMs:250,canRun}).catch(()=>err('feature receipt repair failed'));},5000);
+  setInterval(()=>{const canRun=()=>!resourcePressure()&&(HEALTH?.lagMs||0)<250&&(!RESEARCH_EXPORTS.busy||!['r1-update','r2-update','auto-research'].includes(RESEARCH_EXPORTS.stage));if(RESEARCH_V2&&canRun())RESEARCH_V2.repairFrozenFeatures({coins:researchCoins(),passes:PASS_V2,now:Date.now(),limit:12,budgetMs:1000,cpuBudgetMs:100,canRun}).catch(()=>err('feature receipt repair failed'));},5000);
   setInterval(()=>liveDecisionTick().catch(e=>err('live decision '+e.message)),2000);
   fastPassedLoop().catch(e=>err('fast pass loop '+e.message));
   (async()=>{for(;;){await sleep(5*60e3);try{await exportDays()}catch(e){err('export '+e.message)}}})();
