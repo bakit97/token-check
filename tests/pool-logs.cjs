@@ -27,3 +27,5 @@ test('migration log hint enters proof queue rather than direct admission or manu
 });
 
 test('InitializeAccount3 token-account noise is rejected before JSON.parse while the exact pool instruction stays subscribed',()=>{const {feed,ws}=setup(),parse=JSON.parse;let calls=0;JSON.parse=(...args)=>{calls++;return parse(...args);};try{ws.onmessage({data:'{"method":"logsNotification","logs":["Program log: Instruction: InitializeAccount3"]}'});}finally{JSON.parse=parse;}a.equal(calls,0);a.equal(feed.summary().noise,1);feed.stop();});
+
+test('public discovery starts at the current official endpoint and fails over once without parallel duplicate sockets',()=>{const sockets=[],callbacks=[];class Socket{constructor(url){this.url=url;sockets.push(this)}send(){}close(){this.onclose?.()}}const feed=new PoolLogs({WebSocket:Socket,definitions,onSignal:()=>{},setTimer:f=>{callbacks.push(f);return {}},clearTimer:()=>{}});feed.start();a.equal(sockets[0].url,'wss://api.mainnet.solana.com');sockets[0].onclose();sockets[0].onclose();a.equal(callbacks.length,1);callbacks.shift()();a.equal(sockets.length,2);a.equal(sockets[1].url,'wss://api.mainnet-beta.solana.com');feed.stop();});

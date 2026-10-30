@@ -161,7 +161,7 @@ class ResearchRuntime {
     let quoteSol=opening.quoteSol;
     if(quoteSol==null&&opening.quoteSolEquivalent==null&&coin){const first=[...(coin.lq||[])].sort((a,b)=>a[0]-b[0]).find(r=>r[0]*1000<=row.acceptedAt);if(first){const qi=coin.vmint?.indexOf('So11111111111111111111111111111111111111112');if(qi>=0&&coin.vmint[1-qi]===coin.a&&Number.isFinite(first[2+qi])&&first[2+qi]>=0)quoteSol=first[2+qi]/1e9;}}
     const features={...opening,quoteSol},gate=intakeDecision(cfg.intake,row,features,passes),previous=this.intakeDecisions.get(row.mint);
-    if(!previous||previous.ok!==gate.ok||previous.why!==gate.why||previous.via!==gate.via){if(previous){const bank=previous.ok?this.intakeAccepted:this.intakeRejected,key=previous.ok?previous.via:previous.why;if(bank[key]>0)bank[key]--;if(!bank[key])delete bank[key];}const bank=gate.ok?this.intakeAccepted:this.intakeRejected,key=gate.ok?gate.via:gate.why;bank[key]=(bank[key]||0)+1;this.intakeDecisions.set(row.mint,{...gate,at:now,acceptedAt:row.acceptedAt,...features});}
+    if(!previous||previous.ok!==gate.ok||previous.why!==gate.why||previous.via!==gate.via||previous.intakePool!==pool||previous.intakePhase!==row.phase){if(previous){const bank=previous.ok?this.intakeAccepted:this.intakeRejected,key=previous.ok?previous.via:previous.why;if(bank[key]>0)bank[key]--;if(!bank[key])delete bank[key];}const bank=gate.ok?this.intakeAccepted:this.intakeRejected,key=gate.ok?gate.via:gate.why;bank[key]=(bank[key]||0)+1;this.intakeDecisions.set(row.mint,{...gate,at:now,acceptedAt:row.acceptedAt,intakePool:pool,intakePhase:row.phase,...features});}
     if(!gate.ok){this.admitted.delete(row.mint);if(!cfg.intake?.modules.enabled)this.processed.set(row.mint,row.acceptedAt);return null;}
     this.processed.delete(row.mint);const admission={mint:row.mint,phase:row.phase,p:pool,pair:pool,phaseEpoch:row.proof?.poolEpoch?.id||null,eventAt:eventAnchor(row),acceptedAt:row.acceptedAt,admittedAt:now,intakeFeatures:features,intakeMode:'discovery-v3',features:{},via:gate.via};this.admitted.set(row.mint,admission);return admission;
   }
@@ -196,13 +196,23 @@ class ResearchRuntime {
   reanchor(options){const work=this.reanchorSteps(options);let step;do{step=work.next();}while(!step.done);return step.value;}
   update(options){const work=this.updateSteps(options);let step;do{step=work.next();}while(!step.done);return step.value;}
   async updateAsync(options){this.work={stage:'scan',startedAt:Date.now(),visited:0};const work=this.updateSteps({...options,deferSave:true});let step,at=Date.now();try{for(;;){step=work.next();if(step.done){this.work.stage='snapshot';this.work.scanMs=Date.now()-this.work.startedAt;this.work.snapshot=await this.saveAsync(options?.now??Date.now());this.work.stage='idle';this.work.finishedAt=Date.now();return {...step.value,work:{...this.work}};}if(Date.now()-at>=8){await new Promise(resolve=>setImmediate(resolve));at=Date.now();}}}catch(e){this.work.stage='failed';this.work.finishedAt=Date.now();throw e;}}
-  *updateSteps({source,coins,passes=null,now=Date.now(),deferSave=false}={}) {
+  *updateSteps({source,coins,passes=null,terminalFor=null,now=Date.now(),deferSave=false}={}) {
     this.pruneRevoked(source?.revokedManual);this.pruneRevoked(new Map([...(source?.revokedMigrations||[])].filter(([mint])=>!source.records.has(mint))),'after');
     if(!source?.records || !coins?.get)throw new TypeError('Need source ledger and coin map');
     if(this.config.outcomeMethod!=='gt-ohlcv-20m-v1')yield* this.reanchorSteps({source,coins,now});
     const maxChecks=this.config.outcomeMethod==='gt-ohlcv-20m-v1'?MAX_CLASSIFICATION_CHECKS:16;
-    let added=0,considered=0,attempted=0,gateChecks=0,classificationStarted=0;
+    let added=0,reclassified=0,considered=0,attempted=0,gateChecks=0,classificationStarted=0;
     const pending={},byPhase={before:{live:0,dead:0},after:{live:0,dead:0}};
+    // Retry already received immutable charts without reconstructing old coins.
+    // Keep half the batch for ordinary/new windows and never replace live vectors.
+    if(this.config.outcomeMethod==='gt-ohlcv-20m-v1'&&terminalFor)for(const old of this.rows){
+      yield;if(reclassified>=16||classificationStarted&&Date.now()-classificationStarted>=4000)break;
+      const admission=this.admitted.get(old.mint);if(!admission||admission.intakePending||admission.acceptedAt!==old.acceptedAt||admission.phase!==old.phase||admission.p&&admission.p!==(old.p||old.pair)||old.terminalCandlesPacked||old.label!=='unknown')continue;
+      const payload=terminalFor(old),evidence=payload?.evidence;if(!evidence||evidence.mint!==old.mint||evidence.pool!==(old.p||old.pair)||evidence.anchor!==old.acceptedAt)continue;
+      classificationStarted=classificationStarted||Date.now();const result=require('./terminal-candles').outcome(evidence,old.acceptedAt,phaseSettings(this.config,old.phase),now,payload.state);
+      if(!['live','dead'].includes(result.label))continue;
+      Object.assign(old,result,{slices:undefined,sliceVolumes:undefined,outcomeAt:now});this.processed.set(old.mint,old.acceptedAt);this.lastAttemptAt.delete(old.mint);reclassified++;attempted++;if(this.work)this.work.readyOutcomes=reclassified;
+    }
     // Newest first, avoid scanning the entire multi-month ledger.
     const recent=Array.from(typeof source.recentAdmissions==='function'?
       source.recentAdmissions(now-FRESH_WINDOW,now):source.records.values());
@@ -221,6 +231,8 @@ class ResearchRuntime {
       considered++;
       const cfg=phaseSettings(this.config,row.phase);
       let admission=this.admitted.get(row.mint);
+      if(!admission){const previous=this.intakeDecisions.get(row.mint),pool=row.proof?.pool,opening=row.proof?.openingMetrics,identity=previous?.intakePool===pool&&previous?.intakePhase===row.phase||opening?.pool===pool&&opening?.quoteMint==='So11111111111111111111111111111111111111112'&&previous?.liquidityObservedAt===opening?.at&&previous?.quoteSol===opening?.liquiditySol;
+        if(previous?.ok===false&&previous.acceptedAt===row.acceptedAt&&identity&&(Number.isFinite(previous.quoteSol)||Number.isFinite(previous.quoteSolEquivalent))){const gate=intakeDecision(cfg.intake,row,previous,passes);if(!gate.ok&&gate.why===previous.why)continue;}}
       if(!admission||admission.intakePending)admission=this.admit(row,coins.get(row.mint,row),passes,now);
       if(!admission)continue;
       const featureAt=row.acceptedAt+cfg.decisionMinutes*MIN;
@@ -291,7 +303,7 @@ class ResearchRuntime {
     }
     this.pending=pending;
     this.lastAt=now;
-    return {added,considered,attempted,diag:{...diag,cohortStart:this.cohortStart,cohortEnd:String(this.cohortEnd),now},
+    return {added,reclassified,considered,attempted,diag:{...diag,cohortStart:this.cohortStart,cohortEnd:String(this.cohortEnd),now},
       maxChecksPerRun:maxChecks,intake:this.config.intake,intakeAccepted:this.intakeAccepted,intakeRejected:this.intakeRejected,...this.summary()};
   }
   snapshot(now){return {schema:1,rows:this.rows,

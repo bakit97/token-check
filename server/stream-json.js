@@ -14,8 +14,8 @@ async function* jsonPieces(value,depth=0){
  yield '{';let first=true;for(const key of Object.keys(value)){const item=value[key];if(item===undefined||typeof item==='function'||typeof item==='symbol')continue;
   if(!first)yield ',';first=false;yield JSON.stringify(key)+':';yield*jsonPieces(item,depth+1);}yield '}';
 }
-async function* jsonChunks(value){let pending='';for await(const piece of jsonPieces(value)){if(pending.length+piece.length>32768&&pending){yield pending;pending=''}
- if(piece.length>32768)yield piece;else pending+=piece;}if(pending)yield pending;}
+async function* jsonChunks(value,maxChars=32768){let pending='';for await(const piece of jsonPieces(value)){if(pending.length+piece.length>maxChars&&pending){yield pending;pending=''}
+ if(piece.length>maxChars)yield piece;else pending+=piece;}if(pending)yield pending;}
 async function gzipJson({dir,value,health,name}){
  const tmp=path.join(dir,'publish-tmp');fs.mkdirSync(tmp,{recursive:true});
  if(!cleaned.has(tmp)){cleaned.add(tmp);for(const name of fs.readdirSync(tmp))if(/^json-\d+-\d+\.gz$/.test(name)&&!name.startsWith('json-'+process.pid+'-'))try{fs.unlinkSync(path.join(tmp,name))}catch{}}
@@ -37,7 +37,7 @@ async function saveRowsAsync(file,rows,health){const tmp=file+'.async-'+process.
  }catch(e){if(fd)await fd.close().catch(()=>{});await fs.promises.unlink(tmp).catch(()=>{});throw e;}
 }
 // Stream large runtime snapshots without retaining one full serialized bank string.
-async function saveObjectAsync(file,value){const started=Date.now(),tmp=file+'.object-'+process.pid+'-'+(++sequence);let fd,bytes=0;try{fd=await fs.promises.open(tmp,'wx',0o600);for await(const piece of jsonChunks(value)){const b=Buffer.from(piece);bytes+=b.length;let offset=0;while(offset<b.length){const r=await fd.write(b,offset,b.length-offset,null);if(!r.bytesWritten)throw Error('Incomplete snapshot write');offset+=r.bytesWritten;}}await fd.sync();await fd.close();fd=null;await fs.promises.rename(tmp,file);require('./durable-json').syncDirectory(path.dirname(file));return {bytes,durationMs:Date.now()-started};}catch(e){if(fd)await fd.close().catch(()=>{});await fs.promises.unlink(tmp).catch(()=>{});throw e;}}
+async function saveObjectAsync(file,value){const started=Date.now(),tmp=file+'.object-'+process.pid+'-'+(++sequence);let fd,bytes=0,chunks=0;try{fd=await fs.promises.open(tmp,'wx',0o600);for await(const piece of jsonChunks(value,262144)){chunks++;const b=Buffer.from(piece);bytes+=b.length;let offset=0;while(offset<b.length){const r=await fd.write(b,offset,b.length-offset,null);if(!r.bytesWritten)throw Error('Incomplete snapshot write');offset+=r.bytesWritten;}}await fd.sync();await fd.close();fd=null;await fs.promises.rename(tmp,file);require('./durable-json').syncDirectory(path.dirname(file));return {bytes,chunks,durationMs:Date.now()-started};}catch(e){if(fd)await fd.close().catch(()=>{});await fs.promises.unlink(tmp).catch(()=>{});throw e;}}
 // Incremental replay keeps the file text and parsed array from coexisting with C.
 function* readRows(file,health,{field=null}={}){
  const {StringDecoder}=require('node:string_decoder'),decoder=new StringDecoder('utf8');

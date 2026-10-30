@@ -1408,7 +1408,7 @@ async function exportResearchV2(now) {
   syncResearchEpochBanks();
   // All read-only observations originate from the accepted main source.
   if(typeof RESEARCH_EXPORTS!=='undefined')RESEARCH_EXPORTS.stage='r1-update';
-  const result=await runtime.updateAsync({source:SOURCE,coins:researchCoins(),passes:PASS_V2,now});
+  const result=await runtime.updateAsync({source:SOURCE,coins:researchCoins(),passes:PASS_V2,terminalFor:row=>{if(!TERMINAL_CHARTS)return null;const pool=row.p||row.pair,record={mint:row.mint,acceptedAt:row.acceptedAt,proof:{pool}},state=TERMINAL_CHARTS.statusFor(record,pool);return state?.state==='ready'?{state,evidence:TERMINAL_CHARTS.read(record,pool)}:null;},now});
   AI_SNAP.r1=result;
   const population=runtime.view().map(r=>withPoolReference({mint:r.mint,phase:r.phase,acceptedAt:r.acceptedAt,label:r.label,why:r.why||null,activePct:r.activePct??null,maxIdleObserved:r.maxIdleObserved??null,features:r.features||{},terminalEvidenceId:r.terminalEvidenceId||null}));
   if(typeof RESEARCH_EXPORTS!=='undefined')RESEARCH_EXPORTS.stage='r1-status-upload';
