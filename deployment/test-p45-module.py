@@ -57,4 +57,21 @@ class RetirementTests(unittest.TestCase):
   with self.assertRaisesRegex(RuntimeError,'checksum mismatch'):apply(root,'bucket',run)
   self.assertEqual(objects['config/pass-filters.json'],before['config/pass-filters.json']);self.assertEqual(objects['config/modules.json'],before['config/modules.json']);self.assertFalse(writes)
 
+
+class ChangingSnapshotTests(unittest.TestCase):
+ fixture=RetirementTests.fixture
+ def test_disappearing_source_generation_is_retried_with_a_fresh_verified_copy(self):
+  root,objects,writes,run,_=self.fixture();fail=[True]
+  def racing(args,allow_missing=False):
+   if args[:2]==['storage','cp'] and args[2].startswith('gs://') and fail[0]:fail[0]=False;raise RuntimeError('source generation disappeared')
+   return run(args,allow_missing)
+  self.assertEqual(apply(root,'bucket',racing)['action'],'diagnostics-retired');self.assertEqual(len(writes),2)
+ def test_failed_backup_is_not_ignored_when_all_attempts_fail(self):
+  root,objects,writes,run,_=self.fixture();before=copy.deepcopy(objects)
+  def racing(args,allow_missing=False):
+   if args[:2]==['storage','cp'] and args[2].startswith('gs://'):raise RuntimeError('source unavailable')
+   return run(args,allow_missing)
+  with self.assertRaisesRegex(RuntimeError,'Verified diagnostic backup unavailable'):apply(root,'bucket',racing)
+  self.assertEqual(objects['config/pass-filters.json'],before['config/pass-filters.json']);self.assertFalse(writes)
+
 if __name__=='__main__':unittest.main()

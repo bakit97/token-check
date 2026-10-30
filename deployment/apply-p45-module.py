@@ -72,17 +72,28 @@ def retire(bucket,run):
     ids={r['id'] for r in all_rules if owned_diagnostic(r)}
     ids={i for i in ids if all(owned_diagnostic(r) for r in all_rules if r.get('id')==i)}
     if not ids:return {'action':'diagnostics-already-retired-or-owner-edited'}
-    # Pin and verify the original object before any configuration is rewritten.
+    # Views can be replaced while a pinned generation is being copied. Retry a
+    # fresh immutable generation; never relax destination CAS or checksum checks.
     for name in ['config/modules.json','config/pass-filters.json','passed-v2/day/2026-10-29.json','passed-v2/day/2026-10-30.json','research-v2/polygon-2.json','research-v2/status-two.json']:
-        raw=run(['storage','objects','describe',base+name,'--format=json(generation,md5_hash)'],allow_missing=True)
-        if raw is None:continue
-        meta=json.loads(raw);generation=str(meta['generation']);checksum=meta.get('md5_hash')
-        if not checksum:raise RuntimeError('Diagnostic snapshot checksum unavailable; originals preserved')
-        dest=base+'archive/p45-smoke/snapshots/'+name.replace('/','_')+'-'+generation+'.json'
-        old=run(['storage','objects','describe',dest,'--format=json(generation,md5_hash)'],allow_missing=True)
-        if old is None:run(['storage','cp',base+name+'#'+generation,dest,'--if-generation-match=0','--quiet'])
-        saved=json.loads(run(['storage','objects','describe',dest,'--format=json(generation,md5_hash)']))
-        if saved.get('md5_hash')!=checksum:raise RuntimeError('Diagnostic archive checksum mismatch; originals preserved')
+        verified=False
+        for attempt in range(4):
+            raw=run(['storage','objects','describe',base+name,'--format=json(generation,md5_hash)'],allow_missing=True)
+            if raw is None:verified=True;break
+            meta=json.loads(raw);generation=str(meta['generation']);checksum=meta.get('md5_hash')
+            if not checksum:raise RuntimeError('Diagnostic snapshot checksum unavailable; originals preserved')
+            dest=base+'archive/p45-smoke/snapshots/'+name.replace('/','_')+'-'+generation+'.json'
+            old=run(['storage','objects','describe',dest,'--format=json(generation,md5_hash)'],allow_missing=True)
+            copy_error=None
+            if old is None:
+                try:run(['storage','cp',base+name+'#'+generation,dest,'--if-generation-match=0','--quiet'])
+                except RuntimeError as error:copy_error=error
+            saved=run(['storage','objects','describe',dest,'--format=json(generation,md5_hash)'],allow_missing=True)
+            if saved is not None:
+                if json.loads(saved).get('md5_hash')!=checksum:raise RuntimeError('Diagnostic archive checksum mismatch; originals preserved')
+                verified=True;break
+            if attempt==3:raise RuntimeError('Verified diagnostic backup unavailable for '+name+'; '+str(copy_error or 'copy missing'))
+            print(json.dumps({'diagnosticSnapshot':name,'action':'retry-changed-generation','attempt':attempt+1}))
+        if not verified:raise RuntimeError('Diagnostic backup not verified; originals preserved')
     with tempfile.TemporaryDirectory() as folder:
         file=pathlib.Path(folder)/'config.json'
         for name,(cfg,meta) in values.items():
