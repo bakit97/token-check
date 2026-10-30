@@ -1,7 +1,7 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "9db6508db124b025986243692f965b1dd1f66a39d85546c061b451fb6b506f35",
+    "collector.js": "297bfa1f2bd709f35fff86652d6a8ef411384d81040522d2d40b61c430f8c44f",
     "feature-coverage.js": "035f21fadacde227e1c13b410645d74806d7413090c9d1f429b9db221c52b96b",
     "terminal-candles.js": "9e6c2dd9881ba70bfff50325c58ee87ddbae5376142d63db0bc6a3269ccb6cd5",
     "early-window.js": "b40eadbaeb85e3647243a28cb7da9489deabc3ce973607c72a2c5ba723cf7a6e",
@@ -20,7 +20,7 @@
     "pump-pre.js": "8f01365922819d7900219eb316213f044e331c146f4cb71db9f1f398bbddac06",
     "pre-watcher.js": "72879fa8a144c40ec5c3bca90c64a0276ffb1582b39c1960fdc5ad7721e41dd3",
     "research-v2.js": "abd3908a30104ee315bf064cb90c40af33c1889e96d4a1f7fa2fed719434fc22",
-    "research-runtime.js": "742646ccfdf5777697e821e82d231ce8f2d9d43574d665b08dfca49e863fe392",
+    "research-runtime.js": "55fa4f139cbe6004e930f4bdff42630c7651bb059b9245e6e2b7f575cc097025",
     "research-config.js": "eba92bd89b4b87bb65f76ec5b3452d2cdd657e13c2cefc0523d97aa0ddca4ca7",
     "pass-runtime.js": "b48e8ac48e3701afd11b55882b665238e082472ed8356521f91c34379f258fe8",
     "research-two-runtime.js": "f8bb0114168a054a07384914853a18c6a3ed9bcb8e38d1df01afe80e616c03ac",
@@ -28,7 +28,7 @@
     "filter-audit.js": "63cf836c3dbeca80ff18fd2685afb2e0e646ec141537a7471f7e397be881c75a",
     "resource-budget.js": "64b33c8516c7c103548006473815be60292079061db0d1d69bbfdbbd64f8a4ce",
     "runtime-health.js": "3766fe31b09cf8a9216849a6dec47f2046668e715d81f0cf2e0647541a06d0d0",
-    "stream-json.js": "7278aa6f1c176cb3a3e447d9f38b30bb3ffaa3effc5265b127cacc4edc598521",
+    "stream-json.js": "b0c31d078c5b90511f85cec8c31a291ebb7c60a5cb318039dcedd7d8296dcb5c",
     "observation-contract.js": "5a8952c09d1345b0555a80a141c901d1a3fffeaf29c0f7e161e4bfcfd69385ba",
     "packed-observations.js": "cfbe0c13e4402cfd13aa2bb27740b20b2ac66afe835ba9947951b273a3ca39cd",
     "completed-coins.js": "d16146b51da4478a00d848879f3e73f553cebce20467c606f729c949136b23dc",
