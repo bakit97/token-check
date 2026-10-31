@@ -6,9 +6,11 @@ def apply(root,bucket,target,run,read=None):
     if not p.exists():return {'action':'no-request'}
     req=json.loads(p.read_text())
     if not req.get('enabled'):return {'action':'disabled'}
-    if req.get('id')!='owner-stalled-solscan-20261026' or req.get('allowedFromGeneration')!='1792636239831388':raise ValueError('Unreviewed VM reset')
+    reviewed={'owner-stalled-solscan-20261026':('1792636239831388','20261026'),'owner-stalled-solscan-20261031':('1793365443116295','20261031')}
+    scope_request=reviewed.get(req.get('id'))
+    if not scope_request or req.get('allowedFromGeneration')!=scope_request[0]:raise ValueError('Unreviewed VM reset')
     if time.time()*1000>req['expiresAt']:return {'action':'expired'}
-    marker='gs://'+bucket+'/config/applied-vm-recovery-20261026.json'
+    marker='gs://'+bucket+'/config/applied-vm-recovery-'+scope_request[1]+'.json'
     if run(['storage','objects','describe',marker,'--format=value(generation)'],allow_missing=True):return {'action':'already-applied'}
     if read is None:
         def read():

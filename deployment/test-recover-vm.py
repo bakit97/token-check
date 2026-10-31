@@ -23,4 +23,14 @@ class RecoveryTest(unittest.TestCase):
    self.assertEqual(apply(root,'bucket','999',run,lambda:status)['action'],'reset')
    status['memory']['phases']['save:complete']['rows']=0
    with self.assertRaises(RuntimeError):apply(root,'bucket','999',run,lambda:status)
+ def test_oct31_scope_has_distinct_once_marker(self):
+  with tempfile.TemporaryDirectory() as folder:
+   root=pathlib.Path(folder);(root/'deployment').mkdir();(root/'deployment/vm-reset-request.json').write_text(json.dumps({'id':'owner-stalled-solscan-20261031','enabled':True,'allowedFromGeneration':'1793365443116295','expiresAt':time.time()*1000+100000,'ownerAcceptsCheckpointGap':True}));calls=[]
+   def run(args,allow_missing=False):
+    calls.append(args);return None if args[:3]==['storage','objects','describe'] else ''
+   status={'version':'1793365443116295','memory':{'phases':{'save:complete':{'at':time.time()*1000-3600000,'rows':4362}}},'retention':{'stateBytes':28220101}}
+   self.assertEqual(apply(root,'bucket','1793443407688530',run,lambda:status)['action'],'reset')
+   self.assertTrue(any('gs://bucket/config/applied-vm-recovery-20261031.json' in c for c in calls))
+   self.assertEqual(sum(c[:4]==['compute','instances','reset','solscan']for c in calls),1)
+   self.assertEqual(apply(root,'bucket','1793443407688530',lambda *a,**k:'exists',lambda:status)['action'],'already-applied')
 if __name__=='__main__':unittest.main()
