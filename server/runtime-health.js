@@ -7,7 +7,7 @@ class RuntimeHealth{
   return m;
  }
  summary(structures){const m=this.capture(),at=this.now();this.uploadsHour=this.uploadsHour.filter(x=>x>at-3600000);
-  const result={at,rssMB:+(m.rss/1e6).toFixed(1),heapUsedMB:+(m.heapUsed/1e6).toFixed(1),heapTotalMB:+(m.heapTotal/1e6).toFixed(1),externalMB:+(m.external/1e6).toFixed(1),arrayBuffersMB:+((m.arrayBuffers||0)/1e6).toFixed(1),heapLimitMB:+(v8.getHeapStatistics().heap_size_limit/1e6).toFixed(1),rssPeakMB:+this.peak.toFixed(1),rssPeakMinuteMB:+this.windowPeak.toFixed(1),lagMs:this.lagMs,maxLagMs:this.maxLagMs,activeUploads:this.activeUploads,uploadsHour:this.uploadsHour.length,structures,phases:this.phases};
+  const nativeValue=(key,max)=>{const n=Number(process.env[key]);return Number.isInteger(n)&&n>0&&n<=max?n:null;};const result={at,nativeAllocator:{arenaMax:nativeValue('MALLOC_ARENA_MAX',64),trimThresholdBytes:nativeValue('MALLOC_TRIM_THRESHOLD_',1073741824)},rssMB:+(m.rss/1e6).toFixed(1),heapUsedMB:+(m.heapUsed/1e6).toFixed(1),heapTotalMB:+(m.heapTotal/1e6).toFixed(1),externalMB:+(m.external/1e6).toFixed(1),arrayBuffersMB:+((m.arrayBuffers||0)/1e6).toFixed(1),heapLimitMB:+(v8.getHeapStatistics().heap_size_limit/1e6).toFixed(1),rssPeakMB:+this.peak.toFixed(1),rssPeakMinuteMB:+this.windowPeak.toFixed(1),lagMs:this.lagMs,maxLagMs:this.maxLagMs,activeUploads:this.activeUploads,uploadsHour:this.uploadsHour.length,structures,phases:this.phases};
   this.windowPeak=m.rss/1e6;this.maxLagMs=this.lagMs;return result;
  }
 }

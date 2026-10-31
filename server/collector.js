@@ -1,4 +1,4 @@
-if(typeof WebSocket==='undefined'&&!process.env.WSX||process.platform==='linux'&&!process.env.SOLSCAN_BOUNDED_HEAP&&process.execArgv.some(x=>/^--max-old-space-size=600$/.test(x))){const ch=require('child_process').spawn(process.execPath,['--experimental-websocket','--max-old-space-size=600','--max-semi-space-size=4','--expose-gc',__filename],{stdio:'inherit',env:{...process.env,WSX:'1',SOLSCAN_BOUNDED_HEAP:'1'}});
+if(typeof WebSocket==='undefined'&&!process.env.WSX||process.platform==='linux'&&!process.env.SOLSCAN_BOUNDED_HEAP&&process.execArgv.some(x=>/^--max-old-space-size=600$/.test(x))){const ch=require('child_process').spawn(process.execPath,['--experimental-websocket','--max-old-space-size=600','--max-semi-space-size=4','--expose-gc',__filename],{stdio:'inherit',env:{...process.env,WSX:'1',SOLSCAN_BOUNDED_HEAP:'1',MALLOC_ARENA_MAX:process.env.MALLOC_ARENA_MAX||'2',MALLOC_TRIM_THRESHOLD_:process.env.MALLOC_TRIM_THRESHOLD_||'131072'}});
   ['SIGTERM','SIGINT'].forEach(sg=>process.on(sg,()=>ch.kill(sg)));ch.on('exit',code=>process.exit(code??0))}else{
 'use strict';
 /* SOL·СКАН — сборщик. Круглосуточно записывает все новые пулы Solana:

@@ -1,7 +1,7 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "e4ab7d616139405043c5ee47a224eec7e66a2e5dec29f8f20331f528768b2074",
+    "collector.js": "3a55665a95230d9ca9d6fb65a4e5133cddd7b8ca13a03f7f1cd2916ac7c13db6",
     "feature-coverage.js": "05cb73f959eaa4d1e7f4972f2617a3f6604618b6528c9c1ef356806ae3e962e3",
     "terminal-candles.js": "9e6c2dd9881ba70bfff50325c58ee87ddbae5376142d63db0bc6a3269ccb6cd5",
     "early-window.js": "d697dfee6dec3f89df610fe7f98161cadbb7ec4fc80f74681b2885c702719996",
@@ -27,7 +27,7 @@
     "auto-research-v2.js": "d27c4a32ed27b3546847f98ad967116de81dd1b95d77f7e25e74d51bdbc4a71f",
     "filter-audit.js": "63cf836c3dbeca80ff18fd2685afb2e0e646ec141537a7471f7e397be881c75a",
     "resource-budget.js": "64b33c8516c7c103548006473815be60292079061db0d1d69bbfdbbd64f8a4ce",
-    "runtime-health.js": "3766fe31b09cf8a9216849a6dec47f2046668e715d81f0cf2e0647541a06d0d0",
+    "runtime-health.js": "8ac6d40bae8d7e4d99b8f9a62a9e3541f37718ae4bbd4e28f413f3e260bff7b5",
     "stream-json.js": "20e24a575db1bfc53e70f227b2807d243ccd005236576599424305bb911cc02b",
     "observation-contract.js": "5a8952c09d1345b0555a80a141c901d1a3fffeaf29c0f7e161e4bfcfd69385ba",
     "packed-observations.js": "205844c1c32ba130a698c366dd590aa2f049cddb56c60d20c9dc8196eea5bcb6",
