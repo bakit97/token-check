@@ -30,6 +30,8 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
       - name: Publish changed modules before collector
         run: python3 deployment/publish-runtime.py --bucket sol-scan-511718-data --result runtime-result.json
+      - name: Read sanitized startup fault counts
+        run: python3 deployment/inspect-runtime-startup.py
       - name: Verify deployed health and resource limits
         run: |
           generation=$(python3 -c "import json; print(json.load(open('runtime-result.json'))['collectorGeneration'])")
