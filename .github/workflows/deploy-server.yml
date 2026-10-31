@@ -31,7 +31,9 @@ jobs:
       - name: Publish changed modules before collector
         run: python3 deployment/publish-runtime.py --bucket sol-scan-511718-data --result runtime-result.json
       - name: Read sanitized startup fault counts
-        run: python3 deployment/inspect-runtime-startup.py
+        run: |
+          python3 deployment/inspect-runtime-startup.py > startup-fault-counts.json
+          gcloud storage cp startup-fault-counts.json gs://sol-scan-511718-data/diag/startup-fault-counts.json --cache-control=no-cache --quiet
       - name: Verify deployed health and resource limits
         run: |
           generation=$(python3 -c "import json; print(json.load(open('runtime-result.json'))['collectorGeneration'])")
