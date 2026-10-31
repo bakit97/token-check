@@ -21,7 +21,7 @@ async function gzipJson({dir,value,health,name}){
  if(!cleaned.has(tmp)){cleaned.add(tmp);for(const name of fs.readdirSync(tmp))if(/^json-\d+-\d+\.gz$/.test(name)&&!name.startsWith('json-'+process.pid+'-'))try{fs.unlinkSync(path.join(tmp,name))}catch{}}
  const file=path.join(tmp,'json-'+process.pid+'-'+(++sequence)+'.gz');
  health?.capture('stream:before',{name});
- try{await pipeline(Readable.from(jsonChunks(value),{objectMode:false,highWaterMark:65536}),zlib.createGzip({chunkSize:16384,memLevel:4}),fs.createWriteStream(file,{flags:'wx'}));
+ try{await pipeline(Readable.from(jsonChunks(value),{objectMode:false,highWaterMark:65536}),zlib.createGzip({level:1,chunkSize:16384,memLevel:4}),fs.createWriteStream(file,{flags:'wx'}));
   const bytes=fs.statSync(file).size;health?.capture('stream:ready',{name,bytes});return {file,bytes,dispose:()=>fs.promises.unlink(file).catch(()=>{})};
  }catch(e){await fs.promises.unlink(file).catch(()=>{});throw e}
 }

@@ -1,0 +1,8 @@
+'use strict';
+const test=require('node:test'),a=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+const {SourceRuntime}=require('../server/source-runtime');
+const now=Date.now(),mint=i=>'A'.repeat(29)+String(i).padStart(3,'0').replace(/[0-9]/g,n=>'ABCDEFGHJK'[+n]);
+function folder(t){const d=fs.mkdtempSync(path.join(os.tmpdir(),'source-cold-'));t.after(()=>fs.rmSync(d,{recursive:true,force:true}));return d;}
+function row(i,age){return {v:1,mint:mint(i),phase:'after',eventAt:now-age-1000,acceptedAt:now-age,proof:{kind:'verified-migration',pool:'pool'+i,signature:'signature'+i,ct:{mint:false,freeze:false},nested:{text:'данные'.repeat(200),list:Array.from({length:20},(_,j)=>({key:'address-'+i+'-'+j,value:j}))}}};}
+test('streamed source replay preserves unicode across blocks and discards only the torn last record',t=>{const dir=folder(t),file=path.join(dir,'source-accepted-v1.jsonl'),rows=Array.from({length:40},(_,i)=>row(i+1,51*3600000));const full=rows.map(JSON.stringify).join('\n')+'\n';fs.writeFileSync(file,full+'{"v":1,"broken":"неполная');const read=fs.readFileSync;let lifetimeReads=0;t.mock.method(fs,'readFileSync',function(p,...args){if(p===file)lifetimeReads++;return read.call(this,p,...args)});const s=new SourceRuntime({dir,clock:()=>now,fsync:false});a.equal(lifetimeReads,0);a.equal(s.records.size,40);a.deepEqual(s.get(rows.at(-1).mint).proof,rows.at(-1).proof);a.equal(fs.statSync(file).size,Buffer.byteLength(full));});
+test('streamed source replay fails closed on a corrupt complete record',t=>{const dir=folder(t);fs.writeFileSync(path.join(dir,'source-accepted-v1.jsonl'),JSON.stringify(row(1,51*3600000))+'\nBROKEN\n');a.throws(()=>new SourceRuntime({dir,clock:()=>now,fsync:false}));});

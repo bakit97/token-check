@@ -55,7 +55,7 @@ async function stateCoinAsync(c){
    if(!Object.keys(fields).length)continue;
    const text=JSON.stringify(target==='archiveRefsPacked'?p.archiveRefs:fields),bytes=Buffer.byteLength(text);
    if(bytes<minimum||bytes>2*1024*1024)continue;
-   const data=(await deflate(Buffer.from(text),{level:6})).toString('base64');
+   const data=(await deflate(Buffer.from(text),{level:1})).toString('base64');
    const packed={v:1,data,hash:crypto.createHash('sha256').update(text).digest('hex')};
    if(JSON.stringify(packed).length>=text.length)continue;
    p[target]=packed;for(const k of Object.keys(fields))delete p[k];

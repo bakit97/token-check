@@ -28,6 +28,14 @@ function joinUniqueTimes(c, minTime) {
   ].filter(t => goodTime(t) && t >= minTime);
   return ts.length ? Math.min(...ts) : null;
 }
+// Replay complete JSONL records without retaining lifetime journal text.
+function* journalRows(file){const fd=fs.openSync(file,'r'),buf=Buffer.alloc(65536);let tail=Buffer.alloc(0),offset=0,complete=0;
+ try{for(;;){const n=fs.readSync(fd,buf,0,buf.length,null);if(!n)break;const data=tail.length?Buffer.concat([tail,buf.subarray(0,n)]):buf.subarray(0,n);let start=0,index;
+  while((index=data.indexOf(10,start))!==-1){const line=data.subarray(start,index).toString('utf8');complete=offset+index+1;if(line)yield JSON.parse(line);start=index+1;}
+  tail=Buffer.from(data.subarray(start));offset+=start;if(tail.length>2*1024*1024)throw Error('Source journal row exceeds replay bound');
+ }if(!complete&&offset+tail.length)throw Error('Incomplete source journal');if(tail.length)fs.truncateSync(file,complete);
+ }finally{fs.closeSync(fd)}
+}
 class SourceRuntime {
   constructor({dir, beforeMinutes = 2, afterMinutes = 2, fsync = true, maxRecords = 100000, maxJournalBytes = 64*1024*1024, clock = Date.now} = {}) {
     if (!dir) throw new TypeError('Нужна директория данных');
@@ -126,14 +134,9 @@ class SourceRuntime {
 
   _replay() {
     if(fs.statSync(this.logPath).size>this.maxJournalBytes)throw Error('Source journal exceeds memory-safe replay limit; disk index required');
-    const contents=fs.readFileSync(this.logPath, 'utf8');
-    const completed=contents.lastIndexOf('\n');
-    if(completed===-1 && contents.length) throw new Error('Повреждённый журнал: нет завершённых записей');
-    const data=contents.slice(0,completed+1);
-    for(const line of data.split('\n')) {
-      if(!line)continue;
+    for(const record of journalRows(this.logPath)) {
       if(this.records.size>=this.maxRecords)throw Error('Source journal exceeds memory-safe index capacity');
-      const record=JSON.parse(line);if(record.phase==='before'&&this.revokedManual.has(record.mint)&&this.revokedManual.get(record.mint)?.pool===record.proof?.pool)continue;
+      if(record.phase==='before'&&this.revokedManual.has(record.mint)&&this.revokedManual.get(record.mint)?.pool===record.proof?.pool)continue;
       if(record.phase==='after'&&this.revokedMigrations.has(record.mint)&&this.revokedMigrations.get(record.mint)?.signature===record.proof?.signature)continue;
       if(record.v!==1)throw new Error('Неизвестная версия журнала источника');
       // Реплей защищён той же схемой валидации, но не запускает возрастной фильтр.
@@ -142,15 +145,10 @@ class SourceRuntime {
         snapshot:{schema:1,coins:[{mint:record.mint,phase:record.phase,eventAt:record.eventAt,acceptedAt:record.acceptedAt}]}});
       if(this.records.has(record.mint))throw new Error('Дубликат mint в журнале источника');
       this.records.set(record.mint,Object.freeze({...record}));
-      if(record.acceptedAt>=Date.now()-50*3600_000)this.recent.set(record.mint,this.records.get(record.mint));
+      if(record.acceptedAt>=this.clock()-50*3600_000)this.recent.set(record.mint,this.records.get(record.mint));
       this.gate.accepted.set(record.mint,gate.get(record.mint));
       if(record.phase==='before')this.stats.acceptedBefore++;
       else this.stats.acceptedAfter++;
-    }
-    // После аварийного окончания неполная строка не становится принятым событием.
-    // Убираем её, иначе будущая дописанная строка слилась бы с повреждённой.
-    if(completed+1!==contents.length){
-      fs.truncateSync(this.logPath, Buffer.byteLength(data,'utf8'));
     }
   }
 
