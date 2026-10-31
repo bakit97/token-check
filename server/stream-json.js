@@ -80,4 +80,39 @@ function multipartGzip(payload,name){
  const close=stream=>stream.closed?Promise.resolve():new Promise(resolve=>{stream.once('close',resolve);stream.once('error',()=>{});stream.destroy()});
  return {body,contentType:'multipart/related; boundary='+boundary,length:head.length+payload.bytes+tail.length,close:async()=>{await close(body);await close(file)}};
 }
-module.exports={saveObjectAsync,jsonChunks,gzipJson,saveRows,saveRowsAsync,loadRows,multipartGzip,rowStream,readRows};
+// Snapshot arrays are parsed one record at a time; no lifetime-sized JSON string.
+function readObject(file){
+ const decoder=new (require('node:string_decoder').StringDecoder)('utf8'),fd=fs.openSync(file,'r'),buffer=Buffer.alloc(65536),out={};
+ let mode='root',keyText='',key='',keyEscape=false,array=null,allowEnd=true,parts=[],chars=0,tokenKind='',depth=0,quoted=false,escape=false;
+ const property=value=>Object.defineProperty(out,key,{value,enumerable:true,writable:true,configurable:true});
+ const finish=()=>{const value=JSON.parse(parts.join(''));parts=[];chars=0;if(array){array.push(value);mode='arrayAfter';}else{property(value);mode='propertyAfter';}};
+ const consume=text=>{let start=mode==='token'?0:-1;
+  for(let i=0;i<text.length;i++){const ch=text[i];
+   if(mode==='token'){
+    let ended=false,consumeEnd=true;
+    if(quoted){if(escape)escape=false;else if(ch.charCodeAt(0)===92)escape=true;else if(ch==='"'){quoted=false;if(tokenKind==='string')ended=true;}}
+    else if(ch==='"')quoted=true;else if(tokenKind==='structured'){if(ch==='{'||ch==='[')depth++;else if(ch==='}'||ch===']'){depth--;if(depth===0)ended=true;}}
+    else if(/[\s,}\]]/.test(ch)){ended=true;consumeEnd=false;}
+    if(ended){const end=consumeEnd?i+1:i,part=text.slice(start,end);parts.push(part);chars+=part.length;if(chars>2*1024*1024)throw SyntaxError('Snapshot record exceeds bound');finish();start=-1;if(!consumeEnd)i--;}
+    continue;
+   }
+   if(mode!=='keyText'&&/\s/.test(ch))continue;
+   if(mode==='root'){if(ch!=='{')throw SyntaxError('Snapshot must be an object');mode='key';allowEnd=true;continue;}
+   if(mode==='key'){if(ch==='}'&&allowEnd){mode='done';continue;}if(ch!=='"')throw SyntaxError('Invalid snapshot key');mode='keyText';keyText='"';keyEscape=false;continue;}
+   if(mode==='keyText'){keyText+=ch;if(keyEscape)keyEscape=false;else if(ch.charCodeAt(0)===92)keyEscape=true;else if(ch==='"'){key=JSON.parse(keyText);mode='colon';}if(keyText.length>4096)throw SyntaxError('Snapshot key exceeds bound');continue;}
+   if(mode==='colon'){if(ch!==':')throw SyntaxError('Invalid snapshot colon');mode='value';continue;}
+   if(mode==='value'||mode==='arrayValue'){
+    if(mode==='arrayValue'&&ch===']'&&allowEnd){mode='propertyAfter';array=null;continue;}
+    if(mode==='value'&&ch==='['){array=[];property(array);mode='arrayValue';allowEnd=true;continue;}
+    if(!/[{"\[0-9tfn-]/.test(ch))throw SyntaxError('Invalid snapshot value');
+    mode='token';parts=[];chars=0;start=i;depth=ch==='{'||ch==='['?1:0;tokenKind=depth?'structured':ch==='"'?'string':'primitive';quoted=ch==='"';escape=false;continue;
+   }
+   if(mode==='arrayAfter'){if(ch===','){mode='arrayValue';allowEnd=false;continue;}if(ch===']'){mode='propertyAfter';array=null;continue;}throw SyntaxError('Invalid snapshot array separator');}
+   if(mode==='propertyAfter'){if(ch===','){mode='key';allowEnd=false;continue;}if(ch==='}'){mode='done';continue;}throw SyntaxError('Invalid snapshot separator');}
+   throw SyntaxError('Trailing snapshot data');
+  }
+  if(mode==='token'){const part=text.slice(start);parts.push(part);chars+=part.length;if(chars>2*1024*1024)throw SyntaxError('Snapshot record exceeds bound');}
+ };
+ try{for(;;){const n=fs.readSync(fd,buffer,0,buffer.length,null);if(!n)break;consume(decoder.write(buffer.subarray(0,n)));}consume(decoder.end());if(mode!=='done')throw SyntaxError('Incomplete snapshot');return out;}finally{fs.closeSync(fd);}
+}
+module.exports={readObject,saveObjectAsync,jsonChunks,gzipJson,saveRows,saveRowsAsync,loadRows,multipartGzip,rowStream,readRows};

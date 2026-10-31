@@ -104,7 +104,7 @@ class ResearchRuntime {
     this.lastAt=null;this.featureRepair={repaired:0,missing:0,errors:0,bySource:{},busy:false,lastAt:0};
     this.pending={};
     if(fs.existsSync(this.file)){
-      const state=JSON.parse(fs.readFileSync(this.file,'utf8'));
+      const state=require('./stream-json').readObject(this.file);
       if(state.schema!==1||!Array.isArray(state.rows))throw Error('Unknown stored research format');
       for(const r of state.rows){if(r.terminalCandlesPacked){delete r.slices;delete r.sliceVolumes;}
         if(typeof r.mint!=='string'||!Number.isSafeInteger(r.acceptedAt)||
