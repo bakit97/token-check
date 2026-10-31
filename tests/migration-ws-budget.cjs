@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),vm=require(
 const code=fs.readFileSync(process.env.SOLSCAN_TEST_COLLECTOR||path.join(__dirname,'../server/collector.js'),'utf8');
 test('TZ20 disables birth socket while DBC, LaunchLab and migration-authority logs stay connected',async()=>{
  const sockets=[],received=[],offered=[],timers=[],metered=[];
- class Socket{constructor(url){this.url=url;sockets.push(this);this.sent=[]}send(s){this.sent.push(JSON.parse(s))}close(){this.closed=true;this.onclose?.()}}
+ class Socket{constructor(url){this.url=url;sockets.push(this);this.sent=[]}send(s){this.sent.push(JSON.parse(s))}close(){this.closed=true;this.closeCalls=(this.closeCalls||0)+1;this.onerror?.();this.onclose?.()}}
  let preAllowed=true;
  const WS={preOn:false,msgs:{},cand:{},bytes:0,err:0,preGapMs:0,prePausedAt:0,preBudgetPauses:0};
  const ctx={require,DIR:path.join(__dirname,'../server'),FAST_DISCOVERY:null,processFastMigration:async()=>{},processManualPool:async()=>{},POOL_DISCOVERY:null,POOL_LOGS:null,offerFastMigration:t=>offered.push(t),EVENT_CLOCK:null,WS,WebSocket:Socket,heliusKey:async()=>'<mock>',RESOURCE:{streamAllowed:()=>preAllowed,stream:(n,source)=>{metered.push(source);return false}},PRE:{onLog:()=>{}},
@@ -29,6 +29,6 @@ test('TZ20 disables birth socket while DBC, LaunchLab and migration-authority lo
  assert.equal(WS.on,true);assert.equal(WS.preOn,false);assert.equal(metered.includes('pre'),false);
  assert.ok(metered.includes('migrations'));
  const reconnects=()=>timers.filter(f=>f.delay===5000);
- migration.onerror();migration.onclose();assert.equal(reconnects().length,1,'error plus close must schedule only one reconnect');
+ const oldErrors=WS.err;migration.onerror();migration.onclose();assert.equal(WS.err,oldErrors+1);assert.equal(migration.closeCalls,1);assert.equal(reconnects().length,1,'error plus close must schedule only one reconnect');
  reconnects()[0]();await new Promise(r=>setImmediate(r));const stalled=sockets.at(-1);timers.filter(f=>f.delay===15000).at(-1)();assert.equal(stalled.closed,true);assert.equal(WS.connectTimeouts,1);assert.equal(reconnects().length,2);stalled.onopen();assert.equal(stalled.sent.length,0,'a retired connection must not subscribe after a delayed open');
 });

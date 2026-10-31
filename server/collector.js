@@ -1272,7 +1272,7 @@ function chainWatch(){
       if(n==='pc'){try{pumpCurveComplete(v.pubkey,b64(v.account?.data?.[0]),slot)}catch(x){WS.err++;err('ws pc '+x.message)}return}
       try{wsCandidate(n,v.pubkey,b64(v.account?.data?.[0]),slot,v.account?.owner)}catch(x){WS.err++;err('ws '+x.message)}
     };
-    ws.onerror=()=>{WS.err++;try{ws.close()}catch{};ws.onclose?.();};
+    ws.onerror=()=>{if(reconnectScheduled)return;WS.err++;ws.onclose?.();if(ws.readyState!==2&&ws.readyState!==3)try{ws.close()}catch{}};
     ws.onclose=()=>{if(reconnectScheduled)return;reconnectScheduled=true;clearTimeout(openTimer);clearInterval(timer);if(pre){PRE?.telemetry?.disconnected(ws.budgetPause?'budget':'network',EVENT_CLOCK?.anchor?.slot);WS.preOn=false;WS.preSub=false;WS.prePausedAt=WS.prePausedAt||Date.now()}
       else{WS.on=false;WS.connected={dbc:false,ll:false,pc:false};WS.disconnects=(WS.disconnects||0)+1}
       setTimeout(()=>connect(channel),pre?10000:5000)};
