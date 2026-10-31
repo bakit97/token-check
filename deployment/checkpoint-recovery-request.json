@@ -1,9 +1,9 @@
 {
-  "id": "p46-streamed-bank-and-diagnostic-retirement",
-  "allowedFromGeneration": "1793282423513348",
+  "id": "manual-pool-redundant-feed-recovery",
+  "allowedFromGeneration": "1793365443116295",
   "enabled": true,
-  "maxWaitMs": 1000,
-  "maxStateBytes": 64000000,
+  "maxWaitMs": 60000,
+  "maxStateBytes": 30000000,
   "allowExistingCheckpoint": true,
-  "maxCheckpointAgeMs": 1800000
+  "maxCheckpointAgeMs": 600000
 }
