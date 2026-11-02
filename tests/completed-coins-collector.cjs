@@ -33,6 +33,24 @@ test('completed old days retire before publishing a young current day',async t=>
  ctx.upload=async(name,value)=>{if(name==='observations-v2/'+day(young.t)+'.json')assert.equal(ctx.C.has(old.a),false);await upload(name,value);};
  await ctx.run();const files=[...sent.keys()].filter(k=>/^observations-v2\/\d{4}-\d\d-\d\d\.json$/.test(k));assert.equal(files[0],'observations-v2/'+day(old.t)+'.json');assert.equal(ctx.C.has(young.a),true);
 });
+
+test('retirement commits a fresh reduced checkpoint after an older snapshot already in flight',async t=>{
+ const c=coin('stale-snapshot',27),{ctx,dir}=setup(t,[c]),save=ctx.save;let release,calls=0;const pending=new Promise(r=>release=r);ctx.save=()=>{calls++;return save()};ctx.save.pending=pending;
+ const work=ctx.run();for(let i=0;i<10&&ctx.C.has(c.a);i++)await new Promise(r=>setImmediate(r));assert.equal(ctx.C.has(c.a),false);assert.equal(calls,0);ctx.save.pending=null;release(true);await work;assert.equal(calls,1);assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir,'state.json'),'utf8')),[]);
+});
+
+test('a confirmed inactive cold day is not republished just because the process publication cache is empty',async t=>{
+ const c=coin('already-confirmed',27),{ctx,sent,store}=setup(t,[c]);await ctx.run();assert.equal(store.sealed.has(day(c.t)),false);sent.clear();vm.runInContext('LAST_DAY_EXPORT.clear()',ctx);await ctx.run();assert.equal(sent.has('observations-v2/'+day(c.t)+'.json'),false);assert.deepEqual(store.readCoin(c.a).ds,c.ds);
+});
+
+test('restart dedup compares verified hydrated prefixes rather than treating compacted raw stubs as new observations',async t=>{
+ const c=coin('hydrated-copy',27),{ctx,store}=setup(t,[c]);await store.stage([c]);store.confirm(day(c.t),store.view(day(c.t),[]));c.raw={1:{at:1000000,historyArchived:true}};assert.equal(store.coversHot(c),false);ctx.fullCoin=row=>({...row,raw:{1:{at:1000000,b:['state']}}});await ctx.deduplicateClosedArchiveRows();assert.equal(ctx.C.has(c.a),false);assert.deepEqual(store.readCoin(c.a).raw[1].b,['state']);
+});
+
+test('self-update waits for an existing snapshot and then saves the latest census before exit',async()=>{
+ const start=code.indexOf('setInterval(async()=>{try{const g=await codeGen()'),end=code.indexOf('},60000);',start),events=[];let release;const pending=new Promise(r=>release=r),save=async()=>{events.push('fresh-save');return true};save.pending=pending;
+ const ctx={codeGen:async()=> 'new',VERSION:'old',log(){},save,process:{exit:code=>events.push('exit:'+code)},setInterval:f=>{ctx.tick=f;}};vm.createContext(ctx);vm.runInContext(code.slice(start,end+10),ctx);const work=ctx.tick();await new Promise(r=>setImmediate(r));assert.deepEqual(events,[]);save.pending=null;release(true);await work;assert.deepEqual(events,['fresh-save','exit:0']);
+});
 test('retention keeps active research/raw jobs and merges retired rows into later exports',async t=>{
  const old=coin('old',27),rejected=coin('rejected',3,false),research=coin('research',3,false),young=coin('young',1),raw=coin('raw',27);
  const {ctx,sent,store,dir}=setup(t,[old,rejected,research,young,raw]);ctx.SOURCE.records.set('research',{mint:'research',acceptedAt:clock-H});ctx.UPQ.push(['raw/'+day(raw.t)+'/raw-state.json',{}]);

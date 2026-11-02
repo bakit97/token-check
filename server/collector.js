@@ -1632,7 +1632,7 @@ async function deduplicateClosedArchiveRows(){if(COLD_DEDUP_BUSY||!COMPLETED||!S
  const now=Date.now(),pins=retentionPins(now);let checked=0,removed=0;
  for(const c of C.values()){
   if((SOURCE.get(c.a)?.phase==='before'?now-c.t<24*3600e3+20*60e3:!require(DIR+'/completed-coins.js').retirementDue(c,{now,pins}))||pins.get(c.a)>now||c.chTry||c.kTry||c.pTry||c.trTry||now-(c.dsTryAt||0)<35000)continue;
-  if(COMPLETED.coversHot(c)){C.delete(c.a);removed++;}if(++checked%16===0)await new Promise(r=>setImmediate(r));
+  if(COMPLETED.coversHot(fullCoin(c))){C.delete(c.a);removed++;}if(++checked%16===0)await new Promise(r=>setImmediate(r));
  }
  RETENTION.closedArchiveDeduplicated=(RETENTION.closedArchiveDeduplicated||0)+removed;if(removed)save();
 }finally{COLD_DEDUP_BUSY=false}}
@@ -1644,7 +1644,9 @@ async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayK
   RETENTION.stage='local-archive';RETENTION.stageAt=Date.now();await stageCompleted(now);
   const {rowStream}=require(DIR+'/stream-json.js'),days=[...new Set([today,yest,...(COMPLETED?.days()||[])])].sort(),completedDays=[];
   for(const d of days){if(COMPLETED&&!COMPLETED.seeded.has(d))continue;const live=[...C.values()].filter(c=>dayKey(c.t)===d),pins=COMPLETED?retentionPins(now):new Map();
-    const force=COMPLETED&&(COMPLETED.needsConfirmation(d)||live.some(c=>require(DIR+'/completed-coins.js').retirementDue(c,{now,pins})&&!retirementBlocked(c)));if(d!==today&&!force&&now-(LAST_DAY_EXPORT.get(d)||0)<30*60e3)continue;
+    const force=COMPLETED&&(COMPLETED.needsConfirmation(d)||live.some(c=>require(DIR+'/completed-coins.js').retirementDue(c,{now,pins})&&!retirementBlocked(c)));
+    if(d!==today&&!force&&!live.some(c=>collectionActive(c,now,pins)))continue;
+    if(d!==today&&!force&&now-(LAST_DAY_EXPORT.get(d)||0)<30*60e3)continue;
     if(COMPLETED?.sealed.has(d)){if(live.length)err('retention: sealed day has unexpected active records '+d);continue}
     const list=COMPLETED?COMPLETED.view(d,live,fullCoin):live;if(!list.length)continue;
     RETENTION.stage='publish-day';RETENTION.day=d;RETENTION.stageAt=Date.now();
@@ -1654,7 +1656,7 @@ async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayK
     if(COMPLETED){COMPLETED.confirm(d,list);await retireConfirmed(d,live,Date.now());completedDays.push(d)}
     LAST_DAY_EXPORT.set(d,now);while(LAST_DAY_EXPORT.size>4)LAST_DAY_EXPORT.delete(LAST_DAY_EXPORT.keys().next().value);if(d===yest)lastYest=now;
   }
-  const stateCommitted=completedDays.length&&await save();
+  let stateCommitted=false;if(completedDays.length){if(save.pending)await save.pending;stateCommitted=await save();}
   await flushUploads();
   // Lightweight feeds and bounded research have independent timers.
 
@@ -1779,7 +1781,7 @@ const STARTED=Date.now();
   (async()=>{for(;;){await sleep(5*60e3);try{await exportDays()}catch(e){err('export '+e.message)}}})();
   (async()=>{await sleep(45000);for(;;){try{await exportLive()}catch(e){err('live '+e.message)}await sleep(30000)}})();
   setTimeout(()=>exportDays().catch(e=>err('export '+e.message)),30000);
-  setInterval(async()=>{try{const g=await codeGen();if(g&&VERSION!=='dev'&&g!==VERSION){log('новая версия кода',g,'— перезапуск');if(await save())process.exit(0)}}catch{}},60000);
+  setInterval(async()=>{try{const g=await codeGen();if(g&&VERSION!=='dev'&&g!==VERSION){log('новая версия кода',g,'— перезапуск');if(save.pending)await save.pending;if(await save())process.exit(0)}}catch{}},60000);
 })();
 process.on('SIGTERM',async()=>{process.exit(await save()?0:1)});
 
