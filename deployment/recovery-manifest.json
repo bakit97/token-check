@@ -32,7 +32,7 @@
     "stream-json.js": "20e24a575db1bfc53e70f227b2807d243ccd005236576599424305bb911cc02b",
     "observation-contract.js": "5a8952c09d1345b0555a80a141c901d1a3fffeaf29c0f7e161e4bfcfd69385ba",
     "packed-observations.js": "205844c1c32ba130a698c366dd590aa2f049cddb56c60d20c9dc8196eea5bcb6",
-    "completed-coins.js": "d16146b51da4478a00d848879f3e73f553cebce20467c606f729c949136b23dc",
+    "completed-coins.js": "99c2a94bdbe571971658511067c64e520bf447238e3f0098d18ce58e152ad5e3",
     "seed-completed.js": "d1bfe44875a6e52062f6e2daceeff4ea4530889bb0a4dcd33c98f49c1dbf4a4b",
     "coin-profile.js": "4f1e744d18068ed8de883f8a1380d8c0771cb3c5d75d79dca0854a3587332af9",
     "durable-json.js": "a042526c285613abc0935b43db8dffb98502054b1b9d43a8355438620dc8f192",
