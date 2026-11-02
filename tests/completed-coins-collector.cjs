@@ -7,7 +7,7 @@ function setup(t,coins,{failMirror=false,saveOk=true}={}){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'retire-collector-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const store=new CompletedCoins(dir),sent=new Map(),C=new Map(coins.map(c=>[c.a,c]));
  const ctx={manualPool:{enabled:true},MANUAL_FREEZE:{},RESEARCH_BANKS:null,phaseCollecting:()=>true,OLD_RESEARCH_ONE:[],OLD_RESEARCH_TWO:[],OBS_RECOVERY:null,C,ACTIVE_HISTORY:null,fullCoin:c=>c,COMPLETED:store,RETENTION:{removed:0},DIR:'mock',Date:{now:()=>clock},UPQ:[],RESEARCH_V2:null,RESEARCH_TWO:null,PASS_V2:null,OLD_RESEARCH_ONE:[],OLD_RESEARCH_TWO:[],SOURCE:{records:new Map(),get:()=>null},
   dayKey:day,lastYest:0,lastObs:0,FV:2,OBS_CONTRACT:{days:{}},setImmediate,err:()=>{},coinMetadata:c=>({a:c.a,t:c.t,ds:c.ds,n:c.n}),observedEligible:c=>c.mg?.st==='ok',
-  reloadSourceAgeConfig:async()=>{},reloadResearchConfig:async()=>{},flushUploads:async()=>{},exportSource:async()=>{},exportResearchV2:async()=>{},exportPathsV2:async()=>{},
+  reloadSourceAgeConfig:async()=>{for(const c of C.values())store.seeded.add(day(c.t));},reloadResearchConfig:async()=>{},flushUploads:async()=>{},exportSource:async()=>{},exportResearchV2:async()=>{},exportPathsV2:async()=>{},
   save:()=>{if(!saveOk)return false;fs.writeFileSync(path.join(dir,'state.json'),JSON.stringify([...C.values()]));return true},
   require:p=>p.endsWith('completed-coins.js')?require('../server/completed-coins'):p.endsWith('observation-contract.js')?contract:p.endsWith('feature-snapshots.js')?require('../server/feature-snapshots'):stream,
   upload:async(name,obj)=>{if(failMirror&&name.startsWith('observations-v2/'))throw Error('injected mirror failure');let text='';for await(const chunk of stream.jsonChunks(obj))text+=chunk;sent.set(name,JSON.parse(text))}};
@@ -21,6 +21,11 @@ test('history mirror timeouts cannot starve verified retirement and only one opt
  const old=coin('expired-after',27),young=coin('young-after',1),{ctx,store,sent,dir}=setup(t,[old,young]);let calls=0;const errors=[];
  ctx.getObj=async()=>null;ctx.err=e=>errors.push(e);ctx.ACTIVE_HISTORY={compact:async options=>{calls++;assert.equal(options.maxChunks,1);assert.equal(ctx.C.has(old.a),false);assert.ok(sent.has('observations-v2/'+day(old.t)+'.json'));throw Error('mirror timeout');}};
  await ctx.run();assert.equal(calls,1);assert.equal(ctx.C.has(young.a),true);assert.deepEqual(store.readCoin(old.a).ds,old.ds);assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'state.json'),'utf8')).length,1);assert.ok(errors.some(e=>e.includes('mirror timeout')));
+});
+
+test('historical seed failure cannot starve known days or overwrite an unmerged remote day',async t=>{
+ const known=coin('known-day',27),unmerged=coin('unmerged-day',80),{ctx,store,sent}=setup(t,[known,unmerged]);store.seeded.add(day(known.t));ctx.reloadSourceAgeConfig=async()=>{};ctx.seedCompletedDays=async()=>{throw Error('historical download timeout')};
+ await ctx.run();assert.equal(ctx.C.has(known.a),false);assert.equal(ctx.C.has(unmerged.a),true);assert.ok(sent.has('observations-v2/'+day(known.t)+'.json'));assert.equal(sent.has('observations-v2/'+day(unmerged.t)+'.json'),false);assert.deepEqual(store.readCoin(unmerged.a).ds,unmerged.ds);
 });
 test('retention keeps active research/raw jobs and merges retired rows into later exports',async t=>{
  const old=coin('old',27),rejected=coin('rejected',3,false),research=coin('research',3,false),young=coin('young',1),raw=coin('raw',27);

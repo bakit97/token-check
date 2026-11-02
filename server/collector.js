@@ -1637,9 +1637,9 @@ let DAY_EXPORT_BUSY=false;
 async function exportDays(){if(DAY_EXPORT_BUSY)return;DAY_EXPORT_BUSY=true;try{await exportDaysBody()}finally{DAY_EXPORT_BUSY=false}}
 async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayKey(now-864e5);
   await reloadSourceAgeConfig();
-  await seedCompletedDays(now);await stageCompleted(now);
+  await stageCompleted(now);
   const {rowStream}=require(DIR+'/stream-json.js'),days=[...new Set([today,yest,...(COMPLETED?.days()||[])])],completedDays=[];
-  for(const d of days){const live=[...C.values()].filter(c=>dayKey(c.t)===d),pins=COMPLETED?retentionPins(now):new Map();
+  for(const d of days){if(COMPLETED&&!COMPLETED.seeded.has(d))continue;const live=[...C.values()].filter(c=>dayKey(c.t)===d),pins=COMPLETED?retentionPins(now):new Map();
     const force=COMPLETED&&(COMPLETED.needsConfirmation(d)||live.some(c=>require(DIR+'/completed-coins.js').retirementDue(c,{now,pins})&&!retirementBlocked(c)));if(d!==today&&!force&&now-(LAST_DAY_EXPORT.get(d)||0)<30*60e3)continue;
     if(COMPLETED?.sealed.has(d)){if(live.length)err('retention: sealed day has unexpected active records '+d);continue}
     const list=COMPLETED?COMPLETED.view(d,live,fullCoin):live;if(!list.length)continue;
@@ -1653,6 +1653,9 @@ async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayK
   // Lightweight feeds and bounded research have independent timers.
 
   if(stateCommitted){const activeDays=new Set([...C.values()].map(c=>dayKey(c.t)));for(const d of completedDays)if(!activeDays.has(d)&&COMPLETED.index.has(d))COMPLETED.seal(d,now)}
+  // Unseeded days remain local/hot until their existing remote history is merged.
+  // A slow historical download must not starve already seeded days.
+  try{await seedCompletedDays(now)}catch(e){err('archive seed '+e.message)}
   // Optional history compaction must never gate the confirmed day archive/retention.
   // One chunk per pass; retries retain the original hot observations.
   try{if(ACTIVE_HISTORY&&await ACTIVE_HISTORY.compact({coins:C,publish:upload,read:getObj,now,maxChunks:1}))save();}catch(e){err('state archive '+e.message)}
