@@ -47,6 +47,10 @@ test('restart dedup compares verified hydrated prefixes rather than treating com
  const c=coin('hydrated-copy',27),{ctx,store}=setup(t,[c]);await store.stage([c]);store.confirm(day(c.t),store.view(day(c.t),[]));c.raw={1:{at:1000000,historyArchived:true}};assert.equal(store.coversHot(c),false);ctx.fullCoin=row=>({...row,raw:{1:{at:1000000,b:['state']}}});await ctx.deduplicateClosedArchiveRows();assert.equal(ctx.C.has(c.a),false);assert.deepEqual(store.readCoin(c.a).raw[1].b,['state']);
 });
 
+test('unconfirmed cold rows never trigger expensive prefix hydration',async t=>{
+ const c=coin('not-confirmed',27),{store}=setup(t,[c]);await store.stage([c]);let reads=0;assert.equal(store.coversHot(c,()=>{reads++;throw Error('unconfirmed history must not be read')}),false);assert.equal(reads,0);store.confirm(day(c.t),store.view(day(c.t),[]));assert.equal(store.coversHot(c,row=>{reads++;return row}),true);assert.equal(reads,1);
+});
+
 test('self-update waits for an existing snapshot and then saves the latest census before exit',async()=>{
  const start=code.indexOf('setInterval(async()=>{try{const g=await codeGen()'),end=code.indexOf('},60000);',start),events=[];let release;const pending=new Promise(r=>release=r),save=async()=>{events.push('fresh-save');return true};save.pending=pending;
  const ctx={codeGen:async()=> 'new',VERSION:'old',log(){},save,process:{exit:code=>events.push('exit:'+code)},setInterval:f=>{ctx.tick=f;}};vm.createContext(ctx);vm.runInContext(code.slice(start,end+10),ctx);const work=ctx.tick();await new Promise(r=>setImmediate(r));assert.deepEqual(events,[]);save.pending=null;release(true);await work;assert.deepEqual(events,['fresh-save','exit:0']);

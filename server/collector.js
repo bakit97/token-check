@@ -1632,7 +1632,7 @@ async function deduplicateClosedArchiveRows(){if(COLD_DEDUP_BUSY||!COMPLETED||!S
  const now=Date.now(),pins=retentionPins(now);let checked=0,removed=0;
  for(const c of C.values()){
   if((SOURCE.get(c.a)?.phase==='before'?now-c.t<24*3600e3+20*60e3:!require(DIR+'/completed-coins.js').retirementDue(c,{now,pins}))||pins.get(c.a)>now||c.chTry||c.kTry||c.pTry||c.trTry||now-(c.dsTryAt||0)<35000)continue;
-  if(COMPLETED.coversHot(fullCoin(c))){C.delete(c.a);removed++;}if(++checked%16===0)await new Promise(r=>setImmediate(r));
+  if(COMPLETED.coversHot(c,fullCoin)){C.delete(c.a);removed++;}if(++checked%16===0)await new Promise(r=>setImmediate(r));
  }
  RETENTION.closedArchiveDeduplicated=(RETENTION.closedArchiveDeduplicated||0)+removed;if(removed)save();
 }finally{COLD_DEDUP_BUSY=false}}
@@ -1739,7 +1739,7 @@ const STARTED=Date.now();
   setInterval(relieveHeap,10000).unref();
   load();relieveHeap();for(const c of C.values())if(c.earlyGTAttempted&&c.tr)c.trDone=1;ACTIVE_HISTORY=new (require(DIR+'/active-history.js').ActiveHistory)(DIR);await ACTIVE_HISTORY.restore(C,getObj);if(fs.existsSync(DIR+'/state.json'))RETENTION.stateBytes=fs.statSync(DIR+'/state.json').size;HEALTH.capture('load:complete');log('старт, версия',VERSION);
   try{await initSource();await reloadSourceAgeConfig()}catch(e){SOURCE_ERR=e.message;err('главный источник не запустился: '+e.message)}relieveHeap();
-  await freezeManualCandidates();relieveHeap();
+  await freezeManualCandidates();await deduplicateClosedArchiveRows();relieveHeap();
   samplePoolBalances();setInterval(()=>samplePoolBalances(),10000);
   try{await initResearchV2()}catch(e){RESEARCH_V2_ERR=e.message;err('исследование v2 не запустилось: '+e.message)}relieveHeap();
   try{await initPathsV2()}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('серверные пути не запустились: '+e.message)}relieveHeap();

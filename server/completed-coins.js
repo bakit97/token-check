@@ -110,8 +110,8 @@ class CompletedCoins{
  days(){return [...this.index.keys()].filter(d=>!this.sealed.has(d))}
  metadata(mint){let best=null;for(const records of this.index.values()){const row=records.get(mint);if(row&&(!best||row.t>best.t))best=row}return best}
  readCoin(mint){const e=this.metadata(mint);if(!e)return null;const fd=fs.openSync(this.file(dayOf(e.t)),'r');try{const b=Buffer.alloc(e.length);let n=0;while(n<b.length){const read=fs.readSync(fd,b,n,b.length-n,e.offset+n);if(!read)throw Error('Incomplete completed coin');n+=read}const row=JSON.parse(b.toString('utf8'));if(row.hash!==e.hash||hash(JSON.stringify(row.c))!==e.hash)throw Error('Completed coin checksum mismatch');return row.c}finally{fs.closeSync(fd)}}
- coversHot(c){const e=this.metadata(c.a);if(!e||e.t!==c.t||!e.poolKeys.includes(c.p)||this.confirmed.get(dayOf(e.t))?.get(c.a)!==e.hash)return false;
-  const archived=this.readCoin(c.a);return archived.p===c.p&&containsObservations(archived,c);
+ coversHot(c,hydrate=x=>x){const e=this.metadata(c.a);if(!e||e.t!==c.t||!e.poolKeys.includes(c.p)||this.confirmed.get(dayOf(e.t))?.get(c.a)!==e.hash)return false;
+  const archived=this.readCoin(c.a);return archived.p===c.p&&containsObservations(archived,hydrate(c));
  }
  view(day,live,hydrate=c=>c){const records=this.index.get(day)||new Map(),mutable=[],shadowed=new Set();
   for(const c of live){const e=records.get(c.a);if(!e||e.hash!==hash(JSON.stringify(hydrate(c)))){mutable.push(c);shadowed.add(c.a)}}
