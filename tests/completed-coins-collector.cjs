@@ -51,6 +51,11 @@ test('unconfirmed cold rows never trigger expensive prefix hydration',async t=>{
  const c=coin('not-confirmed',27),{store}=setup(t,[c]);await store.stage([c]);let reads=0;assert.equal(store.coversHot(c,()=>{reads++;throw Error('unconfirmed history must not be read')}),false);assert.equal(reads,0);store.confirm(day(c.t),store.view(day(c.t),[]));assert.equal(store.coversHot(c,row=>{reads++;return row}),true);assert.equal(reads,1);
 });
 
+test('early startup never reclaims a fresh catchup before research/pass journals are loaded',async t=>{
+ const c=coin('fresh-catchup',27),{ctx,store}=setup(t,[c]);await store.stage([c]);store.confirm(day(c.t),store.view(day(c.t),[]));const row={mint:c.a,phase:'after',acceptedAt:clock-H,eventAt:c.t};ctx.SOURCE.records.set(c.a,row);ctx.SOURCE.get=m=>ctx.SOURCE.records.get(m);ctx.fullCoin=()=>{throw Error('fresh research must stay resident')};await ctx.deduplicateClosedArchiveRows();assert.equal(ctx.C.has(c.a),true);
+ ctx.RESEARCH_V2={config:{outcomeMethod:'gt-ohlcv-20m-v1',hours:5}};ctx.PASS_V2={records:new Map()};ctx.RESEARCH_TWO={config:{hours:5}};await ctx.deduplicateClosedArchiveRows();assert.equal(ctx.C.has(c.a),true);ctx.fullCoin=x=>x;ctx.Date.now=()=>clock+6*H;await ctx.deduplicateClosedArchiveRows();assert.equal(ctx.C.has(c.a),false);assert.deepEqual(store.readCoin(c.a).ds,c.ds);
+});
+
 test('self-update waits for an existing snapshot and then saves the latest census before exit',async()=>{
  const start=code.indexOf('setInterval(async()=>{try{const g=await codeGen()'),end=code.indexOf('},60000);',start),events=[];let release;const pending=new Promise(r=>release=r),save=async()=>{events.push('fresh-save');return true};save.pending=pending;
  const ctx={codeGen:async()=> 'new',VERSION:'old',log(){},save,process:{exit:code=>events.push('exit:'+code)},setInterval:f=>{ctx.tick=f;}};vm.createContext(ctx);vm.runInContext(code.slice(start,end+10),ctx);const work=ctx.tick();await new Promise(r=>setImmediate(r));assert.deepEqual(events,[]);save.pending=null;release(true);await work;assert.deepEqual(events,['fresh-save','exit:0']);
@@ -98,6 +103,7 @@ test('research and Passed adapter reads the canonical schema-2 observation contr
 
 test('closed archive dedup never removes new observations or an active research cohort',async t=>{
  const a=coin('closed-copy',25),b=coin('new-observation',25),c=coin('research-pin',25),{ctx,store,dir}=setup(t,[a,b,c]);
+ ctx.RESEARCH_V2={config:{hours:5}};ctx.PASS_V2={records:new Map()};ctx.RESEARCH_TWO={config:{hours:5}};
  await store.stage([a,b,c]);const d=day(a.t);store.confirm(d,store.view(d,[]));b.ds.push([9999,5,6]);
  ctx.SOURCE.records=new Map([a,b,c].map(x=>[x.a,{mint:x.a,phase:'before',acceptedAt:x===c?clock-H:x.t,eventAt:x===c?clock-H:x.t}]));ctx.SOURCE.get=m=>ctx.SOURCE.records.get(m);
  await ctx.deduplicateClosedArchiveRows();assert.equal(ctx.C.has(a.a),false);assert.equal(ctx.C.has(b.a),true);assert.equal(ctx.C.has(c.a),true);

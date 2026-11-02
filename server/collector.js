@@ -1631,6 +1631,9 @@ let COLD_DEDUP_BUSY=false;
 async function deduplicateClosedArchiveRows(){if(COLD_DEDUP_BUSY||!COMPLETED||!SOURCE)return;COLD_DEDUP_BUSY=true;try{
  const now=Date.now(),pins=retentionPins(now);let checked=0,removed=0;
  for(const c of C.values()){
+  // Before the research/pass journals load, protect all recent admissions;
+  // every currently valid research window is shorter than this 26h guard.
+  if((!RESEARCH_V2||!PASS_V2||!RESEARCH_TWO)&&now-(SOURCE.get(c.a)?.acceptedAt??-Infinity)<26*3600e3)continue;
   if((SOURCE.get(c.a)?.phase==='before'?now-c.t<24*3600e3+20*60e3:!require(DIR+'/completed-coins.js').retirementDue(c,{now,pins}))||pins.get(c.a)>now||c.chTry||c.kTry||c.pTry||c.trTry||now-(c.dsTryAt||0)<35000)continue;
   if(COMPLETED.coversHot(c,fullCoin)){C.delete(c.a);removed++;}if(++checked%16===0)await new Promise(r=>setImmediate(r));
  }

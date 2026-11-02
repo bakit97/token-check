@@ -16,7 +16,8 @@ function researchPins({source,passes,one=[],two=[],now=Date.now()}={}){
  const sourceRows=()=>typeof source?.recentAdmissions==='function'&&hours<48?source.recentAdmissions(now-hours*HOUR-3*60000,now):source?.records?.values()||[];
  for(const rt of first.length?first:[{}])for(const r of sourceRows()){
   if(r.acceptedAt<(rt.cohortStart||0)||r.acceptedAt>=(rt.cohortEnd??Infinity)||rt.processed?.has(r.mint))continue;
-  pin(r.mint,require('./event-clock').eventAnchor(r)+(rt.config?.phases?.[r.phase]?.hours??rt.config?.hours??5)*HOUR+3*60000);
+  const phase=rt.config?.phases?.[r.phase],anchor=(phase?.outcomeMethod??rt.config?.outcomeMethod)==='gt-ohlcv-20m-v1'?r.acceptedAt:require('./event-clock').eventAnchor(r);
+  pin(r.mint,anchor+(phase?.hours??rt.config?.hours??5)*HOUR+3*60000);
  }
  for(const rt of second.length?second:[{}])for(const r of passes?.records?.values()||[]){
   if(r.firstSeenAt<(rt.cohortStart||0)||r.firstSeenAt>=(rt.cohortEnd??Infinity)||rt.processed?.has(r.mint))continue;
