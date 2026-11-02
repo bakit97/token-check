@@ -27,6 +27,12 @@ test('historical seed failure cannot starve known days or overwrite an unmerged 
  const known=coin('known-day',27),unmerged=coin('unmerged-day',80),{ctx,store,sent}=setup(t,[known,unmerged]);store.seeded.add(day(known.t));ctx.reloadSourceAgeConfig=async()=>{};ctx.seedCompletedDays=async()=>{throw Error('historical download timeout')};
  await ctx.run();assert.equal(ctx.C.has(known.a),false);assert.equal(ctx.C.has(unmerged.a),true);assert.ok(sent.has('observations-v2/'+day(known.t)+'.json'));assert.equal(sent.has('observations-v2/'+day(unmerged.t)+'.json'),false);assert.deepEqual(store.readCoin(unmerged.a).ds,unmerged.ds);
 });
+
+test('completed old days retire before publishing a young current day',async t=>{
+ const old=coin('old-first',30),young=coin('current-day',0),{ctx,sent}=setup(t,[young,old]);const upload=ctx.upload;
+ ctx.upload=async(name,value)=>{if(name==='observations-v2/'+day(young.t)+'.json')assert.equal(ctx.C.has(old.a),false);await upload(name,value);};
+ await ctx.run();const files=[...sent.keys()].filter(k=>/^observations-v2\/\d{4}-\d\d-\d\d\.json$/.test(k));assert.equal(files[0],'observations-v2/'+day(old.t)+'.json');assert.equal(ctx.C.has(young.a),true);
+});
 test('retention keeps active research/raw jobs and merges retired rows into later exports',async t=>{
  const old=coin('old',27),rejected=coin('rejected',3,false),research=coin('research',3,false),young=coin('young',1),raw=coin('raw',27);
  const {ctx,sent,store,dir}=setup(t,[old,rejected,research,young,raw]);ctx.SOURCE.records.set('research',{mint:'research',acceptedAt:clock-H});ctx.UPQ.push(['raw/'+day(raw.t)+'/raw-state.json',{}]);

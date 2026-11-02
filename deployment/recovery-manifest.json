@@ -1,7 +1,7 @@
 {
   "sourceDirectory": "server",
   "files": {
-    "collector.js": "e7c3dec43224e7527fd6ed08cc7da87dc72cf482a9eccc51b39c428b0ae45067",
+    "collector.js": "b7ea09c949fe6d6cd0d1904e6d5a6ff81d86560cc66a38782c5c048028bc845a",
     "runtime-config.js": "18fd5ec05dde904242d728d3b5c3c8b5a68c9a2089c0027724e3d1624ac66c75",
     "feature-coverage.js": "05cb73f959eaa4d1e7f4972f2617a3f6604618b6528c9c1ef356806ae3e962e3",
     "terminal-candles.js": "50f111803f1f4395ec48b25e65b3e416c125c5b115cc4e432f9d52b7c3ca85ee",
