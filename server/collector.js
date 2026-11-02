@@ -1452,7 +1452,7 @@ async function exportResearchV2(now) {
   if(typeof RESEARCH_EXPORTS!=='undefined')RESEARCH_EXPORTS.oneAt=Date.now();
   // A settings change does NOT abandon previously admitted cohorts.
   // Earlier raw cohorts remain on disk; current labels must not be overwritten by old criteria.
-  // Primary R1 snapshot/population above is durable; defer secondary bank I/O during day retention.
+  // Primary R1 snapshot/population above is durable; secondary bank I/O resumes on the next idle export.
   if(!DAY_EXPORT_BUSY){
   if(typeof RESEARCH_EXPORTS!=='undefined')RESEARCH_EXPORTS.stage='r1-bank-relabel';RESEARCH_BANKS?.removeRevoked(SOURCE.revokedManual);RESEARCH_BANKS?.removeRevoked(activeMigrationRevocations(),'after');if(RESEARCH_BANKS?.relabelOneAsync)await RESEARCH_BANKS.relabelOneAsync(runtime.config);else RESEARCH_BANKS?.relabelOne(runtime.config);
   if(typeof RESEARCH_EXPORTS!=='undefined')RESEARCH_EXPORTS.stage='r1-bank-upsert';if(RESEARCH_BANKS?.upsertAsync)await RESEARCH_BANKS.upsertAsync(runtime.select({phase:manualPool.enabled?null:'after',limit:20000}));else RESEARCH_BANKS?.upsert(runtime.select({phase:manualPool.enabled?null:'after',limit:20000}));
