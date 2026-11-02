@@ -1452,15 +1452,18 @@ async function exportResearchV2(now) {
   if(typeof RESEARCH_EXPORTS!=='undefined')RESEARCH_EXPORTS.oneAt=Date.now();
   // A settings change does NOT abandon previously admitted cohorts.
   // Earlier raw cohorts remain on disk; current labels must not be overwritten by old criteria.
+  // Primary R1 snapshot/population above is durable; defer secondary bank I/O during day retention.
+  if(!DAY_EXPORT_BUSY){
   if(typeof RESEARCH_EXPORTS!=='undefined')RESEARCH_EXPORTS.stage='r1-bank-relabel';RESEARCH_BANKS?.removeRevoked(SOURCE.revokedManual);RESEARCH_BANKS?.removeRevoked(activeMigrationRevocations(),'after');if(RESEARCH_BANKS?.relabelOneAsync)await RESEARCH_BANKS.relabelOneAsync(runtime.config);else RESEARCH_BANKS?.relabelOne(runtime.config);
   if(typeof RESEARCH_EXPORTS!=='undefined')RESEARCH_EXPORTS.stage='r1-bank-upsert';if(RESEARCH_BANKS?.upsertAsync)await RESEARCH_BANKS.upsertAsync(runtime.select({phase:manualPool.enabled?null:'after',limit:20000}));else RESEARCH_BANKS?.upsert(runtime.select({phase:manualPool.enabled?null:'after',limit:20000}));
+  }
 
 }
 async function exportPathsV2(now){
   if(!PASS_V2||!RESEARCH_TWO||!SOURCE)return;
   const diagnostic=require(DIR+'/pass-runtime.js'),archive=diagnostic.flushDiagnostics(DIR),signature=archive.records+':'+archive.bytes;if(archive.records&&signature!==globalThis.p45ArchiveUploaded){await upload('archive/p45-smoke/records.json',{schema:1,updated:now,records:archive.records,coins:require(DIR+'/stream-json.js').rowStream(()=>diagnostic.diagnosticRows(DIR))});globalThis.p45ArchiveUploaded=signature;}
   await reloadPassConfig();
-  await publishLibrary(now);
+  await publishLibrary(now,{score:!DAY_EXPORT_BUSY&&!resourcePressure()});
   const p=PASS_CFG_ERR
     ?{added:0,...PASS_V2.summary(now),status:'paused-control-unavailable'}
     :PASS_V2.update({source:SOURCE,coins:researchCoins(),now});
@@ -1505,7 +1508,7 @@ async function exportPathsV2(now){
     });
     TWO_BANK_UPLOADED=now;
   }
-  if(AUTO_V2&&RESEARCH_V2&&(now-AUTO_UPLOADED>60*60e3)){
+  if(!DAY_EXPORT_BUSY&&AUTO_V2&&RESEARCH_V2&&(now-AUTO_UPLOADED>60*60e3)){
     if(typeof RESEARCH_EXPORTS!=='undefined')RESEARCH_EXPORTS.stage='auto-research';
     let levelOne=(RESEARCH_BANKS?RESEARCH_BANKS.select({level:'1',projection:'analysis'}):RESEARCH_V2.select({limit:20000})).filter(x=>x.outcomeVersion===2&&['live','dead'].includes(x.label)).map(x=>({
       ...x,time:x.acceptedAt
@@ -1637,14 +1640,16 @@ let DAY_EXPORT_BUSY=false;
 async function exportDays(){if(DAY_EXPORT_BUSY)return;DAY_EXPORT_BUSY=true;try{await exportDaysBody()}finally{DAY_EXPORT_BUSY=false}}
 async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayKey(now-864e5);
   await reloadSourceAgeConfig();
-  await stageCompleted(now);
+  RETENTION.stage='local-archive';RETENTION.stageAt=Date.now();await stageCompleted(now);
   const {rowStream}=require(DIR+'/stream-json.js'),days=[...new Set([today,yest,...(COMPLETED?.days()||[])])].sort(),completedDays=[];
   for(const d of days){if(COMPLETED&&!COMPLETED.seeded.has(d))continue;const live=[...C.values()].filter(c=>dayKey(c.t)===d),pins=COMPLETED?retentionPins(now):new Map();
     const force=COMPLETED&&(COMPLETED.needsConfirmation(d)||live.some(c=>require(DIR+'/completed-coins.js').retirementDue(c,{now,pins})&&!retirementBlocked(c)));if(d!==today&&!force&&now-(LAST_DAY_EXPORT.get(d)||0)<30*60e3)continue;
     if(COMPLETED?.sealed.has(d)){if(live.length)err('retention: sealed day has unexpected active records '+d);continue}
     const list=COMPLETED?COMPLETED.view(d,live,fullCoin):live;if(!list.length)continue;
+    RETENTION.stage='publish-day';RETENTION.day=d;RETENTION.stageAt=Date.now();
     OBS_CONTRACT.days[d]=await exportObservationContract('observations-v2/'+d+'.json',list,now);
     await exportObservationSummary('observations-v2/summary/day/'+d+'.json',list,now);
+    RETENTION.stage='confirm-day';RETENTION.stageAt=Date.now();
     if(COMPLETED){COMPLETED.confirm(d,list);await retireConfirmed(d,live,Date.now());completedDays.push(d)}
     LAST_DAY_EXPORT.set(d,now);while(LAST_DAY_EXPORT.size>4)LAST_DAY_EXPORT.delete(LAST_DAY_EXPORT.keys().next().value);if(d===yest)lastYest=now;
   }
@@ -1655,6 +1660,7 @@ async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayK
   if(stateCommitted){const activeDays=new Set([...C.values()].map(c=>dayKey(c.t)));for(const d of completedDays)if(!activeDays.has(d)&&COMPLETED.index.has(d))COMPLETED.seal(d,now)}
   // Unseeded days remain local/hot until their existing remote history is merged.
   // A slow historical download must not starve already seeded days.
+  RETENTION.stage='historical-seed';RETENTION.stageAt=Date.now();
   try{await seedCompletedDays(now)}catch(e){err('archive seed '+e.message)}
   // Optional history compaction must never gate the confirmed day archive/retention.
   // One chunk per pass; retries retain the original hot observations.
@@ -1765,7 +1771,7 @@ const STARTED=Date.now();
   // Legacy research results are invalid; keep observation exports, run only v2 research.
   setTimeout(()=>deduplicateClosedArchiveRows().catch(e=>err('archive dedup '+e.message)),1000);
   setInterval(()=>{prune();save();deduplicateClosedArchiveRows().catch(e=>err('archive dedup '+e.message))},120000);
-  setInterval(()=>{if((RETENTION.stateBytes>=RETENTION.stateArchiveTriggerBytes||resourcePressure())&&ACTIVE_HISTORY&&!ACTIVE_HISTORY.busy)ACTIVE_HISTORY.compact({coins:C,publish:upload,read:getObj,now:Date.now(),maxChunks:4}).then(changed=>{if(changed)save()}).catch(e=>err('state archive '+e.message));},60000);
+  setInterval(()=>{if((RETENTION.stateBytes>=RETENTION.stateArchiveTriggerBytes||resourcePressure())&&ACTIVE_HISTORY&&!ACTIVE_HISTORY.busy&&!DAY_EXPORT_BUSY)ACTIVE_HISTORY.compact({coins:C,publish:upload,read:getObj,now:Date.now(),maxChunks:4}).then(changed=>{if(changed)save()}).catch(e=>err('state archive '+e.message));},60000);
   setInterval(()=>{const canRun=()=>!resourcePressure()&&(HEALTH?.lagMs||0)<250&&(!RESEARCH_EXPORTS.busy||!['r1-update','r2-update','auto-research'].includes(RESEARCH_EXPORTS.stage));if(RESEARCH_V2&&canRun())RESEARCH_V2.repairFrozenFeatures({coins:researchCoins(),passes:PASS_V2,now:Date.now(),limit:12,budgetMs:1000,cpuBudgetMs:100,canRun}).catch(()=>err('feature receipt repair failed'));},5000);
   setInterval(()=>liveDecisionTick().catch(e=>err('live decision '+e.message)),2000);
   fastPassedLoop().catch(e=>err('fast pass loop '+e.message));
