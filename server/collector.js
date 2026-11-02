@@ -1326,8 +1326,9 @@ async function upload(name,obj){
   let payload,multipart;try{
     const stream=require(DIR+'/stream-json.js');payload=await stream.gzipJson({dir:DIR,value:obj,health:HEALTH,name});timing.compressionMs=Date.now()-timing.startedAt;timing.stage='token';const tokenAt=Date.now();
     const tk=await token();timing.tokenMs=Date.now()-tokenAt;timing.stage='upload';timing.uploadAt=Date.now();multipart=stream.multipartGzip(payload,name);
+    const uploadTimeout=payload.bytes<=1024*1024?60000:Math.min(300000,60000+Math.ceil(payload.bytes/(256*1024))*1000);
     const r=await fetch(`https://storage.googleapis.com/upload/storage/v1/b/${BUCKET}/o?uploadType=multipart`,
-      {method:'POST',duplex:'half',signal:AbortSignal.timeout(60000),headers:{Authorization:'Bearer '+tk,'Content-Type':multipart.contentType,'Content-Length':String(multipart.length)},body:multipart.body});
+      {method:'POST',duplex:'half',signal:AbortSignal.timeout(uploadTimeout),headers:{Authorization:'Bearer '+tk,'Content-Type':multipart.contentType,'Content-Length':String(multipart.length)},body:multipart.body});
     if(!r.ok)throw new Error('upload '+r.status+' '+(await r.text()).slice(0,120));await r.arrayBuffer();timing.networkMs=Date.now()-timing.uploadAt;timing.okay=true;timing.stage='complete';
     HEALTH?.uploadsHour.push(Date.now());
   }finally{await multipart?.close();await payload?.dispose();if(HEALTH)HEALTH.activeUploads--;timing.totalMs=Date.now()-timing.startedAt;if(['research-v2/status.json','research-v2/polygon-1.json','research-v2/status-two.json','research-v2/polygon-2.json','source/live.json','source/status.json','passed-v2/live.json','passed-v2/status.json','status.json'].includes(name))HEALTH?.capture('publish:'+name,timing);HEALTH?.capture('upload:complete',{name})}

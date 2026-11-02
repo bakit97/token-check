@@ -5,3 +5,9 @@ test('day retention defers secondary R1 bank I/O, and the next idle cycle resume
  const ctx={DAY_EXPORT_BUSY:true,manualPool:{enabled:false},RESEARCH_EXPORTS:{},SOURCE:{revokedManual:new Set()},activeMigrationRevocations:()=>new Map(),runtime:{config:{},select:()=>[{mint:'preserved',phase:'after'}]},RESEARCH_BANKS:{removeRevoked(){},relabelOneAsync:async()=>writes.push('labels'),upsertAsync:async rows=>writes.push(rows[0].mint)}};
  vm.createContext(ctx);vm.runInContext('async function run(){'+src.slice(start,end)+';this.run=run;',ctx);await ctx.run();a.deepEqual(writes,[]);ctx.DAY_EXPORT_BUSY=false;await ctx.run();a.deepEqual(writes,['labels','preserved']);
 });
+
+test('large archive upload gets a bounded transfer allowance without allocating its file in RAM',async()=>{
+ const src=fs.readFileSync(require.resolve('../server/collector'),'utf8'),start=src.indexOf('async function upload(name,obj){'),end=src.indexOf('let lastYest=',start),seen=[];let bytes=1024,disposed=0,closed=0;
+ const ctx={DIR:'/unused',BUCKET:'test',Date,Math,HEALTH:{activeUploads:0,uploadsHour:[],capture(){}},token:async()=>'<mock>',AbortSignal:{timeout:ms=>ms},fetch:async(url,options)=>{seen.push(options.signal);return {ok:true,arrayBuffer:async()=>new ArrayBuffer(0)};},require:()=>({gzipJson:async()=>({bytes,dispose:async()=>disposed++}),multipartGzip:()=>({length:bytes,contentType:'multipart/test',body:'file-stream-placeholder',close:async()=>closed++})})};
+ vm.createContext(ctx);vm.runInContext(src.slice(start,end)+';this.upload=upload;',ctx);await ctx.upload('status.json',{});bytes=64*1024*1024;await ctx.upload('observations-v2/2026-10-31.json',{});bytes=512*1024*1024;await ctx.upload('archive/large.json',{});a.equal(seen[0],60000);a.ok(seen[1]>60000&&seen[1]<=300000);a.equal(seen[2],300000);a.equal(disposed,3);a.equal(closed,3);a.equal(ctx.HEALTH.activeUploads,0);
+});
