@@ -16,6 +16,12 @@ function setup(t,coins,{failMirror=false,saveOk=true}={}){
 test('failed mirror never permits eviction; retry confirms all exports before shrinking state',async t=>{
  const c=coin('old',27),{ctx,store}=setup(t,[c],{failMirror:true});await assert.rejects(ctx.run(),/injected mirror failure/);assert.equal(ctx.C.has(c.a),true);assert.equal(store.isConfirmed(c),false);assert.equal(store.sealed.size,0);
 });
+
+test('history mirror timeouts cannot starve verified retirement and only one optional chunk is requested',async t=>{
+ const old=coin('expired-after',27),young=coin('young-after',1),{ctx,store,sent,dir}=setup(t,[old,young]);let calls=0;const errors=[];
+ ctx.getObj=async()=>null;ctx.err=e=>errors.push(e);ctx.ACTIVE_HISTORY={compact:async options=>{calls++;assert.equal(options.maxChunks,1);assert.equal(ctx.C.has(old.a),false);assert.ok(sent.has('observations-v2/'+day(old.t)+'.json'));throw Error('mirror timeout');}};
+ await ctx.run();assert.equal(calls,1);assert.equal(ctx.C.has(young.a),true);assert.deepEqual(store.readCoin(old.a).ds,old.ds);assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'state.json'),'utf8')).length,1);assert.ok(errors.some(e=>e.includes('mirror timeout')));
+});
 test('retention keeps active research/raw jobs and merges retired rows into later exports',async t=>{
  const old=coin('old',27),rejected=coin('rejected',3,false),research=coin('research',3,false),young=coin('young',1),raw=coin('raw',27);
  const {ctx,sent,store,dir}=setup(t,[old,rejected,research,young,raw]);ctx.SOURCE.records.set('research',{mint:'research',acceptedAt:clock-H});ctx.UPQ.push(['raw/'+day(raw.t)+'/raw-state.json',{}]);

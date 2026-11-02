@@ -1637,7 +1637,6 @@ let DAY_EXPORT_BUSY=false;
 async function exportDays(){if(DAY_EXPORT_BUSY)return;DAY_EXPORT_BUSY=true;try{await exportDaysBody()}finally{DAY_EXPORT_BUSY=false}}
 async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayKey(now-864e5);
   await reloadSourceAgeConfig();
-  if(ACTIVE_HISTORY&&await ACTIVE_HISTORY.compact({coins:C,publish:upload,read:getObj,now}))save();
   await seedCompletedDays(now);await stageCompleted(now);
   const {rowStream}=require(DIR+'/stream-json.js'),days=[...new Set([today,yest,...(COMPLETED?.days()||[])])],completedDays=[];
   for(const d of days){const live=[...C.values()].filter(c=>dayKey(c.t)===d),pins=COMPLETED?retentionPins(now):new Map();
@@ -1654,6 +1653,9 @@ async function exportDaysBody(){const now=Date.now(),today=dayKey(now),yest=dayK
   // Lightweight feeds and bounded research have independent timers.
 
   if(stateCommitted){const activeDays=new Set([...C.values()].map(c=>dayKey(c.t)));for(const d of completedDays)if(!activeDays.has(d)&&COMPLETED.index.has(d))COMPLETED.seal(d,now)}
+  // Optional history compaction must never gate the confirmed day archive/retention.
+  // One chunk per pass; retries retain the original hot observations.
+  try{if(ACTIVE_HISTORY&&await ACTIVE_HISTORY.compact({coins:C,publish:upload,read:getObj,now,maxChunks:1}))save();}catch(e){err('state archive '+e.message)}
 }
 async function publicFeedsCycle(){
  if(PUBLIC_FEEDS.busy)return;PUBLIC_FEEDS.busy=true;const errors=[];
