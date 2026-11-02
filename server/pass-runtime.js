@@ -198,7 +198,7 @@ class PassRuntime {
       const recent=typeof source.recentAdmissions==='function'?
         source.recentAdmissions(now-(cfg.decisionMinutes+2)*MIN,now):
         source.records.values();
-      for(const row of recent){
+      for(const row of recent){if(row.phase===this.readOnlyPhase)continue;
         if(!PHASES.has(row.phase)||this.records.has(row.mint)||row.acceptedAt<cfg.activatedAt||
            row.acceptedAt>now||now-row.acceptedAt>(cfg.decisionMinutes+2)*MIN)continue;
         considered++;
@@ -234,7 +234,7 @@ class PassRuntime {
       }
     }
     for(const [mint,row] of this.records)
-      if(now-row.acceptedAt>WINDOW)this.records.delete(mint);
+      if(row.phase!==this.readOnlyPhase&&now-row.acceptedAt>WINDOW)this.records.delete(mint);
     this.updated=now;
     return {added,considered,missingFeatures,...this.summary(now)};
   }
@@ -246,7 +246,7 @@ class PassRuntime {
         .map(m=>({module:m,filter:byId.get(m.filterId)})).filter(x=>x.filter&&(!x.filter.phase||x.filter.phase===x.module.phase));
       const maxMinutes=Math.max(1,...selected.map(x=>x.filter.verdictMinutes||cfg.decisionMinutes));
       const recent=typeof source.recentAdmissions==='function'?source.recentAdmissions(now-(maxMinutes+2)*MIN,now):source.records.values();
-      for(const row of recent){
+      for(const row of recent){if(row.phase===this.readOnlyPhase)continue;
         if(!PHASES.has(row.phase)||this.records.has(row.mint)||row.acceptedAt<cfg.activatedAt||row.acceptedAt>now)continue;
         const rules=selected.filter(x=>x.module.phase===row.phase);
         if(!rules.some(x=>x.module.level==='1')||(cfg.passMode[row.phase]==='12'&&!rules.some(x=>x.module.level==='2')))continue;
@@ -269,7 +269,7 @@ class PassRuntime {
           name:String(coin.n||coin.s||'').slice(0,64),kind:'completed-module-verdicts'});added++;
       }
     }
-    for(const [mint,row] of this.records)if(now-row.acceptedAt>WINDOW)this.records.delete(mint);
+    for(const [mint,row] of this.records)if(row.phase!==this.readOnlyPhase&&now-row.acceptedAt>WINDOW)this.records.delete(mint);
     this.updated=now;this.verdictStats={waiting,rejected,missingFeatures,considered};
     return {added,...this.verdictStats,...this.summary(now)};
   }

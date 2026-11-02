@@ -11,6 +11,8 @@ let COMPLETED=null,ACTIVE_HISTORY=null,OBS_RECOVERY=null,RECOVERY_RPC=null;
 const fullCoin=c=>ACTIVE_HISTORY?ACTIVE_HISTORY.hydrate(c):c;
 const PUBLIC_FEEDS={busy:false,sourceAt:0,libraryAt:0,storageAt:0,error:''},RESEARCH_EXPORTS={busy:false,oneAt:0,twoAt:0,error:''};let SOURCE_DAY_PUBLISHED_AT=0;
 const RETENTION={activeHours:26,rejectedHours:2,stateTargetBytes:30000000,stateArchiveTriggerBytes:27000000,stateBytes:0,lastSweepAt:null,removed:0,protectedResearch:0,pendingRaw:0,pendingWork:0,cancelledGT:0};
+let manualPool={enabled:false};const MANUAL_FREEZE={archived:0,path:null,readOnly:true};
+const phaseCollecting=row=>manualPool.enabled||row?.phase!=='before';
 let TERMINAL_CHARTS=null,FEATURE_TRIAL=null,GT_TASKS=null,FREE_TASKS=null;let MIGRATION_CATCHUP=null;let RESOURCE=null,FAST_DISCOVERY=null,POOL_DISCOVERY=null,POOL_LOGS=null;const POOL_TRANSITION={mode:'pools-v1',legacySourceRemoved:0,legacyDataCleanupPending:true};
 const resourcePressure=()=>{const m=process.memoryUsage();return m.rss>=430e6||m.heapUsed>=300*1024*1024;};
 const MEMORY_GC={runs:0,lastAt:0,maxMs:0,heapAfterBytes:0,skippedNoGrowth:0,skippedCooldown:0,totalMs:0,cooldownMs:60000,available:typeof global.gc==='function'};function relieveHeap(){if(!MEMORY_GC.available)return;const m=process.memoryUsage();if(m.heapUsed<180e6&&m.rss<350e6)return;if(MEMORY_GC.heapAfterBytes&&m.heapUsed<MEMORY_GC.heapAfterBytes+16*1024*1024){MEMORY_GC.skippedNoGrowth++;return;}const start=Date.now();if(MEMORY_GC.runs&&start-MEMORY_GC.lastAt<MEMORY_GC.cooldownMs){MEMORY_GC.skippedCooldown++;return;}global.gc();MEMORY_GC.heapAfterBytes=process.memoryUsage().heapUsed;MEMORY_GC.runs++;MEMORY_GC.lastAt=Date.now();MEMORY_GC.totalMs+=MEMORY_GC.lastAt-start;MEMORY_GC.maxMs=Math.max(MEMORY_GC.maxMs,Date.now()-start);}
@@ -499,7 +501,7 @@ async function collectIntelligence(){const now=Date.now();if(INTEL_BUSY||now-INT
  }catch(e){if(e.code==='BUDGET_DEFERRED')INTEL_STATS.deferred++;else INTEL_STATS.errors++;}finally{INTEL_BUSY=false;}}
 // Все модули скачиваются ОДНИМ шагом до любого require: модули зависят друг от друга
 // (pass-runtime → research-v2, source-runtime → admission), раздельная загрузка давала MODULE_NOT_FOUND.
-const MODULES=['feature-coverage.js','terminal-candles.js','early-window.js','pool-balance-reader.js','bounded-cache.js','pool-trade-observer.js','opening-evidence.js','holder-census.js','liquidity-proof.js','venue-identity.js','feature-snapshots.js','activity-slices.js','event-clock.js','admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
+const MODULES=['runtime-config.js','feature-coverage.js','terminal-candles.js','early-window.js','pool-balance-reader.js','bounded-cache.js','pool-trade-observer.js','opening-evidence.js','holder-census.js','liquidity-proof.js','venue-identity.js','feature-snapshots.js','activity-slices.js','event-clock.js','admission.js','source-runtime.js','pump-pre.js','pre-watcher.js','research-v2.js','research-runtime.js',
   'research-config.js','pass-runtime.js','research-two-runtime.js','auto-research-v2.js','filter-audit.js','resource-budget.js','runtime-health.js','stream-json.js','observation-contract.js','packed-observations.js','completed-coins.js','seed-completed.js','coin-profile.js','durable-json.js','research-banks.js','module-library.js','active-history.js','launch-history.js','early-intelligence.js','migration-fast.js','legacy-birth-cleanup.js','manual-pools.js','pool-logs.js','legacy-data-redaction.js','side-pools.js','observation-recovery.js','public-pool-trades.js','migration-catchup.js','opening-liquidity.js','manual-recovery-request.js'];
 let MODULES_OK=null;
 function ensureModules(){if(!MODULES_OK)MODULES_OK=(async()=>{const auth=await token();
@@ -514,7 +516,7 @@ function restoreAdmittedMigrations(now=Date.now()){
  }RETENTION.sourceMigrationsRestored=(RETENTION.sourceMigrationsRestored||0)+restored;return restored;
 }
 async function initSource() {
-  await ensureModules();
+  await ensureModules();manualPool=require(DIR+'/runtime-config.js').manualPool;
 
   // Отсутствующий/повреждённый журнал НЕ очищать; источник лучше отключить,
   // чем повторно занести монеты после рестарта.
@@ -532,7 +534,7 @@ async function initSource() {
   PRE=new PumpPreWatcher({onCreate:rememberCurve,canObserve:()=>!resourcePressure()&&C.size<12000,rpc:(method,params)=>rpc(method,params,{priority:'pre',context:'новые до миграции',source:'pre'}),decode58:b58dec,deriveCurve:bondingCurveOf,source:SOURCE,slotClock:EVENT_CLOCK,telemetry:new (require(DIR+'/resource-budget.js').PumpTelemetry)({dir:DIR}),
     onAdmitted:admitVerifiedPublicLaunch,log:msg=>err(msg)});
   // Journal is durable even if the VM was restarted before candidate-state save.
-  for(const item of SOURCE.records.values())if(item.phase==='before'&&!C.has(item.mint)&&item.proof?.curve) {
+  for(const item of SOURCE.records.values())if(manualPool.enabled&&item.phase==='before'&&!C.has(item.mint)&&item.proof?.curve) {
     if(Date.now()-item.acceptedAt>26*3600e3)continue;
     if(COMPLETED?.metadata(item.mint)){RETENTION.archivedRestoreSkipped=(RETENTION.archivedRestoreSkipped||0)+1;continue;}
     C.set(item.mint,{a:item.mint,n:item.proof.name||'',s:item.proof.symbol||'',i:'',
@@ -541,7 +543,8 @@ async function initSource() {
       pools:[item.proof.curve],mg:{v:MGV,st:'curve',k:'curve-pump',final:1,
       lastAt:item.acceptedAt},fv:FV});seedLaunchEvidence(C.get(item.mint),item.proof,item);
   }
-  for(const item of SOURCE.records.values())if(item.proof?.kind==='manual-pool-open-v1'&&!C.has(item.mint)&&Date.now()-item.acceptedAt<26*3600e3){const p=item.proof;C.set(item.mint,{a:item.mint,n:'',s:'',i:'',p:p.pool,d:({'PumpSwap':'pumpswap','Raydium CPMM':'raydium-cpmm','Raydium CLMM':'raydium-clmm','Meteora DLMM':'meteora-dlmm','Meteora DAMM v2':'meteora-damm-v2','Orca':'orca-whirlpools'})[p.dex],q:p.quote,t:item.eventAt,seen:item.acceptedAt,pools:[p.pool],preCurve:0,fv:FV,disc:'manual-pool',discoverySource:'manual-pool',mg:{v:MGV,st:'ok',k:'manual-pool',pool:p.pool,sig:p.signature,mT:item.eventAt,owner:p.dexProgram},ct:p.ct,creatorAddress:p.creatorAddress,openingMetrics:p.openingMetrics,admissionVerifiedAt:p.verifiedAt,launchpad:null,dex:p.dex,venue:p.venue,vaults:[p.baseVault,p.quoteVault]});}
+  for(const item of SOURCE.records.values())if(manualPool.enabled&&item.proof?.kind==='manual-pool-open-v1'&&!C.has(item.mint)&&Date.now()-item.acceptedAt<26*3600e3){const p=item.proof;C.set(item.mint,{a:item.mint,n:'',s:'',i:'',p:p.pool,d:({'PumpSwap':'pumpswap','Raydium CPMM':'raydium-cpmm','Raydium CLMM':'raydium-clmm','Meteora DLMM':'meteora-dlmm','Meteora DAMM v2':'meteora-damm-v2','Orca':'orca-whirlpools'})[p.dex],q:p.quote,t:item.eventAt,seen:item.acceptedAt,pools:[p.pool],preCurve:0,fv:FV,disc:'manual-pool',discoverySource:'manual-pool',mg:{v:MGV,st:'ok',k:'manual-pool',pool:p.pool,sig:p.signature,mT:item.eventAt,owner:p.dexProgram},ct:p.ct,creatorAddress:p.creatorAddress,openingMetrics:p.openingMetrics,admissionVerifiedAt:p.verifiedAt,launchpad:null,dex:p.dex,venue:p.venue,vaults:[p.baseVault,p.quoteVault]});}
+  if(manualPool.enabled)for(const file of fs.readdirSync(DIR).filter(n=>/^manual-pool-frozen-[a-z0-9]+-[0-9]+\.json$/.test(n)).sort())for(const c of require(DIR+'/stream-json.js').readRows(DIR+'/'+file)){const r=SOURCE.get(c.a);if(r?.phase==='before'&&r.proof?.pool===c.p&&Date.now()-c.t<26*3600e3)C.set(c.a,c);}
   restoreAdmittedMigrations();
   SOURCE_ERR='';
   SOURCE.onAdmitted=admitResearchImmediately;
@@ -606,11 +609,12 @@ async function initResearchV2() {
     config,adoptLegacy:JSON.stringify(config)===JSON.stringify(baseline)});
   RESEARCH_ONE_EPOCH.apply(config,require(DIR+'/early-window.js').reset(await getObj('config/research-epoch-one.json')));
   const epoch=RESEARCH_ONE_EPOCH.current;
-  GT_TASKS=new (require(DIR+'/early-window.js').TaskQuota)();FREE_TASKS=new (require(DIR+'/early-window.js').RPCQuota)();TERMINAL_CHARTS=new (require(DIR+'/terminal-candles.js').TerminalCandles)({dir:DIR,gt,cohortStart:epoch.activeAt,onReady:j=>{RESEARCH_V2?.processed.delete(j.mint);RESEARCH_V2?.lastAttemptAt.delete(j.mint);RESEARCH_TWO?.retry.delete(j.mint);}});FEATURE_TRIAL=new (require(DIR+'/early-window.js').FeatureProbe)({dir:DIR,startedAt:epoch.activeAt});
+  GT_TASKS=new (require(DIR+'/early-window.js').TaskQuota)();FREE_TASKS=new (require(DIR+'/early-window.js').RPCQuota)();TERMINAL_CHARTS=new (require(DIR+'/terminal-candles.js').TerminalCandles)({dir:DIR,gt,canCollect:j=>phaseCollecting(SOURCE?.get(j.mint)),cohortStart:epoch.activeAt,onReady:j=>{RESEARCH_V2?.processed.delete(j.mint);RESEARCH_V2?.lastAttemptAt.delete(j.mint);RESEARCH_TWO?.retry.delete(j.mint);}});FEATURE_TRIAL=new (require(DIR+'/early-window.js').FeatureProbe)({dir:DIR,startedAt:epoch.activeAt});
   RESEARCH_V2=new ResearchRuntime({
     dir:DIR,config:epoch.config,cohortStart:epoch.activeAt,
     bankName:oneResearchBankName(epoch)
   });
+  RESEARCH_V2.readOnlyPhase=manualPool.enabled?null:'before';
   recoverSupersededStudies();
   RESEARCH_V2_ERR='';
   log('исследование v2 готово, накоплено',RESEARCH_V2.rows.length);
@@ -642,6 +646,7 @@ async function initPathsV2(){
   try{LIBRARY_SCORES=JSON.parse(fs.readFileSync(DIR+'/module-live-evaluations.json','utf8'))}catch(e){if(e.code!=='ENOENT')err('library live scores unavailable')}
   await refreshLibrary(PASS_V2.config);
   RESEARCH_BANKS=new (require(DIR+'/research-banks.js').ResearchBanks)({dir:DIR,config:await getObj('config/research-storage.json')||{},one:RESEARCH_V2?.config||{},two:RESEARCH_TWO.config});
+  RESEARCH_BANKS.readOnlyPhase=manualPool.enabled?null:'before';
   syncResearchEpochBanks();
   FILTER_AUDIT=new (require(DIR+'/filter-audit.js').FilterAudit)({dir:DIR});
   PASS_ERR='';TWO_ERR='';PASS_CFG_ERR='';
@@ -875,7 +880,7 @@ async function liquidityTick(now=Date.now()){
 }
 async function captureFeatureSnapshots(now=Date.now()){
  if(captureFeatureSnapshots.busy||!SOURCE)return;captureFeatureSnapshots.busy=true;try{const api=require(DIR+'/feature-snapshots.js');let batch=0;
- for(const c of C.values()){const row=SOURCE.get(c.a);if(!row||now-row.acceptedAt>21*60000||now<row.acceptedAt+60000||c.featureNextAt>now)continue;const complete=fullCoin(c);api.capture(complete,row,now,(typeof twentyMinuteMode==='function'&&twentyMinuteMode())?FEATURE_TRIAL:null);if(complete.featureSnapshotsPacked)c.featureSnapshotsPacked=complete.featureSnapshotsPacked;c.featureNextAt=row.acceptedAt+(Math.floor((now-row.acceptedAt)/60000)+1)*60000;if(++batch%4===0)await new Promise(resolve=>setImmediate(resolve));}
+ for(const c of C.values()){const row=SOURCE.get(c.a);if(!row||!phaseCollecting(row)||now-row.acceptedAt>21*60000||now<row.acceptedAt+60000||c.featureNextAt>now)continue;const complete=fullCoin(c);api.capture(complete,row,now,(typeof twentyMinuteMode==='function'&&twentyMinuteMode())?FEATURE_TRIAL:null);if(complete.featureSnapshotsPacked)c.featureSnapshotsPacked=complete.featureSnapshotsPacked;c.featureNextAt=row.acceptedAt+(Math.floor((now-row.acceptedAt)/60000)+1)*60000;if(++batch%4===0)await new Promise(resolve=>setImmediate(resolve));}
  }finally{captureFeatureSnapshots.busy=false;}
 }
 const BUYER_REPAIR={busy:false,checked:0,repairedCoins:0,repairedSnapshots:0,missingArchive:0,errors:0,lastAt:0};
@@ -884,13 +889,13 @@ function birthBackfill(now){if((typeof twentyMinuteMode==='function'&&twentyMinu
 
 function twentyMinuteMode(){return typeof RESEARCH_V2!=='undefined'&&RESEARCH_V2?.config?.outcomeMethod==='gt-ohlcv-20m-v1';}
 function freeTaskFetch(lane){return (...args)=>{if(FREE_TASKS&&!FREE_TASKS.take(lane))throw Object.assign(Error('optional public task quota'),{code:'BUDGET_DEFERRED'});return fetch(...args);};}
-function earlyActive(c,now=Date.now()){return !(typeof twentyMinuteMode==='function'&&twentyMinuteMode())||require(DIR+'/early-window.js').active(SOURCE?.get(c.a),now);}
+function earlyActive(c,now=Date.now()){if(!phaseCollecting(SOURCE?.get(c.a)))return false;return !(typeof twentyMinuteMode==='function'&&twentyMinuteMode())||require(DIR+'/early-window.js').active(SOURCE?.get(c.a),now);}
 const EARLY_WINDOW_STATS={tradesRequests:0,tradesErrors:0,openingRequests:0,openingErrors:0,lastAt:0,active:0};
 async function earlyWindowTick(){
  if(earlyWindowTick.busy||!(typeof twentyMinuteMode==='function'&&twentyMinuteMode())||!SOURCE||!TERMINAL_CHARTS)return;earlyWindowTick.busy=true;
- try{const now=Date.now(),windowAPI=require(DIR+'/early-window.js'),one=RESEARCH_V2,active=[...SOURCE.recentAdmissions(now-21*60000,now)].filter(r=>windowAPI.active(r,now));EARLY_WINDOW_STATS.active=active.length;FEATURE_TRIAL?.evaluate();
+ try{const now=Date.now(),windowAPI=require(DIR+'/early-window.js'),one=RESEARCH_V2,active=[...SOURCE.recentAdmissions(now-21*60000,now)].filter(r=>phaseCollecting(r)&&windowAPI.active(r,now));EARLY_WINDOW_STATS.active=active.length;FEATURE_TRIAL?.evaluate();
  if(now-(earlyWindowTick.offeredAt||0)>10000){earlyWindowTick.offeredAt=now;const watched=new Map(one.admitted);for(const pass of PASS_V2?.records.values()||[])if(pass.firstSeenAt>=RESEARCH_TWO.cohortStart&&!watched.has(pass.mint))watched.set(pass.mint,pass);
-  for(const row of watched.values()){if(row.intakePending)continue;const c=C.get(row.mint),record=SOURCE.get(row.mint);if(!record||!c)continue;const cfg=one.config.phases?.[row.phase]||one.config,pass=PASS_V2?.records.get(row.mint),two=RESEARCH_TWO?.config.phases?.[row.phase]||RESEARCH_TWO?.config;const lineEnd=pass&&two?require(DIR+'/research-two-runtime.js').lineClock(pass,two).windowEnd:0;
+  for(const row of watched.values()){if(!phaseCollecting(row)||row.intakePending)continue;const c=C.get(row.mint),record=SOURCE.get(row.mint);if(!record||!c)continue;const cfg=one.config.phases?.[row.phase]||one.config,pass=PASS_V2?.records.get(row.mint),two=RESEARCH_TWO?.config.phases?.[row.phase]||RESEARCH_TWO?.config;const lineEnd=pass&&two?require(DIR+'/research-two-runtime.js').lineClock(pass,two).windowEnd:0;
    TERMINAL_CHARTS.offer({mint:row.mint,pool:record.proof?.pool||c.p,anchor:record.acceptedAt,quote:record.proof?.openingMetrics?.quoteMint||c.q,hours:cfg.hours,lineEnd});}
  }
  TERMINAL_CHARTS.tick().catch(()=>{});
@@ -1199,7 +1204,7 @@ async function readCurveGraduation(v,options){
  else{let result;try{result=await rpc('getAccountInfo',[v.curve,{encoding:'base64',commitment:'confirmed',dataSlice:{offset:0,length:424},...(Number.isSafeInteger(v.slot)?{minContextSlot:v.slot}:{})}],{...options,cache:false,maxBytes:8192});}catch(e){if(e.code==='BUDGET_DEFERRED')throw e;throw Object.assign(Error('curve state not available yet'),{code:'TX_PENDING'});}if(Number.isSafeInteger(result?.context?.slot)&&result.context.slot<v.slot)throw Object.assign(Error('curve state slot pending'),{code:'TX_PENDING'});account=result?.value;slot=result?.context?.slot||slot;}
  const receipt=api.curveGraduation(account,{...v,encode58:typeof b58enc==='function'?b58enc:null,slot});if(!receipt.known)throw Object.assign(Error(receipt.reason),{code:'TX_PENDING'});const creator=receipt.graduated&&typeof b58dec==='function'&&typeof b58enc==='function'?require(DIR+'/holder-census.js').curveCreator(account,{mint:v.mint,decode58:b58dec,encode58:b58enc}):null;return {...receipt,method,...(creator?{creator,creatorAt:method==='ws-curve-account'?snapshot.at:receipt.at}:{})};
 }
-async function processManualPool(task){
+async function processManualPool(task){if(!manualPool.enabled)return {outcome:'manual-pool-disabled'};
  const stage=name=>{task.stage=name;task.progressAt=Date.now();};
  const call=(m,p,o)=>{stage(m);return PUBLIC_POOL_RPC.call(m,p,o);};
  const api=require(DIR+'/manual-pools.js'),options={priority:'pool-discovery',context:'ручные пулы',source:'pool-discovery',urgent:true,maxBytes:3*1024*1024};
@@ -1222,7 +1227,7 @@ async function processManualPool(task){
  return {outcome};
 }
 const MANUAL_AUDIT={checked:0,revoked:0,errors:0,busy:false,lastAt:0};const MANUAL_AUDITED=new Map();
-async function auditManualPools(){if(MANUAL_AUDIT.busy||!SOURCE)return;const now=Date.now();MANUAL_AUDIT.busy=true;try{for(let checked=0;checked<4;checked++){
+async function auditManualPools(){if(!manualPool.enabled||MANUAL_AUDIT.busy||!SOURCE)return;const now=Date.now();MANUAL_AUDIT.busy=true;try{for(let checked=0;checked<4;checked++){
  const row=[...SOURCE.records.values()].filter(r=>!(typeof twentyMinuteMode==='function'&&twentyMinuteMode())||require(DIR+'/early-window.js').active(r,now)).sort((a,b)=>(MANUAL_AUDITED.get(a.mint)||0)-(MANUAL_AUDITED.get(b.mint)||0)).find(r=>r.proof?.kind==='manual-pool-open-v1'&&Date.now()-r.acceptedAt<26*3600e3&&Date.now()-(MANUAL_AUDITED.get(r.mint)||0)>5*60e3);if(!row)return;
  const earlier=await require(DIR+'/side-pools.js').catalogue({mint:row.mint,pool:row.proof.pool,eventAt:row.eventAt});MANUAL_AUDIT.checked++;MANUAL_AUDITED.set(row.mint,Date.now());while(MANUAL_AUDITED.size>2000)MANUAL_AUDITED.delete(MANUAL_AUDITED.keys().next().value);MANUAL_AUDIT.lastAt=Date.now();
  if(earlier&&SOURCE.revokeManualPool(row.mint,'earlier-pool')){MANUAL_AUDIT.revoked++;C.delete(row.mint);RESEARCH_V2?.pruneRevoked(SOURCE.revokedManual);RESEARCH_TWO?.pruneRevoked(SOURCE.revokedManual);if(PASS_V2?.records.get(row.mint)?.phase==='before')PASS_V2.records.delete(row.mint);RESEARCH_BANKS?.removeRevoked(SOURCE.revokedManual);save();}
@@ -1277,8 +1282,9 @@ function chainWatch(){
       else{WS.on=false;WS.connected={dbc:false,ll:false,pc:false};WS.disconnects=(WS.disconnects||0)+1}
       setTimeout(()=>connect(channel),pre?10000:5000)};
   };
-  POOL_DISCOVERY=new (require(DIR+'/migration-fast.js').FastSignals)({process:processManualPool,maxQueue:64,workers:1,maxAgeMs:120000,onPending:n=>{if(!n)releaseManualReservation();},onError:(e,t)=>{if(t?.mint)SOURCE?.observe({mint:t.mint,phase:'before',origin:'manual-pool',reason:e.code||'RPC_ERROR'});err('manual pool '+(e.code||'RPC_ERROR'))}});
+  if(manualPool.enabled){POOL_DISCOVERY=new (require(DIR+'/migration-fast.js').FastSignals)({process:processManualPool,maxQueue:64,workers:1,maxAgeMs:120000,onPending:n=>{if(!n)releaseManualReservation();},onError:(e,t)=>{if(t?.mint)SOURCE?.observe({mint:t.mint,phase:'before',origin:'manual-pool',reason:e.code||'RPC_ERROR'});err('manual pool '+(e.code||'RPC_ERROR'))}});
   POOL_LOGS=new (require(DIR+'/pool-logs.js').PoolLogGroup)({WebSocket,definitions:require(DIR+'/manual-pools.js').definitions,onSignal:t=>t.migrationKind?offerFastMigration({...t,kind:t.migrationKind}):POOL_DISCOVERY.offer(t),onSlot:(slot,at)=>EVENT_CLOCK?.observe(slot,at)});POOL_LOGS.start();
+  }
   connect('migrations'); // TZ20: birth stream intentionally disabled; migration socket is never budget-paused.
 }
 
@@ -1388,7 +1394,7 @@ async function exportSource(now) {
   // Нет задним числом добавленных кандидатов из обычной ленты.
   // Предмиграционный адаптер пока не активен: не выдавать пустоту за готовность.
   AI_SNAP.source=summary;
-  await upload('source/status.json',{...summary,dailyPrevious:SOURCE.dailySummary?.(now-86400000)||null,phaseModel:'pool-after-with-before-alias',phaseAliases:{before:'pool'},poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,birthStreamEnabled:false,fastDiscovery:discoveryStatus(),daySnapshot:{day:dayWork.day||null,updated:dayWork.updated,count:dayWork.count,busy:dayWork.busy,error:dayWork.error},solCoverage:PROFILES?.stats.solCoverage||null,solMissingReasons:solReasons,cardUnits:{sol:'SOL',top10:'percent',b5:'transactions',s5:'transactions',createdAt:'unix-ms'},mode:'verified-pre-post',preConnected:preFlowing(),preLive:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:POOL_LOGS?.summary().available===true&&!SOURCE_ERR,pool:POOL_LOGS?.summary().available===true&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
+  await upload('source/status.json',{...summary,manualPool:{...manualPool,...MANUAL_FREEZE},dailyPrevious:SOURCE.dailySummary?.(now-86400000)||null,phaseModel:'pool-after-with-before-alias',phaseAliases:{before:'pool'},poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,birthStreamEnabled:false,fastDiscovery:discoveryStatus(),daySnapshot:{day:dayWork.day||null,updated:dayWork.updated,count:dayWork.count,busy:dayWork.busy,error:dayWork.error},solCoverage:PROFILES?.stats.solCoverage||null,solMissingReasons:solReasons,cardUnits:{sol:'SOL',top10:'percent',b5:'transactions',s5:'transactions',createdAt:'unix-ms'},mode:'verified-pre-post',preConnected:preFlowing(),preLive:!!PRE&&WS.preOn&&WS.preSub,pre:PRE?.summary()||null,dailyAvailability:{before:POOL_LOGS?.summary().available===true&&!SOURCE_ERR,pool:POOL_LOGS?.summary().available===true&&!SOURCE_ERR,after:!!WS.on&&!!WS.connected.dbc&&!!WS.connected.ll&&!SOURCE_ERR}});
   await upload('source/live.json',{updated:now,count:summary.today,coins:live});
   if(!dayWork.busy&&(dayWork.day!==d||now-SOURCE_DAY_PUBLISHED_AT>=5*60e3)){dayWork.busy=true;dayWork.day=d;dayWork.startedAt=Date.now();
     (async()=>{const today=await projectCards(todayRows),active=[];for(const c of Array.from(C.values())){if(SOURCE.has(c.a))active.push(card(c.a,c));if(++projected%4===0)await new Promise(resolve=>setImmediate(resolve));}
@@ -1447,7 +1453,7 @@ async function exportResearchV2(now) {
   // A settings change does NOT abandon previously admitted cohorts.
   // Earlier raw cohorts remain on disk; current labels must not be overwritten by old criteria.
   if(typeof RESEARCH_EXPORTS!=='undefined')RESEARCH_EXPORTS.stage='r1-bank-relabel';RESEARCH_BANKS?.removeRevoked(SOURCE.revokedManual);RESEARCH_BANKS?.removeRevoked(activeMigrationRevocations(),'after');if(RESEARCH_BANKS?.relabelOneAsync)await RESEARCH_BANKS.relabelOneAsync(runtime.config);else RESEARCH_BANKS?.relabelOne(runtime.config);
-  if(typeof RESEARCH_EXPORTS!=='undefined')RESEARCH_EXPORTS.stage='r1-bank-upsert';if(RESEARCH_BANKS?.upsertAsync)await RESEARCH_BANKS.upsertAsync(runtime.select({limit:20000}));else RESEARCH_BANKS?.upsert(runtime.select({limit:20000}));
+  if(typeof RESEARCH_EXPORTS!=='undefined')RESEARCH_EXPORTS.stage='r1-bank-upsert';if(RESEARCH_BANKS?.upsertAsync)await RESEARCH_BANKS.upsertAsync(runtime.select({phase:manualPool.enabled?null:'after',limit:20000}));else RESEARCH_BANKS?.upsert(runtime.select({phase:manualPool.enabled?null:'after',limit:20000}));
 
 }
 async function exportPathsV2(now){
@@ -1476,7 +1482,7 @@ async function exportPathsV2(now){
   }
   const result=RESEARCH_TWO.update({passes:PASS_V2,source:SOURCE,coins:researchCoins(),now});
   for(const item of OLD_RESEARCH_TWO){
-    try{item.runtime.update({passes:PASS_V2,source:SOURCE,coins:researchCoins(),now});if(RESEARCH_BANKS?.upsertAsync)await RESEARCH_BANKS.upsertAsync(item.runtime.select({limit:20000}));else RESEARCH_BANKS?.upsert(item.runtime.select({limit:20000}))}
+    try{item.runtime.update({passes:PASS_V2,source:SOURCE,coins:researchCoins(),now});if(RESEARCH_BANKS?.upsertAsync)await RESEARCH_BANKS.upsertAsync(item.runtime.select({phase:manualPool.enabled?null:'after',limit:20000}));else RESEARCH_BANKS?.upsert(item.runtime.select({phase:manualPool.enabled?null:'after',limit:20000}))}
     catch(e){err('research old 2 '+item.epoch.hash+' '+e.message)}
   }
   TWO_ERR='';
@@ -1536,7 +1542,7 @@ async function exportPathsV2(now){
 // Critical path: durable first-level matches must not wait for the 120s
 // export cycle, especially when the decision timer is only one minute.
 let FAST_PASS_PUBLISH_AT=0,FAST_PASS_STATUS_AT=0,FAST_PASS_CONFIG_AT=0,FAST_PASS_ATTEMPTS=0,FAST_PASS_LAST_ADDED=0,FAST_PASS_QUEUED=0;let FAST_DECISION_BUSY=false;
-async function liveDecisionTick(now=Date.now()){if(FAST_DECISION_BUSY||!SOURCE||!PASS_V2||PASS_CFG_ERR||!twentyMinuteMode())return;FAST_DECISION_BUSY=true;try{await captureFeatureSnapshots(now);const result=PASS_V2.update({source:SOURCE,coins:researchCoins(),now:Date.now()});FAST_PASS_ATTEMPTS++;FAST_PASS_LAST_ADDED=result.added;FAST_PASS_QUEUED+=result.added;if(typeof RESEARCH_V2!=='undefined')RESEARCH_V2?.sealDecisionFeatures({coins:researchCoins(),passes:PASS_V2,now:Date.now()});}catch(e){err('live decision '+e.message)}finally{FAST_DECISION_BUSY=false;}}
+async function liveDecisionTick(now=Date.now()){if(PASS_V2)PASS_V2.readOnlyPhase=manualPool.enabled?null:'before';if(FAST_DECISION_BUSY||!SOURCE||!PASS_V2||PASS_CFG_ERR||!twentyMinuteMode())return;FAST_DECISION_BUSY=true;try{await captureFeatureSnapshots(now);const result=PASS_V2.update({source:SOURCE,coins:researchCoins(),now:Date.now()});FAST_PASS_ATTEMPTS++;FAST_PASS_LAST_ADDED=result.added;FAST_PASS_QUEUED+=result.added;if(typeof RESEARCH_V2!=='undefined')RESEARCH_V2?.sealDecisionFeatures({coins:researchCoins(),passes:PASS_V2,now:Date.now()});}catch(e){err('live decision '+e.message)}finally{FAST_DECISION_BUSY=false;}}
 async function fastPassedLoop(){
   for(;;){
     const now=Date.now();
@@ -1590,8 +1596,15 @@ async function seedCompletedDays(now){
   };
   for(const day of days)await require(DIR+'/seed-completed.js').seedObservationDay({store:COMPLETED,day,hot:C,download});
 }
+async function freezeManualCandidates(){
+ if(manualPool.enabled)return;const frozen=[...C.values()].filter(c=>SOURCE?.get(c.a)?.phase==='before');if(!frozen.length)return;
+ const api=require(DIR+'/stream-json.js'),file=DIR+'/manual-pool-frozen-'+VERSION+'-'+Date.now()+'.json',name='archive/manual-pool/'+file.split('/').pop();
+ await api.saveRowsAsync(file,frozen);require(DIR+'/durable-json.js').syncDirectory(DIR);
+ await upload(name,api.rowStream(function*(){yield* api.readRows(file)}));
+ for(const c of frozen)if(C.get(c.a)===c)C.delete(c.a);MANUAL_FREEZE.archived+=frozen.length;MANUAL_FREEZE.path=name;await save();
+}
 function collectionPins(now){return typeof COMPLETED!=='undefined'&&COMPLETED?retentionPins(now):new Map()}
-function collectionActive(c,now,pins){return typeof COMPLETED==='undefined'||!COMPLETED||!require(DIR+'/completed-coins.js').retirementDue(c,{now,pins})}
+function collectionActive(c,now,pins){if(!phaseCollecting(SOURCE?.get(c.a)))return false;return typeof COMPLETED==='undefined'||!COMPLETED||!require(DIR+'/completed-coins.js').retirementDue(c,{now,pins})}
 function retirementBlocked(c){return !!(c.chTry||c.kTry||c.pTry||c.trTry||UPQ.some(([name])=>(name.includes('/'+c.a+'-')||name.includes('/'+c.a+'/'))))}
 async function stageCompleted(now){
   if(!COMPLETED)return;const pins=retentionPins(now),{retirementDue}=require(DIR+'/completed-coins.js');RETENTION.protectedResearch=pins.size;RETENTION.pendingRaw=0;RETENTION.pendingWork=0;
@@ -1614,7 +1627,7 @@ let COLD_DEDUP_BUSY=false;
 async function deduplicateClosedArchiveRows(){if(COLD_DEDUP_BUSY||!COMPLETED||!SOURCE)return;COLD_DEDUP_BUSY=true;try{
  const now=Date.now(),pins=retentionPins(now);let checked=0,removed=0;
  for(const c of C.values()){
-  if(now-c.t<24*3600e3+20*60e3||pins.get(c.a)>now||SOURCE.get(c.a)?.phase!=='before'||c.chTry||c.kTry||c.pTry||c.trTry||now-(c.dsTryAt||0)<35000)continue;
+  if((SOURCE.get(c.a)?.phase==='before'?now-c.t<24*3600e3+20*60e3:!require(DIR+'/completed-coins.js').retirementDue(c,{now,pins}))||pins.get(c.a)>now||c.chTry||c.kTry||c.pTry||c.trTry||now-(c.dsTryAt||0)<35000)continue;
   if(COMPLETED.coversHot(c)){C.delete(c.a);removed++;}if(++checked%16===0)await new Promise(r=>setImmediate(r));
  }
  RETENTION.closedArchiveDeduplicated=(RETENTION.closedArchiveDeduplicated||0)+removed;if(removed)save();
@@ -1653,6 +1666,7 @@ async function publicFeedsCycle(){
  }finally{PUBLIC_FEEDS.busy=false}
 }
 async function researchExportsCycle(){
+ for(const rt of [RESEARCH_V2,RESEARCH_TWO,PASS_V2,RESEARCH_BANKS,...OLD_RESEARCH_ONE.map(x=>x.runtime),...OLD_RESEARCH_TWO.map(x=>x.runtime)])if(rt)rt.readOnlyPhase=manualPool.enabled?null:'before';
  if(RESEARCH_EXPORTS.busy)return;RESEARCH_EXPORTS.busy=true;const errors=[];
  try{
   if(RESEARCH_V2&&SOURCE)try{await exportResearchV2(Date.now());RESEARCH_EXPORTS.oneAt=Date.now();RESEARCH_V2_ERR=''}catch(e){RESEARCH_V2_ERR=e.message;errors.push('one');err('research-v2 export '+e.message)}
@@ -1667,7 +1681,7 @@ async function exportStatus(){if(STATUS_BUSY)return;STATUS_BUSY=true;try{const n
   if(RESEARCH_V2&&!globalThis.p45CoverageBusy&&now-(globalThis.p45CoverageAt||0)>60000){globalThis.p45CoverageBusy=true;const rows=RESEARCH_V2.view(),api=require(DIR+'/feature-coverage.js');api.coverage(rows,{settings:RESEARCH_V2.config,cohortStart:RESEARCH_V2.cohortStart,now,probe:FEATURE_TRIAL?.summary(RESEARCH_V2.config.decisionMinutes||12),progress:p=>globalThis.p45CoverageProgress={...p,updated:Date.now()},unavailableReasons:SMART_WALLETS?.snapshot?.wallets?.length?{}:{smartBuyers:'no-qualified-wallets-in-local-history',smartShare:'no-qualified-wallets-in-local-history'},snapshot:(r,N)=>{const c=require(DIR+'/feature-snapshots.js').forPool(C.get(r.mint)||COMPLETED?.readCoin(r.mint),r.p||r.pair);return c?api.snapshotCoverage(c,r.acceptedAt,N,r.p||r.pair,c=>ACTIVE_HISTORY?ACTIVE_HISTORY.featureView(c):c):null;}}).then(result=>{result.moduleVerification=api.moduleVerification(PASS_V2?[...PASS_V2.records.values()]:[],rows,{terminalFor:pass=>TERMINAL_CHARTS?.statusFor({mint:pass.mint,acceptedAt:pass.acceptedAt,proof:{pool:pass.p}},pass.p),r2EvidenceFor:mint=>RESEARCH_TWO?.rows.find(r=>r.mint===mint)?.terminalEvidenceId||null});globalThis.p45Coverage=result;globalThis.p45CoverageAt=Date.now()}).catch(e=>err('feature coverage epoch '+e.message)).finally(()=>globalThis.p45CoverageBusy=false);}
   if(!globalThis.stateShapeBusy&&now-(RETENTION.fieldBytes?.at||0)>15*60e3){globalThis.stateShapeBusy=true;require(DIR+'/runtime-health.js').stateFieldBytes(C.values()).then(x=>RETENTION.fieldBytes=x).catch(e=>RETENTION.fieldBytesError=e.name||'Error').finally(()=>globalThis.stateShapeBusy=false);}
   const memory=HEALTH?.summary(require(DIR+'/runtime-health.js').structureCounts({C,wsSeen,RPC_CACHE,gtQ,UPQ,PRE,SOURCE,RESEARCH_V2,RESEARCH_TWO,PASS_V2,OLD_RESEARCH_ONE,OLD_RESEARCH_TWO,FILTER_AUDIT,crLog,now}));
-  await upload('status.json',{updated:now,featureCoverage:globalThis.p45Coverage||{pending:true,progress:globalThis.p45CoverageProgress||null},featureReceiptRepair:RESEARCH_V2?.featureRepair||null,memoryGC:MEMORY_GC,terminalCandles:TERMINAL_CHARTS?.summary()||null,featureProbe:FEATURE_TRIAL?.summary(RESEARCH_V2?.config?.decisionMinutes||12)||null,earlyWindow:{method:(typeof twentyMinuteMode==='function'&&twentyMinuteMode())?'gt-ohlcv-20m-v1':'legacy',activeMinutes:20,legacyR1TradeTracking:!(typeof twentyMinuteMode==='function'&&twentyMinuteMode()),gtQuotas:GT_TASKS?.summary()||null,freeRpcQuotas:FREE_TASKS?.summary()||null,...EARLY_WINDOW_STATS},buyers10Collection:{...BUYER_REPAIR,selectedMinutes:RESEARCH_V2?.config?{before:(RESEARCH_V2.config.phases?.before||RESEARCH_V2.config).decisionMinutes,after:(RESEARCH_V2.config.phases?.after||RESEARCH_V2.config).decisionMinutes}:null},migrationGraduation:{...SOURCE?.graduationSummary(now),audit:{...GRADUATION_AUDIT},rpc:GRADUATION_RPC?.stats||null},researchStorage:RESEARCH_BANKS?.summary(),rpcNetwork:RPC_NETWORK,publicProgramScans:PUBLIC_SCAN_RPC?.stats,poolProofReads:PUBLIC_POOL_RPC?.stats,poolBalanceReads:POOL_BALANCES?.summary(),caches:{migrationCurves:globalThis.migrationCurveSnapshots?.size||0,rpc:RPC_CACHE.summary(),recovery:OBS_RECOVERY?.cache.summary()||null,recoveryRpc:RECOVERY_RPC?.cache.summary()||null},featureSnapshots,poolTradeObservations:{...POOL_TRADE_STATS,publicRPC:PUBLIC_POOL_TRADES?.summary()||null},holderCensus:HOLDER_CENSUS?.stats||null,liquidityProofs:LP_PROOFS?.stats||null,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,openingLiquidity:QUOTE_VALUATION?.summary()||null,migrationCatchup:MIGRATION_CATCHUP?{...MIGRATION_CATCHUP.summary(),admissions:SOURCE?.catchupSummary?.(now)||null}:null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,observationRecovery:OBS_RECOVERY?{...OBS_RECOVERY.summary(),rpc:RECOVERY_RPC?.summary()||null,r1Unknown:RESEARCH_V2?.summary().counts.unknown??null}:null,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:discoveryStatus(),poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,identityPublic:{...FREE_IDENTITY_STATS},openingProofs:OPENING_PROOFS?{...OPENING_PROOFS.stats,active:OPENING_PROOFS.job?{mint:OPENING_PROOFS.job.mint,pages:OPENING_PROOFS.job.pages,blocks:OPENING_PROOFS.job.blocks.length}:null}:null,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
+  await upload('status.json',{updated:now,manualPool:{...manualPool,...MANUAL_FREEZE},stabilityOnly:!manualPool.enabled,featureCoverage:globalThis.p45Coverage||{pending:true,progress:globalThis.p45CoverageProgress||null},featureReceiptRepair:RESEARCH_V2?.featureRepair||null,memoryGC:MEMORY_GC,terminalCandles:TERMINAL_CHARTS?.summary()||null,featureProbe:FEATURE_TRIAL?.summary(RESEARCH_V2?.config?.decisionMinutes||12)||null,earlyWindow:{method:(typeof twentyMinuteMode==='function'&&twentyMinuteMode())?'gt-ohlcv-20m-v1':'legacy',activeMinutes:20,legacyR1TradeTracking:!(typeof twentyMinuteMode==='function'&&twentyMinuteMode()),gtQuotas:GT_TASKS?.summary()||null,freeRpcQuotas:FREE_TASKS?.summary()||null,...EARLY_WINDOW_STATS},buyers10Collection:{...BUYER_REPAIR,selectedMinutes:RESEARCH_V2?.config?{before:(RESEARCH_V2.config.phases?.before||RESEARCH_V2.config).decisionMinutes,after:(RESEARCH_V2.config.phases?.after||RESEARCH_V2.config).decisionMinutes}:null},migrationGraduation:{...SOURCE?.graduationSummary(now),audit:{...GRADUATION_AUDIT},rpc:GRADUATION_RPC?.stats||null},researchStorage:RESEARCH_BANKS?.summary(),rpcNetwork:RPC_NETWORK,publicProgramScans:PUBLIC_SCAN_RPC?.stats,poolProofReads:PUBLIC_POOL_RPC?.stats,poolBalanceReads:POOL_BALANCES?.summary(),caches:{migrationCurves:globalThis.migrationCurveSnapshots?.size||0,rpc:RPC_CACHE.summary(),recovery:OBS_RECOVERY?.cache.summary()||null,recoveryRpc:RECOVERY_RPC?.cache.summary()||null},featureSnapshots,poolTradeObservations:{...POOL_TRADE_STATS,publicRPC:PUBLIC_POOL_TRADES?.summary()||null},holderCensus:HOLDER_CENSUS?.stats||null,liquidityProofs:LP_PROOFS?.stats||null,publicFeeds:{...PUBLIC_FEEDS},researchExports:{...RESEARCH_EXPORTS},memory,retention:{...RETENTION,legacyRawPending:UPQ.filter(([name])=>name.startsWith('raw/')).length,overStateTarget:RETENTION.stateBytes>=RETENTION.stateTargetBytes,archive:COMPLETED?.summary()||null,activeHistory:ACTIVE_HISTORY?.summary()||null},packedObservations:require(DIR+'/packed-observations.js').packedStats(C),proofFast:{...PROOF_FAST,cachedBlocks:MIG_BLOCKS.size},eventClock:EVENT_CLOCK?.summary()||null,openingLiquidity:QUOTE_VALUATION?.summary()||null,migrationCatchup:MIGRATION_CATCHUP?{...MIGRATION_CATCHUP.summary(),admissions:SOURCE?.catchupSummary?.(now)||null}:null,migrationQueue:migrationQueueSummary(now),observationContract:OBS_CONTRACT,observationRecovery:OBS_RECOVERY?{...OBS_RECOVERY.summary(),rpc:RECOVERY_RPC?.summary()||null,r1Unknown:RESEARCH_V2?.summary().counts.unknown??null}:null,version:VERSION,poolTransition:{...POOL_TRANSITION},fastDiscovery:discoveryStatus(),poolDiscovery:POOL_DISCOVERY?{...POOL_DISCOVERY.summary(),rejectedSidePool:(POOL_DISCOVERY.summary().outcomes['rejected-side-pool']||0)+(SOURCE?.revokedManual.size||0),audit:{...MANUAL_AUDIT},manualPoolStreamReady:POOL_LOGS?.summary().available===true}:null,poolTransport:POOL_LOGS?.summary()||null,coinProfiles:PROFILES?.stats||null,intelligence:{...INTEL_STATS,identityPublic:{...FREE_IDENTITY_STATS},openingProofs:OPENING_PROOFS?{...OPENING_PROOFS.stats,active:OPENING_PROOFS.job?{mint:OPENING_PROOFS.job.mint,pages:OPENING_PROOFS.job.pages,blocks:OPENING_PROOFS.job.blocks.length}:null}:null,blocksCached:INTEL_BLOCKS.size,smartWallets:SMART_WALLETS?.snapshot?.wallets?.length??null,smartRegistryAt:SMART_WALLETS?.snapshot?.createdAt??null,smartRegistryReady:SMART_WALLETS?.snapshot?.ready===true,smartRegistrySupport:SMART_WALLETS?.snapshot?.support??null},resources:{stage:'canonical-observations-v2',helius:RESOURCE?.summary(),gcsGovernorActive:false},source:{active:!!SOURCE,error:SOURCE_ERR,configError:SOURCE_CFG_ERR,summary:SOURCE?.summary(now)||null},
     researchV2:{active:!!RESEARCH_V2,error:RESEARCH_V2_ERR,configError:RESEARCH_CONFIG_ERR,summary:RESEARCH_V2?.summary()||null},
     passedV2:{active:!!PASS_V2,error:PASS_ERR,configError:PASS_CFG_ERR,
       fast:{attempts:FAST_PASS_ATTEMPTS,lastAdded:FAST_PASS_LAST_ADDED,publishedAt:FAST_PASS_PUBLISH_AT},
@@ -1694,10 +1708,10 @@ let diagGen=null;async function diagCheck(){try{const tk=await token();const r=a
   await fetch(`https://storage.googleapis.com/upload/storage/v1/b/${BUCKET}/o?uploadType=media&name=diag%2Fout.txt`,{method:'POST',headers:{Authorization:'Bearer '+(await token()),'Content-Type':'text/plain'},body})}catch(e){err('diag '+e.message)}}
 
 /* ---------- старт ---------- */
-function offerManualCatalogue(response){for(const p of response?.data||[]){const a=p.attributes||{},pool=a.address||p.id?.replace(/^solana_/,''),createdAt=Date.parse(a.pool_created_at);if(pool&&Number.isFinite(createdAt))MIGRATION_CATCHUP?.offerPool({pool,createdAt});}}
+function offerManualCatalogue(response){if(!manualPool.enabled)return;for(const p of response?.data||[]){const a=p.attributes||{},pool=a.address||p.id?.replace(/^solana_/,''),createdAt=Date.parse(a.pool_created_at);if(pool&&Number.isFinite(createdAt))MIGRATION_CATCHUP?.offerPool({pool,createdAt});}}
 function startDiscoveryBootstrap(){
   // Discovery backfill cannot delay live migration proofs or code-version monitoring.
-  (async()=>{for(const pg of [1,2,3])try{const response=await gt(`/new_pools?page=${pg}&include=base_token,quote_token,dex`,0,'boot'+pg);offerManualCatalogue(response);await addFromGT(response)}catch(e){err('boot '+e.message)}for(const pg of [1,2,3])try{offerManualCatalogue(await gt(`/trending_pools?page=${pg}&duration=6h`,3,'catchup-catalogue'+pg))}catch{err('manual replay catalogue unavailable')}})().catch(e=>err('boot '+e.message));
+  (async()=>{for(const pg of [1,2,3])try{const response=await gt(`/new_pools?page=${pg}&include=base_token,quote_token,dex`,0,'boot'+pg);offerManualCatalogue(response);await addFromGT(response)}catch(e){err('boot '+e.message)}if(manualPool.enabled)for(const pg of [1,2,3])try{offerManualCatalogue(await gt(`/trending_pools?page=${pg}&duration=6h`,3,'catchup-catalogue'+pg))}catch{err('manual replay catalogue unavailable')}})().catch(e=>err('boot '+e.message));
 }
 const STARTED=Date.now();
 (async()=>{fs.mkdirSync(DIR,{recursive:true});await ensureModules();
@@ -1711,12 +1725,14 @@ const STARTED=Date.now();
   setInterval(relieveHeap,10000).unref();
   load();relieveHeap();for(const c of C.values())if(c.earlyGTAttempted&&c.tr)c.trDone=1;ACTIVE_HISTORY=new (require(DIR+'/active-history.js').ActiveHistory)(DIR);await ACTIVE_HISTORY.restore(C,getObj);if(fs.existsSync(DIR+'/state.json'))RETENTION.stateBytes=fs.statSync(DIR+'/state.json').size;HEALTH.capture('load:complete');log('старт, версия',VERSION);
   try{await initSource();await reloadSourceAgeConfig()}catch(e){SOURCE_ERR=e.message;err('главный источник не запустился: '+e.message)}relieveHeap();
+  await freezeManualCandidates();relieveHeap();
   samplePoolBalances();setInterval(()=>samplePoolBalances(),10000);
   try{await initResearchV2()}catch(e){RESEARCH_V2_ERR=e.message;err('исследование v2 не запустилось: '+e.message)}relieveHeap();
   try{await initPathsV2()}catch(e){PASS_ERR=e.message;TWO_ERR=e.message;err('серверные пути не запустились: '+e.message)}relieveHeap();
+  for(const rt of [RESEARCH_V2,RESEARCH_TWO,PASS_V2,RESEARCH_BANKS])if(rt)rt.readOnlyPhase=manualPool.enabled?null:'before';
   chainWatch();
   const knownMigrationSignatures=new Set(SOURCE.latest(4000).filter(r=>r.phase==='after').map(r=>r.proof?.signature).filter(Boolean));
-  MIGRATION_CATCHUP=new (require(DIR+'/migration-catchup.js').MigrationCatchup)({dir:DIR,addresses:[{kind:'pump',address:require(DIR+'/migration-fast.js').PUMP_WITHDRAW_AUTH},{kind:'dbc',address:DBC_AUTH},{kind:'ll',address:LL_AUTH}],decode58:b58dec,knownSignature:sig=>knownMigrationSignatures.has(sig),process:processFastMigration,processManual:processManualPool,seeds:[...require(DIR+'/manual-recovery-request.js').pools,...(require(DIR+'/manual-recovery-request.js').migrations||[])],rpc:async(m,p)=>{const opt={priority:'background',context:'догон миграций',source:'migration-catchup',cache:false,maxBytes:3*1024*1024};try{return await freeFastRPC(m,p,opt)}catch{return rpc(m,p,opt)}}});
+  MIGRATION_CATCHUP=new (require(DIR+'/migration-catchup.js').MigrationCatchup)({dir:DIR,addresses:[{kind:'pump',address:require(DIR+'/migration-fast.js').PUMP_WITHDRAW_AUTH},{kind:'dbc',address:DBC_AUTH},{kind:'ll',address:LL_AUTH}],decode58:b58dec,knownSignature:sig=>knownMigrationSignatures.has(sig),process:processFastMigration,processManual:manualPool.enabled?processManualPool:null,seeds:[...(manualPool.enabled?require(DIR+'/manual-recovery-request.js').pools:[]),...(require(DIR+'/manual-recovery-request.js').migrations||[])],rpc:async(m,p)=>{const opt={priority:'background',context:'догон миграций',source:'migration-catchup',cache:false,maxBytes:3*1024*1024};try{return await freeFastRPC(m,p,opt)}catch{return rpc(m,p,opt)}}});
   MIGRATION_CATCHUP.tick();setInterval(()=>MIGRATION_CATCHUP.tick(),2000);setInterval(()=>{try{MIGRATION_CATCHUP.heartbeat()}catch(e){err('migration replay heartbeat failed')}},30000);
 
   captureFeatureSnapshots().catch(e=>err('feature snapshots '+e.message));setInterval(()=>{if(!(typeof twentyMinuteMode==='function'&&twentyMinuteMode()))repairBuyerSnapshots()},10000);setInterval(()=>captureFeatureSnapshots().catch(e=>err('feature snapshots '+e.message)),1000);

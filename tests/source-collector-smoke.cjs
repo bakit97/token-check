@@ -29,14 +29,14 @@ test('collector exports separate source status, live and day data',()=>{
 
 
 test('slow discovery bootstrap does not block live processing after startup',async()=>{
- const vm=require('node:vm');let release,requested=0,added=0,catalogued=0;const pending=new Promise(r=>release=r),ctx={offerManualCatalogue:()=>{catalogued++},gt:()=>{requested++;return pending},addFromGT:async()=>{added++},err:()=>{}};
+ const vm=require('node:vm');let release,requested=0,added=0,catalogued=0;const pending=new Promise(r=>release=r),ctx={manualPool:{enabled:true},MANUAL_FREEZE:{},phaseCollecting:()=>true,OLD_RESEARCH_ONE:[],OLD_RESEARCH_TWO:[],offerManualCatalogue:()=>{catalogued++},gt:()=>{requested++;return pending},addFromGT:async()=>{added++},err:()=>{}};
  vm.createContext(ctx);vm.runInContext(body.slice(body.indexOf('function startDiscoveryBootstrap()'),body.indexOf('const STARTED='))+';this.start=startDiscoveryBootstrap;',ctx);
  assert.equal(ctx.start(),undefined);assert.equal(requested,1);assert.equal(added,0);
  release({});await new Promise(r=>setImmediate(r));assert.equal(added,3);assert.equal(catalogued,6);assert.equal(requested,6);
 });
 
 test('canonical collector retains the shared authenticated configuration loader',async()=>{
- const vm=require('node:vm'),requests=[],ctx={networkDeadline:p=>p,BUCKET:'test',token:async()=>'<mock>',AbortSignal,fetch:async(url,options)=>{requests.push({url,options});return {status:200,ok:true,json:async()=>({enabled:true})}}};vm.createContext(ctx);
+ const vm=require('node:vm'),requests=[],ctx={manualPool:{enabled:true},MANUAL_FREEZE:{},phaseCollecting:()=>true,OLD_RESEARCH_ONE:[],OLD_RESEARCH_TWO:[],networkDeadline:p=>p,BUCKET:'test',token:async()=>'<mock>',AbortSignal,fetch:async(url,options)=>{requests.push({url,options});return {status:200,ok:true,json:async()=>({enabled:true})}}};vm.createContext(ctx);
  vm.runInContext(body.slice(body.indexOf('async function getObj('),body.indexOf('async function upload('))+';this.read=getObj;',ctx);
  assert.equal((await ctx.read('config/pass-filters.json')).enabled,true);assert.match(requests[0].url,/config%2Fpass-filters.json/);assert.ok(requests[0].options.signal);
  ctx.fetch=async()=>({status:404,arrayBuffer:async()=>new ArrayBuffer(0)});assert.equal(await ctx.read('config/missing.json'),null);

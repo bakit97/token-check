@@ -201,7 +201,7 @@ class ResearchTwoRuntime {
     this.relabel();
     let added=0,attempted=0,considered=0;
     const pending={},newRows=[];
-    for(const pass of passes.records.values()){
+    for(const pass of passes.records.values()){if(pass?.phase===this.readOnlyPhase)continue;
       if(!pass||pass.firstSeenAt<this.cohortStart||pass.firstSeenAt>=this.cohortEnd||this.processed.has(pass.mint)||now-pass.zeroAt>FRESH||
          now<pass.zeroAt)continue;
       const cfg=this.config.phases?.[pass.phase]||this.config,{verdictAt,lineAt,windowEnd}=lineClock(pass,cfg);
@@ -276,7 +276,7 @@ class ResearchTwoRuntime {
   relabel(){
     const sig=JSON.stringify(this.config);if(this.labelSig===sig)return;
     let changed=false;
-    this.rows=this.rows.map(row=>{const next=relabelStrength(row,this.config.phases?.[row.phase]||this.config);if(next&&JSON.stringify(next)!==JSON.stringify(row)){changed=true;return next;}return row;});
+    this.rows=this.rows.map(row=>{if(row.phase===this.readOnlyPhase)return row;const next=relabelStrength(row,this.config.phases?.[row.phase]||this.config);if(next&&JSON.stringify(next)!==JSON.stringify(row)){changed=true;return next;}return row;});
     if(changed)this._compact(Date.now());this.labelSig=sig;
   }
   summary(){

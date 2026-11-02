@@ -6,7 +6,7 @@ test('TZ20 disables birth socket while DBC, LaunchLab and migration-authority lo
  class Socket{constructor(url){this.url=url;sockets.push(this);this.sent=[]}send(s){this.sent.push(JSON.parse(s))}close(){this.closed=true;this.closeCalls=(this.closeCalls||0)+1;this.onerror?.();this.onclose?.()}}
  let preAllowed=true;
  const WS={preOn:false,msgs:{},cand:{},bytes:0,err:0,preGapMs:0,prePausedAt:0,preBudgetPauses:0};
- const ctx={require,DIR:path.join(__dirname,'../server'),FAST_DISCOVERY:null,processFastMigration:async()=>{},processManualPool:async()=>{},POOL_DISCOVERY:null,POOL_LOGS:null,offerFastMigration:t=>offered.push(t),EVENT_CLOCK:null,WS,WebSocket:Socket,heliusKey:async()=>'<mock>',RESOURCE:{streamAllowed:()=>preAllowed,stream:(n,source)=>{metered.push(source);return false}},PRE:{onLog:()=>{}},
+ const ctx={manualPool:{enabled:true},MANUAL_FREEZE:{},phaseCollecting:()=>true,OLD_RESEARCH_ONE:[],OLD_RESEARCH_TWO:[],require,DIR:path.join(__dirname,'../server'),FAST_DISCOVERY:null,processFastMigration:async()=>{},processManualPool:async()=>{},POOL_DISCOVERY:null,POOL_LOGS:null,offerFastMigration:t=>offered.push(t),EVENT_CLOCK:null,WS,WebSocket:Socket,heliusKey:async()=>'<mock>',RESOURCE:{streamAllowed:()=>preAllowed,stream:(n,source)=>{metered.push(source);return false}},PRE:{onLog:()=>{}},
   PUMP_MINT_AUTH:'mint-auth',PUMP:'pump-program',DBC:'dbc-program',LAUNCH:'ll-program',Buffer,Date,JSON,err:()=>{},b64:x=>x,wsCandidate:(...x)=>received.push(x),
   setTimeout:(f,ms)=>{f.delay=ms;timers.push(f);return f},clearTimeout:()=>{},setInterval:f=>{timers.push(f);return f},clearInterval:()=>{}};
  vm.createContext(ctx);vm.runInContext(code.slice(code.indexOf('function chainWatch()'),code.indexOf('/* ---------- 6.'))+'\nchainWatch();',ctx);
