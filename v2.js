@@ -499,12 +499,14 @@ function ruleLabel(f){
   const one=function(r){return (labels[r.key]||r.key)+' '+r.op+' '+fmt(r.value)};
   return [one(f)].concat((f.conditions||[]).map(one)).join(' · и ');
 }
-var MINE_STREAM='before',MOD_DRAFT=null,MOD_DIRTY=false,PICK_LEVEL='1';
+var MINE_STREAM='before',MOD_DRAFT=null,MOD_DIRTY=false,PICK_LEVEL='1',MOD_PENDING=null;
+function cfgModSig(c){return JSON.stringify(((c&&c.modules)||[]).map(function(m){return draftModuleKey(m)+':'+(m.enabled!==false)+':'+(!!m.toR1)}).sort())+JSON.stringify((c&&c.r1)||{})}
 var TAGK={buyers10:'пок.10м',quoteSol:'SOL',top10:'топ-10%',top1:'топ-1%',buyers:'пок.5м',trades:'сделки',volume:'объём',liq:'ликв.',mc:'MC',buySellRatio:'пок/прод',buys:'покупки',sells:'продажи'};
 function ruleTags(f){return (f.conds||[f].concat(f.conditions||[])).map(function(r){if(r.key==='safeContract')return '<span class="tag">контракт ✓</span>';
   return '<span class="tag">'+esc(TAGK[r.key]||r.key)+' '+(r.op==='>='?'≥':'≤')+' '+esc(fmt(r.value))+'</span>'}).join('')}
 function serverCfg(){return serverPassActive&&passMeta&&passMeta.serverConfig||null}
-function draft(){if(!MOD_DIRTY||!MOD_DRAFT){var c=serverCfg();MOD_DRAFT=c?JSON.parse(JSON.stringify({schema:1,enabled:c.enabled,activatedAt:c.activatedAt||0,decisionMinutes:c.decisionMinutes,filters:c.filters||[],modules:c.modules||[],passMode:c.passMode||{before:'1',after:'1'},r1:{before:!!(c.r1&&c.r1.before),after:!!(c.r1&&c.r1.after)}})):null}return MOD_DRAFT}
+function draft(){if(!MOD_DIRTY&&MOD_PENDING){var sc=serverCfg();if(sc&&cfgModSig(sc)===cfgModSig(MOD_PENDING.cfg)||now()-MOD_PENDING.at>15*60000)MOD_PENDING=null;else{MOD_DRAFT=MOD_PENDING.cfg;return MOD_DRAFT}}
+ if(!MOD_DIRTY||!MOD_DRAFT){var c=serverCfg();MOD_DRAFT=c?JSON.parse(JSON.stringify({schema:1,enabled:c.enabled,activatedAt:c.activatedAt||0,decisionMinutes:c.decisionMinutes,filters:c.filters||[],modules:c.modules||[],passMode:c.passMode||{before:'1',after:'1'},r1:{before:!!(c.r1&&c.r1.before),after:!!(c.r1&&c.r1.after)}})):null}return MOD_DRAFT}
 function dfltVerdict(){var c=serverCfg();return c&&c.decisionMinutes||10}
 function modRow(m,i,byId,today){var f=byId[m.filterId];if(!f)return '';
   var n=serverPassRows.filter(function(r){return r.phase===m.phase&&day(r.acceptedAt)===today&&(r.matches||[]).some(function(x){return x.id===f.id})}).length;
@@ -517,7 +519,7 @@ function renderServerModules(){var d=draft();if(!$('mods1'))return;
   var byId={};d.filters.forEach(function(f){byId[f.id]=f});var today=day(now());
   ['1','2'].forEach(function(l){var h='';d.modules.forEach(function(m,i){if(m.level===l&&m.phase===MINE_STREAM)h+=modRow(m,i,byId,today)});$('mods'+l).innerHTML=h||'<p class="hint">пусто</p>'});
   var on=!!(d.r1&&(d.r1.before||d.r1.after));$('winR1').classList.toggle('on',on);var t3=$('winR1').querySelector&&$('winR1').querySelector('.tg');if(t3)t3.classList.toggle('on',on);
-  $('modApplyRow').hidden=!MOD_DIRTY}
+  $('modApplyRow').hidden=!MOD_DIRTY;if(!MOD_DIRTY&&MOD_PENDING)$('modMsg').textContent='⏳ Сервер применяет изменения (обычно 1–3 мин)…';else if(!MOD_DIRTY&&/Сервер применяет/.test($('modMsg').textContent))$('modMsg').textContent='✓ Сервер применил'}
 function showModPicker(level){PICK_LEVEL=level;var d=draft();if(!d)return;var have={};d.modules.forEach(function(m){if(m.phase===MINE_STREAM&&m.level===level)have[m.filterId]=1});
   var pool={};d.filters.concat(((libraryMeta&&libraryMeta.modules)||[]).map(catalogFilter)).forEach(function(f){if(String(f.level)===level&&(!f.phase||f.phase===MINE_STREAM)&&!have[f.id])pool[f.id]=f});
   var list=Object.values(pool);$('modPickerT').textContent='Добавить · '+level+' ур. · '+(MINE_STREAM==='before'?'ручной пул':'после');
@@ -536,7 +538,7 @@ async function applyModules(){var key=keyFrom('modKey'),d=draft();
   if(!key){$('modMsg').textContent='Нужен ключ';return}
   $('modApply').disabled=true;$('modMsg').textContent='Отправка…';
   try{var r=await ownerFetch(controlEndpoint+'/api/filter-config',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(d)});
-    $('modKey').value='';rememberIfOk(r,key);if(r.ok){MOD_DIRTY=false;$('modMsg').textContent='✓ Принято, сервер применит за пару минут'}else $('modMsg').textContent='Отклонено: HTTP '+r.status+(r.status===401?' (пароль)':'')}
+    $('modKey').value='';rememberIfOk(r,key);if(r.ok){MOD_PENDING={cfg:JSON.parse(JSON.stringify(d)),at:now()};MOD_DIRTY=false;renderServerModules()}else $('modMsg').textContent='Отклонено: HTTP '+r.status+(r.status===401?' (пароль)':'')}
   catch(e){$('modMsg').textContent='Ошибка связи'}finally{$('modApply').disabled=false}}
 // ---- Вход в Исследование 1 ----
 function intakeFromUI(){return {manual:{enabled:$('inManual').checked,phase:$('inPhase').value||'both',
